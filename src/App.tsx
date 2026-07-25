@@ -67,6 +67,7 @@ import { SettingsModal, getSavedHotkeys, getSavedFormatterSettings, FormatterSet
 import { VersionHistoryModal } from './components/VersionHistoryModal';
 import { saveVersion, getVersions } from './utils/versionHistory';
 import { format as formatSql } from 'sql-formatter';
+import { connectDuckDbWasmFile, queryDuckDbWasm, disconnectDuckDbWasm } from './lib/duckdbWasm';
 
 export interface EditorTab {
   id: string;
@@ -113,6 +114,7 @@ export default function App() {
   
   // DuckDB Integration State
   const [duckDbConnectedPath, setDuckDbConnectedPath] = useState<string | null>(null);
+  const [isWasmMode, setIsWasmMode] = useState<boolean>(false);
   const [duckDbResults, setDuckDbResults] = useState<any[] | null>(null);
   const [duckDbError, setDuckDbError] = useState<string | null>(null);
   const [isDuckDbRunning, setIsDuckDbRunning] = useState<boolean>(false);
@@ -297,22 +299,34 @@ export default function App() {
       
       try {
         setIsDuckDbRunning(true);
-        const res = await fetch("/api/duckdb/connect", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ dbPath })
-        });
-        const data = await res.json();
-        if (!res.ok || data.error) {
-          setDuckDbError(data.error || "Failed to connect to DuckDB");
-          setIsDuckDbResultVisible(true);
-        } else {
-          setDuckDbConnectedPath(data.path);
+        let connectedViaServer = false;
+
+        try {
+          const data = await fetchApiJson("/api/duckdb/connect", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ dbPath })
+          });
+          if (data && !data.error) {
+            connectedViaServer = true;
+            setIsWasmMode(false);
+            setDuckDbConnectedPath(data.path);
+            setShowDuckDbSchemaPanel(true);
+            setDuckDbError(null);
+          }
+        } catch (_) {
+          connectedViaServer = false;
+        }
+
+        if (!connectedViaServer) {
+          const fileName = await connectDuckDbWasmFile(file);
+          setIsWasmMode(true);
+          setDuckDbConnectedPath(fileName);
           setShowDuckDbSchemaPanel(true);
           setDuckDbError(null);
         }
       } catch (err: any) {
-        setDuckDbError(err.message);
+        setDuckDbError("Ошибка подключения к DuckDB: " + (err.message || String(err)));
         setIsDuckDbResultVisible(true);
       } finally {
         setIsDuckDbRunning(false);
@@ -321,15 +335,20 @@ export default function App() {
   };
 
   const fetchDuckDbSchema = async () => {
+    const schemaQuery = "SELECT c.database_name, c.schema_name, c.table_name, c.column_name, c.data_type, CASE WHEN v.view_name IS NOT NULL THEN 'Views' ELSE 'Tables' END as table_type FROM duckdb_columns() c LEFT JOIN duckdb_views() v ON c.table_name = v.view_name AND c.schema_name = v.schema_name AND c.database_name = v.database_name ORDER BY c.database_name, c.schema_name, table_type, c.table_name, c.column_index";
     try {
-      const res = await fetch("/api/duckdb/query", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: "SELECT c.database_name, c.schema_name, c.table_name, c.column_name, c.data_type, CASE WHEN v.view_name IS NOT NULL THEN 'Views' ELSE 'Tables' END as table_type FROM duckdb_columns() c LEFT JOIN duckdb_views() v ON c.table_name = v.view_name AND c.schema_name = v.schema_name AND c.database_name = v.database_name ORDER BY c.database_name, c.schema_name, table_type, c.table_name, c.column_index" })
-      });
-      const data = await res.json();
-      if (res.ok && data.data) {
-        setDuckDbSchema(data.data);
+      if (isWasmMode) {
+        const rows = await queryDuckDbWasm(schemaQuery);
+        setDuckDbSchema(rows);
+      } else {
+        const data = await fetchApiJson("/api/duckdb/query", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: schemaQuery })
+        });
+        if (data.data) {
+          setDuckDbSchema(data.data);
+        }
       }
     } catch (e) {
       console.error("Failed to fetch schema", e);
@@ -342,13 +361,18 @@ export default function App() {
     } else if (!duckDbConnectedPath) {
       setDuckDbSchema(null);
     }
-  }, [duckDbConnectedPath, showDuckDbSchemaPanel]);
+  }, [duckDbConnectedPath, showDuckDbSchemaPanel, isWasmMode]);
 
   const handleDisconnectDuckDb = async () => {
-    try {
-      await fetch("/api/duckdb/disconnect", { method: "POST" });
-    } catch (e) {
-      console.error(e);
+    if (isWasmMode) {
+      await disconnectDuckDbWasm();
+      setIsWasmMode(false);
+    } else {
+      try {
+        await fetchApiJson("/api/duckdb/disconnect", { method: "POST" });
+      } catch (e) {
+        console.error(e);
+      }
     }
     setDuckDbConnectedPath(null);
     setDuckDbResults(null);
@@ -394,20 +418,24 @@ export default function App() {
       const maxRows = uiVisibility.duckDbMaxRows ?? 100;
       let finalQuery = queryToExecute.trim();
       
-      const res = await fetch("/api/duckdb/query", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: finalQuery })
-      });
-      const data = await res.json();
-      
-      if (!res.ok || data.error) {
-        setDuckDbError(data.error || "Failed to execute query");
+      if (isWasmMode) {
+        const rows = await queryDuckDbWasm(finalQuery);
+        setDuckDbResults(rows.slice(0, maxRows));
       } else {
-        setDuckDbResults((data.data || []).slice(0, maxRows));
+        const data = await fetchApiJson("/api/duckdb/query", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: finalQuery })
+        });
+        
+        if (data.error) {
+          setDuckDbError(data.error);
+        } else {
+          setDuckDbResults((data.data || []).slice(0, maxRows));
+        }
       }
     } catch (err: any) {
-      setDuckDbError(err.message);
+      setDuckDbError(err.message || "Ошибка выполнения запроса");
     } finally {
       setIsDuckDbRunning(false);
     }
@@ -504,7 +532,6 @@ export default function App() {
           });
           setActiveTabId(newId);
           setSql(content);
-          handleVisualize(content, dialect, direction);
         }
       };
       reader.readAsText(file);
@@ -536,7 +563,6 @@ export default function App() {
           });
           setActiveTabId(newId);
           setSql(content);
-          handleVisualize(content, dialect, direction);
         }
       };
       reader.readAsText(file, 'windows-1251');
@@ -1635,8 +1661,8 @@ export default function App() {
           
           {/* CODE EDITOR WORKSPACE */}
           <div className="flex-1 flex flex-col space-y-1.5 min-h-0 relative">
-            <div className="flex items-center justify-between">
-              <label className={`text-[10px] font-bold uppercase tracking-widest ${theme === 'dark' ? 'text-slate-200' : 'text-slate-700'}`}>SQL Query</label>
+            <div className="flex items-center justify-between min-h-[28px]">
+              <label className={`text-xs font-bold uppercase tracking-wider leading-none ${theme === 'dark' ? 'text-slate-200' : 'text-slate-700'}`}>SQL Query</label>
               <div className="flex items-center gap-1.5 relative">
                 {/* HIDDEN FILE INPUT FOR OPEN SQL FILE */}
                 <input 
@@ -1658,7 +1684,7 @@ export default function App() {
                 {uiVisibility.showOpenFile && (
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className={`flex items-center justify-center gap-1 text-xs px-1.5 h-5 rounded font-semibold transition-colors ${
+                  className={`flex items-center justify-center gap-1 text-xs px-2 py-1 rounded-md font-semibold transition-colors ${
                     theme === 'dark' 
                       ? 'text-amber-300 hover:text-amber-100 bg-amber-950/40 hover:bg-amber-900/60 border border-amber-500/30' 
                       : 'text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 shadow-2xs'
@@ -1674,7 +1700,7 @@ export default function App() {
                 {uiVisibility.showSaveFile && (
                 <button
                   onClick={handleSaveSqlFile}
-                  className={`flex items-center justify-center gap-1 text-xs px-1.5 h-5 rounded font-semibold transition-colors ${
+                  className={`flex items-center justify-center gap-1 text-xs px-2 py-1 rounded-md font-semibold transition-colors ${
                     theme === 'dark' 
                       ? 'text-emerald-300 hover:text-emerald-100 bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-500/30' 
                       : 'text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 shadow-2xs'
@@ -1689,7 +1715,7 @@ export default function App() {
                 {uiVisibility.showSnippets && (
                 <button
                   onClick={() => setShowSnippetsModal(true)}
-                  className={`flex items-center justify-center gap-1 text-xs px-1.5 h-5 rounded font-semibold transition-colors ${
+                  className={`flex items-center justify-center gap-1 text-xs px-2 py-1 rounded-md font-semibold transition-colors ${
                     theme === 'dark' 
                       ? 'text-blue-300 hover:text-blue-100 bg-blue-900/40 hover:bg-blue-800/60 border border-blue-500/40' 
                       : 'text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200 shadow-2xs'
@@ -1703,7 +1729,7 @@ export default function App() {
                 {uiVisibility.showMaximizeButton && (
                 <button
                   onClick={() => setIsMaximizedSql(true)}
-                  className={`flex items-center justify-center gap-1 text-xs px-1.5 h-5 rounded font-semibold transition-colors ${
+                  className={`flex items-center justify-center gap-1 text-xs px-2 py-1 rounded-md font-semibold transition-colors ${
                     theme === 'dark' 
                       ? 'text-slate-300 hover:text-slate-100 bg-slate-700/60 hover:bg-slate-700 border border-slate-600' 
                       : 'text-slate-700 hover:text-slate-900 bg-slate-200/80 hover:bg-slate-300 border border-slate-300'
