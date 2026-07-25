@@ -54,7 +54,8 @@ import {
   ChevronUp,
   Folder,
   ChevronsUpDown,
-  ChevronsDownUp
+  ChevronsDownUp,
+  Square
 } from 'lucide-react';
 
 import { parseSqlToAst, astToGraph, getLayoutedElements } from './utils/astToGraph';
@@ -67,7 +68,7 @@ import { SettingsModal, getSavedHotkeys, getSavedFormatterSettings, FormatterSet
 import { VersionHistoryModal } from './components/VersionHistoryModal';
 import { saveVersion, getVersions } from './utils/versionHistory';
 import { format as formatSql } from 'sql-formatter';
-import { connectDuckDbWasmFile, queryDuckDbWasm, disconnectDuckDbWasm } from './lib/duckdbWasm';
+import { connectDuckDbWasmFile, queryDuckDbWasm, disconnectDuckDbWasm, exportDuckDbFile } from './lib/duckdbWasm';
 
 export interface EditorTab {
   id: string;
@@ -291,6 +292,45 @@ export default function App() {
     duckDbFileInputRef.current?.click();
   };
 
+  const fetchApiJson = async (endpoint: string, options?: RequestInit) => {
+    // List of target server URLs to attempt for local/desktop server calls
+    const targetUrls = [
+      endpoint,
+      `http://127.0.0.1:48291${endpoint}`,
+      `http://localhost:48291${endpoint}`,
+      `http://127.0.0.1:3000${endpoint}`,
+      `http://localhost:3000${endpoint}`,
+    ];
+
+    let lastError: Error | null = null;
+
+    for (const url of targetUrls) {
+      try {
+        const res = await fetch(url, options);
+        const contentType = res.headers.get("content-type") || "";
+        if (!contentType.includes("application/json")) {
+          const text = await res.text();
+          if (text.trim().startsWith("<")) {
+            throw new Error("Received HTML response instead of JSON");
+          }
+          throw new Error(`Server error (${res.status}): ${text.slice(0, 100)}`);
+        }
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || `Request error (${res.status})`);
+        }
+        return data;
+      } catch (err: any) {
+        lastError = err;
+      }
+    }
+
+    throw new Error(
+      lastError?.message ||
+        "Бэкенд-сервер недоступен. Запустите локальный сервер (node server.ts)."
+    );
+  };
+
   const handleDuckDbFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -391,7 +431,24 @@ export default function App() {
     }
   }, [uiVisibility.showDuckDbConfig]);
 
+  const duckDbAbortControllerRef = useRef<AbortController | null>(null);
+
+  const handleCancelDuckDbQuery = () => {
+    if (duckDbAbortControllerRef.current) {
+      duckDbAbortControllerRef.current.abort();
+      duckDbAbortControllerRef.current = null;
+    }
+    setIsDuckDbRunning(false);
+    setDuckDbError("Запрос отменен пользователем");
+  };
+
   const handleExecuteDuckDb = async () => {
+    // If query is already running, clicking Execute acts as CANCEL / ABORT
+    if (isDuckDbRunning) {
+      handleCancelDuckDbQuery();
+      return;
+    }
+
     if (!duckDbConnectedPath) {
       alert("Сначала настройте подключение к БД DuckDB");
       return;
@@ -408,6 +465,9 @@ export default function App() {
 
     if (!queryToExecute.trim()) return;
 
+    const controller = new AbortController();
+    duckDbAbortControllerRef.current = controller;
+
     try {
       setIsDuckDbRunning(true);
       setIsDuckDbResultVisible(true);
@@ -418,14 +478,27 @@ export default function App() {
       const maxRows = uiVisibility.duckDbMaxRows ?? 100;
       let finalQuery = queryToExecute.trim();
       
+      // AUTO LIMIT: Automatically limit query results at DB level for SELECT/WITH statements
+      // if query doesn't already specify a custom LIMIT clause.
+      let queryWithLimit = finalQuery;
+      if (maxRows > 0 && /^(SELECT|WITH)\b/i.test(finalQuery)) {
+        if (!/\bLIMIT\s+\d+/i.test(finalQuery)) {
+          queryWithLimit = `SELECT * FROM (${finalQuery.replace(/;+$/, '')}) AS _limited_subquery LIMIT ${maxRows}`;
+        }
+      }
+
       if (isWasmMode) {
-        const rows = await queryDuckDbWasm(finalQuery);
+        const rows = await queryDuckDbWasm(queryWithLimit);
+        if (controller.signal.aborted) {
+          throw new Error("Запрос отменен пользователем");
+        }
         setDuckDbResults(rows.slice(0, maxRows));
       } else {
         const data = await fetchApiJson("/api/duckdb/query", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query: finalQuery })
+          body: JSON.stringify({ query: queryWithLimit }),
+          signal: controller.signal
         });
         
         if (data.error) {
@@ -435,9 +508,18 @@ export default function App() {
         }
       }
     } catch (err: any) {
-      setDuckDbError(err.message || "Ошибка выполнения запроса");
+      if (err.name === 'AbortError' || controller.signal.aborted) {
+        setDuckDbError("Запрос отменен пользователем");
+      } else {
+        let errMsg = err.message || "Ошибка выполнения запроса";
+        if (errMsg.includes("invalid escaped character") || errMsg.includes("trailing escape")) {
+          errMsg += "\n\n💡 Подсказка: В строках SQL пути Windows содержат обратные слэши '\\', которые считаются спецсимволами. Замените '\\' на прямые слэши '/' (напр. 'C:/Users/...') или удвойте их '\\\\'.";
+        }
+        setDuckDbError(errMsg);
+      }
     } finally {
       setIsDuckDbRunning(false);
+      duckDbAbortControllerRef.current = null;
     }
   };
 
@@ -1892,6 +1974,30 @@ export default function App() {
             </button>
             )}
 
+            {duckDbConnectedPath && (
+              <button
+                onClick={handleExecuteDuckDb}
+                className={`py-1.5 px-2.5 text-xs font-semibold rounded-md shadow-md transition-all flex items-center justify-center gap-1 shrink-0 ${
+                  isDuckDbRunning
+                    ? 'bg-red-600 hover:bg-red-700 text-white animate-pulse'
+                    : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/20'
+                }`}
+                title={isDuckDbRunning ? "Нажмите для отмены выполнения запроса" : "Выполнить SQL в DuckDB (Ctrl+Enter)"}
+              >
+                {isDuckDbRunning ? (
+                  <>
+                    <Square className="w-3 h-3 fill-white shrink-0" />
+                    <span>Отмена</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-3 h-3 fill-white shrink-0" />
+                    <span>Run DB</span>
+                  </>
+                )}
+              </button>
+            )}
+
             <button
               onClick={() => handleVisualize()}
               className="flex-1 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-md shadow-md shadow-blue-900/20 active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5"
@@ -2635,7 +2741,7 @@ export default function App() {
                 <div className="flex items-center gap-1">
                   <button
                     onClick={handleConfigureDuckDb}
-                    className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded font-semibold transition-colors ${
+                    className={`flex items-center gap-1 text-xs px-2.5 h-[26px] rounded font-semibold transition-colors ${
                       theme === 'dark' 
                         ? 'text-teal-300 hover:text-teal-100 bg-teal-950/40 hover:bg-teal-900/60 border border-teal-500/30' 
                         : 'text-teal-800 hover:text-teal-950 bg-teal-100 hover:bg-teal-200 border border-teal-300 shadow-2xs'
@@ -2650,7 +2756,7 @@ export default function App() {
                       {!showDuckDbSchemaPanel && (
                         <button
                           onClick={() => setShowDuckDbSchemaPanel(true)}
-                          className={`flex items-center justify-center p-1 rounded transition-colors ${
+                          className={`flex items-center justify-center h-[26px] w-[26px] rounded transition-colors ${
                             theme === 'dark' 
                               ? 'text-blue-400 hover:bg-blue-950/40 border border-blue-500/30' 
                               : 'text-blue-600 hover:bg-blue-100 border border-blue-300 shadow-2xs'
@@ -2662,7 +2768,7 @@ export default function App() {
                       )}
                       <button
                         onClick={handleDisconnectDuckDb}
-                        className={`flex items-center justify-center p-1 rounded transition-colors ${
+                        className={`flex items-center justify-center h-[26px] w-[26px] rounded transition-colors ${
                           theme === 'dark' 
                             ? 'text-red-400 hover:bg-red-950/40 border border-red-500/30' 
                             : 'text-red-600 hover:bg-red-100 border border-red-300 shadow-2xs'
@@ -2936,6 +3042,16 @@ export default function App() {
                     Результат запроса (Первые {uiVisibility.duckDbMaxRows ?? 100} строк)
                   </span>
                   <div className="flex items-center gap-1">
+                    {isDuckDbRunning && (
+                      <button
+                        onClick={handleCancelDuckDbQuery}
+                        className="flex items-center justify-center gap-1 text-xs px-2 h-6 rounded font-semibold bg-red-600 hover:bg-red-700 text-white transition-colors mr-1 shadow-2xs"
+                        title="Отменить выполнение текущего запроса"
+                      >
+                        <Square className="w-3 h-3 fill-white shrink-0" />
+                        <span>Отменить</span>
+                      </button>
+                    )}
                     <button 
                       onClick={() => {
                         if (duckDbError) {
@@ -2945,7 +3061,7 @@ export default function App() {
                           navigator.clipboard.writeText(csv);
                         }
                       }}
-                      className={`p-1 rounded transition-colors ${
+                      className={`h-6 w-6 flex items-center justify-center rounded transition-colors ${
                         theme === 'dark' ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'
                       }`}
                       title="Скопировать"
@@ -2955,7 +3071,7 @@ export default function App() {
                     {!isDuckDbResultExpanded && (
                       <button 
                         onClick={() => setIsDuckDbResultExpanded(true)}
-                        className={`p-1 rounded transition-colors ${
+                        className={`h-6 w-6 flex items-center justify-center rounded transition-colors ${
                           theme === 'dark' ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'
                         }`}
                         title="Увеличить таблицу"
@@ -2971,7 +3087,7 @@ export default function App() {
                           setIsDuckDbResultVisible(false);
                         }
                       }}
-                      className={`p-1 rounded transition-colors ${
+                      className={`h-6 w-6 flex items-center justify-center rounded transition-colors ${
                         theme === 'dark' ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'
                       }`}
                       title={isDuckDbResultExpanded ? "Уменьшить таблицу" : "Свернуть таблицу"}

@@ -9,7 +9,23 @@ const { Database } = duckdb;
 const app = express();
 app.use(express.json());
 
-const PORT = 3000;
+// Enable CORS for desktop clients (Tauri) and local connections
+app.use((req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+
+// Healthcheck endpoint
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok", mode: "native_duckdb_server" });
+});
 
 // Global duckdb connection for the server
 let db: Database | null = null;

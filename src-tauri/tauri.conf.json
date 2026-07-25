@@ -11,7 +11,31 @@
   },
   "tauri": {
     "allowlist": {
-      "all": true
+      "all": true,
+      "fs": {
+        "all": true,
+        "readFile": true,
+        "readBinaryFile": true,
+        "readTextFile": true,
+        "exists": true,
+        "scope": [
+          "$HOME/**",
+          "C:\\**",
+          "C:/**",
+          "D:\\**",
+          "D:/**",
+          "E:\\**",
+          "E:/**",
+          "F:\\**",
+          "F:/**",
+          "\\\\**",
+          "//**",
+          "**"
+        ]
+      },
+      "dialog": {
+        "all": true
+      }
     },
     "bundle": {
       "active": true,
