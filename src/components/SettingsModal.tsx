@@ -6,7 +6,7 @@ export interface HotkeyBinding {
   id: string;
   label: string;
   description: string;
-  category: 'Редактор' | 'Граф' | 'Общие';
+  category: 'Редактор' | 'Вкладки' | 'Граф' | 'Общие';
   defaultKey: string;
 }
 
@@ -19,11 +19,15 @@ export interface FormatterSettings {
 }
 
 export interface UiVisibilitySettings {
+  showEditorToggleBtn?: boolean;
   showPresets: boolean;
   showSnippets: boolean;
   showHistory: boolean;
+  showDuckDbConfig?: boolean;
+  duckDbMaxRows?: number;
   showSearchSql?: boolean;
   showOpenFile: boolean;
+  showWin1251Button?: boolean;
   showSaveFile: boolean;
   showFormatSql: boolean;
   showCopySql: boolean;
@@ -45,6 +49,16 @@ export interface UiVisibilitySettings {
   showHistoryManualSnapshot: boolean;
   showHistoryExport: boolean;
   showHistoryDiff: boolean;
+  // Export Menu Settings
+  showExportPngBg: boolean;
+  showExportPngTransparent: boolean;
+  showExportSvgBg: boolean;
+  showExportSvgTransparent: boolean;
+  showExportJpeg: boolean;
+  showExportJson: boolean;
+  showExportXml: boolean;
+  showExportMermaid: boolean;
+  showExportDrawio: boolean;
 }
 
 export const DEFAULT_FORMATTER_SETTINGS: FormatterSettings = {
@@ -56,11 +70,15 @@ export const DEFAULT_FORMATTER_SETTINGS: FormatterSettings = {
 };
 
 export const DEFAULT_UI_VISIBILITY: UiVisibilitySettings = {
+  showEditorToggleBtn: true,
   showPresets: true,
   showSnippets: true,
   showHistory: true,
+  showDuckDbConfig: true,
+  duckDbMaxRows: 100,
   showSearchSql: true,
   showOpenFile: true,
+  showWin1251Button: true,
   showSaveFile: true,
   showFormatSql: true,
   showCopySql: true,
@@ -80,6 +98,15 @@ export const DEFAULT_UI_VISIBILITY: UiVisibilitySettings = {
   showHistoryManualSnapshot: true,
   showHistoryExport: true,
   showHistoryDiff: true,
+  showExportPngBg: true,
+  showExportPngTransparent: true,
+  showExportSvgBg: true,
+  showExportSvgTransparent: true,
+  showExportJpeg: true,
+  showExportJson: true,
+  showExportXml: true,
+  showExportMermaid: true,
+  showExportDrawio: true,
 };
 
 const FORMATTER_STORAGE_KEY = 'sql_visualizer_formatter_v1';
@@ -162,7 +189,7 @@ export const DEFAULT_HOTKEYS: HotkeyBinding[] = [
   {
     id: 'formatSql',
     label: 'Форматировать SQL',
-    description: 'Автоматически красивое форматирование запроса',
+    description: 'Автоматическое форматирование запроса',
     category: 'Редактор',
     defaultKey: 'Ctrl+Shift+F'
   },
@@ -200,6 +227,13 @@ export const DEFAULT_HOTKEYS: HotkeyBinding[] = [
     description: 'Открыть меню экспорта в PNG, SVG, JSON, XML, Mermaid',
     category: 'Граф',
     defaultKey: 'Ctrl+E'
+  },
+  {
+    id: 'tabSwitchModifier',
+    label: 'Переключение вкладок (1–9)',
+    description: 'Модификатор клавиш для быстрого перехода на вкладки от 1 до 9',
+    category: 'Вкладки',
+    defaultKey: 'Ctrl'
   }
 ];
 
@@ -454,7 +488,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     localStorage.setItem(UI_VISIBILITY_STORAGE_KEY, JSON.stringify(updated));
   };
 
-  const categories: ('Редактор' | 'Граф' | 'Общие')[] = ['Редактор', 'Граф', 'Общие'];
+  const updateDuckDbMaxRows = (val: number) => {
+    const updated = { ...uiVisibility, duckDbMaxRows: val };
+    onUpdateUiVisibility(updated);
+    localStorage.setItem(UI_VISIBILITY_STORAGE_KEY, JSON.stringify(updated));
+  };
+
+  const categories: ('Редактор' | 'Вкладки' | 'Граф' | 'Общие')[] = ['Редактор', 'Вкладки', 'Граф', 'Общие'];
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/80 p-4 sm:p-6 flex items-center justify-center animate-in fade-in duration-200">
@@ -550,8 +590,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   {[
+                    { key: 'showEditorToggleBtn', label: 'Кнопка «Скрыть редактор»', desc: 'Кнопка скрытия левой панели' },
+                    { key: 'showDuckDbConfig', label: 'Интеграция DuckDB', desc: 'Кнопки подключения и выполнения кода' },
                     { key: 'showSearchSql', label: 'Кнопка «Поиск»', desc: 'Поиск и замена текста в редакторе (Ctrl+F)' },
                     { key: 'showOpenFile', label: 'Открыть файл (.sql)', desc: 'Загрузка файла с диска' },
+                    { key: 'showWin1251Button', label: 'Кнопка «Win-1251»', desc: 'Открытие файла в кодировке Windows-1251' },
                     { key: 'showSaveFile', label: 'Сохранить файл (.sql)', desc: 'Скачивание текущего SQL' },
                     { key: 'showSnippets', label: 'Сниппеты и Конструктор', desc: 'Библиотека готовых фрагментов' },
                     { key: 'showHistory', label: 'История версий', desc: 'История снимков и автосохранений' },
@@ -560,7 +603,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     { key: 'showFormatSql', label: 'Кнопка «Формат»', desc: 'Авто-форматирование SQL' },
                     { key: 'showCopySql', label: 'Кнопка «Copy SQL»', desc: 'Копирование текста в буфер обмена' },
                   ].map((item) => {
-                    const isChecked = uiVisibility[item.key as keyof UiVisibilitySettings];
+                    const isChecked = Boolean(uiVisibility[item.key as keyof UiVisibilitySettings]);
                     return (
                       <label
                         key={item.key}
@@ -580,9 +623,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           onChange={() => toggleUiElement(item.key as keyof UiVisibilitySettings)}
                           className="mt-0.5 rounded border-slate-600 text-blue-600 focus:ring-blue-500 w-4 h-4 shrink-0"
                         />
-                        <div>
+                        <div className="flex-1">
                           <div className="text-xs font-semibold">{item.label}</div>
-                          <div className="text-[10px] opacity-75">{item.desc}</div>
+                          <div className="text-[10px] opacity-75 mb-1">{item.desc}</div>
+                          {item.key === 'showDuckDbConfig' && isChecked && (
+                            <div className="mt-2 flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                              <span className="text-[10px]">Max rows:</span>
+                              <input 
+                                type="number" 
+                                min="1" 
+                                step="10"
+                                value={uiVisibility.duckDbMaxRows ?? 100} 
+                                onChange={e => {
+                                  const val = parseInt(e.target.value);
+                                  if (!isNaN(val) && val > 0) updateDuckDbMaxRows(val);
+                                }}
+                                className={`w-16 px-1.5 py-0.5 text-xs rounded border outline-none ${theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'}`}
+                              />
+                            </div>
+                          )}
                         </div>
                       </label>
                     );
@@ -607,7 +666,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     { key: 'showExportButton', label: 'Кнопка «Export» графа', desc: 'Экспорт схемы в PNG, SVG, JSON' },
                     { key: 'showGraphFooter', label: 'Подвал графа (Детали узлов)', desc: 'Нижняя панель информации о выбранном узле' },
                   ].map((item) => {
-                    const isChecked = uiVisibility[item.key as keyof UiVisibilitySettings];
+                    const isChecked = Boolean(uiVisibility[item.key as keyof UiVisibilitySettings]);
                     return (
                       <label
                         key={item.key}
@@ -651,7 +710,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     { key: 'showSnippetFavorites', label: 'Избранное', desc: 'Возможность отмечать сниппеты звездочкой' },
                     { key: 'showSnippetCreateBtn', label: 'Конструктор сниппетов', desc: 'Кнопка и форма «+ Создать сниппет»' },
                   ].map((item) => {
-                    const isChecked = uiVisibility[item.key as keyof UiVisibilitySettings];
+                    const isChecked = Boolean(uiVisibility[item.key as keyof UiVisibilitySettings]);
                     return (
                       <label
                         key={item.key}
@@ -695,7 +754,56 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     { key: 'showHistoryExport', label: 'Экспорт истории', desc: 'Кнопка сохранения всех снимков в JSON' },
                     { key: 'showHistoryDiff', label: 'Сравнение кодов (Diff)', desc: 'Переключатель просмотра изменений' },
                   ].map((item) => {
-                    const isChecked = uiVisibility[item.key as keyof UiVisibilitySettings];
+                    const isChecked = Boolean(uiVisibility[item.key as keyof UiVisibilitySettings]);
+                    return (
+                      <label
+                        key={item.key}
+                        className={`flex items-start gap-3 p-2.5 rounded-lg border cursor-pointer transition-all ${
+                          isChecked
+                            ? theme === 'dark'
+                              ? 'bg-slate-800/80 border-blue-500/50 text-slate-100'
+                              : 'bg-blue-50/60 border-blue-300 text-slate-900'
+                            : theme === 'dark'
+                              ? 'bg-slate-850/40 border-slate-700/50 text-slate-400 opacity-60'
+                              : 'bg-slate-50 border-slate-200 text-slate-500 opacity-60'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => toggleUiElement(item.key as keyof UiVisibilitySettings)}
+                          className="mt-0.5 rounded border-slate-600 text-blue-600 focus:ring-blue-500 w-4 h-4 shrink-0"
+                        />
+                        <div>
+                          <div className="text-xs font-semibold">{item.label}</div>
+                          <div className="text-[10px] opacity-75">{item.desc}</div>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* EXPORT MENU UI TOGGLES */}
+              <div className="space-y-3">
+                <h3 className={`text-xs uppercase font-bold tracking-wider border-b pb-1 ${
+                  theme === 'dark' ? 'text-slate-400 border-slate-700/50' : 'text-slate-900 border-slate-300'
+                }`}>
+                  Меню Экспорта (Кнопка Export)
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {[
+                    { key: 'showExportPngBg', label: 'PNG с фоном', desc: 'Растровая картинка с фоном темы' },
+                    { key: 'showExportPngTransparent', label: 'PNG прозрачный', desc: 'Растровая картинка без фона' },
+                    { key: 'showExportSvgBg', label: 'SVG с фоном', desc: 'Векторная картинка с фоном темы' },
+                    { key: 'showExportSvgTransparent', label: 'SVG прозрачный', desc: 'Векторная картинка без фона' },
+                    { key: 'showExportJpeg', label: 'JPEG с фоном', desc: 'Растровая картинка с фоном темы (JPEG)' },
+                    { key: 'showExportJson', label: 'JSON Data', desc: 'Экспорт схемы в JSON формат' },
+                    { key: 'showExportXml', label: 'XML Schema', desc: 'Экспорт схемы в XML формат' },
+                    { key: 'showExportMermaid', label: 'Mermaid', desc: 'Экспорт графа в формат Mermaid' },
+                    { key: 'showExportDrawio', label: 'Draw.io', desc: 'Экспорт графа для Draw.io (.drawio.xml)' },
+                  ].map((item) => {
+                    const isChecked = Boolean(uiVisibility[item.key as keyof UiVisibilitySettings]);
                     return (
                       <label
                         key={item.key}
@@ -756,9 +864,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                 <div className="flex flex-wrap gap-2">
                   {[
-                    { width: 50, label: '50 симв.', desc: 'С переносом каждого столбца' },
-                    { width: 120, label: '120 симв.', desc: 'Компактно (в одну строку)' },
-                    { width: 200, label: '200 симв.', desc: 'Ультра компактно' }
+                    { width: 1, label: 'По столбцам', desc: 'Каждый столбец с новой строки' },
+                    { width: 80, label: '80 симв.', desc: 'Заполнение строк до 80 символов' },
+                    { width: 120, label: '120 симв.', desc: 'Заполнение строк до 120 символов' }
                   ].map((preset) => (
                     <button
                       key={preset.width}
@@ -778,18 +886,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
 
                 <div className="flex items-center gap-3 pt-1">
-                  <span className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>Свой порог ширины:</span>
+                  <span className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>Макс. длина строки:</span>
                   <input
                     type="number"
-                    min={20}
+                    min={1}
                     max={500}
                     value={formatterSettings.expressionWidth}
-                    onChange={(e) => updateFormatter({ expressionWidth: Math.max(20, parseInt(e.target.value) || 50) })}
+                    onChange={(e) => updateFormatter({ expressionWidth: Math.max(1, parseInt(e.target.value) || 1) })}
                     className={`w-24 px-2.5 py-1 text-xs font-mono rounded border ${
                       theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-900'
                     }`}
                   />
-                  <span className="text-[11px] text-slate-500">символов</span>
+                  <span className="text-[11px] text-slate-500">символов (1 = каждый столбец с новой строки)</span>
                 </div>
               </div>
 
@@ -1106,18 +1214,39 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               }`}>{item.description}</div>
                             </div>
 
-                            <button
-                              onClick={() => setListeningActionId(isListening ? null : item.id)}
-                              className={`px-3 py-1.5 rounded font-mono text-xs font-bold border shadow-xs transition-all shrink-0 min-w-[100px] text-center ${
-                                isListening
-                                  ? 'bg-amber-500 text-slate-900 border-amber-400 animate-pulse'
-                                  : theme === 'dark'
-                                  ? 'bg-slate-750 hover:bg-slate-700 border-slate-600 text-blue-400 hover:text-blue-300'
-                                  : 'bg-white hover:bg-slate-100 border-slate-300 text-blue-800 font-bold shadow-2xs'
-                              }`}
-                            >
-                              {isListening ? 'Нажмите клавиши...' : currentKey}
-                            </button>
+                            {item.id === 'tabSwitchModifier' ? (
+                              <select
+                                value={hotkeys.tabSwitchModifier || 'Ctrl'}
+                                onChange={(e) => {
+                                  const updated = { ...hotkeys, tabSwitchModifier: e.target.value };
+                                  onUpdateHotkeys(updated);
+                                  localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+                                }}
+                                className={`px-3 py-1.5 rounded font-mono text-xs font-bold border shadow-xs outline-none transition-all cursor-pointer ${
+                                  theme === 'dark'
+                                    ? 'bg-slate-750 border-slate-600 text-blue-400 hover:bg-slate-700'
+                                    : 'bg-white border-slate-300 text-blue-800 font-bold hover:bg-slate-100'
+                                }`}
+                              >
+                                <option value="Ctrl">Ctrl (Ctrl+1 .. Ctrl+9)</option>
+                                <option value="Alt">Alt (Alt+1 .. Alt+9)</option>
+                                <option value="Shift">Shift (Shift+1 .. Shift+9)</option>
+                                <option value="Meta">Cmd / Win (Meta+1 .. Meta+9)</option>
+                              </select>
+                            ) : (
+                              <button
+                                onClick={() => setListeningActionId(isListening ? null : item.id)}
+                                className={`px-3 py-1.5 rounded font-mono text-xs font-bold border shadow-xs transition-all shrink-0 min-w-[100px] text-center ${
+                                  isListening
+                                    ? 'bg-amber-500 text-slate-900 border-amber-400 animate-pulse'
+                                    : theme === 'dark'
+                                    ? 'bg-slate-750 hover:bg-slate-700 border-slate-600 text-blue-400 hover:text-blue-300'
+                                    : 'bg-white hover:bg-slate-100 border-slate-300 text-blue-800 font-bold shadow-2xs'
+                                }`}
+                              >
+                                {isListening ? 'Нажмите клавиши...' : currentKey}
+                              </button>
+                            )}
                           </div>
                         );
                       })}

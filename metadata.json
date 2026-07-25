@@ -1,6 +1,6 @@
 {
   "name": "SQL Visualizer",
-  "description": "",
+  "description": "Interactive SQL query visualizer and AST diagram generator",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }

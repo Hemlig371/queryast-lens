@@ -50,7 +50,11 @@ import {
   FileJson,
   FileCode,
   Workflow,
-  History
+  History,
+  ChevronUp,
+  Folder,
+  ChevronsUpDown,
+  ChevronsDownUp
 } from 'lucide-react';
 
 import { parseSqlToAst, astToGraph, getLayoutedElements } from './utils/astToGraph';
@@ -106,6 +110,74 @@ export default function App() {
   const [showLimitNodes, setShowLimitNodes] = useState<boolean>(false);
   const [isWrapSql, setIsWrapSql] = useState<boolean>(() => savedSession?.isWrapSql ?? false);
   const [isMaximizedSql, setIsMaximizedSql] = useState<boolean>(() => savedSession?.isMaximizedSql ?? true);
+  
+  // DuckDB Integration State
+  const [duckDbConnectedPath, setDuckDbConnectedPath] = useState<string | null>(null);
+  const [duckDbResults, setDuckDbResults] = useState<any[] | null>(null);
+  const [duckDbError, setDuckDbError] = useState<string | null>(null);
+  const [isDuckDbRunning, setIsDuckDbRunning] = useState<boolean>(false);
+  const [isDuckDbResultVisible, setIsDuckDbResultVisible] = useState<boolean>(false);
+  const [isDuckDbResultExpanded, setIsDuckDbResultExpanded] = useState<boolean>(false);
+  const [duckDbSelectedCell, setDuckDbSelectedCell] = useState<{ title: string; content: string } | null>(null);
+    const [duckDbSchema, setDuckDbSchema] = useState<any[] | null>(null);
+  const [schemaSearchTerm, setSchemaSearchTerm] = useState('');
+  const [showDuckDbSchemaPanel, setShowDuckDbSchemaPanel] = useState<boolean>(true);
+  const [expandedSchemaNodes, setExpandedSchemaNodes] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    setExpandedSchemaNodes({});
+    setSchemaSearchTerm('');
+  }, [duckDbConnectedPath]);
+
+
+
+  const toggleSchemaNode = (id: string) => {
+    setExpandedSchemaNodes(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const handleExpandAllSchemaNodes = () => {
+    if (!groupedDuckDbSchema) return;
+    const nextState: Record<string, boolean> = {};
+    Object.entries(groupedDuckDbSchema).forEach(([dbName, schemas]: any) => {
+      nextState[`db-${dbName}`] = true;
+      Object.entries(schemas).forEach(([schemaName, types]: any) => {
+        nextState[`sch-${dbName}-${schemaName}`] = true;
+        Object.entries(types).forEach(([typeName, tables]: any) => {
+          nextState[`type-${dbName}-${schemaName}-${typeName}`] = true;
+          Object.entries(tables).forEach(([tableName, cols]: any) => {
+            nextState[`tbl-${dbName}-${schemaName}-${tableName}`] = true;
+          });
+        });
+      });
+    });
+    setExpandedSchemaNodes(nextState);
+  };
+
+  const groupedDuckDbSchema = useMemo(() => {
+    if (!duckDbSchema) return null;
+    const tree: Record<string, Record<string, Record<string, Record<string, any[]>>>> = {};
+    const term = schemaSearchTerm.toLowerCase();
+    
+    duckDbSchema.forEach(col => {
+      const tblMatch = col.table_name.toLowerCase().includes(term);
+      const colMatch = col.column_name.toLowerCase().includes(term);
+      if (term && !tblMatch && !colMatch) return;
+      
+      const db = col.database_name;
+      const sch = col.schema_name;
+      const type = col.table_type === 'Views' ? 'Views' : 'Tables';
+      const tbl = col.table_name;
+      
+      if (!tree[db]) tree[db] = {};
+      if (!tree[db][sch]) tree[db][sch] = {};
+      if (!tree[db][sch][type]) tree[db][sch][type] = {};
+      if (!tree[db][sch][type][tbl]) tree[db][sch][type][tbl] = [];
+      
+      tree[db][sch][type][tbl].push(col);
+    });
+    return tree;
+  }, [duckDbSchema, schemaSearchTerm]);
+
   const [showSnippetsModal, setShowSnippetsModal] = useState<boolean>(false);
   const [showPresetsDropdown, setShowPresetsDropdown] = useState<boolean>(false);
   const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
@@ -119,6 +191,8 @@ export default function App() {
     formatterSettingsRef.current = formatterSettings;
   }, [formatterSettings]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const win1251FileInputRef = useRef<HTMLInputElement>(null);
+  const duckDbFileInputRef = useRef<HTMLInputElement>(null);
 
   // Tabs state for fullscreen editor
   const [tabs, setTabs] = useState<EditorTab[]>(() => {
@@ -211,6 +285,134 @@ export default function App() {
     setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql } : t));
   }, [sql, activeTabId]);
 
+  const handleConfigureDuckDb = () => {
+    duckDbFileInputRef.current?.click();
+  };
+
+  const handleDuckDbFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // @ts-ignore - access non-standard path property for desktop environments
+      const dbPath = file.path || file.name;
+      
+      try {
+        setIsDuckDbRunning(true);
+        const res = await fetch("/api/duckdb/connect", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dbPath })
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          setDuckDbError(data.error || "Failed to connect to DuckDB");
+          setIsDuckDbResultVisible(true);
+        } else {
+          setDuckDbConnectedPath(data.path);
+          setShowDuckDbSchemaPanel(true);
+          setDuckDbError(null);
+        }
+      } catch (err: any) {
+        setDuckDbError(err.message);
+        setIsDuckDbResultVisible(true);
+      } finally {
+        setIsDuckDbRunning(false);
+      }
+    }
+  };
+
+  const fetchDuckDbSchema = async () => {
+    try {
+      const res = await fetch("/api/duckdb/query", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: "SELECT c.database_name, c.schema_name, c.table_name, c.column_name, c.data_type, CASE WHEN v.view_name IS NOT NULL THEN 'Views' ELSE 'Tables' END as table_type FROM duckdb_columns() c LEFT JOIN duckdb_views() v ON c.table_name = v.view_name AND c.schema_name = v.schema_name AND c.database_name = v.database_name ORDER BY c.database_name, c.schema_name, table_type, c.table_name, c.column_index" })
+      });
+      const data = await res.json();
+      if (res.ok && data.data) {
+        setDuckDbSchema(data.data);
+      }
+    } catch (e) {
+      console.error("Failed to fetch schema", e);
+    }
+  };
+
+  useEffect(() => {
+    if (duckDbConnectedPath && showDuckDbSchemaPanel) {
+      fetchDuckDbSchema();
+    } else if (!duckDbConnectedPath) {
+      setDuckDbSchema(null);
+    }
+  }, [duckDbConnectedPath, showDuckDbSchemaPanel]);
+
+  const handleDisconnectDuckDb = async () => {
+    try {
+      await fetch("/api/duckdb/disconnect", { method: "POST" });
+    } catch (e) {
+      console.error(e);
+    }
+    setDuckDbConnectedPath(null);
+    setDuckDbResults(null);
+    setDuckDbSelectedCell(null);
+    setDuckDbError(null);
+    setIsDuckDbResultVisible(false);
+    setIsDuckDbResultExpanded(false);
+  };
+
+  useEffect(() => {
+    if (!uiVisibility.showDuckDbConfig) {
+      if (duckDbConnectedPath) {
+        handleDisconnectDuckDb();
+      }
+      setShowDuckDbSchemaPanel(false);
+    }
+  }, [uiVisibility.showDuckDbConfig]);
+
+  const handleExecuteDuckDb = async () => {
+    if (!duckDbConnectedPath) {
+      alert("Сначала настройте подключение к БД DuckDB");
+      return;
+    }
+
+    let queryToExecute = sql;
+    const textareas = document.querySelectorAll('textarea');
+    for (const textarea of Array.from(textareas)) {
+      if (textarea.offsetWidth > 0 && textarea.offsetHeight > 0 && textarea.selectionStart !== textarea.selectionEnd) {
+        queryToExecute = textarea.value.substring(textarea.selectionStart, textarea.selectionEnd);
+        break;
+      }
+    }
+
+    if (!queryToExecute.trim()) return;
+
+    try {
+      setIsDuckDbRunning(true);
+      setIsDuckDbResultVisible(true);
+      setDuckDbError(null);
+      setDuckDbResults(null);
+      setDuckDbSelectedCell(null);
+
+      const maxRows = uiVisibility.duckDbMaxRows ?? 100;
+      let finalQuery = queryToExecute.trim();
+      
+      const res = await fetch("/api/duckdb/query", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: finalQuery })
+      });
+      const data = await res.json();
+      
+      if (!res.ok || data.error) {
+        setDuckDbError(data.error || "Failed to execute query");
+      } else {
+        setDuckDbResults((data.data || []).slice(0, maxRows));
+      }
+    } catch (err: any) {
+      setDuckDbError(err.message);
+    } finally {
+      setIsDuckDbRunning(false);
+    }
+  };
+
   const handleSelectTab = (targetId: string) => {
     if (targetId === activeTabId) return;
     const targetTab = tabs.find(t => t.id === targetId);
@@ -220,6 +422,7 @@ export default function App() {
   };
 
   const handleAddTab = () => {
+    if (tabs.length >= 9) return;
     const newId = Date.now().toString();
     const nextNum = tabs.length + 1;
     const newTab: EditorTab = {
@@ -280,6 +483,11 @@ export default function App() {
   const handleOpenFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (tabs.length >= 9) {
+        alert('Достигнуто максимальное количество вкладок (9). Закройте одну из вкладок, чтобы открыть новый файл.');
+        e.target.value = '';
+        return;
+      }
       const reader = new FileReader();
       reader.onload = (event) => {
         const content = event.target?.result as string;
@@ -300,6 +508,38 @@ export default function App() {
         }
       };
       reader.readAsText(file);
+    }
+    e.target.value = '';
+  };
+
+  const handleOpenFileWin1251 = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (tabs.length >= 9) {
+        alert('Достигнуто максимальное количество вкладок (9). Закройте одну из вкладок, чтобы открыть новый файл.');
+        e.target.value = '';
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const content = event.target?.result as string;
+        if (typeof content === 'string') {
+          const newId = Date.now().toString();
+          const newTab: EditorTab = {
+            id: newId,
+            title: file.name,
+            sql: content
+          };
+          setTabs(prev => {
+            const updated = prev.map(t => t.id === activeTabId ? { ...t, sql } : t);
+            return [...updated, newTab];
+          });
+          setActiveTabId(newId);
+          setSql(content);
+          handleVisualize(content, dialect, direction);
+        }
+      };
+      reader.readAsText(file, 'windows-1251');
     }
     e.target.value = '';
   };
@@ -480,24 +720,25 @@ export default function App() {
   }, [nodes, lineageHighlightMode, lineageNodeIds]);
 
   const processedEdges = React.useMemo(() => {
-    if (!lineageHighlightMode || !lineageEdgeIds) return edges;
-    return edges.map((e) => {
-      const isLineage = lineageEdgeIds.has(e.id);
+    return edges.map((e: any) => {
+      const isLineageModeActive = lineageHighlightMode && lineageEdgeIds;
+      const isLineage = isLineageModeActive && lineageEdgeIds.has(e.id);
+      
       return {
         ...e,
-        animated: isLineage ? true : e.animated,
+        animated: isLineageModeActive ? (isLineage ? true : false) : (e.animated ?? true),
         style: {
           ...(e.style || {}),
-          opacity: isLineage ? 1 : 0.15,
-          strokeWidth: isLineage ? 2.5 : 1,
-          stroke: isLineage ? '#3b82f6' : (e.style?.stroke || '#94a3b8'),
+          opacity: isLineageModeActive ? (isLineage ? 1 : 0.15) : 1,
+          strokeWidth: isLineage ? 3 : 2,
+          stroke: isLineage ? '#3b82f6' : (e.style?.stroke || (theme === 'dark' ? '#f8fafc' : '#334155')),
           transition: 'opacity 0.2s ease-in-out'
         }
       };
     });
-  }, [edges, lineageHighlightMode, lineageEdgeIds]);
+  }, [edges, lineageHighlightMode, lineageEdgeIds, theme]);
   const [showAstPreview, setShowAstPreview] = useState<boolean>(false);
-  const [copied, setCopied] = useState<boolean>(false);
+  const [copied, setCopied] = useState<string | boolean>(false);
   const [showLeftPanel, setShowLeftPanel] = useState<boolean>(true);
   const [showMiniMap, setShowMiniMap] = useState<boolean>(true);
   const [isExporting, setIsExporting] = useState<boolean>(false);
@@ -528,7 +769,7 @@ export default function App() {
         0.1
       );
 
-      const defaultBgColor = theme === 'dark' ? '#172033' : '#263345';
+      const defaultBgColor = theme === 'dark' ? '#172033' : '#e2e8f0';
       const bgColor = transparent ? undefined : defaultBgColor;
 
       const options: any = {
@@ -601,16 +842,31 @@ export default function App() {
       // 2. Prepare edge paths (<path class="react-flow__edge-path">)
       const edgePaths = viewportElement.querySelectorAll('.react-flow__edges path, .react-flow__edge-path, .react-flow__edge path');
       edgePaths.forEach((path) => {
-        const computed = window.getComputedStyle(path);
+        const pathEl = path as HTMLElement;
+        const computed = window.getComputedStyle(pathEl);
         const origStroke = path.getAttribute('stroke');
         const origStrokeWidth = path.getAttribute('stroke-width');
         const origStrokeDasharray = path.getAttribute('stroke-dasharray');
         const origFill = path.getAttribute('fill');
+        
+        const origInlineStroke = pathEl.style.getPropertyValue('stroke');
+        const origInlineStrokePriority = pathEl.style.getPropertyPriority('stroke');
+        const origInlineStrokeWidth = pathEl.style.getPropertyValue('stroke-width');
+        const origInlineStrokeWidthPriority = pathEl.style.getPropertyPriority('stroke-width');
 
         let stroke = computed.stroke;
         if (!stroke || stroke === 'none' || stroke === 'rgba(0, 0, 0, 0)') {
           stroke = '#94a3b8';
         }
+
+        if (transparent && theme === 'dark') {
+          // In dark mode, lines are very light (e.g. #f8fafc). On a transparent export, 
+          // they disappear against typical light viewers. Force them to a neutral visible gray.
+          if (stroke !== '#3b82f6' && stroke !== 'rgb(59, 130, 246)') {
+            stroke = '#64748b'; 
+          }
+        }
+
         let strokeWidth = computed.strokeWidth;
         if (!strokeWidth || strokeWidth === '0px') {
           strokeWidth = '1.5px';
@@ -619,8 +875,10 @@ export default function App() {
         path.setAttribute('stroke', stroke);
         path.setAttribute('stroke-width', strokeWidth.replace('px', ''));
         path.setAttribute('fill', 'none');
+        pathEl.style.setProperty('stroke', stroke, 'important');
+        pathEl.style.setProperty('stroke-width', strokeWidth, 'important');
 
-        const dashArray = path.style.strokeDasharray || computed.strokeDasharray;
+        const dashArray = pathEl.style.strokeDasharray || computed.strokeDasharray;
         if (dashArray && dashArray !== 'none') {
           path.setAttribute('stroke-dasharray', dashArray);
         }
@@ -630,8 +888,64 @@ export default function App() {
           if (origStrokeWidth !== null) path.setAttribute('stroke-width', origStrokeWidth); else path.removeAttribute('stroke-width');
           if (origStrokeDasharray !== null) path.setAttribute('stroke-dasharray', origStrokeDasharray); else path.removeAttribute('stroke-dasharray');
           if (origFill !== null) path.setAttribute('fill', origFill); else path.removeAttribute('fill');
+          
+          if (origInlineStroke) {
+             pathEl.style.setProperty('stroke', origInlineStroke, origInlineStrokePriority);
+          } else {
+             pathEl.style.removeProperty('stroke');
+          }
+          if (origInlineStrokeWidth) {
+             pathEl.style.setProperty('stroke-width', origInlineStrokeWidth, origInlineStrokeWidthPriority);
+          } else {
+             pathEl.style.removeProperty('stroke-width');
+          }
         });
       });
+
+      // 2.5 Prepare marker colors (arrow heads)
+      if (transparent && theme === 'dark') {
+        const flowContainer = viewportElement.closest('.react-flow');
+        if (flowContainer) {
+          const markerPaths = flowContainer.querySelectorAll('marker path, marker polyline, marker polygon');
+          markerPaths.forEach((marker) => {
+            const m = marker as HTMLElement;
+            const origFill = m.getAttribute('fill');
+            const origStroke = m.getAttribute('stroke');
+            
+            const origInlineFill = m.style.getPropertyValue('fill');
+            const origInlineFillPriority = m.style.getPropertyPriority('fill');
+            const origInlineStroke = m.style.getPropertyValue('stroke');
+            const origInlineStrokePriority = m.style.getPropertyPriority('stroke');
+            
+            // Only modify markers that aren't the blue highlight ones
+            const currentFill = window.getComputedStyle(m).fill;
+            if (currentFill !== '#3b82f6' && currentFill !== 'rgb(59, 130, 246)') {
+              m.setAttribute('fill', '#64748b');
+              m.style.setProperty('fill', '#64748b', 'important');
+              if (origStroke || window.getComputedStyle(m).stroke !== 'none') {
+                 m.setAttribute('stroke', '#64748b');
+                 m.style.setProperty('stroke', '#64748b', 'important');
+              }
+            }
+            
+            cleanupTasks.push(() => {
+              if (origFill !== null) m.setAttribute('fill', origFill); else m.removeAttribute('fill');
+              if (origStroke !== null) m.setAttribute('stroke', origStroke); else m.removeAttribute('stroke');
+              
+              if (origInlineFill) {
+                m.style.setProperty('fill', origInlineFill, origInlineFillPriority);
+              } else {
+                m.style.removeProperty('fill');
+              }
+              if (origInlineStroke) {
+                m.style.setProperty('stroke', origInlineStroke, origInlineStrokePriority);
+              } else {
+                m.style.removeProperty('stroke');
+              }
+            });
+          });
+        }
+      }
 
       // 3. Prepare edge label background rects (<rect class="react-flow__edge-textbg">)
       const edgeRects = viewportElement.querySelectorAll('.react-flow__edge-textbg, .react-flow__edge rect');
@@ -639,12 +953,13 @@ export default function App() {
         const origFill = rect.getAttribute('fill');
         const origFillOpacity = rect.getAttribute('fill-opacity');
         const origStroke = rect.getAttribute('stroke');
+        const origStrokeWidth = rect.getAttribute('stroke-width');
         const origRx = rect.getAttribute('rx');
         const origRy = rect.getAttribute('ry');
 
-        rect.setAttribute('fill', '#ffffff');
+        rect.setAttribute('fill', (transparent && theme === 'dark') ? '#1e293b' : '#ffffff');
         rect.setAttribute('fill-opacity', '1');
-        rect.setAttribute('stroke', '#cbd5e1');
+        rect.setAttribute('stroke', (transparent && theme === 'dark') ? '#94a3b8' : '#cbd5e1');
         rect.setAttribute('stroke-width', '1');
         rect.setAttribute('rx', '4');
         rect.setAttribute('ry', '4');
@@ -653,6 +968,7 @@ export default function App() {
           if (origFill !== null) rect.setAttribute('fill', origFill); else rect.removeAttribute('fill');
           if (origFillOpacity !== null) rect.setAttribute('fill-opacity', origFillOpacity); else rect.removeAttribute('fill-opacity');
           if (origStroke !== null) rect.setAttribute('stroke', origStroke); else rect.removeAttribute('stroke');
+          if (origStrokeWidth !== null) rect.setAttribute('stroke-width', origStrokeWidth); else rect.removeAttribute('stroke-width');
           if (origRx !== null) rect.setAttribute('rx', origRx); else rect.removeAttribute('rx');
           if (origRy !== null) rect.setAttribute('ry', origRy); else rect.removeAttribute('ry');
         });
@@ -664,8 +980,9 @@ export default function App() {
         const origFill = text.getAttribute('fill');
         const origFontSize = text.getAttribute('font-size');
         const origFontWeight = text.getAttribute('font-weight');
+        const origFontFamily = text.getAttribute('font-family');
 
-        text.setAttribute('fill', '#0f172a');
+        text.setAttribute('fill', (transparent && theme === 'dark') ? '#f8fafc' : '#0f172a');
         text.setAttribute('font-size', '10px');
         text.setAttribute('font-family', 'ui-sans-serif, system-ui, sans-serif');
         text.setAttribute('font-weight', '600');
@@ -674,6 +991,7 @@ export default function App() {
           if (origFill !== null) text.setAttribute('fill', origFill); else text.removeAttribute('fill');
           if (origFontSize !== null) text.setAttribute('font-size', origFontSize); else text.removeAttribute('font-size');
           if (origFontWeight !== null) text.setAttribute('font-weight', origFontWeight); else text.removeAttribute('font-weight');
+          if (origFontFamily !== null) text.setAttribute('font-family', origFontFamily); else text.removeAttribute('font-family');
         });
       });
 
@@ -684,8 +1002,8 @@ export default function App() {
         const origBg = htmlEl.style.backgroundColor;
         const origColor = htmlEl.style.color;
 
-        htmlEl.style.backgroundColor = '#ffffff';
-        htmlEl.style.color = '#0f172a';
+        htmlEl.style.backgroundColor = (transparent && theme === 'dark') ? '#1e293b' : '#ffffff';
+        htmlEl.style.color = (transparent && theme === 'dark') ? '#f8fafc' : '#0f172a';
 
         cleanupTasks.push(() => {
           htmlEl.style.backgroundColor = origBg;
@@ -721,7 +1039,7 @@ export default function App() {
     }
   };
 
-  const exportGraphText = (format: 'json' | 'xml' | 'mermaid' | 'drawio') => {
+  const exportGraphText = (format: 'json' | 'xml' | 'mermaid' | 'drawio', toClipboard: boolean = false) => {
     if (nodes.length === 0) return;
     setShowExportMenu(false);
 
@@ -923,13 +1241,19 @@ export default function App() {
     }
 
     if (content) {
-      const blob = new Blob([content], { type: mimeType });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename;
-      link.click();
-      URL.revokeObjectURL(url);
+      if (toClipboard) {
+        navigator.clipboard.writeText(content);
+        setCopied(format);
+        setTimeout(() => setCopied(false), 2000);
+      } else {
+        const blob = new Blob([content], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        link.click();
+        URL.revokeObjectURL(url);
+      }
     }
   };
 
@@ -942,9 +1266,42 @@ export default function App() {
     }
   }, [theme]);
 
-  // Global hotkeys listener
+  // Global hotkeys listener ref to avoid re-subscribing on every state change
+  const hotkeysStateRef = useRef<any>(null);
+
+  useEffect(() => {
+    hotkeysStateRef.current = {
+      hotkeys,
+      tabs,
+      isMaximizedSql,
+      uiVisibility,
+      duckDbConnectedPath,
+      handleExecuteDuckDb,
+      handleVisualize,
+      handleSaveSqlFile,
+      handleCopySql,
+      handleFormatSql,
+      handleSelectTab,
+    };
+  });
+
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (!hotkeysStateRef.current) return;
+      const {
+        hotkeys: currentHotkeys,
+        tabs: currentTabs,
+        isMaximizedSql: currentIsMaximizedSql,
+        uiVisibility: currentUiVisibility,
+        duckDbConnectedPath: currentDuckDbConnectedPath,
+        handleExecuteDuckDb: currentHandleExecuteDuckDb,
+        handleVisualize: currentHandleVisualize,
+        handleSaveSqlFile: currentHandleSaveSqlFile,
+        handleCopySql: currentHandleCopySql,
+        handleFormatSql: currentHandleFormatSql,
+        handleSelectTab: currentHandleSelectTab,
+      } = hotkeysStateRef.current;
+
       const parts: string[] = [];
       if (e.ctrlKey || e.metaKey) parts.push('Ctrl');
       if (e.altKey) parts.push('Alt');
@@ -965,47 +1322,79 @@ export default function App() {
 
       const combo = parts.length > 0 ? `${parts.join('+')}+${keyName}` : keyName;
 
-      if (combo === (hotkeys.visualize || 'Ctrl+Enter')) {
+      // Tab switching hotkey (Modifier + 1..9)
+      const tabModifier = currentHotkeys.tabSwitchModifier || 'Ctrl';
+      let modMatch = false;
+      if (tabModifier === 'Ctrl' && (e.ctrlKey || e.metaKey)) modMatch = true;
+      else if (tabModifier === 'Alt' && e.altKey) modMatch = true;
+      else if (tabModifier === 'Shift' && e.shiftKey) modMatch = true;
+      else if (tabModifier === 'Meta' && e.metaKey) modMatch = true;
+
+      if (modMatch) {
+        let digitNum: number | null = null;
+        if (e.code && e.code.startsWith('Digit')) {
+          const d = parseInt(e.code.slice(5), 10);
+          if (d >= 1 && d <= 9) digitNum = d;
+        } else if (e.key && e.key >= '1' && e.key <= '9') {
+          digitNum = parseInt(e.key, 10);
+        }
+
+        if (digitNum !== null) {
+          const targetIndex = digitNum - 1;
+          if (currentTabs[targetIndex]) {
+            e.preventDefault();
+            e.stopPropagation();
+            currentHandleSelectTab(currentTabs[targetIndex].id);
+            return;
+          }
+        }
+      }
+
+      if (combo === (currentHotkeys.visualize || 'Ctrl+Enter')) {
         e.preventDefault();
         e.stopPropagation();
-        handleVisualize();
-      } else if (combo === (hotkeys.saveFile || 'Ctrl+S')) {
+        if (currentIsMaximizedSql && currentUiVisibility.showDuckDbConfig && currentDuckDbConnectedPath) {
+          currentHandleExecuteDuckDb();
+        } else {
+          currentHandleVisualize();
+        }
+      } else if (combo === (currentHotkeys.saveFile || 'Ctrl+S')) {
         e.preventDefault();
         e.stopPropagation();
-        handleSaveSqlFile();
-      } else if (combo === (hotkeys.openFile || 'Ctrl+O')) {
+        currentHandleSaveSqlFile();
+      } else if (combo === (currentHotkeys.openFile || 'Ctrl+O')) {
         e.preventDefault();
         e.stopPropagation();
         fileInputRef.current?.click();
-      } else if (combo === (hotkeys.copySql || 'Ctrl+Shift+C')) {
+      } else if (combo === (currentHotkeys.copySql || 'Ctrl+Shift+C')) {
         e.preventDefault();
         e.stopPropagation();
-        handleCopySql();
-      } else if (combo === (hotkeys.toggleWrap || 'Alt+W')) {
+        currentHandleCopySql();
+      } else if (combo === (currentHotkeys.toggleWrap || 'Alt+W')) {
         e.preventDefault();
         e.stopPropagation();
         setIsWrapSql((prev) => !prev);
-      } else if (combo === (hotkeys.formatSql || 'Ctrl+Shift+F')) {
+      } else if (combo === (currentHotkeys.formatSql || 'Ctrl+Shift+F')) {
         e.preventDefault();
         e.stopPropagation();
-        handleFormatSql();
-      } else if (combo === (hotkeys.openSnippets || 'Ctrl+K')) {
+        currentHandleFormatSql();
+      } else if (combo === (currentHotkeys.openSnippets || 'Ctrl+K')) {
         e.preventDefault();
         e.stopPropagation();
         setShowSnippetsModal(true);
-      } else if (combo === (hotkeys.toggleMaximized || 'Alt+F')) {
+      } else if (combo === (currentHotkeys.toggleMaximized || 'Alt+F')) {
         e.preventDefault();
         e.stopPropagation();
         setIsMaximizedSql((prev) => !prev);
-      } else if (combo === (hotkeys.toggleTheme || 'Alt+T')) {
+      } else if (combo === (currentHotkeys.toggleTheme || 'Alt+T')) {
         e.preventDefault();
         e.stopPropagation();
         setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
-      } else if (combo === (hotkeys.toggleMiniMap || 'Alt+M')) {
+      } else if (combo === (currentHotkeys.toggleMiniMap || 'Alt+M')) {
         e.preventDefault();
         e.stopPropagation();
         setShowMiniMap((prev) => !prev);
-      } else if (combo === (hotkeys.exportGraph || 'Ctrl+E')) {
+      } else if (combo === (currentHotkeys.exportGraph || 'Ctrl+E')) {
         e.preventDefault();
         e.stopPropagation();
         setShowExportMenu((prev) => !prev);
@@ -1014,7 +1403,7 @@ export default function App() {
 
     window.addEventListener('keydown', handleGlobalKeyDown, true);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown, true);
-  }, [hotkeys, sql, dialect, direction, formatterSettings]);
+  }, []);
 
   const debounceTimerRef = useRef<any>(null);
 
@@ -1028,6 +1417,16 @@ export default function App() {
     currentDialect = dialect,
     currentDir = direction
   ) => {
+    if (queryText === sql) {
+      const textareas = document.querySelectorAll('textarea');
+      for (const textarea of Array.from(textareas)) {
+        if (textarea.offsetWidth > 0 && textarea.offsetHeight > 0 && textarea.selectionStart !== textarea.selectionEnd) {
+          queryText = textarea.value.substring(textarea.selectionStart, textarea.selectionEnd);
+          break;
+        }
+      }
+    }
+
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
       debounceTimerRef.current = null;
@@ -1130,7 +1529,7 @@ export default function App() {
 
   const handleCopySql = () => {
     navigator.clipboard.writeText(sql);
-    setCopied(true);
+    setCopied('sql');
     setTimeout(() => setCopied(false), 2000);
   };
 
@@ -1160,25 +1559,52 @@ export default function App() {
           denseOperators: cfg.denseOperators,
         });
 
-        // Apply compact column formatting if expressionWidth is set to compact threshold (e.g. >= 80)
-        if (cfg.expressionWidth >= 80) {
+        // Apply custom column line wrapping if expressionWidth >= 0
+        if (cfg.expressionWidth >= 0) {
+          const maxWidth = cfg.expressionWidth;
+          const indent = cfg.useTabs ? '\t' : ' '.repeat(cfg.tabWidth || 2);
+
           formatted = formatted.replace(
             /(SELECT|GROUP BY|ORDER BY|INSERT INTO|VALUES)\s+([\s\S]+?)(?=\n\s*(?:FROM|WHERE|GROUP BY|ORDER BY|HAVING|LIMIT|JOIN|LEFT|RIGHT|INNER|OUTER|CROSS|UNION|RETURNING|WINDOW|SET|VALUES|;|$))/gi,
             (match, keyword, items) => {
               if (items.includes('--') || items.includes('/*') || /\bSELECT\b/i.test(items)) {
                 return match;
               }
-              const cleanItems = items
+
+              const rawLines = items
                 .split('\n')
                 .map((s) => s.trim())
-                .filter(Boolean)
-                .join(' ');
+                .filter(Boolean);
 
-              const candidate = keyword + ' ' + cleanItems;
-              if (candidate.length <= cfg.expressionWidth) {
-                return candidate;
+              if (rawLines.length === 0) return match;
+
+              const lines: string[] = [];
+              let currentLine = keyword;
+
+              for (let i = 0; i < rawLines.length; i++) {
+                const item = rawLines[i];
+                if (currentLine === keyword) {
+                  if ((currentLine + ' ' + item).length <= maxWidth || rawLines.length === 1) {
+                    currentLine += ' ' + item;
+                  } else {
+                    lines.push(currentLine);
+                    currentLine = indent + item;
+                  }
+                } else {
+                  const testLine = currentLine + ' ' + item;
+                  if (testLine.length <= maxWidth) {
+                    currentLine = testLine;
+                  } else {
+                    lines.push(currentLine);
+                    currentLine = indent + item;
+                  }
+                }
               }
-              return match;
+              if (currentLine) {
+                lines.push(currentLine);
+              }
+
+              return lines.join('\n');
             }
           );
         }
@@ -1220,17 +1646,24 @@ export default function App() {
                   onChange={handleOpenFile} 
                   className="hidden" 
                 />
+                <input 
+                  type="file" 
+                  ref={win1251FileInputRef} 
+                  accept=".sql,.txt,text/plain" 
+                  onChange={handleOpenFileWin1251} 
+                  className="hidden" 
+                />
 
                 {/* OPEN FILE BUTTON */}
                 {uiVisibility.showOpenFile && (
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className={`flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-semibold transition-colors ${
+                  className={`flex items-center justify-center gap-1 text-xs px-1.5 h-5 rounded font-semibold transition-colors ${
                     theme === 'dark' 
                       ? 'text-amber-300 hover:text-amber-100 bg-amber-950/40 hover:bg-amber-900/60 border border-amber-500/30' 
                       : 'text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 shadow-2xs'
                   }`}
-                  title="Открыть SQL файл с диска"
+                  title="Открыть SQL файл с диска (UTF-8)"
                 >
                   <FolderOpen className="w-3 h-3 text-amber-500" />
                   <span>Открыть</span>
@@ -1241,7 +1674,7 @@ export default function App() {
                 {uiVisibility.showSaveFile && (
                 <button
                   onClick={handleSaveSqlFile}
-                  className={`flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-semibold transition-colors ${
+                  className={`flex items-center justify-center gap-1 text-xs px-1.5 h-5 rounded font-semibold transition-colors ${
                     theme === 'dark' 
                       ? 'text-emerald-300 hover:text-emerald-100 bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-500/30' 
                       : 'text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 shadow-2xs'
@@ -1256,7 +1689,7 @@ export default function App() {
                 {uiVisibility.showSnippets && (
                 <button
                   onClick={() => setShowSnippetsModal(true)}
-                  className={`flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-semibold transition-colors ${
+                  className={`flex items-center justify-center gap-1 text-xs px-1.5 h-5 rounded font-semibold transition-colors ${
                     theme === 'dark' 
                       ? 'text-blue-300 hover:text-blue-100 bg-blue-900/40 hover:bg-blue-800/60 border border-blue-500/40' 
                       : 'text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200 shadow-2xs'
@@ -1264,14 +1697,13 @@ export default function App() {
                   title="Конструктор и библиотека сниппетов SQL"
                 >
                   <Layers className="w-3 h-3 text-blue-500" />
-                  <span>Сниппеты</span>
                 </button>
                 )}
 
                 {uiVisibility.showMaximizeButton && (
                 <button
                   onClick={() => setIsMaximizedSql(true)}
-                  className={`flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-semibold transition-colors ${
+                  className={`flex items-center justify-center gap-1 text-xs px-1.5 h-5 rounded font-semibold transition-colors ${
                     theme === 'dark' 
                       ? 'text-slate-300 hover:text-slate-100 bg-slate-700/60 hover:bg-slate-700 border border-slate-600' 
                       : 'text-slate-700 hover:text-slate-900 bg-slate-200/80 hover:bg-slate-300 border border-slate-300'
@@ -1320,7 +1752,7 @@ export default function App() {
             <div className="relative">
               <button
                 onClick={() => setShowPresetsDropdown(!showPresetsDropdown)}
-                className={`text-[10px] px-2 py-1.5 rounded-md border transition-colors shrink-0 font-medium ${
+                className={`text-xs px-2 py-1.5 rounded-md border transition-colors shrink-0 font-medium ${
                   showPresetsDropdown
                     ? (theme === 'dark' ? 'bg-slate-700 border-slate-600 text-slate-200' : 'bg-slate-200 border-slate-300 text-slate-800')
                     : (theme === 'dark' 
@@ -1388,7 +1820,7 @@ export default function App() {
             {/* WRAP TEXT BUTTON */}
             <button
               onClick={() => setIsWrapSql(!isWrapSql)}
-              className={`flex items-center gap-1 text-[10px] px-2.5 py-1 rounded font-mono transition-all shrink-0 ${
+              className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md font-mono transition-all shrink-0 ${
                 isWrapSql
                   ? 'bg-blue-600 text-white font-bold'
                   : theme === 'dark' ? 'text-slate-300 hover:text-slate-100' : 'text-slate-700 hover:text-slate-900'
@@ -1403,7 +1835,7 @@ export default function App() {
             {uiVisibility.showFormatSql && (
             <button
               onClick={handleFormatSql}
-              className={`flex items-center gap-1 text-[10px] px-2.5 py-1 rounded font-mono transition-all shrink-0 ${
+              className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md font-mono transition-all shrink-0 ${
                 theme === 'dark' ? 'text-slate-300 hover:text-slate-100' : 'text-slate-700 hover:text-slate-900'
               }`}
               title="Форматировать SQL (Ctrl+Shift+F)"
@@ -1417,10 +1849,10 @@ export default function App() {
             {uiVisibility.showCopySql && (
             <button
               onClick={handleCopySql}
-              className={`flex items-center gap-1 text-[10px] px-1.5 py-1.5 transition-colors shrink-0 ${theme === 'dark' ? 'text-slate-300 hover:text-slate-100' : 'text-slate-600 hover:text-slate-900'}`}
+              className={`flex items-center gap-1 text-xs px-1.5 py-1.5 rounded-md transition-colors shrink-0 ${theme === 'dark' ? 'text-slate-300 hover:text-slate-100' : 'text-slate-600 hover:text-slate-900'}`}
               title="Copy SQL"
             >
-              {copied ? (
+              {copied === 'sql' ? (
                 <>
                   <Check className="w-3 h-3 text-emerald-500" />
                   <span className="text-emerald-500 font-medium">Copied!</span>
@@ -1471,7 +1903,7 @@ export default function App() {
                         : theme === 'dark' ? 'text-slate-300 hover:text-slate-100' : 'text-slate-700 hover:text-slate-900'
                     }`}
                   >
-                    Left-Right
+                    LR
                   </button>
                   <button
                     onClick={() => handleDirectionChange('TB')}
@@ -1481,7 +1913,7 @@ export default function App() {
                         : theme === 'dark' ? 'text-slate-300 hover:text-slate-100' : 'text-slate-700 hover:text-slate-900'
                     }`}
                   >
-                    Top-Bottom
+                    TB
                   </button>
                 </div>
               </>
@@ -1505,7 +1937,7 @@ export default function App() {
                       }`}
                       title="Toggle visualization of ORDER BY (Sort) nodes"
                     >
-                      Sort Nodes
+                      Sort Node
                     </button>
                     <button
                       onClick={handleLimitToggle}
@@ -1516,7 +1948,7 @@ export default function App() {
                       }`}
                       title="Toggle visualization of LIMIT / OFFSET nodes"
                     >
-                      Limit Nodes
+                      Limit Node
                     </button>
                   </>
                   )}
@@ -1541,6 +1973,7 @@ export default function App() {
 
             {/* AST Preview toggle and Info labels */}
             <div className="flex items-center gap-2">
+              {uiVisibility.showEditorToggleBtn && (
               <button
                 onClick={() => setShowLeftPanel(!showLeftPanel)}
                 className={`p-1.5 rounded-lg border transition-all ${
@@ -1552,6 +1985,7 @@ export default function App() {
               >
                 {showLeftPanel ? <PanelLeftClose className="w-3.5 h-3.5" /> : <PanelLeftOpen className="w-3.5 h-3.5" />}
               </button>
+              )}
 
               {uiVisibility.showMiniMapButton && (
               <button
@@ -1620,6 +2054,7 @@ export default function App() {
                     <div className={`absolute right-0 mt-1 w-52 rounded-lg border shadow-xl z-30 overflow-hidden py-1 text-xs ${
                       theme === 'dark' ? 'bg-slate-750 border-slate-600 text-slate-100' : 'bg-slate-100 border-slate-300 text-slate-800'
                     }`}>
+                      {uiVisibility.showExportPngBg !== false && (
                       <button
                         onClick={() => exportGraph('png', false)}
                         className={`w-full px-3 py-2 text-left flex items-center justify-between transition-colors ${
@@ -1632,7 +2067,9 @@ export default function App() {
                         </div>
                         <span className="text-[10px] opacity-70 font-mono">With Bg</span>
                       </button>
+                      )}
 
+                      {uiVisibility.showExportPngTransparent !== false && (
                       <button
                         onClick={() => exportGraph('png', true)}
                         className={`w-full px-3 py-2 text-left flex items-center justify-between transition-colors border-t ${
@@ -1645,7 +2082,9 @@ export default function App() {
                         </div>
                         <span className={`text-[10px] font-mono ${theme === 'dark' ? 'text-cyan-300' : 'text-cyan-600'}`}>No Bg</span>
                       </button>
+                      )}
                       
+                      {uiVisibility.showExportSvgBg !== false && (
                       <button
                         onClick={() => exportGraph('svg', false)}
                         className={`w-full px-3 py-2 text-left flex items-center justify-between transition-colors border-t ${
@@ -1658,7 +2097,9 @@ export default function App() {
                         </div>
                         <span className="text-[10px] opacity-70 font-mono">With Bg</span>
                       </button>
+                      )}
 
+                      {uiVisibility.showExportSvgTransparent !== false && (
                       <button
                         onClick={() => exportGraph('svg', true)}
                         className={`w-full px-3 py-2 text-left flex items-center justify-between transition-colors border-t ${
@@ -1671,7 +2112,9 @@ export default function App() {
                         </div>
                         <span className={`text-[10px] font-mono ${theme === 'dark' ? 'text-teal-300' : 'text-teal-600'}`}>No Bg</span>
                       </button>
+                      )}
 
+                      {uiVisibility.showExportJpeg !== false && (
                       <button
                         onClick={() => exportGraph('jpeg', false)}
                         className={`w-full px-3 py-2 text-left flex items-center justify-between transition-colors border-t ${
@@ -1684,12 +2127,13 @@ export default function App() {
                         </div>
                         <span className="text-[10px] opacity-70 font-mono">With Bg</span>
                       </button>
+                      )}
 
                       <div className="my-1 border-t border-slate-600/30 dark:border-slate-600/50" />
 
-                      <button
-                        onClick={() => exportGraphText('json')}
-                        className={`w-full px-3 py-2 text-left flex items-center justify-between transition-colors ${
+                      {uiVisibility.showExportJson !== false && (
+                      <div
+                        className={`w-full px-3 py-1.5 text-left flex items-center justify-between transition-colors ${
                           theme === 'dark' ? 'hover:bg-blue-600/30' : 'hover:bg-blue-50'
                         }`}
                       >
@@ -1697,12 +2141,28 @@ export default function App() {
                           <FileJson className="w-3.5 h-3.5 text-amber-400" />
                           <span className="font-semibold">JSON Data</span>
                         </div>
-                        <span className="text-[10px] opacity-70 font-mono">.json</span>
-                      </button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => exportGraphText('json', true)}
+                            className={`p-1.5 rounded transition-colors flex items-center gap-1 ${copied === 'json' ? 'text-emerald-500' : theme === 'dark' ? 'hover:bg-slate-600 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-300 text-slate-500 hover:text-slate-800'}`}
+                            title="Copy JSON to clipboard"
+                          >
+                            {copied === 'json' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                          </button>
+                          <button
+                            onClick={() => exportGraphText('json')}
+                            className={`p-1.5 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-600 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-300 text-slate-500 hover:text-slate-800'}`}
+                            title="Download JSON file"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                      )}
 
-                      <button
-                        onClick={() => exportGraphText('xml')}
-                        className={`w-full px-3 py-2 text-left flex items-center justify-between transition-colors border-t ${
+                      {uiVisibility.showExportXml !== false && (
+                      <div
+                        className={`w-full px-3 py-1.5 text-left flex items-center justify-between transition-colors border-t ${
                           theme === 'dark' ? 'hover:bg-blue-600/30 border-slate-600/30' : 'hover:bg-blue-50 border-slate-200'
                         }`}
                       >
@@ -1710,12 +2170,28 @@ export default function App() {
                           <FileCode className="w-3.5 h-3.5 text-purple-400" />
                           <span className="font-semibold">XML Schema</span>
                         </div>
-                        <span className="text-[10px] opacity-70 font-mono">.xml</span>
-                      </button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => exportGraphText('xml', true)}
+                            className={`p-1.5 rounded transition-colors flex items-center gap-1 ${copied === 'xml' ? 'text-emerald-500' : theme === 'dark' ? 'hover:bg-slate-600 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-300 text-slate-500 hover:text-slate-800'}`}
+                            title="Copy XML to clipboard"
+                          >
+                            {copied === 'xml' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                          </button>
+                          <button
+                            onClick={() => exportGraphText('xml')}
+                            className={`p-1.5 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-600 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-300 text-slate-500 hover:text-slate-800'}`}
+                            title="Download XML file"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                      )}
 
-                      <button
-                        onClick={() => exportGraphText('mermaid')}
-                        className={`w-full px-3 py-2 text-left flex items-center justify-between transition-colors border-t ${
+                      {uiVisibility.showExportMermaid !== false && (
+                      <div
+                        className={`w-full px-3 py-1.5 text-left flex items-center justify-between transition-colors border-t ${
                           theme === 'dark' ? 'hover:bg-blue-600/30 border-slate-600/30' : 'hover:bg-blue-50 border-slate-200'
                         }`}
                       >
@@ -1723,12 +2199,28 @@ export default function App() {
                           <Workflow className="w-3.5 h-3.5 text-emerald-400" />
                           <span className="font-semibold">Mermaid Diagram</span>
                         </div>
-                        <span className="text-[10px] opacity-70 font-mono">.mmd</span>
-                      </button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => exportGraphText('mermaid', true)}
+                            className={`p-1.5 rounded transition-colors flex items-center gap-1 ${copied === 'mermaid' ? 'text-emerald-500' : theme === 'dark' ? 'hover:bg-slate-600 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-300 text-slate-500 hover:text-slate-800'}`}
+                            title="Copy Mermaid to clipboard"
+                          >
+                            {copied === 'mermaid' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                          </button>
+                          <button
+                            onClick={() => exportGraphText('mermaid')}
+                            className={`p-1.5 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-600 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-300 text-slate-500 hover:text-slate-800'}`}
+                            title="Download Mermaid file"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                      )}
 
-                      <button
-                        onClick={() => exportGraphText('drawio')}
-                        className={`w-full px-3 py-2 text-left flex items-center justify-between transition-colors border-t ${
+                      {uiVisibility.showExportDrawio !== false && (
+                      <div
+                        className={`w-full px-3 py-1.5 text-left flex items-center justify-between transition-colors border-t ${
                           theme === 'dark' ? 'hover:bg-blue-600/30 border-slate-600/30' : 'hover:bg-blue-50 border-slate-200'
                         }`}
                       >
@@ -1736,8 +2228,17 @@ export default function App() {
                           <Workflow className="w-3.5 h-3.5 text-cyan-400" />
                           <span className="font-semibold">Draw.io Diagram</span>
                         </div>
-                        <span className="text-[10px] opacity-70 font-mono">.drawio.xml</span>
-                      </button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => exportGraphText('drawio')}
+                            className={`p-1.5 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-600 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-300 text-slate-500 hover:text-slate-800'}`}
+                            title="Download Draw.io file"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                      )}
                     </div>
                   </>
                 )}
@@ -1769,6 +2270,11 @@ export default function App() {
                 className="sql-flow-canvas"
                 onlyRenderVisibleElements={true}
                 proOptions={{ hideAttribution: true }}
+                defaultEdgeOptions={{
+                  type: 'smoothstep',
+                  animated: true,
+                  style: { strokeWidth: 2, stroke: theme === 'dark' ? '#f8fafc' : '#334155' }
+                }}
               >
                 <Background 
                   color={theme === 'dark' ? "#64748b" : "#94a3b8"} 
@@ -2028,10 +2534,24 @@ export default function App() {
                       ? 'text-amber-300 hover:text-amber-100 bg-amber-950/40 hover:bg-amber-900/60 border border-amber-500/30' 
                       : 'text-amber-800 hover:text-amber-950 bg-amber-50 hover:bg-amber-100 border border-amber-300 shadow-2xs'
                   }`}
-                  title="Открыть SQL файл с диска"
+                  title="Открыть SQL файл с диска (UTF-8)"
                 >
                   <FolderOpen className="w-3.5 h-3.5 text-amber-500" />
                   <span>Открыть</span>
+                </button>
+                )}
+
+                {(uiVisibility.showWin1251Button ?? true) && (
+                <button
+                  onClick={() => win1251FileInputRef.current?.click()}
+                  className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded transition-all ${
+                    theme === 'dark' 
+                      ? 'text-slate-300 hover:text-slate-100' 
+                      : 'text-slate-700 hover:text-slate-900'
+                  }`}
+                  title="Открыть файл в кодировке Windows-1251"
+                >
+                  <span>Win-1251</span>
                 </button>
                 )}
 
@@ -2061,7 +2581,6 @@ export default function App() {
                   title="Конструктор и библиотека сниппетов SQL"
                 >
                   <Layers className="w-3.5 h-3.5 text-blue-500" />
-                  <span>Сниппеты</span>
                 </button>
                 )}
 
@@ -2076,8 +2595,59 @@ export default function App() {
                   title="История версий SQL"
                 >
                   <History className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
-                  <span>История</span>
                 </button>
+                )}
+
+                <input 
+                  type="file" 
+                  ref={duckDbFileInputRef} 
+                  onChange={handleDuckDbFileChange} 
+                  className="hidden" 
+                />
+
+                {uiVisibility.showDuckDbConfig && (
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={handleConfigureDuckDb}
+                    className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded font-semibold transition-colors ${
+                      theme === 'dark' 
+                        ? 'text-teal-300 hover:text-teal-100 bg-teal-950/40 hover:bg-teal-900/60 border border-teal-500/30' 
+                        : 'text-teal-800 hover:text-teal-950 bg-teal-100 hover:bg-teal-200 border border-teal-300 shadow-2xs'
+                    }`}
+                    title={duckDbConnectedPath ? `Изменить DuckDB: ${duckDbConnectedPath}` : "Настроить подключение DuckDB"}
+                  >
+                    <Database className={`w-3.5 h-3.5 ${duckDbConnectedPath ? 'text-teal-500' : 'text-slate-400'}`} />
+                    <span>{duckDbConnectedPath ? 'DuckDB (Connected)' : 'Connect DuckDB'}</span>
+                  </button>
+                  {duckDbConnectedPath && (
+                    <>
+                      {!showDuckDbSchemaPanel && (
+                        <button
+                          onClick={() => setShowDuckDbSchemaPanel(true)}
+                          className={`flex items-center justify-center p-1 rounded transition-colors ${
+                            theme === 'dark' 
+                              ? 'text-blue-400 hover:bg-blue-950/40 border border-blue-500/30' 
+                              : 'text-blue-600 hover:bg-blue-100 border border-blue-300 shadow-2xs'
+                          }`}
+                          title="Показать схему DuckDB"
+                        >
+                          <Database className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      <button
+                        onClick={handleDisconnectDuckDb}
+                        className={`flex items-center justify-center p-1 rounded transition-colors ${
+                          theme === 'dark' 
+                            ? 'text-red-400 hover:bg-red-950/40 border border-red-500/30' 
+                            : 'text-red-600 hover:bg-red-100 border border-red-300 shadow-2xs'
+                        }`}
+                        title="Отключить DuckDB"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  )}
+                </div>
                 )}
 
                 {uiVisibility.showMaximizeButton && (
@@ -2161,30 +2731,307 @@ export default function App() {
                 );
               })}
 
-              <button
-                onClick={handleAddTab}
-                className={`p-1.5 rounded-md mb-1 text-xs transition-colors shrink-0 ${
-                  theme === 'dark'
-                    ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-750'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-300/80'
-                }`}
-                title="Новая вкладка"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
+              {tabs.length < 9 && (
+                <button
+                  onClick={handleAddTab}
+                  className={`p-1.5 rounded-md mb-1 text-xs transition-colors shrink-0 ${
+                    theme === 'dark'
+                      ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-750'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-300/80'
+                  }`}
+                  title="Новая вкладка"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              )}
             </div>
 
-            {/* BODY */}
-            <div className="flex-1 p-3.5 flex flex-col min-h-0 relative">
-              <ErrorBoundary title="Ошибка редактора SQL" theme={theme}>
-                <SqlEditor
-                  value={sql}
-                  onChange={setSql}
-                  isWrapSql={isWrapSql}
-                  theme={theme}
-                />
-              </ErrorBoundary>
+            {/* BODY & SCHEMA BROWSER */}
+            <div className="flex-1 flex flex-row min-h-0 min-w-0">
+              {/* BODY */}
+              <div className="flex-1 p-3.5 flex flex-col min-h-0 relative">
+                <ErrorBoundary title="Ошибка редактора SQL" theme={theme}>
+                  <SqlEditor
+                    value={sql}
+                    onChange={setSql}
+                    isWrapSql={isWrapSql}
+                    theme={theme}
+                  />
+                </ErrorBoundary>
+              </div>
+
+              {/* SCHEMA BROWSER */}
+              {showDuckDbSchemaPanel && duckDbSchema && groupedDuckDbSchema && (
+                <div className={`w-72 flex flex-col shrink-0 border-l transition-colors ${theme === 'dark' ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-300'}`}>
+                  <div className={`px-3 py-2 border-b flex items-center justify-between shrink-0 transition-colors ${theme === 'dark' ? 'border-slate-700 bg-slate-800' : 'border-slate-300 bg-slate-100'}`}>
+                    <span className={`text-xs font-semibold flex items-center gap-2 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>
+                      <Database className="w-3.5 h-3.5 text-teal-500" />
+                      Schema Browser
+                    </span>
+                    <button 
+                      onClick={() => setShowDuckDbSchemaPanel(false)}
+                      className={`p-1 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'}`}
+                      title="Закрыть"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <div className={`p-2 border-b flex items-center gap-1 shrink-0 transition-colors ${theme === 'dark' ? 'border-slate-700 bg-slate-800/50' : 'border-slate-300 bg-slate-100/50'}`}>
+                    <div className="relative flex-1">
+                      <Search className="w-3.5 h-3.5 absolute left-2 top-1.5 opacity-50" />
+                      <input 
+                        type="text" 
+                        placeholder="Поиск..." 
+                        value={schemaSearchTerm}
+                        onChange={(e) => setSchemaSearchTerm(e.target.value)}
+                        className={`w-full pl-7 pr-2 py-1 text-xs rounded border transition-colors focus:outline-none focus:ring-1 focus:ring-blue-500 ${theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-300 placeholder-slate-500' : 'bg-slate-50 border-slate-300 text-slate-700 placeholder-slate-400'}`}
+                      />
+                    </div>
+                    <button 
+                      onClick={handleExpandAllSchemaNodes}
+                      className={`p-1.5 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-200 text-slate-500 hover:text-slate-800'}`}
+                      title="Развернуть все"
+                    >
+                      <ChevronsUpDown className="w-3.5 h-3.5" />
+                    </button>
+                    <button 
+                      onClick={() => setExpandedSchemaNodes({})}
+                      className={`p-1.5 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-200 text-slate-500 hover:text-slate-800'}`}
+                      title="Свернуть все"
+                    >
+                      <ChevronsDownUp className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-2">
+                    {Object.entries(groupedDuckDbSchema).map(([dbName, schemas]) => (
+                      <div key={dbName} className="mb-1">
+                        <div 
+                          className={`text-xs font-bold px-2 py-1 flex items-center gap-1.5 rounded cursor-pointer select-none transition-colors ${theme === 'dark' ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-200 text-slate-800'}`}
+                          onClick={() => toggleSchemaNode(`db-${dbName}`)}
+                        >
+                          <Database className="w-3.5 h-3.5 opacity-70" />
+                          <span className="truncate">{dbName}</span>
+                        </div>
+                        {expandedSchemaNodes[`db-${dbName}`] && (
+                          <div className="pl-3 border-l ml-3 border-slate-400/20 mt-1">
+                            {Object.entries(schemas).map(([schemaName, types]) => (
+                              <div key={schemaName} className="mb-1">
+                                <div 
+                                  className={`text-[11px] font-semibold px-2 py-1 flex items-center gap-1.5 rounded cursor-pointer select-none transition-colors ${theme === 'dark' ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-200 text-slate-700'}`}
+                                  onClick={() => toggleSchemaNode(`sch-${dbName}-${schemaName}`)}
+                                >
+                                  <FileText className="w-3 h-3 opacity-70" />
+                                  <span className="truncate">{schemaName}</span>
+                                </div>
+                                {expandedSchemaNodes[`sch-${dbName}-${schemaName}`] && (
+                                  <div className="pl-3 border-l ml-3 border-slate-400/20 mt-1">
+                                    {Object.entries(types).map(([typeName, tables]) => (
+                                      <div key={typeName} className="mb-1">
+                                        <div 
+                                          className={`text-[11px] font-semibold px-2 py-1 flex items-center gap-1.5 rounded cursor-pointer select-none transition-colors ${theme === 'dark' ? 'hover:bg-slate-800 text-slate-500' : 'hover:bg-slate-200 text-slate-600'}`}
+                                          onClick={() => toggleSchemaNode(`type-${dbName}-${schemaName}-${typeName}`)}
+                                        >
+                                          <Folder className="w-3 h-3 opacity-70" />
+                                          <span className="truncate">{typeName}</span>
+                                        </div>
+                                        {expandedSchemaNodes[`type-${dbName}-${schemaName}-${typeName}`] && (
+                                          <div className="pl-3 border-l ml-3 border-slate-400/20 mt-1">
+                                            {Object.entries(tables).map(([tableName, columns]) => (
+                                              <div key={tableName} className="mb-1">
+                                                <div 
+                                                  className={`group text-[11px] font-medium px-2 py-1 flex items-center justify-between rounded cursor-pointer select-none transition-colors ${theme === 'dark' ? 'hover:bg-slate-800' : 'hover:bg-slate-200'}`}
+                                                  onClick={() => {
+                                                    toggleSchemaNode(`tbl-${dbName}-${schemaName}-${tableName}`);
+                                                    navigator.clipboard.writeText(`${dbName}.${schemaName}.${tableName}`);
+                                                  }}
+                                                  title="Нажмите, чтобы развернуть и скопировать название таблицы"
+                                                >
+                                                  <div className={`flex items-center gap-1.5 truncate ${theme === 'dark' ? 'text-blue-400' : 'text-blue-700'}`}>
+                                                    <Layout className="w-3 h-3 opacity-70 shrink-0" />
+                                                    <span className="truncate" title={tableName}>{tableName}</span>
+                                                  </div>
+                                                  <button
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      const cols = (columns as any[]).map(c => `"${c.column_name}"`).join(', ');
+                                                      const sel = `SELECT ${cols} FROM "${dbName}"."${schemaName}"."${tableName}"`;
+                                                      navigator.clipboard.writeText(sel);
+                                                    }}
+                                                    className={`p-1 rounded shrink-0 opacity-0 group-hover:opacity-100 transition-opacity ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-300 text-slate-500 hover:text-slate-800'}`}
+                                                    title="Копировать SELECT"
+                                                  >
+                                                    <Copy className="w-3 h-3" />
+                                                  </button>
+                                                </div>
+                                                {expandedSchemaNodes[`tbl-${dbName}-${schemaName}-${tableName}`] && (
+                                                  <div className="pl-4 mt-0.5 space-y-0.5">
+                                                    {(columns as any[]).map((col: any, idx: number) => (
+                                                      <div 
+                                                        key={idx} 
+                                                        className={`cursor-pointer text-[10px] flex items-center justify-between gap-2 px-1.5 py-0.5 rounded transition-colors ${theme === 'dark' ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-200'}`}
+                                                        onClick={() => navigator.clipboard.writeText(col.column_name)}
+                                                        title="Нажмите, чтобы скопировать название поля"
+                                                      >
+                                                        <span className="font-mono truncate" title={col.column_name}>{col.column_name}</span>
+                                                        <span className="text-[9px] opacity-60 shrink-0 font-mono">{col.data_type}</span>
+                                                      </div>
+                                                    ))}
+                                                  </div>
+                                                )}
+                                              </div>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
+
+            {/* DUCKDB RESULTS PANEL */}
+            {isMaximizedSql && uiVisibility.showDuckDbConfig && isDuckDbResultVisible && (
+              <div className={`border-t flex flex-col shrink-0 transition-colors ${
+                theme === 'dark' ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300'
+              }`} style={{ height: isDuckDbResultExpanded ? '70vh' : '35vh' }}>
+                <div className={`flex items-center justify-between px-3 py-1.5 border-b shrink-0 ${
+                  theme === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'
+                }`}>
+                  <span className={`text-xs font-semibold flex items-center gap-2 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>
+                    <Database className="w-3.5 h-3.5 text-teal-500" />
+                    Результат запроса (Первые {uiVisibility.duckDbMaxRows ?? 100} строк)
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button 
+                      onClick={() => {
+                        if (duckDbError) {
+                          navigator.clipboard.writeText(duckDbError);
+                        } else if (duckDbResults && duckDbResults.length > 0) {
+                          const csv = [Object.keys(duckDbResults[0]).join('\t'), ...duckDbResults.map(r => Object.values(r).join('\t'))].join('\n');
+                          navigator.clipboard.writeText(csv);
+                        }
+                      }}
+                      className={`p-1 rounded transition-colors ${
+                        theme === 'dark' ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'
+                      }`}
+                      title="Скопировать"
+                    >
+                      <Copy className="w-4 h-4" />
+                    </button>
+                    {!isDuckDbResultExpanded && (
+                      <button 
+                        onClick={() => setIsDuckDbResultExpanded(true)}
+                        className={`p-1 rounded transition-colors ${
+                          theme === 'dark' ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'
+                        }`}
+                        title="Увеличить таблицу"
+                      >
+                        <ChevronUp className="w-4 h-4" />
+                      </button>
+                    )}
+                    <button 
+                      onClick={() => {
+                        if (isDuckDbResultExpanded) {
+                          setIsDuckDbResultExpanded(false);
+                        } else {
+                          setIsDuckDbResultVisible(false);
+                        }
+                      }}
+                      className={`p-1 rounded transition-colors ${
+                        theme === 'dark' ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'
+                      }`}
+                      title={isDuckDbResultExpanded ? "Уменьшить таблицу" : "Свернуть таблицу"}
+                    >
+                      <ChevronDown className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+                
+                <div className="flex-1 overflow-hidden relative flex flex-row">
+                  <div className="flex-1 overflow-auto p-0 relative">
+                    {isDuckDbRunning ? (
+                      <div className="absolute inset-0 flex items-center justify-center bg-slate-950/20 backdrop-blur-sm z-10">
+                        <Loader2 className="w-6 h-6 animate-spin text-teal-500" />
+                      </div>
+                    ) : duckDbError ? (
+                      <div className="p-4 text-red-500 font-mono text-xs whitespace-pre-wrap">
+                        Error: {duckDbError}
+                      </div>
+                    ) : duckDbResults && duckDbResults.length > 0 ? (
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead className={`sticky top-0 z-10 ${theme === 'dark' ? 'bg-slate-800 shadow-sm' : 'bg-slate-100 shadow-sm'}`}>
+                          <tr className={`divide-x ${theme === 'dark' ? 'divide-slate-700' : 'divide-slate-300'}`}>
+                            {Object.keys(duckDbResults[0]).map((col) => (
+                              <th 
+                                key={col} 
+                                className={`px-3 py-2 font-semibold border-b max-w-[180px] overflow-hidden text-ellipsis whitespace-nowrap cursor-pointer transition-colors ${
+                                  theme === 'dark' ? 'border-slate-700 text-slate-300 hover:bg-slate-700' : 'border-slate-300 text-slate-700 hover:bg-slate-200'
+                                }`}
+                                title={col.length > 200 ? col.substring(0, 200) + '...' : col}
+                                onClick={() => setDuckDbSelectedCell({ title: 'Столбец', content: col })}
+                              >
+                                {col}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {duckDbResults.map((row, i) => (
+                            <tr key={i} className={`border-b transition-colors divide-x ${
+                              theme === 'dark' ? 'border-slate-800 hover:bg-slate-800/50 divide-slate-700' : 'border-slate-200 hover:bg-slate-50 divide-slate-200'
+                            }`}>
+                              {Object.values(row).map((val: any, j) => (
+                                <td 
+                                  key={j} 
+                                  className={`px-3 py-1.5 whitespace-nowrap overflow-hidden text-ellipsis max-w-[288px] cursor-pointer transition-colors ${
+                                    theme === 'dark' ? 'text-slate-400 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-200'
+                                  }`}
+                                  title={val === null ? 'null' : String(val).length > 200 ? String(val).substring(0, 200) + '...' : String(val)}
+                                  onClick={() => setDuckDbSelectedCell({ title: 'Значение', content: val === null ? 'null' : String(val) })}
+                                >
+                                  {val === null ? <span className="opacity-50 italic">null</span> : String(val)}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : duckDbResults && duckDbResults.length === 0 ? (
+                      <div className={`p-4 text-xs italic ${theme === 'dark' ? 'text-slate-500' : 'text-slate-400'}`}>
+                        Запрос выполнен успешно. Данные отсутствуют.
+                      </div>
+                    ) : null}
+                  </div>
+                  {duckDbSelectedCell && (
+                    <div className={`w-72 border-l flex flex-col shrink-0 ${theme === 'dark' ? 'border-slate-700 bg-slate-900' : 'border-slate-300 bg-slate-50'}`}>
+                      <div className={`flex items-center justify-between px-3 py-1.5 border-b shrink-0 ${theme === 'dark' ? 'border-slate-700' : 'border-slate-200'}`}>
+                        <span className={`text-xs font-semibold ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>
+                          {duckDbSelectedCell.title}
+                        </span>
+                        <button 
+                          onClick={() => setDuckDbSelectedCell(null)}
+                          className={`p-1 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'}`}
+                          title="Закрыть"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      <div className={`flex-1 overflow-auto p-3 text-xs whitespace-pre-wrap select-text [word-break:break-word] ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>
+                        {duckDbSelectedCell.content}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* FOOTER */}
             <div className={`p-3 px-5 border-t flex items-center justify-between shrink-0 relative ${
@@ -2321,22 +3168,55 @@ export default function App() {
                   }`}
                   title="Скопировать SQL"
                 >
-                  {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copied ? 'Copied!' : 'Copy SQL'}</span>
+                  {copied === 'sql' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copied === 'sql' ? 'Copied!' : 'Copy SQL'}</span>
                 </button>
                 )}
               </div>
 
-              <button
-                onClick={() => {
-                  handleVisualize();
-                  setIsMaximizedSql(false);
-                }}
-                className="flex items-center justify-center gap-2 px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md transition-all"
-              >
-                <Play className="w-4 h-4 fill-current" />
-                <span>Visualize</span>
-              </button>
+              <div className="flex items-center gap-2">
+                {uiVisibility.showDuckDbConfig && (duckDbResults !== null || duckDbError !== null) && !isDuckDbResultVisible && (
+                  <button
+                    onClick={() => setIsDuckDbResultVisible(true)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold text-xs shadow-sm transition-all ${
+                      theme === 'dark'
+                        ? 'bg-slate-700 hover:bg-slate-600 text-slate-300'
+                        : 'bg-slate-200 hover:bg-slate-300 text-slate-700'
+                    }`}
+                    title="Развернуть результат запроса"
+                  >
+                    <ChevronUp className="w-3.5 h-3.5" />
+                    <span>Результат</span>
+                  </button>
+                )}
+                {uiVisibility.showDuckDbConfig && (
+                <button
+                  onClick={handleExecuteDuckDb}
+                  disabled={isDuckDbRunning}
+                  className={`flex items-center justify-center gap-2 px-5 py-2 rounded-lg font-bold text-xs shadow-md transition-all ${
+                    isDuckDbRunning
+                      ? 'bg-slate-500 cursor-not-allowed text-white'
+                      : theme === 'dark'
+                        ? 'bg-teal-600 hover:bg-teal-500 text-white'
+                        : 'bg-teal-500 hover:bg-teal-600 text-white'
+                  }`}
+                  title="Выполнить запрос в DuckDB"
+                >
+                  {isDuckDbRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Terminal className="w-4 h-4" />}
+                  <span>Execute</span>
+                </button>
+                )}
+                <button
+                  onClick={() => {
+                    handleVisualize();
+                    setIsMaximizedSql(false);
+                  }}
+                  className="flex items-center justify-center gap-2 px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md transition-all"
+                >
+                  <Play className="w-4 h-4 fill-current" />
+                  <span>Visualize</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

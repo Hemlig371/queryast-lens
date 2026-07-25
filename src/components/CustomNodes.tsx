@@ -36,7 +36,7 @@ export const TableNode = memo(({ data, selected, targetPosition, sourcePosition 
     <div className={`w-64 rounded-lg bg-slate-200 dark:bg-slate-800 border-2 ${selected ? 'border-blue-600 dark:border-blue-500 shadow-2xl scale-102 ring-2 ring-blue-400/50' : 'border-blue-400/80 dark:border-blue-500/50'} transition-all duration-200 shadow-xl overflow-hidden`}>
       <div className="bg-blue-100/90 dark:bg-blue-950/70 px-3 py-1.5 flex items-center border-b border-blue-300 dark:border-blue-800/60">
         <div className="w-2 h-2 rounded-full bg-blue-600 dark:bg-blue-400 mr-2 animate-pulse"></div>
-        <span className="text-[10px] font-bold uppercase text-blue-900 dark:text-blue-300 tracking-wider">
+        <span className="text-[10px] font-bold whitespace-nowrap uppercase text-blue-900 dark:text-blue-300 tracking-wider">
           {data.title || 'TableNode'}
         </span>
         {data.isSubquery && (
@@ -99,7 +99,7 @@ export const JoinNode = memo(({ data, selected, targetPosition, sourcePosition }
         <span className="text-[10px] font-bold uppercase text-purple-900 dark:text-purple-300 tracking-wider">JoinNode</span>
       </div>
       <div className="p-3 bg-slate-100/90 dark:bg-slate-900/90 space-y-2">
-        <div className="text-xs font-bold text-purple-950 dark:text-purple-200 bg-purple-200/90 dark:bg-purple-900/60 border border-purple-300 dark:border-purple-700/60 px-2 py-0.5 rounded inline-block">
+        <div className="text-xs font-bold whitespace-nowrap text-purple-950 dark:text-purple-200 bg-purple-200/90 dark:bg-purple-900/60 border border-purple-300 dark:border-purple-700/60 px-2 py-0.5 rounded inline-block">
           {data.joinType}
         </div>
         <div className="text-[10px] font-mono text-slate-900 dark:text-slate-100 bg-slate-200/90 dark:bg-slate-800/90 p-2 rounded border border-slate-300/80 dark:border-slate-700/70 break-words max-h-24 overflow-y-auto">
@@ -120,7 +120,7 @@ export const FilterNode = memo(({ data, selected, targetPosition, sourcePosition
     <div className={`w-64 rounded-lg bg-slate-200 dark:bg-slate-800 border-2 ${selected ? 'border-orange-600 dark:border-orange-500 shadow-2xl scale-102 ring-2 ring-orange-400/50' : 'border-orange-400/80 dark:border-orange-500/50'} transition-all duration-200 shadow-xl overflow-hidden`}>
       <div className="bg-orange-100/90 dark:bg-orange-950/70 px-3 py-1.5 flex items-center border-b border-orange-300 dark:border-orange-800/60">
         <div className="w-2 h-2 rounded-full bg-orange-600 dark:bg-orange-400 mr-2"></div>
-        <span className="text-[10px] font-bold uppercase text-orange-900 dark:text-orange-300 tracking-wider">
+        <span className="text-[10px] font-bold whitespace-nowrap uppercase text-orange-900 dark:text-orange-300 tracking-wider">
           {data.title || 'FilterNode'}
         </span>
       </div>
@@ -267,7 +267,7 @@ export const ConstantNode = memo(({ data, selected, targetPosition, sourcePositi
     <div className={`w-64 rounded-lg bg-slate-200 dark:bg-slate-800 border-2 ${selected ? 'border-slate-600 dark:border-slate-400 shadow-2xl scale-102 ring-2 ring-slate-400/50' : 'border-slate-400/80 dark:border-slate-600'} transition-all duration-200 shadow-xl overflow-hidden`}>
       <div className="bg-slate-300/90 dark:bg-slate-800/90 px-3 py-1.5 flex items-center border-b border-slate-400 dark:border-slate-700">
         <div className="w-2 h-2 rounded-full bg-slate-600 dark:bg-slate-400 mr-2"></div>
-        <span className="text-[10px] font-bold uppercase text-slate-900 dark:text-slate-200 tracking-wider">
+        <span className="text-[10px] font-bold whitespace-nowrap uppercase text-slate-900 dark:text-slate-200 tracking-wider">
           {data.title || 'ConstantNode'}
         </span>
       </div>
@@ -327,7 +327,7 @@ export const QueryGroupNode = memo(({ data, selected, targetPosition, sourcePosi
         <div className="bg-indigo-100 dark:bg-indigo-950/70 px-3 py-2 border-b border-indigo-200 dark:border-indigo-800/60 flex justify-between items-center">
           <div className="flex items-center gap-2">
             <Layers className="w-4 h-4 text-indigo-700 dark:text-indigo-400" />
-            <span className="font-mono text-xs font-bold text-indigo-900 dark:text-indigo-300 uppercase tracking-wider">
+            <span className="font-mono text-xs font-bold whitespace-nowrap text-indigo-900 dark:text-indigo-300 uppercase tracking-wider">
               {data.title || 'QUERY BLOCK'}
             </span>
           </div>
@@ -358,7 +358,7 @@ export const CollapseNode = memo(({ data, selected, targetPosition, sourcePositi
       <Handle type="target" position={targetPosition || Position.Left} className="w-2 h-2 bg-slate-400 dark:bg-slate-500" />
       <div className={`bg-slate-200 dark:bg-slate-800 border-2 ${selected ? 'border-amber-500' : 'border-slate-400 dark:border-slate-600'} rounded-lg shadow-md overflow-hidden min-w-[200px] transition-all`}>
         <div className="p-2 flex flex-col items-center justify-center gap-2">
-          <span className="font-mono text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider">
+          <span className="font-mono text-xs font-bold whitespace-nowrap text-slate-900 dark:text-slate-100 uppercase tracking-wider">
             {data.title || 'Expanded Query'}
           </span>
           <button 

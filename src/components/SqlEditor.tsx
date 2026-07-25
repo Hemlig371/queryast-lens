@@ -174,8 +174,8 @@ export function SqlEditor({
       const targetSearchCombo = savedHotkeys.searchSql || 'Ctrl+F';
       const targetReplaceCombo = savedHotkeys.replaceSql || 'Ctrl+H';
 
-      const isSearch = combo === targetSearchCombo || ((e.ctrlKey || e.metaKey) && (e.code === 'KeyF' || e.key?.toLowerCase() === 'f' || e.key?.toLowerCase() === 'а'));
-      const isReplace = combo === targetReplaceCombo || ((e.ctrlKey || e.metaKey) && (e.code === 'KeyH' || e.code === 'KeyR' || e.key?.toLowerCase() === 'h' || e.key?.toLowerCase() === 'r' || e.key?.toLowerCase() === 'р' || e.key?.toLowerCase() === 'к'));
+      const isSearch = combo === targetSearchCombo || (!e.shiftKey && (e.ctrlKey || e.metaKey) && (e.code === 'KeyF' || e.key?.toLowerCase() === 'f' || e.key?.toLowerCase() === 'а'));
+      const isReplace = combo === targetReplaceCombo || (!e.shiftKey && (e.ctrlKey || e.metaKey) && (e.code === 'KeyH' || e.code === 'KeyR' || e.key?.toLowerCase() === 'h' || e.key?.toLowerCase() === 'r' || e.key?.toLowerCase() === 'р' || e.key?.toLowerCase() === 'к'));
 
       if (isSearch) {
         e.preventDefault();
@@ -446,14 +446,14 @@ export function SqlEditor({
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Hotkeys Ctrl+F / Cmd+F and Ctrl+H / Cmd+H for Search & Replace
-    if ((e.ctrlKey || e.metaKey) && e.key?.toLowerCase() === 'f') {
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key?.toLowerCase() === 'f') {
       e.preventDefault();
       setShowSearch(true);
       setShowReplace(false);
       setTimeout(() => searchInputRef.current?.focus(), 50);
       return;
     }
-    if ((e.ctrlKey || e.metaKey) && e.key?.toLowerCase() === 'h') {
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key?.toLowerCase() === 'h') {
       e.preventDefault();
       setShowSearch(true);
       setShowReplace(true);

@@ -1446,7 +1446,7 @@ function processNestedQueries(text: string, targetNodeId: string, prefix: string
       const parsedSub = parseSingleSqlToAst(item.subquerySql, dialect).ast;
       const subOutputId = buildDataPipeline(parsedSub, subPrefix, dialect, ctx);
       if (subOutputId) {
-        addEdge(ctx, subOutputId, targetNodeId, 'scalar / constraint', { stroke: '#64748b', strokeDasharray: '4 4' });
+        addEdge(ctx, subOutputId, targetNodeId, 'scalar / constraint', { strokeDasharray: '4 4' });
       }
     } catch (e) {}
   });
@@ -1480,7 +1480,7 @@ function buildDataPipeline(ast: any, prefix: string, dialect: string, ctx: Graph
           data: { label: cteName, title: 'CTE (With Statement)', isSubquery: true }, position: { x: 0, y: 0 }
         });
         
-        addEdge(ctx, cteOutputId, cteWrapId, 'defines CTE', { strokeDasharray: '4 4', stroke: '#64748b' });
+        addEdge(ctx, cteOutputId, cteWrapId, 'defines CTE', { strokeDasharray: '4 4' });
         
         ctx.cteOutputIds[cteName.toLowerCase()] = cteWrapId;
       }
