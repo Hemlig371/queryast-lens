@@ -15,8 +15,6 @@
       "fs": {
         "all": true,
         "readFile": true,
-        "readBinaryFile": true,
-        "readTextFile": true,
         "exists": true,
         "scope": [
           "$HOME/**",
