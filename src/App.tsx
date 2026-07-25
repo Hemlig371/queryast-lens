@@ -288,7 +288,44 @@ export default function App() {
     setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql } : t));
   }, [sql, activeTabId]);
 
-  const handleConfigureDuckDb = () => {
+  const handleConfigureDuckDb = async () => {
+    if (isTauriEnv) {
+      try {
+        let openFn: any;
+        if (typeof window !== 'undefined' && (window as any).__TAURI__?.dialog?.open) {
+          openFn = (window as any).__TAURI__.dialog.open;
+        } else {
+          const dialog = await import('@tauri-apps/api/dialog');
+          openFn = dialog.open;
+        }
+        const selected = await openFn({
+          multiple: false,
+          filters: [{ name: 'DuckDB / SQLite', extensions: ['duckdb', 'db', 'sqlite'] }]
+        });
+
+        if (selected && typeof selected === 'string') {
+          const dbPath = selected;
+          setIsDuckDbRunning(true);
+          try {
+            const path = await tauriInvoke<string>('connect_db', { path: dbPath });
+            setDuckDbConnectedPath(path || dbPath);
+            setIsWasmMode(false);
+            setShowDuckDbSchemaPanel(true);
+            setDuckDbError(null);
+          } catch (err: any) {
+            setDuckDbError("Ошибка подключения к DuckDB: " + (err.message || String(err)));
+            setIsDuckDbResultVisible(true);
+          } finally {
+            setIsDuckDbRunning(false);
+          }
+          return;
+        }
+        return;
+      } catch (dialogErr) {
+        console.warn("Tauri open dialog error, falling back to file input:", dialogErr);
+      }
+    }
+
     duckDbFileInputRef.current?.click();
   };
 
@@ -331,6 +368,20 @@ export default function App() {
     );
   };
 
+  const isTauriEnv = typeof window !== 'undefined' && Boolean(
+    (window as any).__TAURI__ ||
+    (window as any).__TAURI_METADATA__ ||
+    (window as any).__TAURI_IPC__
+  );
+
+  const tauriInvoke = async <T,>(cmd: string, args?: Record<string, any>): Promise<T> => {
+    if (typeof window !== 'undefined' && (window as any).__TAURI__?.invoke) {
+      return (window as any).__TAURI__.invoke(cmd, args);
+    }
+    const { invoke } = await import('@tauri-apps/api/tauri');
+    return invoke<T>(cmd, args);
+  };
+
   const handleDuckDbFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -339,26 +390,44 @@ export default function App() {
       
       try {
         setIsDuckDbRunning(true);
-        let connectedViaServer = false;
+        let connectedSuccessfully = false;
 
-        try {
-          const data = await fetchApiJson("/api/duckdb/connect", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ dbPath })
-          });
-          if (data && !data.error) {
-            connectedViaServer = true;
+        // 1. Try Tauri native Rust command first if in Tauri environment
+        if (isTauriEnv) {
+          try {
+            const path = await tauriInvoke<string>('connect_db', { path: dbPath });
+            setDuckDbConnectedPath(path || dbPath);
             setIsWasmMode(false);
-            setDuckDbConnectedPath(data.path);
             setShowDuckDbSchemaPanel(true);
             setDuckDbError(null);
+            connectedSuccessfully = true;
+          } catch (tauriErr: any) {
+            console.warn("Tauri native connection failed, trying server/WASM:", tauriErr);
           }
-        } catch (_) {
-          connectedViaServer = false;
         }
 
-        if (!connectedViaServer) {
+        // 2. Try Local Express server if not connected yet
+        if (!connectedSuccessfully) {
+          try {
+            const data = await fetchApiJson("/api/duckdb/connect", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ dbPath })
+            });
+            if (data && !data.error) {
+              connectedSuccessfully = true;
+              setIsWasmMode(false);
+              setDuckDbConnectedPath(data.path);
+              setShowDuckDbSchemaPanel(true);
+              setDuckDbError(null);
+            }
+          } catch (_) {
+            connectedSuccessfully = false;
+          }
+        }
+
+        // 3. Fallback to WASM Mode if neither Tauri nor Express backend connected
+        if (!connectedSuccessfully) {
           const fileName = await connectDuckDbWasmFile(file);
           setIsWasmMode(true);
           setDuckDbConnectedPath(fileName);
@@ -377,6 +446,25 @@ export default function App() {
   const fetchDuckDbSchema = async () => {
     const schemaQuery = "SELECT c.database_name, c.schema_name, c.table_name, c.column_name, c.data_type, CASE WHEN v.view_name IS NOT NULL THEN 'Views' ELSE 'Tables' END as table_type FROM duckdb_columns() c LEFT JOIN duckdb_views() v ON c.table_name = v.view_name AND c.schema_name = v.schema_name AND c.database_name = v.database_name ORDER BY c.database_name, c.schema_name, table_type, c.table_name, c.column_index";
     try {
+      if (isTauriEnv && !isWasmMode) {
+        try {
+          const res = await tauriInvoke<{ columns: string[]; rows: any[][] }>('execute_query', {
+            sql: schemaQuery
+          });
+          const parsed = (res?.rows || []).map(row => {
+            const obj: Record<string, any> = {};
+            (res.columns || []).forEach((col, idx) => {
+              obj[col] = row[idx];
+            });
+            return obj;
+          });
+          setDuckDbSchema(parsed);
+          return;
+        } catch (tauriErr) {
+          console.warn("Tauri schema query failed, trying backend/wasm:", tauriErr);
+        }
+      }
+
       if (isWasmMode) {
         const rows = await queryDuckDbWasm(schemaQuery);
         setDuckDbSchema(rows);
@@ -404,6 +492,13 @@ export default function App() {
   }, [duckDbConnectedPath, showDuckDbSchemaPanel, isWasmMode]);
 
   const handleDisconnectDuckDb = async () => {
+    if (isTauriEnv && !isWasmMode) {
+      try {
+        await tauriInvoke('disconnect_db');
+      } catch (e) {
+        console.error(e);
+      }
+    }
     if (isWasmMode) {
       await disconnectDuckDbWasm();
       setIsWasmMode(false);
@@ -481,13 +576,43 @@ export default function App() {
       // AUTO LIMIT: Automatically limit query results at DB level for SELECT/WITH statements
       // if query doesn't already specify a custom LIMIT clause.
       let queryWithLimit = finalQuery;
-      if (maxRows > 0 && /^(SELECT|WITH)\b/i.test(finalQuery)) {
-        if (!/\bLIMIT\s+\d+/i.test(finalQuery)) {
+      const cleanSqlHead = finalQuery
+        .replace(/^(\s*(--[^\n]*\n|\/\*[\s\S]*?\*\/))*/g, '')
+        .trim();
+
+      if (maxRows > 0 && /^(SELECT|WITH)\b/i.test(cleanSqlHead)) {
+        if (!/\bLIMIT\s+\d+/i.test(cleanSqlHead)) {
           queryWithLimit = `SELECT * FROM (${finalQuery.replace(/;+$/, '')}) AS _limited_subquery LIMIT ${maxRows}`;
         }
       }
 
-      if (isWasmMode) {
+      if (isTauriEnv && !isWasmMode) {
+        try {
+          const res = await tauriInvoke<{ columns: string[]; rows: any[][] }>('execute_query', {
+            sql: queryWithLimit
+          });
+          if (controller.signal.aborted) {
+            throw new Error("Запрос отменен пользователем");
+          }
+          const parsed = (res?.rows || []).map(row => {
+            const obj: Record<string, any> = {};
+            (res.columns || []).forEach((col, idx) => {
+              obj[col] = row[idx];
+            });
+            return obj;
+          });
+          setDuckDbResults(parsed.slice(0, maxRows));
+        } catch (tauriErr: any) {
+          if (controller.signal.aborted) {
+            throw new Error("Запрос отменен пользователем");
+          }
+          let errMsg = typeof tauriErr === 'string' ? tauriErr : (tauriErr?.message || String(tauriErr));
+          if (errMsg.includes("invalid escaped character") || errMsg.includes("trailing escape")) {
+            errMsg += "\n\n💡 Подсказка: В строках SQL пути Windows содержат обратные слэши '\\', которые считаются спецсимволами. Замените '\\' на прямые слэши '/' (напр. 'C:/Users/...') или удвойте их '\\\\'.";
+          }
+          setDuckDbError(errMsg);
+        }
+      } else if (isWasmMode) {
         const rows = await queryDuckDbWasm(queryWithLimit);
         if (controller.signal.aborted) {
           throw new Error("Запрос отменен пользователем");
@@ -1972,30 +2097,6 @@ export default function App() {
                 </>
               )}
             </button>
-            )}
-
-            {duckDbConnectedPath && (
-              <button
-                onClick={handleExecuteDuckDb}
-                className={`py-1.5 px-2.5 text-xs font-semibold rounded-md shadow-md transition-all flex items-center justify-center gap-1 shrink-0 ${
-                  isDuckDbRunning
-                    ? 'bg-red-600 hover:bg-red-700 text-white animate-pulse'
-                    : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/20'
-                }`}
-                title={isDuckDbRunning ? "Нажмите для отмены выполнения запроса" : "Выполнить SQL в DuckDB (Ctrl+Enter)"}
-              >
-                {isDuckDbRunning ? (
-                  <>
-                    <Square className="w-3 h-3 fill-white shrink-0" />
-                    <span>Отмена</span>
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-3 h-3 fill-white shrink-0" />
-                    <span>Run DB</span>
-                  </>
-                )}
-              </button>
             )}
 
             <button

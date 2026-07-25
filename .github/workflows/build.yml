@@ -27,6 +27,10 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Setup MSVC developer command prompt
+        if: matrix.platform == 'windows-latest'
+        uses: ilammy/msvc-dev-cmd@v1
+
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
