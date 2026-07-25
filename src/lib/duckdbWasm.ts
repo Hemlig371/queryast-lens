@@ -210,6 +210,8 @@ export async function queryDuckDbWasm(sqlQuery: string) {
     for (const key in obj) {
       if (typeof obj[key] === 'bigint') {
         obj[key] = obj[key].toString();
+      } else if (obj[key] instanceof Date) {
+        obj[key] = obj[key].toISOString().replace('T', ' ').replace('Z', '');
       }
     }
     return obj;

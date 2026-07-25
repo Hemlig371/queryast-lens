@@ -116,6 +116,7 @@ export default function App() {
   // DuckDB Integration State
   const [duckDbConnectedPath, setDuckDbConnectedPath] = useState<string | null>(null);
   const [isWasmMode, setIsWasmMode] = useState<boolean>(false);
+  const [showDuckDbConnMenu, setShowDuckDbConnMenu] = useState<boolean>(false);
   const [duckDbResults, setDuckDbResults] = useState<any[] | null>(null);
   const [duckDbError, setDuckDbError] = useState<string | null>(null);
   const [isDuckDbRunning, setIsDuckDbRunning] = useState<boolean>(false);
@@ -289,6 +290,7 @@ export default function App() {
   }, [sql, activeTabId]);
 
   const handleConfigureDuckDb = async () => {
+    setShowDuckDbConnMenu(false);
     if (isTauriEnv) {
       try {
         let openFn: any;
@@ -327,6 +329,46 @@ export default function App() {
     }
 
     duckDbFileInputRef.current?.click();
+  };
+
+  const handleCreateDuckDbFile = async () => {
+    setShowDuckDbConnMenu(false);
+    if (isTauriEnv) {
+      try {
+        let saveFn: any;
+        if (typeof window !== 'undefined' && (window as any).__TAURI__?.dialog?.save) {
+          saveFn = (window as any).__TAURI__.dialog.save;
+        } else {
+          const dialog = await import('@tauri-apps/api/dialog');
+          saveFn = dialog.save;
+        }
+        const selected = await saveFn({
+          defaultPath: 'new_database.duckdb',
+          filters: [{ name: 'DuckDB Database', extensions: ['duckdb', 'db'] }]
+        });
+
+        if (selected && typeof selected === 'string') {
+          const dbPath = selected;
+          setIsDuckDbRunning(true);
+          try {
+            const path = await tauriInvoke<string>('connect_db', { path: dbPath });
+            setDuckDbConnectedPath(path || dbPath);
+            setIsWasmMode(false);
+            setShowDuckDbSchemaPanel(true);
+            setDuckDbError(null);
+          } catch (err: any) {
+            setDuckDbError("Ошибка создания файл базы данных DuckDB: " + (err.message || String(err)));
+            setIsDuckDbResultVisible(true);
+          } finally {
+            setIsDuckDbRunning(false);
+          }
+        }
+      } catch (dialogErr) {
+        console.warn("Tauri save dialog error:", dialogErr);
+      }
+    } else {
+      alert("Создание локального .duckdb файла на диске доступно в десктопном приложении.");
+    }
   };
 
   const fetchApiJson = async (endpoint: string, options?: RequestInit) => {
@@ -2839,9 +2881,9 @@ export default function App() {
                 />
 
                 {uiVisibility.showDuckDbConfig && (
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 relative">
                   <button
-                    onClick={handleConfigureDuckDb}
+                    onClick={() => setShowDuckDbConnMenu(!showDuckDbConnMenu)}
                     className={`flex items-center gap-1 text-xs px-2.5 h-[26px] rounded font-semibold transition-colors ${
                       theme === 'dark' 
                         ? 'text-teal-300 hover:text-teal-100 bg-teal-950/40 hover:bg-teal-900/60 border border-teal-500/30' 
@@ -2851,7 +2893,39 @@ export default function App() {
                   >
                     <Database className={`w-3.5 h-3.5 ${duckDbConnectedPath ? 'text-teal-500' : 'text-slate-400'}`} />
                     <span>{duckDbConnectedPath ? 'DuckDB (Connected)' : 'Connect DuckDB'}</span>
+                    <ChevronDown className="w-3 h-3 opacity-70 ml-0.5" />
                   </button>
+
+                  {showDuckDbConnMenu && (
+                    <>
+                      <div 
+                        className="fixed inset-0 z-30" 
+                        onClick={() => setShowDuckDbConnMenu(false)} 
+                      />
+                      <div className={`absolute top-full mt-1 left-0 z-40 rounded-lg border shadow-xl p-1.5 w-56 animate-in fade-in duration-150 ${
+                        theme === 'dark' ? 'bg-slate-800 border-slate-600 text-slate-200' : 'bg-white border-slate-300 text-slate-800'
+                      }`}>
+                        <button
+                          onClick={handleConfigureDuckDb}
+                          className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center gap-2 transition-colors ${
+                            theme === 'dark' ? 'hover:bg-slate-700 text-slate-200' : 'hover:bg-slate-100 text-slate-800'
+                          }`}
+                        >
+                          <FolderOpen className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                          <span>Открыть файл БД</span>
+                        </button>
+                        <button
+                          onClick={handleCreateDuckDbFile}
+                          className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center gap-2 transition-colors ${
+                            theme === 'dark' ? 'hover:bg-slate-700 text-emerald-300' : 'hover:bg-slate-100 text-emerald-700'
+                          }`}
+                        >
+                          <Plus className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                          <span>Создать новую БД (.duckdb)</span>
+                        </button>
+                      </div>
+                    </>
+                  )}
                   {duckDbConnectedPath && (
                     <>
                       {!showDuckDbSchemaPanel && (
