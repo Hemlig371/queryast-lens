@@ -1019,13 +1019,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <Plus className="w-3.5 h-3.5" />
                     <span>Добавить новый шаблон</span>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div className="flex flex-col sm:flex-row gap-2 items-center">
                     <input
                       type="text"
-                      placeholder="Триггер (напр. SELECT)"
+                      placeholder="Триггер (SELECT)"
                       value={newKeyword}
                       onChange={(e) => setNewKeyword(e.target.value)}
-                      className={`px-2.5 py-1.5 text-xs font-mono rounded border outline-none ${
+                      className={`w-full sm:w-28 px-2 py-1.5 text-xs font-mono rounded border outline-none shrink-0 ${
                         theme === 'dark' ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-blue-500' : 'bg-slate-50 border-slate-300 text-slate-900 focus:border-blue-500'
                       }`}
                     />
@@ -1034,30 +1034,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       placeholder="Текст вставки (напр. SELECT * FROM )"
                       value={newInsertion}
                       onChange={(e) => setNewInsertion(e.target.value)}
-                      className={`px-2.5 py-1.5 text-xs font-mono rounded border outline-none ${
+                      className={`w-full sm:flex-1 px-2 py-1.5 text-xs font-mono rounded border outline-none min-w-0 ${
                         theme === 'dark' ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-blue-500' : 'bg-slate-50 border-slate-300 text-slate-900 focus:border-blue-500'
                       }`}
                     />
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        placeholder="Описание (необязательно)"
-                        value={newDesc}
-                        onChange={(e) => setNewDesc(e.target.value)}
-                        className={`flex-1 px-2.5 py-1.5 text-xs rounded border outline-none ${
-                          theme === 'dark' ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-blue-500' : 'bg-slate-50 border-slate-300 text-slate-900 focus:border-blue-500'
-                        }`}
-                      />
-                      <button
-                        type="button"
-                        onClick={handleAddTemplate}
-                        disabled={!newKeyword.trim()}
-                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold text-xs rounded transition-colors shrink-0 flex items-center gap-1"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>Добавить</span>
-                      </button>
-                    </div>
+                    <input
+                      type="text"
+                      placeholder="Описание"
+                      value={newDesc}
+                      onChange={(e) => setNewDesc(e.target.value)}
+                      className={`w-full sm:w-32 px-2 py-1.5 text-xs rounded border outline-none shrink-0 ${
+                        theme === 'dark' ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-blue-500' : 'bg-slate-50 border-slate-300 text-slate-900 focus:border-blue-500'
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddTemplate}
+                      disabled={!newKeyword.trim()}
+                      className="p-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold text-xs rounded transition-colors shrink-0 flex items-center justify-center h-8 w-8"
+                      title="Добавить шаблон"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
 
