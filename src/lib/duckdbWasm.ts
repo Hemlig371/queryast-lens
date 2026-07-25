@@ -1,12 +1,11 @@
-import * as duckdb from '@duckdb/duckdb-wasm';
-
-let dbInstance: duckdb.AsyncDuckDB | null = null;
-let connInstance: duckdb.AsyncDuckDBConnection | null = null;
+let dbInstance: any = null;
+let connInstance: any = null;
 let activeFileName: string | null = null;
 
 export async function getDuckDbWasm() {
   if (dbInstance) return dbInstance;
 
+  const duckdb = await import('@duckdb/duckdb-wasm');
   const JSDELIVR_BUNDLES = duckdb.getJsDelivrBundles();
   const bundle = await duckdb.selectBundle(JSDELIVR_BUNDLES);
   const worker = await duckdb.createWorker(bundle.mainWorker!);
