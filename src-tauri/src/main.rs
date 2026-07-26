@@ -52,6 +52,9 @@ fn connect_db(state: State<'_, DbState>, path: String) -> Result<String, String>
 #[tauri::command]
 fn disconnect_db(state: State<'_, DbState>) -> Result<(), String> {
     let mut db_guard = state.0.lock().map_err(|e| e.to_string())?;
+    if let Some(conn) = db_guard.as_ref() {
+        let _ = conn.execute_batch("CHECKPOINT;");
+    }
     *db_guard = None;
     Ok(())
 }
@@ -79,9 +82,8 @@ fn execute_query(state: State<'_, DbState>, sql: String) -> Result<QueryResult, 
                 }
             }
         };
-        let column_names: Vec<String> = stmt.column_names().into_iter().map(|s| s.to_string()).collect();
-
         let mut rows_iter = stmt.query([]).map_err(|e| e.to_string())?;
+        let column_names: Vec<String> = stmt.column_names().into_iter().map(|s| s.to_string()).collect();
         let mut rows = Vec::new();
 
         while let Ok(Some(row)) = rows_iter.next() {
