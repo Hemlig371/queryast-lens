@@ -21,12 +21,19 @@ pub struct QueryResult {
 fn connect_db(state: State<'_, DbState>, path: String) -> Result<String, String> {
     let path_buf = path.trim().to_string();
 
-    let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        if path_buf.is_empty() {
-            Connection::open_in_memory().map_err(|e| e.to_string())
+    let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<Connection, String> {
+        let conn = if path_buf.is_empty() {
+            Connection::open_in_memory().map_err(|e| e.to_string())?
         } else {
-            Connection::open(&path_buf).map_err(|e| e.to_string())
-        }
+            Connection::open(&path_buf).map_err(|e| e.to_string())?
+        };
+        
+        // Disable Arrow StringView and ListView to prevent duckdb-rs from panicking
+        // on unsupported Arrow types (introduced in DuckDB 1.0/1.1)
+        let _ = conn.execute_batch("SET produce_arrow_string_view=false;");
+        let _ = conn.execute_batch("SET arrow_output_list_view=false;");
+        
+        Ok(conn)
     }));
 
     match res {
@@ -78,38 +85,45 @@ fn execute_query(state: State<'_, DbState>, sql: String) -> Result<QueryResult, 
         while let Ok(Some(row)) = rows_iter.next() {
             let mut row_vals = Vec::with_capacity(column_names.len());
             for i in 0..column_names.len() {
-                let val_ref = row.get_ref(i).map_err(|e| e.to_string())?;
-                let val = match val_ref {
-                    ValueRef::Null => JsonValue::Null,
-                    ValueRef::Boolean(b) => JsonValue::Bool(b),
-                    ValueRef::TinyInt(n) => json!(n),
-                    ValueRef::SmallInt(n) => json!(n),
-                    ValueRef::Int(n) => json!(n),
-                    ValueRef::BigInt(n) => json!(n.to_string()),
-                    ValueRef::HugeInt(n) => json!(n.to_string()),
-                    ValueRef::UTinyInt(n) => json!(n),
-                    ValueRef::USmallInt(n) => json!(n),
-                    ValueRef::UInt(n) => json!(n),
-                    ValueRef::UBigInt(n) => json!(n.to_string()),
-                    ValueRef::Float(n) => json!(n),
-                    ValueRef::Double(n) => json!(n),
-                    ValueRef::Decimal(n) => json!(n.to_string()),
-                    ValueRef::Text(t) => {
-                        let s = String::from_utf8_lossy(t).to_string();
-                        JsonValue::String(s)
-                    }
-                    ValueRef::Blob(b) => JsonValue::String(format!("<blob {} bytes>", b.len())),
-                    ValueRef::Date32(_)
-                    | ValueRef::Time64(_, _)
-                    | ValueRef::Timestamp(_, _)
-                    | ValueRef::Interval { .. } => {
-                        let s: Result<String, _> = row.get(i);
-                        s.map(JsonValue::String).unwrap_or_else(|_| JsonValue::Null)
-                    }
-                    _ => {
-                        let s: Result<String, _> = row.get(i);
-                        s.map(JsonValue::String).unwrap_or_else(|_| JsonValue::Null)
-                    }
+                let val = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<JsonValue, String> {
+                    let val_ref = row.get_ref(i).map_err(|e| e.to_string())?;
+                    let v = match val_ref {
+                        ValueRef::Null => JsonValue::Null,
+                        ValueRef::Boolean(b) => JsonValue::Bool(b),
+                        ValueRef::TinyInt(n) => json!(n),
+                        ValueRef::SmallInt(n) => json!(n),
+                        ValueRef::Int(n) => json!(n),
+                        ValueRef::BigInt(n) => json!(n.to_string()),
+                        ValueRef::HugeInt(n) => json!(n.to_string()),
+                        ValueRef::UTinyInt(n) => json!(n),
+                        ValueRef::USmallInt(n) => json!(n),
+                        ValueRef::UInt(n) => json!(n),
+                        ValueRef::UBigInt(n) => json!(n.to_string()),
+                        ValueRef::Float(n) => json!(n),
+                        ValueRef::Double(n) => json!(n),
+                        ValueRef::Decimal(n) => json!(n.to_string()),
+                        ValueRef::Text(t) => {
+                            let s = String::from_utf8_lossy(t).to_string();
+                            JsonValue::String(s)
+                        }
+                        ValueRef::Blob(b) => JsonValue::String(format!("<blob {} bytes>", b.len())),
+                        ValueRef::Date32(_)
+                        | ValueRef::Time64(_, _)
+                        | ValueRef::Timestamp(_, _)
+                        | ValueRef::Interval { .. } => {
+                            let s: Result<String, _> = row.get(i);
+                            s.map(JsonValue::String).unwrap_or_else(|_| JsonValue::Null)
+                        }
+                        _ => {
+                            let s: Result<String, _> = row.get(i);
+                            s.map(JsonValue::String).unwrap_or_else(|_| JsonValue::Null)
+                        }
+                    };
+                    Ok(v)
+                })) {
+                    Ok(Ok(v)) => v,
+                    Ok(Err(e)) => JsonValue::String(format!("<error: {}>", e)),
+                    Err(_) => JsonValue::String("<Unsupported Type>".to_string()),
                 };
                 row_vals.push(val);
             }
