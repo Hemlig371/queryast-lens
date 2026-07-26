@@ -1143,7 +1143,7 @@ export function SqlSnippetsManager({
 }: SqlSnippetsManagerProps) {
   const [customSnippets, setCustomSnippets] = useState<Snippet[]>([]);
   const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<string>('Все');
+  const [selectedCategory, setSelectedCategory] = useState<string>('Избранное');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isCreating, setIsCreating] = useState<boolean>(false);
   const [editingSnippetId, setEditingSnippetId] = useState<string | null>(null);
