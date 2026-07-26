@@ -1,5 +1,5 @@
 {
-  "name": "SQL Visualizer",
+  "name": "QueryAST Lens",
   "description": "Interactive SQL query visualizer and AST diagram generator",
   "requestFramePermissions": [],
   "majorCapabilities": []

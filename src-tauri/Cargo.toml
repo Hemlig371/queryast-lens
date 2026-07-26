@@ -1,7 +1,7 @@
 [package]
 name = "sql-visualizer"
 version = "3.1.0"
-description = "SQL Visualizer"
+description = "QueryAST Lens"
 authors = [""]
 license = "MIT"
 edition = "2021"

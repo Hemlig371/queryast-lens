@@ -59,7 +59,7 @@ async function preloadTauriFilesFromQuery(db: any, sqlQuery: string) {
 
   for (const match of pathMatches) {
     const rawPath = match.slice(1, -1).trim();
-    const isLocalDriveOrNetwork = /^[a-zA-Z]:[\\\/]|^\\\\/i.test(rawPath);
+    const isLocalDriveOrNetwork = /^[a-zA-Z]:[\\\/]|^\\\\|^\/|^~/i.test(rawPath);
     const hasDataExtension = /\.(csv|parquet|json|duckdb|db|tsv|txt)$/i.test(rawPath);
 
     if (isLocalDriveOrNetwork || hasDataExtension) {

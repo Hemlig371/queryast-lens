@@ -12,7 +12,7 @@ export interface SqlVersionItem {
 const DB_NAME = 'SQL_VersionHistory_DB';
 const STORE_NAME = 'versions';
 const MAX_AUTO_VERSIONS = 300;
-const MAX_MANUAL_VERSIONS = 100;
+const MAX_MANUAL_VERSIONS = 200;
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {

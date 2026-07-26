@@ -524,7 +524,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
       const workspaceBundle = {
         version: 1,
-        app: 'SQL Visualizer Workspace Bundle',
+        app: 'QueryAST Lens Workspace Bundle',
         exportedAt: new Date().toISOString(),
         data: backupData
       };

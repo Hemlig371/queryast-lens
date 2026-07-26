@@ -27,7 +27,7 @@ export interface Snippet {
   category: string;
   sql: string;
   description?: string;
-  dialect?: 'PostgreSQL' | 'Oracle' | 'Clickhouse' | 'DuckDB' | 'General';
+  dialect?: string;
   isCustom?: boolean;
 }
 
@@ -1133,6 +1133,7 @@ interface SqlSnippetsManagerProps {
 
 const LOCAL_STORAGE_KEY = 'sql_custom_snippets_v2';
 const LOCAL_STORAGE_FAVORITES_KEY = 'sql_favorite_snippets_ids_v1';
+const LOCAL_STORAGE_DELETED_KEY = 'sql_deleted_snippets_ids_v1';
 
 export function SqlSnippetsManager({
   isOpen,
@@ -1143,6 +1144,7 @@ export function SqlSnippetsManager({
 }: SqlSnippetsManagerProps) {
   const [customSnippets, setCustomSnippets] = useState<Snippet[]>([]);
   const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
+  const [deletedIds, setDeletedIds] = useState<string[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('Избранное');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isCreating, setIsCreating] = useState<boolean>(false);
@@ -1153,12 +1155,13 @@ export function SqlSnippetsManager({
   const [formCategory, setFormCategory] = useState('Запросы');
   const [formSql, setFormSql] = useState('');
   const [formDescription, setFormDescription] = useState('');
-  const [formDialect, setFormDialect] = useState<'PostgreSQL' | 'Oracle' | 'Clickhouse' | 'DuckDB' | 'General'>('General');
+  const [formDialect, setFormDialect] = useState<string>('General');
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const rightPanelRef = useRef<HTMLDivElement>(null);
 
-  // Load custom snippets and favorites
+  // Load custom snippets, favorites and deleted IDs
   useEffect(() => {
     try {
       const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
@@ -1175,6 +1178,21 @@ export function SqlSnippetsManager({
       }
     } catch (e) {
       console.error('Failed to parse favorites from localStorage', e);
+    }
+    try {
+      const savedDeleted = localStorage.getItem(LOCAL_STORAGE_DELETED_KEY);
+      if (savedDeleted) {
+        const parsed: string[] = JSON.parse(savedDeleted);
+        // Only keep IDs that correspond to built-in popular snippets
+        const popularIdsSet = new Set(POPULAR_SNIPPETS.map(s => s.id));
+        const cleaned = parsed.filter(id => popularIdsSet.has(id));
+        setDeletedIds(cleaned);
+        if (cleaned.length !== parsed.length) {
+          localStorage.setItem(LOCAL_STORAGE_DELETED_KEY, JSON.stringify(cleaned));
+        }
+      }
+    } catch (e) {
+      console.error('Failed to parse deleted snippets from localStorage', e);
     }
   }, []);
 
@@ -1205,15 +1223,40 @@ export function SqlSnippetsManager({
 
   if (!isOpen) return null;
 
-  const allSnippets = [...POPULAR_SNIPPETS, ...customSnippets];
+  // Deduplicate and filter out deleted snippets
+  const customIds = new Set(customSnippets.map(s => s.id));
+  const popularFiltered = POPULAR_SNIPPETS.filter(s => !customIds.has(s.id));
+  const rawSnippets = [...customSnippets, ...popularFiltered];
+  const allSnippets = rawSnippets.filter(s => !deletedIds.includes(s.id));
 
-  // Derive unique categories dynamically
-  const existingCategories = Array.from(new Set(allSnippets.map(s => s.category))).filter(Boolean);
-  const categories = [
+  // Extract all distinct dialects and regular categories
+  const rawDialects = Array.from(
+    new Set(allSnippets.map(s => s.dialect).filter((d): d is string => Boolean(d)))
+  );
+  
+  // Set of dialects to separate them into bottom group
+  const knownDialectSet = new Set([
+    'General', 'PostgreSQL', 'Oracle', 'Clickhouse', 'ClickHouse', 'DuckDB', 'MySQL', 'SQLite', 'MS SQL', 'Snowflake',
+    ...rawDialects
+  ]);
+
+  const rawCategories = Array.from(new Set(allSnippets.map(s => s.category))).filter(Boolean);
+  const regularCategories = rawCategories.filter(c => !knownDialectSet.has(c));
+  const activeDialects = Array.from(new Set(allSnippets.map(s => s.dialect).filter((d): d is string => Boolean(d))));
+
+  // Sort alphabetically
+  const sortedCategories = [...regularCategories].sort((a, b) => a.localeCompare(b, 'ru', { sensitivity: 'base' }));
+  const sortedDialects = [...activeDialects].sort((a, b) => a.localeCompare(b, 'ru', { sensitivity: 'base' }));
+
+  const categories = Array.from(new Set([
     'Все', 
     ...(uiVisibility?.showSnippetFavorites !== false ? ['Избранное'] : []), 
-    ...existingCategories
-  ];
+    ...sortedCategories,
+    ...sortedDialects
+  ]));
+
+  const categorySuggestions = Array.from(new Set(['Запросы', 'Схемы', 'Агрегаты', 'Соединения (JOIN)', 'Транзакции', ...regularCategories]));
+  const dialectSuggestions = Array.from(new Set(['General', 'PostgreSQL', 'MySQL', 'SQLite', 'Oracle', 'ClickHouse', 'DuckDB', 'MS SQL', ...activeDialects]));
 
   // Filter snippets
   const filteredSnippets = allSnippets.filter(s => {
@@ -1237,22 +1280,49 @@ export function SqlSnippetsManager({
     if (!formTitle.trim() || !formSql.trim()) return;
 
     const finalCategory = formCategory.trim() || 'Общие';
+    const finalDialect = formDialect.trim() || 'General';
+
+    // If this snippet was in deleted list previously, remove it from deleted
+    if (editingSnippetId && deletedIds.includes(editingSnippetId)) {
+      const updatedDeleted = deletedIds.filter(dId => dId !== editingSnippetId);
+      setDeletedIds(updatedDeleted);
+      try {
+        localStorage.setItem(LOCAL_STORAGE_DELETED_KEY, JSON.stringify(updatedDeleted));
+      } catch (err) {
+        console.error('Failed to save deleted snippets to localStorage', err);
+      }
+    }
 
     if (editingSnippetId) {
-      const updated = customSnippets.map(s => {
-        if (s.id === editingSnippetId) {
-          return {
-            ...s,
-            title: formTitle,
-            category: finalCategory,
-            sql: formSql,
-            description: formDescription,
-            dialect: formDialect
-          };
-        }
-        return s;
-      });
-      saveCustomSnippetsToStorage(updated);
+      const existsInCustom = customSnippets.some(s => s.id === editingSnippetId);
+      if (existsInCustom) {
+        const updated = customSnippets.map(s => {
+          if (s.id === editingSnippetId) {
+            return {
+              ...s,
+              title: formTitle,
+              category: finalCategory,
+              sql: formSql,
+              description: formDescription,
+              dialect: finalDialect,
+              isCustom: true
+            };
+          }
+          return s;
+        });
+        saveCustomSnippetsToStorage(updated);
+      } else {
+        const newOverrideSnippet: Snippet = {
+          id: editingSnippetId,
+          title: formTitle,
+          category: finalCategory,
+          sql: formSql,
+          description: formDescription,
+          dialect: finalDialect,
+          isCustom: true
+        };
+        saveCustomSnippetsToStorage([newOverrideSnippet, ...customSnippets]);
+      }
     } else {
       const newSnippet: Snippet = {
         id: `custom-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
@@ -1260,7 +1330,7 @@ export function SqlSnippetsManager({
         category: finalCategory,
         sql: formSql,
         description: formDescription,
-        dialect: formDialect,
+        dialect: finalDialect,
         isCustom: true
       };
       saveCustomSnippetsToStorage([newSnippet, ...customSnippets]);
@@ -1271,9 +1341,44 @@ export function SqlSnippetsManager({
 
   const handleDeleteSnippet = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm('Вы уверены, что хотите удалить этот шаблон?')) {
-      const updated = customSnippets.filter(s => s.id !== id);
-      saveCustomSnippetsToStorage(updated);
+
+    // 1. Remove from customSnippets array (for both custom created and custom overrides)
+    const updatedCustom = customSnippets.filter(s => s.id !== id);
+    saveCustomSnippetsToStorage(updatedCustom);
+
+    // 2. Only store in deletedIds if it is a built-in template from POPULAR_SNIPPETS
+    const isBuiltIn = POPULAR_SNIPPETS.some(s => s.id === id);
+    if (isBuiltIn) {
+      const updatedDeleted = Array.from(new Set([...deletedIds, id]));
+      setDeletedIds(updatedDeleted);
+      try {
+        localStorage.setItem(LOCAL_STORAGE_DELETED_KEY, JSON.stringify(updatedDeleted));
+      } catch (err) {
+        console.error('Failed to save deleted snippets to localStorage', err);
+      }
+    } else if (deletedIds.includes(id)) {
+      const updatedDeleted = deletedIds.filter(dId => dId !== id);
+      setDeletedIds(updatedDeleted);
+      try {
+        localStorage.setItem(LOCAL_STORAGE_DELETED_KEY, JSON.stringify(updatedDeleted));
+      } catch (err) {
+        console.error('Failed to save deleted snippets to localStorage', err);
+      }
+    }
+
+    // 3. Remove from favorites if present
+    if (favoriteIds.includes(id)) {
+      const updatedFavs = favoriteIds.filter(fId => fId !== id);
+      setFavoriteIds(updatedFavs);
+      try {
+        localStorage.setItem(LOCAL_STORAGE_FAVORITES_KEY, JSON.stringify(updatedFavs));
+      } catch (err) {
+        console.error('Failed to save favorites to localStorage', err);
+      }
+    }
+
+    if (editingSnippetId === id) {
+      resetForm();
     }
   };
 
@@ -1286,6 +1391,12 @@ export function SqlSnippetsManager({
     setFormDescription(snippet.description || '');
     setFormDialect(snippet.dialect || 'General');
     setIsCreating(true);
+
+    setTimeout(() => {
+      if (rightPanelRef.current) {
+        rightPanelRef.current.scrollTop = 0;
+      }
+    }, 0);
   };
 
   const resetForm = () => {
@@ -1496,6 +1607,11 @@ export function SqlSnippetsManager({
                 onClick={() => {
                   resetForm();
                   setIsCreating(true);
+                  setTimeout(() => {
+                    if (rightPanelRef.current) {
+                      rightPanelRef.current.scrollTop = 0;
+                    }
+                  }, 0);
                 }}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs shadow-xs transition-all"
               >
@@ -1574,7 +1690,7 @@ export function SqlSnippetsManager({
                       {cat === 'Избранное' && (
                         <Star className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'fill-amber-300 text-amber-300' : 'fill-amber-400 text-amber-400'}`} />
                       )}
-                      {['PostgreSQL', 'Oracle', 'Clickhouse', 'DuckDB'].includes(cat) && (
+                      {knownDialectSet.has(cat) && cat !== 'Все' && cat !== 'Избранное' && (
                         <Database className="w-3 h-3 text-blue-400 shrink-0" />
                       )}
                       <span>{cat}</span>
@@ -1595,7 +1711,7 @@ export function SqlSnippetsManager({
           )}
 
           {/* RIGHT PANEL: SNIPPETS LIST OR FORM */}
-          <div className="flex-1 flex flex-col p-4 overflow-y-auto min-h-0 relative">
+          <div ref={rightPanelRef} className="flex-1 flex flex-col p-4 overflow-y-auto min-h-0 relative">
             
             {/* CREATE / EDIT FORM */}
             {isCreating ? (
@@ -1645,7 +1761,7 @@ export function SqlSnippetsManager({
                       }`}
                     />
                     <datalist id="category-suggestions">
-                      {existingCategories.map(cat => (
+                      {categorySuggestions.map(cat => (
                         <option key={cat} value={cat} />
                       ))}
                     </datalist>
@@ -1653,19 +1769,21 @@ export function SqlSnippetsManager({
 
                   <div>
                     <label className="block text-[11px] font-semibold text-slate-400 mb-1">Диалект / СУБД</label>
-                    <select
+                    <input
+                      type="text"
+                      list="dialect-suggestions"
+                      placeholder="Выберите или введите..."
                       value={formDialect}
-                      onChange={(e) => setFormDialect(e.target.value as any)}
-                      className={`w-full px-2.5 py-1.5 text-xs rounded-md border outline-none ${
+                      onChange={(e) => setFormDialect(e.target.value)}
+                      className={`w-full px-3 py-1.5 text-xs rounded-md border outline-none ${
                         theme === 'dark' ? 'bg-slate-700 border-slate-600 text-slate-200' : 'bg-slate-50 border-slate-300 text-slate-800'
                       }`}
-                    >
-                      <option value="General">General SQL</option>
-                      <option value="PostgreSQL">PostgreSQL</option>
-                      <option value="Oracle">Oracle</option>
-                      <option value="Clickhouse">ClickHouse</option>
-                      <option value="DuckDB">DuckDB</option>
-                    </select>
+                    />
+                    <datalist id="dialect-suggestions">
+                      {dialectSuggestions.map(d => (
+                        <option key={d} value={d} />
+                      ))}
+                    </datalist>
                   </div>
                 </div>
 
@@ -1749,11 +1867,6 @@ export function SqlSnippetsManager({
                             <h4 className="font-bold text-xs sm:text-sm text-slate-800 dark:text-slate-100">
                               {snippet.title}
                             </h4>
-                            {snippet.isCustom && (
-                              <span className="px-1.5 py-0.2 rounded text-[9px] font-bold uppercase bg-purple-500/20 text-purple-400 border border-purple-500/30">
-                                Свой
-                              </span>
-                            )}
                             {snippet.dialect && snippet.dialect !== 'General' && (
                               <span className={`px-1.5 py-0.2 rounded text-[9px] font-mono border font-semibold ${
                                 snippet.dialect === 'PostgreSQL' ? 'bg-blue-500/10 text-blue-500 border-blue-500/30' :
@@ -1835,32 +1948,28 @@ export function SqlSnippetsManager({
                             {copiedId === snippet.id ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
                           </button>
 
-                          {snippet.isCustom && (
-                            <>
-                              <button
-                                onClick={(e) => handleEditSnippet(snippet, e)}
-                                className={`p-1.5 rounded-md border transition-all ${
-                                  theme === 'dark' 
-                                    ? 'bg-slate-750 border-slate-600 text-slate-300 hover:text-blue-400' 
-                                    : 'bg-slate-100 border-slate-300 text-slate-600 hover:text-blue-600'
-                                }`}
-                                title="Редактировать шаблон"
-                              >
-                                <Edit3 className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={(e) => handleDeleteSnippet(snippet.id, e)}
-                                className={`p-1.5 rounded-md border transition-all ${
-                                  theme === 'dark' 
-                                    ? 'bg-slate-750 border-slate-600 text-slate-300 hover:text-red-400' 
-                                    : 'bg-slate-100 border-slate-300 text-slate-600 hover:text-red-600'
-                                }`}
-                                title="Удалить шаблон"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </>
-                          )}
+                          <button
+                            onClick={(e) => handleEditSnippet(snippet, e)}
+                            className={`p-1.5 rounded-md border transition-all ${
+                              theme === 'dark' 
+                                ? 'bg-slate-750 border-slate-600 text-slate-300 hover:text-blue-400' 
+                                : 'bg-slate-100 border-slate-300 text-slate-600 hover:text-blue-600'
+                            }`}
+                            title="Редактировать шаблон"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={(e) => handleDeleteSnippet(snippet.id, e)}
+                            className={`p-1.5 rounded-md border transition-all ${
+                              theme === 'dark' 
+                                ? 'bg-slate-750 border-slate-600 text-slate-300 hover:text-red-400' 
+                                : 'bg-slate-100 border-slate-300 text-slate-600 hover:text-red-600'
+                            }`}
+                            title="Удалить шаблон"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </div>
 

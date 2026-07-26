@@ -1566,7 +1566,7 @@ export default function App() {
       };
 
       let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
-      xml += `<mxfile host="SQL Flow Visualizer" modified="${new Date().toISOString()}" agent="SQL Visualizer" version="21.0.0" type="device">\n`;
+      xml += `<mxfile host="QueryAST Lens" modified="${new Date().toISOString()}" agent="QueryAST Lens" version="21.0.0" type="device">\n`;
       xml += `  <diagram id="sql-data-flow" name="SQL Data Flow">\n`;
       xml += `    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">\n`;
       xml += `      <root>\n`;
@@ -2125,7 +2125,7 @@ export default function App() {
                       ? 'text-blue-300 hover:text-blue-100 bg-blue-900/40 hover:bg-blue-800/60 border border-blue-500/40' 
                       : 'text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200 shadow-2xs'
                   }`}
-                  title="Конструктор и библиотека сниппетов SQL"
+                  title="Библиотека шаблонов SQL"
                 >
                   <Layers className="w-3 h-3 text-blue-500" />
                 </button>
@@ -2139,10 +2139,10 @@ export default function App() {
                       ? 'text-slate-300 hover:text-slate-100 bg-slate-700/60 hover:bg-slate-700 border border-slate-600' 
                       : 'text-slate-700 hover:text-slate-900 bg-slate-200/80 hover:bg-slate-300 border border-slate-300'
                   }`}
-                  title="Развернуть на весь экран"
+                  title="Открыть SQL Query редактор"
                 >
                   <Maximize2 className="w-3 h-3" />
-                  <span>Развернуть</span>
+                  <span>Editor</span>
                 </button>
                 )}
               </div>
@@ -3009,7 +3009,7 @@ export default function App() {
                       ? 'text-blue-300 hover:text-blue-100 bg-blue-900/40 hover:bg-blue-800/60 border border-blue-500/40' 
                       : 'text-blue-800 hover:text-blue-950 bg-blue-50 hover:bg-blue-100 border border-blue-300 shadow-2xs'
                   }`}
-                  title="Конструктор и библиотека сниппетов SQL"
+                  title="Библиотека шаблонов SQL"
                 >
                   <Layers className="w-3.5 h-3.5 text-blue-500" />
                 </button>
@@ -3124,10 +3124,10 @@ export default function App() {
                         ? 'bg-slate-700 border-slate-600 text-slate-200 hover:bg-slate-600' 
                         : 'bg-white border-slate-300 text-slate-800 hover:bg-slate-50 shadow-2xs'
                     }`}
-                    title="Свернуть (Esc)"
+                    title="Вернуться к графу"
                   >
                     <Minimize2 className="w-3.5 h-3.5" />
-                    <span>Свернуть</span>
+                    <span>Graph</span>
                   </button>
                 </>
                 )}
@@ -3381,7 +3381,7 @@ export default function App() {
                         <div className={`flex items-center gap-1 px-2.5 py-1 rounded transition-all ${
                           theme === 'dark' ? 'text-slate-300' : 'text-slate-700'
                         }`}>
-                          <span>(записи {duckDbResults.length})</span>
+                          <span>(записей: {duckDbResults.length})</span>
                         </div>
 
                         <div className="flex items-center gap-1">
@@ -3395,10 +3395,10 @@ export default function App() {
                           >
                             &lt;
                           </button>
-                          <span className={`flex items-center text-xs px-2.5 py-1 rounded transition-all font-mono font-semibold ${
+                          <span className={`flex items-center text-xs px-2.5 py-1 rounded transition-all ${
                             theme === 'dark' ? 'text-slate-300' : 'text-slate-700'
                           }`}>
-                            {duckDbPage}
+                            стр {duckDbPage}
                           </span>
                           <button
                             disabled={isDuckDbRunning || !duckDbResults || duckDbResults.length < (uiVisibility.duckDbMaxRows ?? 100)}
@@ -3687,7 +3687,7 @@ export default function App() {
                     const textarea = modal?.querySelector('textarea') || document.querySelector('textarea');
                     if (textarea) {
                       textarea.focus();
-                      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', code: 'KeyF', ctrlKey: true, bubbles: true }));
+                      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', code: 'KeyF', ctrlKey: true, metaKey: true, bubbles: true }));
                     }
                   }}
                   className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded transition-all ${
@@ -3729,7 +3729,7 @@ export default function App() {
                 {uiVisibility.showCopySql && (
                 <button
                   onClick={handleCopySql}
-                  className={`flex items-center gap-1 text-xs px-2 py-1 font-medium transition-colors ${
+                  className={`flex items-center gap-1 text-xs px-2 py-1 transition-colors ${
                     theme === 'dark' ? 'text-slate-300 hover:text-slate-100' : 'text-slate-800 hover:text-slate-950'
                   }`}
                   title="Скопировать SQL"

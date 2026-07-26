@@ -10,7 +10,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [windows-latest]
+        platform: [windows-latest, macos-latest]
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -58,7 +58,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: v__VERSION__ # This will be automatically replaced with the version in tauri.conf.json
-          releaseName: "SQL Visualizer v__VERSION__"
-          releaseBody: "Draft release of SQL Visualizer desktop application."
+          releaseName: "QueryAST Lens v__VERSION__"
+          releaseBody: "Draft release of QueryAST Lens desktop application."
           releaseDraft: true
           prerelease: false
