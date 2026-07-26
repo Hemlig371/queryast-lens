@@ -2894,7 +2894,7 @@ export default function App() {
                         ? 'text-teal-300 hover:text-teal-100 bg-teal-950/40 hover:bg-teal-900/60 border border-teal-500/30' 
                         : 'text-teal-800 hover:text-teal-950 bg-teal-100 hover:bg-teal-200 border border-teal-300 shadow-2xs'
                     }`}
-                    title={duckDbConnectedPath ? `Изменить DuckDB: ${duckDbConnectedPath}` : "Настроить подключение DuckDB"}
+                    title={duckDbConnectedPath ? `Изменить: ${duckDbConnectedPath}` : "Настроить подключение DuckDB"}
                   >
                     <Database className={`w-3.5 h-3.5 ${duckDbConnectedPath ? 'text-teal-500' : 'text-slate-400'}`} />
                     <span>{duckDbConnectedPath ? 'DuckDB (Connected)' : 'Connect DuckDB'}</span>
@@ -2953,7 +2953,7 @@ export default function App() {
                             ? 'text-red-400 hover:bg-red-950/40 border border-red-500/30' 
                             : 'text-red-600 hover:bg-red-100 border border-red-300 shadow-2xs'
                         }`}
-                        title="Отключить DuckDB"
+                        title="Отключить"
                       >
                         <X className="w-3.5 h-3.5" />
                       </button>
