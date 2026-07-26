@@ -367,13 +367,33 @@ export default function App() {
     autoReconnect();
   }, []);
 
+  // Remove import flag if present from previous reload
+  useEffect(() => {
+    sessionStorage.removeItem('sql_is_importing_session');
+  }, []);
+
   const saveSessionToStorage = useCallback(() => {
+    // If we just imported local storage, do not overwrite the imported session on page reload/unload
+    if (sessionStorage.getItem('sql_is_importing_session') === 'true') {
+      return;
+    }
     try {
       localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(latestSessionRef.current));
     } catch (e) {
       console.error('Failed to save session to localStorage', e);
     }
   }, []);
+
+  // Listen for explicit session save requests (e.g. before exporting workspace)
+  useEffect(() => {
+    const handleSaveNow = () => {
+      saveSessionToStorage();
+    };
+    window.addEventListener('sql_save_session_now', handleSaveNow);
+    return () => {
+      window.removeEventListener('sql_save_session_now', handleSaveNow);
+    };
+  }, [saveSessionToStorage]);
 
   // Save session state ONLY on window close/unload, visibility hide, or every 20 minutes
   useEffect(() => {
