@@ -534,29 +534,34 @@ export default function App() {
   }, [duckDbConnectedPath, showDuckDbSchemaPanel, isWasmMode]);
 
   const handleDisconnectDuckDb = async () => {
-    if (isTauriEnv && !isWasmMode) {
-      try {
-        await tauriInvoke('disconnect_db');
-      } catch (e) {
-        console.error(e);
+    setIsDuckDbRunning(true);
+    try {
+      if (isTauriEnv && !isWasmMode) {
+        try {
+          await tauriInvoke('disconnect_db');
+        } catch (e) {
+          console.error(e);
+        }
       }
-    }
-    if (isWasmMode) {
-      await disconnectDuckDbWasm();
-      setIsWasmMode(false);
-    } else {
-      try {
-        await fetchApiJson("/api/duckdb/disconnect", { method: "POST" });
-      } catch (e) {
-        console.error(e);
+      if (isWasmMode) {
+        await disconnectDuckDbWasm();
+        setIsWasmMode(false);
+      } else {
+        try {
+          await fetchApiJson("/api/duckdb/disconnect", { method: "POST" });
+        } catch (e) {
+          console.error(e);
+        }
       }
+    } finally {
+      setDuckDbConnectedPath(null);
+      setDuckDbResults(null);
+      setDuckDbSelectedCell(null);
+      setDuckDbError(null);
+      setIsDuckDbResultVisible(false);
+      setIsDuckDbResultExpanded(false);
+      setIsDuckDbRunning(false);
     }
-    setDuckDbConnectedPath(null);
-    setDuckDbResults(null);
-    setDuckDbSelectedCell(null);
-    setDuckDbError(null);
-    setIsDuckDbResultVisible(false);
-    setIsDuckDbResultExpanded(false);
   };
 
   useEffect(() => {
