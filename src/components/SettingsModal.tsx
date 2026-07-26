@@ -1103,7 +1103,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       Шаблоны автодополнения SQL (Autocomplete Snippets)
                     </label>
                     <p className={`text-[11px] mt-0.5 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>
-                      Добавляйте, редактируйте и удаляйте пользовательские шаблоны для выпадающего списка автокомплита
+                      Добавляет, редактирует и удаляет пользовательские шаблоны для выпадающего списка автокомплита
                     </p>
                   </div>
                   <button
@@ -1271,10 +1271,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="flex items-center justify-between">
                   <div>
                     <label className={`font-bold text-xs block ${theme === 'dark' ? 'text-slate-200' : 'text-slate-900'}`}>
-                      Быстрые действия над результатами DuckDB (Quick Actions)
+                      Быстрые действия над результатами запроса (Quick Actions)
                     </label>
                     <p className={`text-[11px] mt-0.5 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>
-                      Настройка шаблонов быстрых действий для кнопки «⚡ Быстрые действия» (используйте <code className="font-mono text-amber-500">{"{table}"}</code>)
+                      Настройка шаблонов быстрых действий для кнопки «Быстрые действия» (использует <code className="font-mono text-amber-500">{"{table}"}</code>)
                     </p>
                   </div>
                   <button
