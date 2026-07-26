@@ -499,6 +499,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const handleExportLocalStorage = async () => {
     try {
+      // First, trigger immediate session save so current in-memory tabs and state are saved
+      window.dispatchEvent(new Event('sql_save_session_now'));
+
       const backupData: Record<string, unknown> = {};
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
@@ -560,6 +563,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         const dataObj: Record<string, unknown> = parsed.data && typeof parsed.data === 'object' ? parsed.data : parsed;
 
+        // Ensure session key compatibility (if old key exists without _v2)
+        if (dataObj['sql_visualizer_session'] && !dataObj['sql_visualizer_session_v2']) {
+          dataObj['sql_visualizer_session_v2'] = dataObj['sql_visualizer_session'];
+        }
+
         let importedCount = 0;
         for (const [key, value] of Object.entries(dataObj)) {
           if (key === 'sql_visualizer_version_history' || key === 'versionHistory') {
@@ -574,6 +582,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             importedCount++;
           }
         }
+
+        // Mark session import flag so App.tsx unload listener doesn't overwrite imported session on page reload
+        sessionStorage.setItem('sql_is_importing_session', 'true');
 
         alert(`Успешно импортировано рабочее пространство! Страница перезагружается...`);
         window.location.reload();
