@@ -605,7 +605,7 @@ export default function App() {
           setDuckDbError(null);
         }
       } catch (err: any) {
-        setDuckDbError("Ошибка подключения к DuckDB: " + (err.message || String(err)));
+        setDuckDbError("Ошибка подключения к DB: " + (err.message || String(err)));
         setIsDuckDbResultVisible(true);
       } finally {
         setIsDuckDbRunning(false);
@@ -720,7 +720,7 @@ export default function App() {
     }
 
     if (!duckDbConnectedPath) {
-      alert("Сначала настройте подключение к БД DuckDB");
+      alert("Сначала настройте подключение к БД");
       return;
     }
 
@@ -729,7 +729,7 @@ export default function App() {
 
   const executeDuckDbQueryWithPagination = async (queryToExec: string, page: number = 1, pageSizeToUse?: number) => {
     if (!duckDbConnectedPath) {
-      alert("Сначала настройте подключение к БД DuckDB");
+      alert("Сначала настройте подключение к БД");
       return;
     }
 
@@ -3045,10 +3045,10 @@ export default function App() {
                         ? 'text-teal-300 hover:text-teal-100 bg-teal-950/40 hover:bg-teal-900/60 border border-teal-500/30' 
                         : 'text-teal-800 hover:text-teal-950 bg-teal-100 hover:bg-teal-200 border border-teal-300 shadow-2xs'
                     }`}
-                    title={duckDbConnectedPath ? `Изменить DuckDB: ${duckDbConnectedPath}` : "Настроить подключение DuckDB"}
+                    title={duckDbConnectedPath ? `Изменить DB: ${duckDbConnectedPath}` : "Настроить подключение DB"}
                   >
                     <Database className={`w-3.5 h-3.5 ${duckDbConnectedPath ? 'text-teal-500' : 'text-slate-400'}`} />
-                    <span>{duckDbConnectedPath ? 'DuckDB (Connected)' : 'Connect DuckDB'}</span>
+                    <span>{duckDbConnectedPath ? 'DB (Connected)' : 'Connect DB'}</span>
                     <ChevronDown className="w-3 h-3 opacity-70 ml-0.5" />
                   </button>
 
@@ -3092,7 +3092,7 @@ export default function App() {
                               ? 'text-blue-400 hover:bg-blue-950/40 border border-blue-500/30' 
                               : 'text-blue-600 hover:bg-blue-100 border border-blue-300 shadow-2xs'
                           }`}
-                          title="Показать схему DuckDB"
+                          title="Показать схему DB"
                         >
                           <Database className="w-3.5 h-3.5" />
                         </button>
@@ -3104,7 +3104,7 @@ export default function App() {
                             ? 'text-red-400 hover:bg-red-950/40 border border-red-500/30' 
                             : 'text-red-600 hover:bg-red-100 border border-red-300 shadow-2xs'
                         }`}
-                        title="Отключить DuckDB"
+                        title="Отключить DB"
                       >
                         <X className="w-3.5 h-3.5" />
                       </button>
@@ -3675,7 +3675,7 @@ export default function App() {
                 )}
 
                 <div className="text-xs text-slate-500 dark:text-slate-400 border-l border-slate-600/40 pl-3">
-                  Нажмите <kbd className="px-1.5 py-0.5 rounded border text-[10px] bg-slate-200 dark:bg-slate-700 border-slate-300 dark:border-slate-600 font-mono">Esc</kbd> чтобы выйти
+                  <kbd className="px-1.5 py-0.5 rounded border text-[10px] bg-slate-200 dark:bg-slate-700 border-slate-300 dark:border-slate-600 font-mono">Esc</kbd> чтобы выйти
                 </div>
 
                 <div className="h-4 w-px bg-slate-400/40 dark:bg-slate-600" />
@@ -3766,7 +3766,7 @@ export default function App() {
                         ? 'bg-teal-600 hover:bg-teal-500 text-white'
                         : 'bg-teal-500 hover:bg-teal-600 text-white'
                   }`}
-                  title="Выполнить запрос в DuckDB"
+                  title="Выполнить запрос в DB"
                 >
                   {isDuckDbRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Terminal className="w-4 h-4" />}
                   <span>Execute</span>
