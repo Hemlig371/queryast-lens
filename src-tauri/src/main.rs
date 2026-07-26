@@ -32,6 +32,8 @@ fn connect_db(state: State<'_, DbState>, path: String) -> Result<String, String>
         // on unsupported Arrow types (introduced in DuckDB 1.0/1.1)
         let _ = conn.execute_batch("SET produce_arrow_string_view=false;");
         let _ = conn.execute_batch("SET arrow_output_list_view=false;");
+        let _ = conn.execute_batch("SET arrow_output_version='1.0';");
+        let _ = conn.execute_batch("SET arrow_lossless_conversion=false;");
         
         Ok(conn)
     }));
@@ -138,7 +140,16 @@ fn execute_query(state: State<'_, DbState>, sql: String) -> Result<QueryResult, 
 
     match res {
         Ok(r) => r,
-        Err(_) => Err("Критический сбой выполнения SQL-запроса в движке DuckDB.".to_string()),
+        Err(e) => {
+            let msg = if let Some(s) = e.downcast_ref::<&str>() {
+                s.to_string()
+            } else if let Some(s) = e.downcast_ref::<String>() {
+                s.clone()
+            } else {
+                "Unknown panic payload".to_string()
+            };
+            Err(format!("Критический сбой: {}", msg))
+        }
     }
 }
 
