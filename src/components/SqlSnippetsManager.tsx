@@ -1271,7 +1271,7 @@ export function SqlSnippetsManager({
 
   const handleDeleteSnippet = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm('Вы уверены, что хотите удалить этот сниппет?')) {
+    if (confirm('Вы уверены, что хотите удалить этот шаблон?')) {
       const updated = customSnippets.filter(s => s.id !== id);
       saveCustomSnippetsToStorage(updated);
     }
@@ -1362,7 +1362,7 @@ export function SqlSnippetsManager({
           if (Array.isArray(parsed)) {
             imported = parsed.map(item => ({
               id: item.id || `custom-${Date.now()}-${Math.random().toString(36).substr(2,4)}`,
-              title: item.title || 'Импортированный сниппет',
+              title: item.title || 'Импортированный шаблон',
               category: item.category || 'Импорт',
               sql: item.sql || '',
               description: item.description || '',
@@ -1380,7 +1380,7 @@ export function SqlSnippetsManager({
                 const clean = matches.map(m => m.replace(/^,?"?|"$/g, '').replace(/""/g, '"'));
                 imported.push({
                   id: clean[0] || `custom-${Date.now()}-${i}`,
-                  title: clean[1] || 'Импортированный сниппет',
+                  title: clean[1] || 'Импортированный шаблон',
                   category: clean[2] || 'Импорт',
                   dialect: (clean[3] as any) || 'General',
                   description: clean[4] || '',
@@ -1397,9 +1397,9 @@ export function SqlSnippetsManager({
           const newEntries = imported.filter(s => !existingIds.has(s.id));
           const merged = [...newEntries, ...customSnippets];
           saveCustomSnippetsToStorage(merged);
-          alert(`Успешно импортировано сниппетов: ${newEntries.length}`);
+          alert(`Успешно импортировано шаблонов: ${newEntries.length}`);
         } else {
-          alert('Файл не содержит корректных сниппетов');
+          alert('Файл не содержит корректных шаблонов');
         }
       } catch (err) {
         console.error('Import error:', err);
@@ -1432,7 +1432,7 @@ export function SqlSnippetsManager({
             </div>
             <div>
               <h3 className="font-bold text-sm sm:text-base flex items-center gap-2">
-                Конструктор & Библиотека SQL Сниппетов
+                Библиотека SQL шаблонов
               </h3>
             </div>
           </div>
@@ -1446,7 +1446,7 @@ export function SqlSnippetsManager({
                   ? 'bg-slate-750 border-slate-600 text-slate-200 hover:bg-slate-700' 
                   : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50 shadow-xs'
               }`}
-              title="Экспортировать сниппеты в JSON файл"
+              title="Экспортировать шаблоны в JSON файл"
             >
               <FileJson className="w-3.5 h-3.5 text-blue-500" />
               <span className="hidden sm:inline">Экспорт JSON</span>
@@ -1460,7 +1460,7 @@ export function SqlSnippetsManager({
                   ? 'bg-slate-750 border-slate-600 text-slate-200 hover:bg-slate-700' 
                   : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50 shadow-xs'
               }`}
-              title="Экспортировать сниппеты в CSV Таблицу"
+              title="Экспортировать шаблоны в CSV Таблицу"
             >
               <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500" />
               <span className="hidden sm:inline">Экспорт CSV</span>
@@ -1474,7 +1474,7 @@ export function SqlSnippetsManager({
                   ? 'bg-slate-750 border-slate-600 text-slate-200 hover:bg-slate-700' 
                   : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50 shadow-xs'
               }`}
-              title="Импортировать сниппеты из файла"
+              title="Импортировать шаблоны из файла"
             >
               <Upload className="w-3.5 h-3.5 text-amber-500" />
               <span className="hidden sm:inline">Импорт</span>
@@ -1500,7 +1500,7 @@ export function SqlSnippetsManager({
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs shadow-xs transition-all"
               >
                 <Plus className="w-4 h-4" />
-                <span>Создать сниппет</span>
+                <span>Создать шаблон</span>
               </button>
             </>
             )}
@@ -1531,7 +1531,7 @@ export function SqlSnippetsManager({
               <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400 pointer-events-none" />
               <input
                 type="text"
-                placeholder="Поиск сниппетов..."
+                placeholder="Поиск шаблонов..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className={`w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border outline-none transition-colors ${
@@ -1605,7 +1605,7 @@ export function SqlSnippetsManager({
                 <div className="flex items-center justify-between border-b pb-2">
                   <h4 className="font-bold text-sm flex items-center gap-2">
                     <Code className="w-4 h-4 text-blue-500" />
-                    <span>{editingSnippetId ? 'Редактировать сниппет' : 'Новый собственный сниппет'}</span>
+                    <span>{editingSnippetId ? 'Редактировать шаблон' : 'Новый собственный шаблон'}</span>
                   </h4>
                   <button
                     type="button"
@@ -1618,7 +1618,7 @@ export function SqlSnippetsManager({
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div className="sm:col-span-1">
-                    <label className="block text-[11px] font-semibold text-slate-400 mb-1">Название сниппета *</label>
+                    <label className="block text-[11px] font-semibold text-slate-400 mb-1">Название шаблона *</label>
                     <input
                       type="text"
                       required
@@ -1708,7 +1708,7 @@ export function SqlSnippetsManager({
                     type="submit"
                     className="px-4 py-1.5 rounded-lg text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-xs"
                   >
-                    {editingSnippetId ? 'Сохранить изменения' : 'Добавить сниппет'}
+                    {editingSnippetId ? 'Сохранить изменения' : 'Добавить шаблон'}
                   </button>
                 </div>
               </form>
@@ -1724,12 +1724,12 @@ export function SqlSnippetsManager({
                     <Code className="w-10 h-10 mx-auto mb-2 opacity-50" />
                   )}
                   <p className="text-sm font-medium">
-                    {selectedCategory === 'Избранное' ? 'В избранном пока нет сниппетов' : 'Сниппетов в этой категории не найдено'}
+                    {selectedCategory === 'Избранное' ? 'В избранном пока нет шаблонов' : 'шаблонов в этой категории не найдено'}
                   </p>
                   <p className="text-xs text-slate-500 mt-1">
                     {selectedCategory === 'Избранное' 
-                      ? 'Нажмите на звездочку у любого сниппета, чтобы добавить его в избранное'
-                      : 'Нажмите "Создать сниппет" или выберите другую категорию'}
+                      ? 'Нажмите на звездочку у любого шаблона, чтобы добавить его в избранное'
+                      : 'Нажмите "Создать шаблон" или выберите другую категорию'}
                   </p>
                 </div>
               ) : (
@@ -1816,7 +1816,7 @@ export function SqlSnippetsManager({
                                 ? 'bg-slate-700/80 hover:bg-slate-700 text-slate-200 border-slate-600' 
                                 : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'
                             }`}
-                            title="Заменить весь текущий текст SQL данным сниппетом"
+                            title="Заменить весь текущий текст SQL данным шаблоном"
                           >
                             <Play className="w-3 h-3 text-emerald-500" />
                             <span>Заменить</span>
@@ -1844,7 +1844,7 @@ export function SqlSnippetsManager({
                                     ? 'bg-slate-750 border-slate-600 text-slate-300 hover:text-blue-400' 
                                     : 'bg-slate-100 border-slate-300 text-slate-600 hover:text-blue-600'
                                 }`}
-                                title="Редактировать сниппет"
+                                title="Редактировать шаблон"
                               >
                                 <Edit3 className="w-3.5 h-3.5" />
                               </button>
@@ -1855,7 +1855,7 @@ export function SqlSnippetsManager({
                                     ? 'bg-slate-750 border-slate-600 text-slate-300 hover:text-red-400' 
                                     : 'bg-slate-100 border-slate-300 text-slate-600 hover:text-red-600'
                                 }`}
-                                title="Удалить сниппет"
+                                title="Удалить шаблон"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
