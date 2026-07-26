@@ -46,7 +46,7 @@ const SQL_KEYWORDS = [
 ];
 
 // Helper function to provide syntax highlighting for SQL queries (PostgreSQL, Oracle, Clickhouse, DuckDB)
-export const highlightSqlHtml = (sqlText: string, theme: 'dark' | 'light') => {
+export const highlightSqlHtml = (sqlText: string, theme: 'dark' | 'light', selectedText?: string) => {
   if (!sqlText) return '';
 
   let html = sqlText
@@ -81,6 +81,35 @@ export const highlightSqlHtml = (sqlText: string, theme: 'dark' | 'light') => {
     }
     return match;
   });
+
+  if (selectedText && selectedText.trim().length > 0) {
+    const trimmed = selectedText.trim();
+    const escapedSearch = trimmed
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    const isWord = /^\w+$/.test(trimmed);
+    const pattern = isWord ? `\\b${escapedSearch}\\b` : escapedSearch;
+
+    try {
+      const regex = new RegExp(`(${pattern})`, 'gi');
+      const highlightClass = isDark
+        ? 'bg-amber-400/25 ring-1 ring-amber-400/40 rounded-[2px]'
+        : 'bg-yellow-200/90 ring-1 ring-yellow-400/60 rounded-[2px]';
+
+      const parts = html.split(/(<[^>]+>)/g);
+      html = parts.map(part => {
+        if (part.startsWith('<') && part.endsWith('>')) {
+          return part;
+        }
+        return part.replace(regex, `<span class="${highlightClass}">${'$1'}</span>`);
+      }).join('');
+    } catch (e) {
+      // ignore invalid regex
+    }
+  }
 
   if (sqlText.endsWith('\n')) {
     html += '<br/>';
@@ -119,6 +148,23 @@ export function SqlEditor({
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
   const [showAutocomplete, setShowAutocomplete] = useState<boolean>(false);
   const [caretPos, setCaretPos] = useState<{ top: number; left: number; isAbove?: boolean }>({ top: 30, left: 30, isAbove: false });
+
+  // Selection highlight state
+  const [selectedText, setSelectedText] = useState<string>('');
+
+  const handleSelectionChange = () => {
+    if (!textareaRef.current) return;
+    const start = textareaRef.current.selectionStart;
+    const end = textareaRef.current.selectionEnd;
+    if (start !== end && start !== null && end !== null) {
+      const sel = value.slice(start, end).trim();
+      if (sel.length >= 1 && sel.length <= 100 && !sel.includes('\n')) {
+        setSelectedText(sel);
+        return;
+      }
+    }
+    setSelectedText('');
+  };
 
   // Search and Replace states
   const [showSearch, setShowSearch] = useState<boolean>(false);
@@ -583,6 +629,7 @@ export function SqlEditor({
     if (onChange) {
       onChange(val);
     }
+    handleSelectionChange();
   };
 
   useEffect(() => {
@@ -771,7 +818,7 @@ export function SqlEditor({
             className={`absolute inset-0 p-3 font-mono text-xs leading-relaxed pointer-events-none overflow-hidden select-none z-0 ${
               isWrapSql ? 'whitespace-pre-wrap [word-break:break-word]' : 'whitespace-pre'
             } ${theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}`}
-            dangerouslySetInnerHTML={{ __html: highlightSqlHtml(value, theme) }}
+            dangerouslySetInnerHTML={{ __html: highlightSqlHtml(value, theme, selectedText) }}
           />
 
           <textarea
@@ -780,7 +827,13 @@ export function SqlEditor({
             onScroll={handleScroll}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
-            onClick={() => setShowAutocomplete(false)}
+            onSelect={handleSelectionChange}
+            onKeyUp={handleSelectionChange}
+            onMouseUp={handleSelectionChange}
+            onClick={() => {
+              setShowAutocomplete(false);
+              handleSelectionChange();
+            }}
             readOnly={!onChange}
             spellCheck="false"
             className={`absolute inset-0 w-full h-full p-3 bg-transparent text-transparent caret-blue-600 dark:caret-blue-400 resize-none outline-none text-xs font-mono leading-relaxed overflow-y-auto selection:bg-blue-500/30 z-10 transition-colors ${

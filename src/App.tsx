@@ -55,7 +55,9 @@ import {
   Folder,
   ChevronsUpDown,
   ChevronsDownUp,
-  Square
+  Square,
+  Table,
+  Zap
 } from 'lucide-react';
 
 import { parseSqlToAst, astToGraph, getLayoutedElements } from './utils/astToGraph';
@@ -64,7 +66,7 @@ import { sqlPresets, SQLPreset } from './components/SQLPresets';
 import { SqlSnippetsManager } from './components/SqlSnippetsManager';
 import { SqlEditor, highlightSqlHtml } from './components/SqlEditor';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { SettingsModal, getSavedHotkeys, getSavedFormatterSettings, FormatterSettings, getSavedUiVisibilitySettings, UiVisibilitySettings } from './components/SettingsModal';
+import { SettingsModal, getSavedHotkeys, getSavedFormatterSettings, FormatterSettings, getSavedUiVisibilitySettings, UiVisibilitySettings, QuickActionTemplate, getQuickActionTemplates } from './components/SettingsModal';
 import { VersionHistoryModal } from './components/VersionHistoryModal';
 import { saveVersion, getVersions } from './utils/versionHistory';
 import { format as formatSql } from 'sql-formatter';
@@ -87,6 +89,10 @@ interface SavedSession {
   theme?: 'dark' | 'light';
   isWrapSql?: boolean;
   isMaximizedSql?: boolean;
+  duckDbConnectedPath?: string | null;
+  schemaSearchTerm?: string;
+  expandedSchemaNodes?: Record<string, boolean>;
+  showDuckDbSchemaPanel?: boolean;
 }
 
 const getSavedSession = (): SavedSession | null => {
@@ -123,14 +129,53 @@ export default function App() {
   const [isDuckDbResultVisible, setIsDuckDbResultVisible] = useState<boolean>(false);
   const [isDuckDbResultExpanded, setIsDuckDbResultExpanded] = useState<boolean>(false);
   const [duckDbSelectedCell, setDuckDbSelectedCell] = useState<{ title: string; content: string } | null>(null);
-    const [duckDbSchema, setDuckDbSchema] = useState<any[] | null>(null);
-  const [schemaSearchTerm, setSchemaSearchTerm] = useState('');
-  const [showDuckDbSchemaPanel, setShowDuckDbSchemaPanel] = useState<boolean>(true);
-  const [expandedSchemaNodes, setExpandedSchemaNodes] = useState<Record<string, boolean>>({});
+  const [duckDbSchema, setDuckDbSchema] = useState<any[] | null>(null);
+  const [schemaSearchTerm, setSchemaSearchTerm] = useState<string>(() => savedSession?.schemaSearchTerm || '');
+  const [showDuckDbSchemaPanel, setShowDuckDbSchemaPanel] = useState<boolean>(() => savedSession?.showDuckDbSchemaPanel ?? true);
+  const [expandedSchemaNodes, setExpandedSchemaNodes] = useState<Record<string, boolean>>(() => savedSession?.expandedSchemaNodes || {});
+
+  // Quick Actions & Pagination State
+  const [lastExecutedSql, setLastExecutedSql] = useState<string>('');
+  const [duckDbPage, setDuckDbPage] = useState<number>(1);
+  const [duckDbPageSize, setDuckDbPageSize] = useState<number>(50);
+  const [showQuickActionsMenu, setShowQuickActionsMenu] = useState<boolean>(false);
+  const [quickActions, setQuickActions] = useState<QuickActionTemplate[]>(getQuickActionTemplates);
 
   useEffect(() => {
-    setExpandedSchemaNodes({});
-    setSchemaSearchTerm('');
+    const updateQuickActions = () => {
+      setQuickActions(getQuickActionTemplates());
+    };
+    window.addEventListener('sql_quick_actions_updated', updateQuickActions);
+    return () => {
+      window.removeEventListener('sql_quick_actions_updated', updateQuickActions);
+    };
+  }, []);
+
+  const extractedTableName = useMemo(() => {
+    if (!lastExecutedSql.trim()) return 'table';
+    const cleanSql = lastExecutedSql.replace(/^(\s*(--[^\n]*\n|\/\*[\s\S]*?\*\/))*/g, '').trim();
+    const match = cleanSql.match(/\bFROM\s+([^\s;(),]+)/i);
+    if (match && match[1]) {
+      const rawTable = match[1].trim();
+      if (rawTable.startsWith('(')) {
+        return `(${cleanSql.replace(/;+$/, '')}) AS _sub`;
+      }
+      return rawTable;
+    }
+    return `(${cleanSql.replace(/;+$/, '')}) AS _sub`;
+  }, [lastExecutedSql]);
+
+  const pagedResults = useMemo(() => {
+    return duckDbResults || [];
+  }, [duckDbResults]);
+
+  const prevDuckDbPathRef = useRef<string | null>(duckDbConnectedPath);
+  useEffect(() => {
+    if (prevDuckDbPathRef.current !== null && prevDuckDbPathRef.current !== duckDbConnectedPath) {
+      setExpandedSchemaNodes({});
+      setSchemaSearchTerm('');
+    }
+    prevDuckDbPathRef.current = duckDbConnectedPath;
   }, [duckDbConnectedPath]);
 
 
@@ -230,7 +275,11 @@ export default function App() {
     direction,
     theme,
     isWrapSql,
-    isMaximizedSql
+    isMaximizedSql,
+    duckDbConnectedPath,
+    schemaSearchTerm,
+    expandedSchemaNodes,
+    showDuckDbSchemaPanel
   });
 
   useEffect(() => {
@@ -242,9 +291,81 @@ export default function App() {
       direction,
       theme,
       isWrapSql,
-      isMaximizedSql
+      isMaximizedSql,
+      duckDbConnectedPath,
+      schemaSearchTerm,
+      expandedSchemaNodes,
+      showDuckDbSchemaPanel
     };
-  }, [tabs, activeTabId, sql, dialect, direction, theme, isWrapSql, isMaximizedSql]);
+  }, [
+    tabs,
+    activeTabId,
+    sql,
+    dialect,
+    direction,
+    theme,
+    isWrapSql,
+    isMaximizedSql,
+    duckDbConnectedPath,
+    schemaSearchTerm,
+    expandedSchemaNodes,
+    showDuckDbSchemaPanel
+  ]);
+
+  // Auto-reconnect to DuckDB database on application startup if path was saved in session
+  useEffect(() => {
+    const autoReconnect = async () => {
+      const dbPath = savedSession?.duckDbConnectedPath;
+      if (!dbPath) return;
+
+      try {
+        setIsDuckDbRunning(true);
+        let connectedSuccessfully = false;
+
+        if (isTauriEnv) {
+          try {
+            const path = await tauriInvoke<string>('connect_db', { path: dbPath });
+            setDuckDbConnectedPath(path || dbPath);
+            setIsWasmMode(false);
+            setDuckDbError(null);
+            connectedSuccessfully = true;
+          } catch (tauriErr) {
+            console.warn("Tauri auto-connect failed:", tauriErr);
+          }
+        }
+
+        if (!connectedSuccessfully) {
+          try {
+            const data = await fetchApiJson("/api/duckdb/connect", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ dbPath })
+            });
+            if (data && !data.error) {
+              connectedSuccessfully = true;
+              setIsWasmMode(false);
+              setDuckDbConnectedPath(data.path || dbPath);
+              setDuckDbError(null);
+            }
+          } catch (_) {
+            connectedSuccessfully = false;
+          }
+        }
+
+        if (connectedSuccessfully) {
+          setShowDuckDbSchemaPanel(true);
+        } else {
+          console.warn("Could not auto-reconnect DuckDB database for path:", dbPath);
+        }
+      } catch (err: any) {
+        console.warn("DuckDB auto-reconnect error:", err);
+      } finally {
+        setIsDuckDbRunning(false);
+      }
+    };
+
+    autoReconnect();
+  }, []);
 
   const saveSessionToStorage = useCallback(() => {
     try {
@@ -401,6 +522,13 @@ export default function App() {
         return data;
       } catch (err: any) {
         lastError = err;
+        if (
+          err.message &&
+          !err.message.includes("Failed to fetch") &&
+          !err.message.includes("NetworkError")
+        ) {
+          throw err;
+        }
       }
     }
 
@@ -520,8 +648,8 @@ export default function App() {
           setDuckDbSchema(data.data);
         }
       }
-    } catch (e) {
-      console.error("Failed to fetch schema", e);
+    } catch (e: any) {
+      console.warn("Failed to fetch schema:", e?.message || e);
     }
   };
 
@@ -596,16 +724,17 @@ export default function App() {
       return;
     }
 
-    let queryToExecute = sql;
-    const textareas = document.querySelectorAll('textarea');
-    for (const textarea of Array.from(textareas)) {
-      if (textarea.offsetWidth > 0 && textarea.offsetHeight > 0 && textarea.selectionStart !== textarea.selectionEnd) {
-        queryToExecute = textarea.value.substring(textarea.selectionStart, textarea.selectionEnd);
-        break;
-      }
+    handleExecuteDuckDbQuery();
+  };
+
+  const executeDuckDbQueryWithPagination = async (queryToExec: string, page: number = 1, pageSizeToUse?: number) => {
+    if (!duckDbConnectedPath) {
+      alert("Сначала настройте подключение к БД DuckDB");
+      return;
     }
 
-    if (!queryToExecute.trim()) return;
+    setLastExecutedSql(queryToExec);
+    setDuckDbPage(page);
 
     const controller = new AbortController();
     duckDbAbortControllerRef.current = controller;
@@ -617,19 +746,22 @@ export default function App() {
       setDuckDbResults(null);
       setDuckDbSelectedCell(null);
 
-      const maxRows = uiVisibility.duckDbMaxRows ?? 100;
-      let finalQuery = queryToExecute.trim();
-      
-      // AUTO LIMIT: Automatically limit query results at DB level for SELECT/WITH statements
-      // if query doesn't already specify a custom LIMIT clause.
+      const maxRows = pageSizeToUse ?? uiVisibility.duckDbMaxRows ?? 100;
+      let finalQuery = queryToExec.trim();
       let queryWithLimit = finalQuery;
       const cleanSqlHead = finalQuery
         .replace(/^(\s*(--[^\n]*\n|\/\*[\s\S]*?\*\/))*/g, '')
         .trim();
 
       if (maxRows > 0 && /^(SELECT|WITH)\b/i.test(cleanSqlHead)) {
-        if (!/\bLIMIT\s+\d+/i.test(cleanSqlHead)) {
-          queryWithLimit = `SELECT * FROM (${finalQuery.replace(/;+$/, '')}) AS _limited_subquery LIMIT ${maxRows}`;
+        const stripped = finalQuery.replace(/;+$/, '');
+        if (page > 1) {
+          const offset = (page - 1) * maxRows;
+          queryWithLimit = `SELECT * FROM (${stripped}) AS _limited_subquery LIMIT ${maxRows} OFFSET ${offset}`;
+        } else {
+          if (!/\bLIMIT\s+\d+/i.test(cleanSqlHead)) {
+            queryWithLimit = `SELECT * FROM (${stripped}) AS _limited_subquery LIMIT ${maxRows}`;
+          }
         }
       }
 
@@ -638,9 +770,7 @@ export default function App() {
           const res = await tauriInvoke<{ columns: string[]; rows: any[][] }>('execute_query', {
             sql: queryWithLimit
           });
-          if (controller.signal.aborted) {
-            throw new Error("Запрос отменен пользователем");
-          }
+          if (controller.signal.aborted) throw new Error("Запрос отменен пользователем");
           const parsed = (res?.rows || []).map(row => {
             const obj: Record<string, any> = {};
             (res.columns || []).forEach((col, idx) => {
@@ -650,9 +780,7 @@ export default function App() {
           });
           setDuckDbResults(parsed.slice(0, maxRows));
         } catch (tauriErr: any) {
-          if (controller.signal.aborted) {
-            throw new Error("Запрос отменен пользователем");
-          }
+          if (controller.signal.aborted) throw new Error("Запрос отменен пользователем");
           let errMsg = typeof tauriErr === 'string' ? tauriErr : (tauriErr?.message || String(tauriErr));
           if (errMsg.includes("invalid escaped character") || errMsg.includes("trailing escape")) {
             errMsg += "\n\n💡 Подсказка: В строках SQL пути Windows содержат обратные слэши '\\', которые считаются спецсимволами. Замените '\\' на прямые слэши '/' (напр. 'C:/Users/...') или удвойте их '\\\\'.";
@@ -661,9 +789,7 @@ export default function App() {
         }
       } else if (isWasmMode) {
         const rows = await queryDuckDbWasm(queryWithLimit);
-        if (controller.signal.aborted) {
-          throw new Error("Запрос отменен пользователем");
-        }
+        if (controller.signal.aborted) throw new Error("Запрос отменен пользователем");
         setDuckDbResults(rows.slice(0, maxRows));
       } else {
         const data = await fetchApiJson("/api/duckdb/query", {
@@ -693,6 +819,31 @@ export default function App() {
       setIsDuckDbRunning(false);
       duckDbAbortControllerRef.current = null;
     }
+  };
+
+  const handleExecuteDuckDbQuery = async () => {
+    let queryToExecute = sql;
+    const textareas = document.querySelectorAll('textarea');
+    for (const textarea of Array.from(textareas)) {
+      if (textarea.offsetWidth > 0 && textarea.offsetHeight > 0 && textarea.selectionStart !== textarea.selectionEnd) {
+        queryToExecute = textarea.value.substring(textarea.selectionStart, textarea.selectionEnd);
+        break;
+      }
+    }
+
+    if (!queryToExecute.trim()) return;
+    executeDuckDbQueryWithPagination(queryToExecute, 1);
+  };
+
+  const executeSpecificDuckDbQuery = async (queryToExec: string) => {
+    if (!queryToExec.trim()) return;
+    executeDuckDbQueryWithPagination(queryToExec, 1);
+  };
+
+  const handleExecuteQuickAction = (qa: QuickActionTemplate) => {
+    setShowQuickActionsMenu(false);
+    const targetQuery = qa.template.replace(/\{table\}/g, extractedTableName);
+    executeSpecificDuckDbQuery(targetQuery);
   };
 
   const handleSelectTab = (targetId: string) => {
@@ -2894,7 +3045,7 @@ export default function App() {
                         ? 'text-teal-300 hover:text-teal-100 bg-teal-950/40 hover:bg-teal-900/60 border border-teal-500/30' 
                         : 'text-teal-800 hover:text-teal-950 bg-teal-100 hover:bg-teal-200 border border-teal-300 shadow-2xs'
                     }`}
-                    title={duckDbConnectedPath ? `Изменить: ${duckDbConnectedPath}` : "Настроить подключение DuckDB"}
+                    title={duckDbConnectedPath ? `Изменить DuckDB: ${duckDbConnectedPath}` : "Настроить подключение DuckDB"}
                   >
                     <Database className={`w-3.5 h-3.5 ${duckDbConnectedPath ? 'text-teal-500' : 'text-slate-400'}`} />
                     <span>{duckDbConnectedPath ? 'DuckDB (Connected)' : 'Connect DuckDB'}</span>
@@ -2953,7 +3104,7 @@ export default function App() {
                             ? 'text-red-400 hover:bg-red-950/40 border border-red-500/30' 
                             : 'text-red-600 hover:bg-red-100 border border-red-300 shadow-2xs'
                         }`}
-                        title="Отключить"
+                        title="Отключить DuckDB"
                       >
                         <X className="w-3.5 h-3.5" />
                       </button>
@@ -2983,99 +3134,102 @@ export default function App() {
               </div>
             </div>
 
-            {/* TAB BAR (Fullscreen Only) */}
-            <div className={`flex items-center gap-1.5 px-3 pt-2 border-b overflow-x-auto shrink-0 select-none ${
-              theme === 'dark' ? 'bg-slate-800/90 border-slate-700' : 'bg-slate-200/60 border-slate-300'
-            }`}>
-              {tabs.map((tab) => {
-                const isActive = tab.id === activeTabId;
-                return (
-                  <div
-                    key={tab.id}
-                    onClick={() => handleSelectTab(tab.id)}
-                    className={`group flex items-center gap-2 px-3 py-1.5 rounded-t-lg border-t border-x cursor-pointer text-xs font-medium transition-all max-w-[200px] shrink-0 ${
-                      isActive
-                        ? theme === 'dark'
-                          ? 'bg-slate-850 border-slate-700 text-blue-400 font-semibold shadow-2xs'
-                          : 'bg-white border-slate-300 text-blue-600 font-semibold shadow-2xs'
-                        : theme === 'dark'
-                          ? 'bg-slate-800/40 border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-750'
-                          : 'bg-slate-200/40 border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/80'
-                    }`}
-                  >
-                    <FileText className="w-3.5 h-3.5 shrink-0 opacity-70" />
-                    {editingTabId === tab.id ? (
-                      <input
-                        type="text"
-                        value={tab.title}
-                        onChange={(e) => handleRenameTab(tab.id, e.target.value)}
-                        onBlur={() => setEditingTabId(null)}
-                        onKeyDown={(e) => e.key === 'Enter' && setEditingTabId(null)}
-                        autoFocus
-                        className="bg-transparent outline-none w-full border-b border-blue-500 text-xs px-0.5"
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    ) : (
-                      <span
-                        onDoubleClick={(e) => {
-                          e.stopPropagation();
-                          setEditingTabId(tab.id);
-                        }}
-                        className="truncate flex-1"
-                        title="Двойной клик для переименования"
-                      >
-                        {tab.title}
-                      </span>
-                    )}
-
-                    {tabs.length > 1 && (
-                      <button
-                        onClick={(e) => handleCloseTab(e, tab.id)}
-                        className={`p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity ${
-                          theme === 'dark' ? 'hover:bg-slate-700 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-200 text-slate-500 hover:text-slate-800'
-                        }`}
-                        title="Закрыть вкладку"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-
-              {tabs.length < 9 && (
-                <button
-                  onClick={handleAddTab}
-                  className={`p-1.5 rounded-md mb-1 text-xs transition-colors shrink-0 ${
-                    theme === 'dark'
-                      ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-750'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-300/80'
-                  }`}
-                  title="Новая вкладка"
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-
-            {/* BODY & SCHEMA BROWSER */}
+            {/* CONTENT AREA WITH TAB BAR, BODY & SCHEMA BROWSER */}
             <div className="flex-1 flex flex-row min-h-0 min-w-0">
-              {/* BODY */}
-              <div className="flex-1 p-3.5 flex flex-col min-h-0 relative">
-                <ErrorBoundary title="Ошибка редактора SQL" theme={theme}>
-                  <SqlEditor
-                    value={sql}
-                    onChange={setSql}
-                    isWrapSql={isWrapSql}
-                    theme={theme}
-                  />
-                </ErrorBoundary>
+              {/* LEFT COLUMN: TAB BAR & EDITOR */}
+              <div className="flex-1 flex flex-col min-h-0 min-w-0">
+                {/* TAB BAR (Fullscreen Only) */}
+                <div className={`flex items-end gap-1.5 px-3 h-[37px] border-b overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden shrink-0 select-none ${
+                  theme === 'dark' ? 'bg-slate-800/90 border-slate-700' : 'bg-slate-200/60 border-slate-300'
+                }`}>
+                  {tabs.map((tab) => {
+                    const isActive = tab.id === activeTabId;
+                    return (
+                      <div
+                        key={tab.id}
+                        onClick={() => handleSelectTab(tab.id)}
+                        className={`group flex items-center gap-2 px-3 py-1.5 rounded-t-lg border-t border-x cursor-pointer text-xs font-medium transition-all max-w-[200px] shrink-0 ${
+                          isActive
+                            ? theme === 'dark'
+                              ? 'bg-slate-850 border-slate-700 text-blue-400 font-semibold shadow-2xs'
+                              : 'bg-white border-slate-300 text-blue-600 font-semibold shadow-2xs'
+                            : theme === 'dark'
+                              ? 'bg-slate-800/40 border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-750'
+                              : 'bg-slate-200/40 border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/80'
+                        }`}
+                      >
+                        <FileText className="w-3.5 h-3.5 shrink-0 opacity-70" />
+                        {editingTabId === tab.id ? (
+                          <input
+                            type="text"
+                            value={tab.title}
+                            onChange={(e) => handleRenameTab(tab.id, e.target.value)}
+                            onBlur={() => setEditingTabId(null)}
+                            onKeyDown={(e) => e.key === 'Enter' && setEditingTabId(null)}
+                            autoFocus
+                            className="bg-transparent outline-none w-full border-b border-blue-500 text-xs px-0.5"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        ) : (
+                          <span
+                            onDoubleClick={(e) => {
+                              e.stopPropagation();
+                              setEditingTabId(tab.id);
+                            }}
+                            className="truncate flex-1"
+                            title="Двойной клик для переименования"
+                          >
+                            {tab.title}
+                          </span>
+                        )}
+
+                        {tabs.length > 1 && (
+                          <button
+                            onClick={(e) => handleCloseTab(e, tab.id)}
+                            className={`p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity ${
+                              theme === 'dark' ? 'hover:bg-slate-700 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-200 text-slate-500 hover:text-slate-800'
+                            }`}
+                            title="Закрыть вкладку"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {tabs.length < 9 && (
+                    <button
+                      onClick={handleAddTab}
+                      className={`p-1.5 rounded-md mb-1 text-xs transition-colors shrink-0 ${
+                        theme === 'dark'
+                          ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-750'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-300/80'
+                      }`}
+                      title="Новая вкладка"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+
+                {/* BODY */}
+                <div className="flex-1 p-3.5 flex flex-col min-h-0 relative">
+                  <ErrorBoundary title="Ошибка редактора SQL" theme={theme}>
+                    <SqlEditor
+                      value={sql}
+                      onChange={setSql}
+                      isWrapSql={isWrapSql}
+                      theme={theme}
+                    />
+                  </ErrorBoundary>
+                </div>
               </div>
 
               {/* SCHEMA BROWSER */}
               {showDuckDbSchemaPanel && duckDbSchema && groupedDuckDbSchema && (
                 <div className={`w-72 flex flex-col shrink-0 border-l transition-colors ${theme === 'dark' ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-300'}`}>
-                  <div className={`px-3 py-2 border-b flex items-center justify-between shrink-0 transition-colors ${theme === 'dark' ? 'border-slate-700 bg-slate-800' : 'border-slate-300 bg-slate-100'}`}>
+                  <div className={`px-3 h-[37px] border-b flex items-center justify-between shrink-0 transition-colors ${theme === 'dark' ? 'border-slate-700 bg-slate-800' : 'border-slate-300 bg-slate-100'}`}>
                     <span className={`text-xs font-semibold flex items-center gap-2 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>
                       <Database className="w-3.5 h-3.5 text-teal-500" />
                       Schema Browser
@@ -3217,11 +3371,101 @@ export default function App() {
                 <div className={`flex items-center justify-between px-3 py-1.5 border-b shrink-0 ${
                   theme === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'
                 }`}>
-                  <span className={`text-xs font-semibold flex items-center gap-2 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>
-                    <Database className="w-3.5 h-3.5 text-teal-500" />
-                    Результат запроса (Первые {uiVisibility.duckDbMaxRows ?? 100} строк)
-                  </span>
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-2 overflow-x-auto min-w-0 pr-2">
+                    <span className={`text-xs font-semibold flex items-center gap-2 shrink-0 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>
+                      <Database className="w-3.5 h-3.5 text-teal-500" />
+                      Результат запроса
+                    </span>
+                    {duckDbResults && (
+                      <div className="flex items-center gap-2 text-xs shrink-0">
+                        <div className={`flex items-center gap-1 px-2.5 py-1 rounded transition-all ${
+                          theme === 'dark' ? 'text-slate-300' : 'text-slate-700'
+                        }`}>
+                          <span>(записи {duckDbResults.length})</span>
+                        </div>
+
+                        <div className="flex items-center gap-1">
+                          <button
+                            disabled={duckDbPage <= 1 || isDuckDbRunning}
+                            onClick={() => executeDuckDbQueryWithPagination(lastExecutedSql, duckDbPage - 1)}
+                            className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded transition-all font-mono disabled:opacity-30 disabled:cursor-not-allowed ${
+                              theme === 'dark' ? 'text-slate-300 hover:text-slate-100 hover:bg-slate-700/40' : 'text-slate-700 hover:text-slate-900 hover:bg-slate-400/30'
+                            }`}
+                            title="Предыдущая страница"
+                          >
+                            &lt;
+                          </button>
+                          <span className={`flex items-center text-xs px-2.5 py-1 rounded transition-all font-mono font-semibold ${
+                            theme === 'dark' ? 'text-slate-300' : 'text-slate-700'
+                          }`}>
+                            {duckDbPage}
+                          </span>
+                          <button
+                            disabled={isDuckDbRunning || !duckDbResults || duckDbResults.length < (uiVisibility.duckDbMaxRows ?? 100)}
+                            onClick={() => executeDuckDbQueryWithPagination(lastExecutedSql, duckDbPage + 1)}
+                            className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded transition-all font-mono disabled:opacity-30 disabled:cursor-not-allowed ${
+                              theme === 'dark' ? 'text-slate-300 hover:text-slate-100 hover:bg-slate-700/40' : 'text-slate-700 hover:text-slate-900 hover:bg-slate-400/30'
+                            }`}
+                            title="Следующая страница"
+                          >
+                            &gt;
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1 shrink-0">
+                    {/* QUICK ACTIONS BUTTON AND DROPDOWN */}
+                    <div className="relative">
+                      <button
+                        onClick={() => setShowQuickActionsMenu(!showQuickActionsMenu)}
+                        disabled={!duckDbResults || duckDbResults.length === 0 || isDuckDbRunning}
+                        className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded font-semibold transition-colors border ${
+                          theme === 'dark'
+                            ? 'text-amber-300 hover:text-amber-100 bg-transparent hover:bg-amber-950/40 border-amber-500/30 disabled:opacity-40 disabled:hover:bg-transparent'
+                            : 'text-amber-800 hover:text-amber-950 bg-transparent hover:bg-amber-50 border-amber-300 shadow-2xs disabled:opacity-40 disabled:hover:bg-transparent'
+                        }`}
+                        title="Быстрые действия над результатами"
+                      >
+                        <Zap className="w-3.5 h-3.5 shrink-0" />
+                        <ChevronDown className="w-3 h-3 opacity-60 shrink-0" />
+                      </button>
+
+                      {showQuickActionsMenu && (
+                        <>
+                          <div 
+                            className="fixed inset-0 z-30" 
+                            onClick={() => setShowQuickActionsMenu(false)} 
+                          />
+                          <div className={`absolute top-full mt-1 right-0 z-40 rounded-lg border shadow-xl p-1.5 w-56 animate-in fade-in duration-150 ${
+                            theme === 'dark' ? 'bg-slate-800 border-slate-600 text-slate-200' : 'bg-white border-slate-300 text-slate-800'
+                          }`}>
+                            <div className={`px-2 py-1.5 rounded text-xs flex items-center gap-2 border-b mb-1 font-mono min-w-0 ${
+                              theme === 'dark' ? 'border-slate-700/60 text-slate-400' : 'border-slate-200 text-slate-500'
+                            }`} title={extractedTableName}>
+                              <Table className="w-3.5 h-3.5 text-teal-500 shrink-0" />
+                              <span className="truncate">{extractedTableName}</span>
+                            </div>
+                            <div className="max-h-60 overflow-y-auto space-y-0.5 pr-0.5">
+                              {quickActions.map((action) => (
+                                <button
+                                  key={action.id}
+                                  onClick={() => handleExecuteQuickAction(action)}
+                                  title={action.name}
+                                  className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center gap-2 transition-colors min-w-0 ${
+                                    theme === 'dark' ? 'hover:bg-slate-700 text-slate-200' : 'hover:bg-slate-100 text-slate-800'
+                                  }`}
+                                >
+                                  <span className="truncate">{action.name}</span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+
                     {isDuckDbRunning && (
                       <button
                         onClick={handleCancelDuckDbQuery}
@@ -3306,7 +3550,7 @@ export default function App() {
                           </tr>
                         </thead>
                         <tbody>
-                          {duckDbResults.map((row, i) => (
+                          {pagedResults.map((row, i) => (
                             <tr key={i} className={`border-b transition-colors divide-x ${
                               theme === 'dark' ? 'border-slate-800 hover:bg-slate-800/50 divide-slate-700' : 'border-slate-200 hover:bg-slate-50 divide-slate-200'
                             }`}>

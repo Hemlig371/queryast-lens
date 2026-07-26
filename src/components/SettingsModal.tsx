@@ -1,6 +1,39 @@
 import React, { useState, useEffect } from 'react';
-import { X, Keyboard, RotateCcw, Settings, AlignLeft, Eye, Download, Upload, Plus, Trash2, Edit3, Check, Code } from 'lucide-react';
+import { X, Keyboard, RotateCcw, Settings, AlignLeft, Eye, Download, Upload, Plus, Trash2, Edit3, Check, Code, Zap } from 'lucide-react';
 import { AutocompleteTemplate, DEFAULT_AUTOCOMPLETE_TEMPLATES, getCustomAutocompleteTemplates } from './SqlEditor';
+import { getVersions, importVersions, SqlVersionItem } from '../utils/versionHistory';
+
+export interface QuickActionTemplate {
+  id: string;
+  name: string;
+  template: string;
+}
+
+export const DEFAULT_QUICK_ACTIONS: QuickActionTemplate[] = [
+  {
+    id: 'qa-1',
+    name: 'Количество строк',
+    template: 'SELECT COUNT(*) FROM {table};',
+  },
+  {
+    id: 'qa-2',
+    name: 'Структура таблицы',
+    template: 'DESCRIBE {table};',
+  },
+];
+
+export function getQuickActionTemplates(): QuickActionTemplate[] {
+  try {
+    const raw = localStorage.getItem('sql_quick_action_templates');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {
+    console.error('Failed to load quick action templates', e);
+  }
+  return DEFAULT_QUICK_ACTIONS;
+}
 
 export interface HotkeyBinding {
   id: string;
@@ -291,6 +324,59 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [editInsertion, setEditInsertion] = useState<string>('');
   const [editDesc, setEditDesc] = useState<string>('');
 
+  // Quick Action Templates State
+  const [quickActions, setQuickActions] = useState<QuickActionTemplate[]>(getQuickActionTemplates);
+  const [newQaName, setNewQaName] = useState<string>('');
+  const [newQaTemplate, setNewQaTemplate] = useState<string>('');
+  const [editingQaId, setEditingQaId] = useState<string | null>(null);
+  const [editQaName, setEditQaName] = useState<string>('');
+  const [editQaTemplate, setEditQaTemplate] = useState<string>('');
+
+  const saveQuickActionsToStorage = (newActions: QuickActionTemplate[]) => {
+    setQuickActions(newActions);
+    localStorage.setItem('sql_quick_action_templates', JSON.stringify(newActions));
+    window.dispatchEvent(new Event('sql_quick_actions_updated'));
+  };
+
+  const handleAddQuickAction = () => {
+    if (!newQaName.trim() || !newQaTemplate.trim()) return;
+    const newQa: QuickActionTemplate = {
+      id: `qa-${Date.now()}`,
+      name: newQaName.trim(),
+      template: newQaTemplate.trim(),
+    };
+    const updated = [...quickActions, newQa];
+    saveQuickActionsToStorage(updated);
+    setNewQaName('');
+    setNewQaTemplate('');
+  };
+
+  const handleDeleteQuickAction = (id: string) => {
+    const updated = quickActions.filter(q => q.id !== id);
+    saveQuickActionsToStorage(updated);
+  };
+
+  const handleResetQuickActions = () => {
+    saveQuickActionsToStorage(DEFAULT_QUICK_ACTIONS);
+  };
+
+  const handleStartEditQuickAction = (qa: QuickActionTemplate) => {
+    setEditingQaId(qa.id);
+    setEditQaName(qa.name);
+    setEditQaTemplate(qa.template);
+  };
+
+  const handleSaveEditQuickAction = () => {
+    if (!editingQaId) return;
+    const updated = quickActions.map(q => q.id === editingQaId ? {
+      ...q,
+      name: editQaName.trim() || q.name,
+      template: editQaTemplate.trim() || q.template
+    } : q);
+    saveQuickActionsToStorage(updated);
+    setEditingQaId(null);
+  };
+
   const saveTemplatesToStorage = (newTpls: AutocompleteTemplate[]) => {
     setTemplates(newTpls);
     localStorage.setItem('sql_custom_autocomplete_templates', JSON.stringify(newTpls));
@@ -411,30 +497,50 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
-  const handleExportLocalStorage = () => {
+  const handleExportLocalStorage = async () => {
     try {
-      const backupData: Record<string, string> = {};
+      const backupData: Record<string, unknown> = {};
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
         if (key) {
           const value = localStorage.getItem(key);
           if (value !== null) {
-            backupData[key] = value;
+            try {
+              backupData[key] = JSON.parse(value);
+            } catch (_) {
+              backupData[key] = value;
+            }
           }
         }
       }
-      const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+
+      // Add IndexedDB version history
+      try {
+        const versions = await getVersions();
+        backupData['sql_visualizer_version_history'] = versions;
+      } catch (err) {
+        console.warn('Failed to get IndexedDB versions for export:', err);
+      }
+
+      const workspaceBundle = {
+        version: 1,
+        app: 'SQL Visualizer Workspace Bundle',
+        exportedAt: new Date().toISOString(),
+        data: backupData
+      };
+
+      const blob = new Blob([JSON.stringify(workspaceBundle, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
       const dateStr = new Date().toISOString().slice(0, 10);
-      link.download = `sql_visualizer_backup_${dateStr}.json`;
+      link.download = `sql_visualizer_workspace_${dateStr}.json`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
     } catch (e) {
-      console.error('Failed to export localStorage', e);
+      console.error('Failed to export workspace', e);
       alert('Ошибка при экспорте данных');
     }
   };
@@ -444,31 +550,35 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         const content = e.target?.result as string;
-        const data = JSON.parse(content);
-        if (typeof data !== 'object' || data === null) {
+        const parsed = JSON.parse(content);
+        if (typeof parsed !== 'object' || parsed === null) {
           throw new Error('Invalid backup file format');
         }
 
-        const storageItems: Record<string, unknown> = data.data && typeof data.data === 'object' ? data.data : data;
+        const dataObj: Record<string, unknown> = parsed.data && typeof parsed.data === 'object' ? parsed.data : parsed;
 
         let importedCount = 0;
-        Object.entries(storageItems).forEach(([key, value]) => {
-          if (typeof value === 'string') {
+        for (const [key, value] of Object.entries(dataObj)) {
+          if (key === 'sql_visualizer_version_history' || key === 'versionHistory') {
+            if (Array.isArray(value)) {
+              await importVersions(value as SqlVersionItem[]);
+            }
+          } else if (typeof value === 'string') {
             localStorage.setItem(key, value);
             importedCount++;
           } else if (value !== null && typeof value === 'object') {
             localStorage.setItem(key, JSON.stringify(value));
             importedCount++;
           }
-        });
+        }
 
-        alert(`Успешно импортировано ${importedCount} элементов. Страница перезагружается...`);
+        alert(`Успешно импортировано рабочее пространство! Страница перезагружается...`);
         window.location.reload();
       } catch (err) {
-        console.error('Failed to import localStorage', err);
+        console.error('Failed to import workspace', err);
         alert('Ошибка при импорте. Проверьте формат JSON файла.');
       }
     };
@@ -1143,6 +1253,155 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               onClick={() => handleDeleteTemplate(tpl.id)}
                               className="p-1 rounded text-red-400 hover:bg-red-500/20 hover:text-red-300 transition-colors"
                               title="Удалить шаблон"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* QUICK ACTIONS MANAGER */}
+              <div className={`p-4 rounded-xl border space-y-4 ${
+                theme === 'dark' ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className={`font-bold text-xs block ${theme === 'dark' ? 'text-slate-200' : 'text-slate-900'}`}>
+                      Быстрые действия над результатами DuckDB (Quick Actions)
+                    </label>
+                    <p className={`text-[11px] mt-0.5 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>
+                      Настройка шаблонов быстрых действий для кнопки «⚡ Быстрые действия» (используйте <code className="font-mono text-amber-500">{"{table}"}</code>)
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleResetQuickActions}
+                    className={`flex items-center gap-1 text-[11px] px-2.5 py-1 rounded border font-semibold transition-colors shrink-0 ${
+                      theme === 'dark'
+                        ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-slate-100'
+                        : 'bg-white border-slate-300 text-slate-800 hover:bg-slate-100'
+                    }`}
+                    title="Восстановить быстрые действия по умолчанию"
+                  >
+                    <RotateCcw className="w-3 h-3 text-amber-500" />
+                    <span>Сбросить действия</span>
+                  </button>
+                </div>
+
+                {/* ADD QUICK ACTION FORM */}
+                <div className={`p-3 rounded-lg border space-y-2.5 ${
+                  theme === 'dark' ? 'bg-slate-900/60 border-slate-700/60' : 'bg-white border-slate-200'
+                }`}>
+                  <div className="text-xs font-bold flex items-center gap-1.5 text-amber-500">
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Добавить быстрое действие</span>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2 items-center">
+                    <input
+                      type="text"
+                      placeholder="Название (напр. Схема)"
+                      value={newQaName}
+                      onChange={(e) => setNewQaName(e.target.value)}
+                      className={`w-full sm:w-36 px-2 py-1.5 text-xs rounded border outline-none shrink-0 ${
+                        theme === 'dark' ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-amber-500' : 'bg-slate-50 border-slate-300 text-slate-900 focus:border-amber-500'
+                      }`}
+                    />
+                    <input
+                      type="text"
+                      placeholder="Запрос (напр. SELECT * FROM {table} LIMIT 10;)"
+                      value={newQaTemplate}
+                      onChange={(e) => setNewQaTemplate(e.target.value)}
+                      className={`w-full sm:flex-1 px-2 py-1.5 text-xs font-mono rounded border outline-none min-w-0 ${
+                        theme === 'dark' ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-amber-500' : 'bg-slate-50 border-slate-300 text-slate-900 focus:border-amber-500'
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddQuickAction}
+                      disabled={!newQaName.trim() || !newQaTemplate.trim()}
+                      className="p-1.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-bold text-xs rounded transition-colors shrink-0 flex items-center justify-center h-8 w-8"
+                      title="Добавить действие"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* QUICK ACTIONS LIST */}
+                <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                  {quickActions.map((qa) => (
+                    <div
+                      key={qa.id}
+                      className={`p-2.5 rounded-lg border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-mono ${
+                        theme === 'dark' ? 'bg-slate-850/70 border-slate-700/60' : 'bg-white border-slate-250 shadow-2xs'
+                      }`}
+                    >
+                      {editingQaId === qa.id ? (
+                        <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2 items-center w-full">
+                          <input
+                            type="text"
+                            value={editQaName}
+                            onChange={(e) => setEditQaName(e.target.value)}
+                            className={`px-2 py-1 text-xs rounded border ${
+                              theme === 'dark' ? 'bg-slate-900 border-slate-600 text-slate-100' : 'bg-slate-50 border-slate-300 text-slate-900'
+                            }`}
+                          />
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="text"
+                              value={editQaTemplate}
+                              onChange={(e) => setEditQaTemplate(e.target.value)}
+                              className={`flex-1 px-2 py-1 text-xs font-mono rounded border ${
+                                theme === 'dark' ? 'bg-slate-900 border-slate-600 text-slate-100' : 'bg-slate-50 border-slate-300 text-slate-900'
+                              }`}
+                            />
+                            <button
+                              type="button"
+                              onClick={handleSaveEditQuickAction}
+                              className="p-1 bg-emerald-600 text-white rounded hover:bg-emerald-500 transition-colors"
+                              title="Сохранить изменения"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingQaId(null)}
+                              className="p-1 bg-slate-600 text-white rounded hover:bg-slate-500 transition-colors"
+                              title="Отмена"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex items-center gap-2 overflow-hidden flex-1">
+                            <Zap className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                            <span className="font-bold text-amber-500 shrink-0">{qa.name}</span>
+                            <span className={`text-[11px] font-mono truncate ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>
+                              → {qa.template}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0 self-end sm:self-auto">
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditQuickAction(qa)}
+                              className={`p-1 rounded transition-colors ${
+                                theme === 'dark' ? 'hover:bg-slate-700 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-100 text-slate-500 hover:text-slate-800'
+                              }`}
+                              title="Редактировать действие"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteQuickAction(qa.id)}
+                              className="p-1 rounded text-red-400 hover:bg-red-500/20 hover:text-red-300 transition-colors"
+                              title="Удалить действие"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>

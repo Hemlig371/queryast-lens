@@ -119,6 +119,22 @@ export async function clearAllVersions(): Promise<void> {
   });
 }
 
+export async function importVersions(versions: SqlVersionItem[]): Promise<void> {
+  if (!Array.isArray(versions) || versions.length === 0) return;
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    for (const item of versions) {
+      if (item && item.id && item.sql) {
+        store.put(item);
+      }
+    }
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
 export async function getVersionById(id: string): Promise<SqlVersionItem | null> {
   try {
     const db = await openDB();
