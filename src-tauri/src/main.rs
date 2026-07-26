@@ -4,7 +4,7 @@
 )]
 
 use std::sync::Mutex;
-use duckdb::{Config, AccessMode, Connection, Result, types::ValueRef};
+use duckdb::{Connection, Result, types::ValueRef};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use tauri::State;
@@ -52,9 +52,6 @@ fn connect_db(state: State<'_, DbState>, path: String) -> Result<String, String>
 #[tauri::command]
 fn disconnect_db(state: State<'_, DbState>) -> Result<(), String> {
     let mut db_guard = state.0.lock().map_err(|e| e.to_string())?;
-    if let Some(conn) = db_guard.as_ref() {
-        let _ = conn.execute_batch("CHECKPOINT;");
-    }
     *db_guard = None;
     Ok(())
 }
@@ -82,15 +79,19 @@ fn execute_query(state: State<'_, DbState>, sql: String) -> Result<QueryResult, 
                 }
             }
         };
+
         let mut rows_iter = stmt.query([]).map_err(|e| e.to_string())?;
-        let column_names: Vec<String> = stmt.column_names().into_iter().map(|s| s.to_string()).collect();
         let mut rows = Vec::new();
 
         while let Ok(Some(row)) = rows_iter.next() {
-            let mut row_vals = Vec::with_capacity(column_names.len());
-            for i in 0..column_names.len() {
-                let val = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<JsonValue, String> {
-                    let val_ref = row.get_ref(i).map_err(|e| e.to_string())?;
+            let mut row_vals = Vec::new();
+            let mut col_idx = 0;
+            loop {
+                let val_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<JsonValue, String> {
+                    let val_ref = match row.get_ref(col_idx) {
+                        Ok(r) => r,
+                        Err(_) => return Err("NO_MORE_COLS".to_string()),
+                    };
                     let v = match val_ref {
                         ValueRef::Null => JsonValue::Null,
                         ValueRef::Boolean(b) => JsonValue::Bool(b),
@@ -115,24 +116,41 @@ fn execute_query(state: State<'_, DbState>, sql: String) -> Result<QueryResult, 
                         | ValueRef::Time64(_, _)
                         | ValueRef::Timestamp(_, _)
                         | ValueRef::Interval { .. } => {
-                            let s: Result<String, _> = row.get(i);
+                            let s: Result<String, _> = row.get(col_idx);
                             s.map(JsonValue::String).unwrap_or_else(|_| JsonValue::Null)
                         }
                         _ => {
-                            let s: Result<String, _> = row.get(i);
+                            let s: Result<String, _> = row.get(col_idx);
                             s.map(JsonValue::String).unwrap_or_else(|_| JsonValue::Null)
                         }
                     };
                     Ok(v)
-                })) {
-                    Ok(Ok(v)) => v,
-                    Ok(Err(e)) => JsonValue::String(format!("<error: {}>", e)),
-                    Err(_) => JsonValue::String("<Unsupported Type>".to_string()),
-                };
-                row_vals.push(val);
+                }));
+
+                match val_res {
+                    Ok(Ok(v)) => {
+                        row_vals.push(v);
+                        col_idx += 1;
+                    }
+                    Ok(Err(err_msg)) if err_msg == "NO_MORE_COLS" => {
+                        break;
+                    }
+                    Ok(Err(e)) => {
+                        row_vals.push(JsonValue::String(format!("<error: {}>", e)));
+                        col_idx += 1;
+                    }
+                    Err(_) => {
+                        row_vals.push(JsonValue::String("<Unsupported Type>".to_string()));
+                        col_idx += 1;
+                    }
+                }
             }
             rows.push(row_vals);
         }
+
+        drop(rows_iter);
+
+        let column_names: Vec<String> = stmt.column_names().into_iter().map(|s| s.to_string()).collect();
 
         Ok(QueryResult {
             columns: column_names,
