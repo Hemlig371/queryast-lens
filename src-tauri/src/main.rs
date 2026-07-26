@@ -112,12 +112,37 @@ fn execute_query(state: State<'_, DbState>, sql: String) -> Result<QueryResult, 
                             JsonValue::String(s)
                         }
                         ValueRef::Blob(b) => JsonValue::String(format!("<blob {} bytes>", b.len())),
-                        ValueRef::Date32(_)
-                        | ValueRef::Time64(_, _)
-                        | ValueRef::Timestamp(_, _)
-                        | ValueRef::Interval { .. } => {
-                            let s: Result<String, _> = row.get(col_idx);
-                            s.map(JsonValue::String).unwrap_or_else(|_| JsonValue::Null)
+                        ValueRef::Date32(_) => {
+                            if let Ok(d) = row.get::<_, chrono::NaiveDate>(col_idx) {
+                                JsonValue::String(d.to_string())
+                            } else if let Ok(s) = row.get::<_, String>(col_idx) {
+                                JsonValue::String(s)
+                            } else {
+                                JsonValue::Null
+                            }
+                        }
+                        ValueRef::Time64(_, _) => {
+                            if let Ok(t) = row.get::<_, chrono::NaiveTime>(col_idx) {
+                                JsonValue::String(t.to_string())
+                            } else if let Ok(s) = row.get::<_, String>(col_idx) {
+                                JsonValue::String(s)
+                            } else {
+                                JsonValue::Null
+                            }
+                        }
+                        ValueRef::Timestamp(_, _) => {
+                            if let Ok(dt) = row.get::<_, chrono::NaiveDateTime>(col_idx) {
+                                JsonValue::String(dt.to_string())
+                            } else if let Ok(dt) = row.get::<_, chrono::DateTime<chrono::Utc>>(col_idx) {
+                                JsonValue::String(dt.to_string())
+                            } else if let Ok(s) = row.get::<_, String>(col_idx) {
+                                JsonValue::String(s)
+                            } else {
+                                JsonValue::Null
+                            }
+                        }
+                        ValueRef::Interval { months, days, nanos } => {
+                            JsonValue::String(format!("{}m {}d {}ns", months, days, nanos))
                         }
                         _ => {
                             let s: Result<String, _> = row.get(col_idx);
