@@ -1,6 +1,6 @@
-import React, { useRef, useState, useLayoutEffect, useEffect, useCallback } from 'react';
-import { Search, Replace, ChevronUp, ChevronDown, X, CaseSensitive } from 'lucide-react';
-import { getSavedHotkeys } from './SettingsModal';
+import React, { useRef, useState, useLayoutEffect, useEffect, useCallback, useMemo } from 'react';
+import { Search, Replace, ChevronUp, ChevronDown, X, CaseSensitive, Zap, Table } from 'lucide-react';
+import { getSavedHotkeys, getQuickActionTemplates, QuickActionTemplate } from './SettingsModal';
 
 export interface AutocompleteTemplate {
   id: string;
@@ -46,20 +46,21 @@ const SQL_KEYWORDS = [
 ];
 
 // Helper function to provide syntax highlighting for SQL queries (PostgreSQL, Oracle, Clickhouse, DuckDB)
-export const highlightSqlHtml = (sqlText: string, theme: 'dark' | 'light', selectedText?: string) => {
+export const getBaseHighlight = (sqlText: string, theme: 'dark' | 'light') => {
   if (!sqlText) return '';
 
   let html = sqlText
+    .replace(/\r/g, '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 
   const isDark = theme === 'dark';
-  const kwColor = isDark ? 'text-blue-400 font-bold' : 'text-blue-700 font-bold';
-  const fnColor = isDark ? 'text-purple-400 font-semibold' : 'text-purple-700 font-semibold';
-  const strColor = isDark ? 'text-emerald-400 font-medium' : 'text-emerald-700 font-medium';
-  const numColor = isDark ? 'text-amber-400 font-medium' : 'text-amber-600 font-medium';
-  const commentColor = isDark ? 'text-slate-500 italic' : 'text-slate-500 italic';
+  const kwColor = isDark ? 'text-blue-400' : 'text-blue-700';
+  const fnColor = isDark ? 'text-purple-400' : 'text-purple-700';
+  const strColor = isDark ? 'text-emerald-400' : 'text-emerald-700';
+  const numColor = isDark ? 'text-amber-400' : 'text-amber-600';
+  const commentColor = isDark ? 'text-slate-500' : 'text-slate-500';
 
   const tokenRegex = /(--.*$|\/\*[\s\S]*?\*\/)|('(?:''|[^'\\]|\\.)*'|"(?:""|[^"\\]|\\.)*")|(\b\d+(?:\.\d+)?\b)|(\b(?:COUNT|SUM|AVG|MIN|MAX|ROUND|COALESCE|NOW|CONCAT|DATE_TRUNC|LOWER|UPPER|CAST|ROW_NUMBER|DENSE_RANK|RANK|LEAD|LAG|FIRST_VALUE|LAST_VALUE|LISTAGG|TO_CHAR|TO_DATE|NVL|DECODE|UNIQEXACT|UNIQCOMBINED|ARGMAX|ARGMIN|TOSTARTOFHOUR|TOSTARTOFDAY|QUANTILESEXACT|DICTGET|READ_CSV_AUTO|READ_PARQUET|READ_CSV|LIST_TRANSFORM|FILTER|JSON_EXTRACT|ARRAY_JOIN|ARRAYMAP|ARRAYFILTER)\b)|(\b(?:SELECT|FROM|WHERE|JOIN|LEFT|RIGHT|INNER|OUTER|FULL|CROSS|ON|GROUP|BY|ORDER|HAVING|LIMIT|OFFSET|UNION|ALL|INSERT|INTO|UPDATE|SET|DELETE|CREATE|TABLE|AS|WITH|RECURSIVE|AND|OR|NOT|IN|IS|NULL|LIKE|ILIKE|BETWEEN|EXISTS|CASE|WHEN|THEN|ELSE|END|ASC|DESC|OVER|PARTITION|WINDOW|INTERVAL|DISTINCT|VALUES|QUALIFY|PIVOT|UNPIVOT|COLUMNS|EXCLUDE|REPLACE|ATTACH|COPY|MERGE|MATCHED|USING|RETURNING|LATERAL|CONNECT|PRIOR|START|FINAL|UPSERT|CONFLICT|DO|RETURNING)\b)/gim;
 
@@ -82,51 +83,88 @@ export const highlightSqlHtml = (sqlText: string, theme: 'dark' | 'light', selec
     return match;
   });
 
-  if (selectedText && selectedText.trim().length > 0) {
-    const trimmed = selectedText.trim();
-    const escapedSearch = trimmed
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-    const isWord = /^\w+$/.test(trimmed);
-    const pattern = isWord ? `\\b${escapedSearch}\\b` : escapedSearch;
-
-    try {
-      const regex = new RegExp(`(${pattern})`, 'gi');
-      const highlightClass = isDark
-        ? 'bg-amber-400/25 ring-1 ring-amber-400/40 rounded-[2px]'
-        : 'bg-yellow-200/90 ring-1 ring-yellow-400/60 rounded-[2px]';
-
-      const parts = html.split(/(<[^>]+>)/g);
-      html = parts.map(part => {
-        if (part.startsWith('<') && part.endsWith('>')) {
-          return part;
-        }
-        return part.replace(regex, `<span class="${highlightClass}">${'$1'}</span>`);
-      }).join('');
-    } catch (e) {
-      // ignore invalid regex
-    }
-  }
-
   if (sqlText.endsWith('\n')) {
-    html += '<br/>';
+    html += ' ';
   }
 
   return html;
 };
 
+export const applySelectionToHtml = (html: string, theme: 'dark' | 'light', selectedText: string) => {
+  if (!selectedText || selectedText.trim().length === 0) return html;
+  
+  const trimmed = selectedText.trim();
+  const escapedSearch = trimmed
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  const isWord = /^\w+$/.test(trimmed);
+  const pattern = isWord ? `\\b${escapedSearch}\\b` : escapedSearch;
+  const isDark = theme === 'dark';
+
+  try {
+    const regex = new RegExp(`(${pattern})`, 'gi');
+    const highlightClass = isDark
+      ? 'bg-amber-400/25 ring-1 ring-amber-400/40 rounded-[2px]'
+      : 'bg-yellow-200/90 ring-1 ring-yellow-400/60 rounded-[2px]';
+
+    const parts = html.split(/(<[^>]+>)/g);
+    return parts.map(part => {
+      if (part.startsWith('<') && part.endsWith('>')) {
+        return part;
+      }
+      return part.replace(regex, `<span class="${highlightClass}">${'$1'}</span>`);
+    }).join('');
+  } catch (e) {
+    return html;
+  }
+};
+
+export const highlightSqlHtml = (sqlText: string, theme: 'dark' | 'light', selectedText?: string) => {
+  let html = getBaseHighlight(sqlText, theme);
+  if (selectedText) {
+    html = applySelectionToHtml(html, theme, selectedText);
+  }
+  return html;
+};
+
 // Unified SqlEditor component with synced scrolling, line numbers, syntax highlighting & autocomplete
+
+export interface SqlEditorRef {
+  getSelection: () => { start: number; end: number; text: string } | null;
+  replaceSelection: (newText: string) => void;
+}
+
+const editorStyles: React.CSSProperties = {
+  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+  fontSize: '12px',
+  lineHeight: '20px',
+  padding: '12px',
+  margin: 0,
+  border: 'none',
+  boxSizing: 'border-box',
+  tabSize: 4,
+  WebkitTextSizeAdjust: 'none',
+  fontVariantLigatures: 'none',
+  letterSpacing: 'normal',
+  wordSpacing: 'normal',
+};
+
 export function SqlEditor({ 
-  value, 
+  value: propValue, 
   onChange, 
   isWrapSql = false, 
   theme, 
   placeholder = "Enter SQL Query here...",
   minHeightClass = "min-h-0",
-  height
+  height,
+  onCompactSql,
+  onExecuteQuickAction,
+  extractedTableName,
+  isQuickActionsEnabled = true,
+  editorRef
 }: {
   value: string;
   onChange?: (val: string) => void;
@@ -135,12 +173,67 @@ export function SqlEditor({
   placeholder?: string;
   minHeightClass?: string;
   height?: string;
+  onCompactSql?: () => void;
+  onExecuteQuickAction?: (qa: QuickActionTemplate) => void;
+  extractedTableName?: string;
+  isQuickActionsEnabled?: boolean;
+  editorRef?: React.MutableRefObject<SqlEditorRef | null>;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
   const lineNumbersRef = useRef<HTMLDivElement>(null);
   const highlightRef = useRef<HTMLDivElement>(null);
   const mirrorRef = useRef<HTMLDivElement>(null);
+  const [value, setValue] = useState(propValue);
+
+  useEffect(() => {
+    if (propValue !== value) {
+      setValue(propValue);
+    }
+  }, [propValue]); // do not add value as dependency to avoid infinite loops
+
+  const timeoutRef = useRef<any>(null);
+
+  const pushChange = useCallback((newVal: string, immediate = false) => {
+    setValue(newVal);
+    if (!onChange) return;
+    
+    if (immediate) {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      onChange(newVal);
+      return;
+    }
+
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => {
+      onChange(newVal);
+    }, 400);
+  }, [onChange]);
+  useEffect(() => {
+    if (editorRef) {
+      editorRef.current = {
+        getSelection: () => {
+          if (!textareaRef.current) return null;
+          const start = textareaRef.current.selectionStart;
+          const end = textareaRef.current.selectionEnd;
+          if (start === end || start === null || end === null) return null;
+          return { start, end, text: value.slice(start, end) };
+        },
+        replaceSelection: (newText: string) => {
+          if (!textareaRef.current) return;
+          textareaRef.current.focus();
+          document.execCommand('insertText', false, newText);
+        }
+      };
+    }
+  }, [editorRef, value, pushChange]);
+
+
   const [lineHeights, setLineHeights] = useState<number[]>([]);
+
+
+  // Quick actions state
+  const [showQuickActionsPopup, setShowQuickActionsPopup] = useState<boolean>(false);
 
   // Autocomplete states
   const [customTemplates, setCustomTemplates] = useState<AutocompleteTemplate[]>(getCustomAutocompleteTemplates);
@@ -148,6 +241,11 @@ export function SqlEditor({
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
   const [showAutocomplete, setShowAutocomplete] = useState<boolean>(false);
   const [caretPos, setCaretPos] = useState<{ top: number; left: number; isAbove?: boolean }>({ top: 30, left: 30, isAbove: false });
+
+  const lineHeightsRef = useRef<number[]>([]);
+  useEffect(() => {
+    lineHeightsRef.current = lineHeights;
+  }, [lineHeights]);
 
   // Selection highlight state
   const [selectedText, setSelectedText] = useState<string>('');
@@ -188,7 +286,32 @@ export function SqlEditor({
     };
   }, []);
 
-  // Global capture keyboard listener to prevent browser hijack of Ctrl+H / Cmd+H / Ctrl+F / Ctrl+R
+  const handleCompactSqlInternal = () => {
+    if (onCompactSql) {
+      onCompactSql();
+      return;
+    }
+    if (!onChange) return;
+    if (textareaRef.current) {
+      const start = textareaRef.current.selectionStart;
+      const end = textareaRef.current.selectionEnd;
+      if (start !== null && end !== null && start !== end) {
+        const selected = value.slice(start, end);
+        const compacted = selected.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ');
+        textareaRef.current.focus();
+        document.execCommand('insertText', false, compacted);
+        return;
+      }
+    }
+    const compacted = value.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ');
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+      textareaRef.current.select();
+      document.execCommand('insertText', false, compacted);
+    }
+  };
+
+  // Global capture keyboard listener to prevent browser hijack of Ctrl+H / Cmd+H / Ctrl+F / Ctrl+R / Ctrl+Q / Ctrl+Shift+U
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       const activeEl = document.activeElement;
@@ -219,9 +342,13 @@ export function SqlEditor({
       const savedHotkeys = getSavedHotkeys();
       const targetSearchCombo = savedHotkeys.searchSql || 'Ctrl+F';
       const targetReplaceCombo = savedHotkeys.replaceSql || 'Ctrl+H';
+      const targetCompactCombo = savedHotkeys.compactSql || 'Ctrl+Shift+U';
+      const targetQuickActionsCombo = savedHotkeys.quickActionsMenu || 'Ctrl+Q';
 
       const isSearch = combo === targetSearchCombo || (!e.shiftKey && (e.ctrlKey || e.metaKey) && (e.code === 'KeyF' || e.key?.toLowerCase() === 'f' || e.key?.toLowerCase() === 'а'));
       const isReplace = combo === targetReplaceCombo || (!e.shiftKey && (e.ctrlKey || e.metaKey) && (e.code === 'KeyH' || e.code === 'KeyR' || e.key?.toLowerCase() === 'h' || e.key?.toLowerCase() === 'r' || e.key?.toLowerCase() === 'р' || e.key?.toLowerCase() === 'к'));
+      const isCompact = combo === targetCompactCombo || ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.code === 'KeyU' || e.key?.toLowerCase() === 'u' || e.key?.toLowerCase() === 'г'));
+      const isQuickActions = combo === targetQuickActionsCombo || (!e.shiftKey && !e.altKey && (e.ctrlKey || e.metaKey) && (e.code === 'KeyQ' || e.key?.toLowerCase() === 'q' || e.key?.toLowerCase() === 'й'));
 
       if (isSearch) {
         e.preventDefault();
@@ -235,6 +362,71 @@ export function SqlEditor({
         setShowSearch(true);
         setShowReplace(true);
         setTimeout(() => searchInputRef.current?.focus(), 50);
+      } else if (isCompact) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleCompactSqlInternal();
+      } else if (isQuickActions) {
+        if (!isQuickActionsEnabled || !onExecuteQuickAction) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (textareaRef.current) {
+          const textarea = textareaRef.current;
+          const curVal = textarea.value;
+          const cursor = textarea.selectionStart || 0;
+          const textBefore = curVal.slice(0, cursor);
+          const linesBefore = textBefore.split('\n');
+          const lineIdx = linesBefore.length - 1;
+          const colIdx = linesBefore[lineIdx].length;
+
+          const scrollTop = textarea.scrollTop;
+          const scrollLeft = textarea.scrollLeft;
+
+          const currentHeights = lineHeightsRef.current;
+          const prevHeightsSum = currentHeights.slice(0, lineIdx).reduce((acc, h) => acc + (h || 20), 0);
+          const lHeight = currentHeights[lineIdx] || 20;
+
+          const lineTop = 12 + prevHeightsSum - scrollTop;
+          const lineBottom = lineTop + lHeight;
+          let left = 12 + colIdx * 7.5 - scrollLeft;
+
+          const editorHeight = textarea.clientHeight;
+          const editorWidth = textarea.clientWidth;
+
+          const templates = getQuickActionTemplates();
+          const estimatedPopupHeight = Math.min(220, 36 + templates.length * 28);
+
+          const spaceBelow = editorHeight - lineBottom;
+          const spaceAbove = lineTop;
+
+          let top = lineBottom + 4;
+          let isAbove = false;
+
+          if (spaceBelow < estimatedPopupHeight) {
+            if (spaceAbove > estimatedPopupHeight || spaceAbove > spaceBelow) {
+              top = lineTop - 4;
+              isAbove = true;
+              
+              // If it still doesn't fit above, just cap it so it doesn't go off top
+              if (top - estimatedPopupHeight < 8) {
+                // Remove isAbove and just anchor it to top or bottom safely
+                isAbove = false;
+                top = Math.max(8, editorHeight - estimatedPopupHeight - 8);
+              }
+            } else {
+              // Not enough space above or below, just cap bottom
+              top = Math.max(8, editorHeight - estimatedPopupHeight - 8);
+            }
+          }
+
+          if (left + 240 > editorWidth) {
+            left = Math.max(10, editorWidth - 240);
+          }
+          if (left < 10) left = 10;
+
+          setCaretPos({ top, left, isAbove });
+        }
+        setShowQuickActionsPopup(prev => !prev);
       }
     };
 
@@ -297,8 +489,11 @@ export function SqlEditor({
   const handleReplaceCurrent = () => {
     if (currentMatchIndex < 0 || matches.length === 0 || !onChange) return;
     const matchPos = matches[currentMatchIndex];
-    const newValue = value.slice(0, matchPos) + replaceQuery + value.slice(matchPos + searchQuery.length);
-    onChange(newValue);
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+      textareaRef.current.setSelectionRange(matchPos, matchPos + searchQuery.length);
+      document.execCommand('insertText', false, replaceQuery);
+    }
   };
 
   const handleReplaceAll = () => {
@@ -307,7 +502,11 @@ export function SqlEditor({
     const escaped = searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const reg = new RegExp(escaped, flags);
     const newValue = value.replace(reg, replaceQuery);
-    onChange(newValue);
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+      textareaRef.current.select();
+      document.execCommand('insertText', false, newValue);
+    }
   };
 
   const handleScroll = () => {
@@ -440,14 +639,26 @@ export function SqlEditor({
         let top = lineBottom + 4;
         let isAbove = false;
 
-        if (spaceBelow < estimatedPopupHeight && spaceAbove > spaceBelow) {
-          top = Math.max(8, lineTop - 4);
-          isAbove = true;
+        if (spaceBelow < estimatedPopupHeight) {
+          if (spaceAbove > estimatedPopupHeight || spaceAbove > spaceBelow) {
+            top = lineTop - 4;
+            isAbove = true;
+            
+            // If it still doesn't fit above, just cap it so it doesn't go off top
+            if (top - estimatedPopupHeight < 8) {
+              isAbove = false;
+              top = Math.max(8, editorHeight - estimatedPopupHeight - 8);
+            }
+          } else {
+            // Not enough space above or below, just cap bottom
+            top = Math.max(8, editorHeight - estimatedPopupHeight - 8);
+          }
         }
 
-        if (left + 220 > editorWidth) {
-          left = Math.max(10, editorWidth - 230);
+        if (left + 240 > editorWidth) {
+          left = Math.max(10, editorWidth - 240);
         }
+        if (left < 10) left = 10;
 
         setCaretPos({ top, left, isAbove });
         setShowAutocomplete(true);
@@ -475,22 +686,41 @@ export function SqlEditor({
         insertion = keyword.slice(0, -1);
       }
 
-      const newValue = value.slice(0, wordStart) + insertion + textAfter;
-      
-      onChange(newValue);
+      textareaRef.current.focus();
+      textareaRef.current.setSelectionRange(wordStart, cursor);
+      document.execCommand('insertText', false, insertion);
       setShowAutocomplete(false);
-
-      setTimeout(() => {
-        if (textareaRef.current) {
-          const newPos = wordStart + insertion.length;
-          textareaRef.current.focus();
-          textareaRef.current.setSelectionRange(newPos, newPos);
-        }
-      }, 10);
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (showQuickActionsPopup) {
+      if (e.key >= '1' && e.key <= '9') {
+        const idx = parseInt(e.key, 10) - 1;
+        const actions = getQuickActionTemplates();
+        if (actions[idx] && onExecuteQuickAction) {
+          e.preventDefault();
+          e.stopPropagation();
+          setShowQuickActionsPopup(false);
+          onExecuteQuickAction(actions[idx]);
+          return;
+        }
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        setShowQuickActionsPopup(false);
+        return;
+      }
+    }
+
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        if (onChange) onChange(value);
+      }
+    }
+
     // Hotkeys Ctrl+F / Cmd+F and Ctrl+H / Cmd+H for Search & Replace
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key?.toLowerCase() === 'f') {
       e.preventDefault();
@@ -518,7 +748,7 @@ export function SqlEditor({
         setSelectedIndex((prev) => (prev - 1 + suggestions.length) % suggestions.length);
         return;
       }
-      if (e.key === 'Enter') {
+      if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
         applySuggestion(suggestions[selectedIndex]);
         return;
@@ -549,15 +779,7 @@ export function SqlEditor({
 
       if (start === end) {
         if (!isShift) {
-          const newValue = value.slice(0, start) + tabStr + value.slice(end);
-          onChange(newValue);
-          const newCursor = start + tabStr.length;
-          setTimeout(() => {
-            if (textareaRef.current) {
-              textareaRef.current.focus();
-              textareaRef.current.setSelectionRange(newCursor, newCursor);
-            }
-          }, 0);
+          document.execCommand('insertText', false, tabStr);
         } else {
           const lineStart = value.lastIndexOf('\n', start - 1) + 1;
           const lineText = value.slice(lineStart);
@@ -569,15 +791,10 @@ export function SqlEditor({
           }
 
           if (removeCount > 0) {
-            const newValue = value.slice(0, lineStart) + value.slice(lineStart + removeCount);
-            onChange(newValue);
+            textarea.setSelectionRange(lineStart, lineStart + removeCount);
+            document.execCommand('insertText', false, '');
             const newCursor = Math.max(lineStart, start - removeCount);
-            setTimeout(() => {
-              if (textareaRef.current) {
-                textareaRef.current.focus();
-                textareaRef.current.setSelectionRange(newCursor, newCursor);
-              }
-            }, 0);
+            textarea.setSelectionRange(newCursor, newCursor);
           }
         }
       } else {
@@ -609,7 +826,7 @@ export function SqlEditor({
 
         const newBlock = newLines.join('\n');
         const newValue = value.slice(0, lineStart) + newBlock + value.slice(lineEnd);
-        onChange(newValue);
+        pushChange(newValue, true);
 
         const newStart = Math.max(lineStart, start + startOffsetDelta);
         const newEnd = Math.max(newStart, end + totalLengthDelta);
@@ -625,16 +842,23 @@ export function SqlEditor({
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const val = e.target.value;
-    if (onChange) {
-      onChange(val);
-    }
+    const val = e.target.value.replace(/\r/g, '');
+    pushChange(val, false);
     handleSelectionChange();
   };
 
   useEffect(() => {
     updateAutocomplete();
   }, [value]);
+
+
+  const baseHighlightedHtml = useMemo(() => {
+    return getBaseHighlight(value, theme);
+  }, [value, theme]);
+
+  const finalHtml = useMemo(() => {
+    return applySelectionToHtml(baseHighlightedHtml, theme, selectedText);
+  }, [baseHighlightedHtml, theme, selectedText]);
 
   return (
     <div 
@@ -782,7 +1006,7 @@ export function SqlEditor({
         <div
           ref={mirrorRef}
           aria-hidden="true"
-          className={`absolute opacity-0 pointer-events-none -z-50 font-mono text-xs leading-relaxed p-3 ${
+          className={`absolute opacity-0 pointer-events-none -z-50 font-mono text-xs leading-5 p-3 ${
             isWrapSql ? 'whitespace-pre-wrap [word-break:break-word]' : 'whitespace-pre'
           }`}
           style={{ top: 0, left: 0, visibility: 'hidden' }}
@@ -803,7 +1027,7 @@ export function SqlEditor({
             <div 
               key={i} 
               style={{ height: lineHeights[i] ? `${lineHeights[i]}px` : undefined }}
-              className="text-xs font-mono leading-relaxed flex items-start justify-end w-full"
+              className="text-xs font-mono leading-5 flex items-start justify-end w-full"
             >
               {i + 1}
             </div>
@@ -815,10 +1039,11 @@ export function SqlEditor({
           <div
             ref={highlightRef}
             aria-hidden="true"
-            className={`absolute inset-0 p-3 font-mono text-xs leading-relaxed pointer-events-none overflow-hidden select-none z-0 ${
-              isWrapSql ? 'whitespace-pre-wrap [word-break:break-word]' : 'whitespace-pre'
-            } ${theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}`}
-            dangerouslySetInnerHTML={{ __html: highlightSqlHtml(value, theme, selectedText) }}
+            className={`absolute inset-0 pointer-events-none overflow-auto select-none z-0 ${
+              isWrapSql ? 'whitespace-pre-wrap break-words' : 'whitespace-pre'
+            }`}
+            style={{ ...editorStyles, color: theme === 'dark' ? '#cbd5e1' : '#1e293b' }}
+            dangerouslySetInnerHTML={{ __html: finalHtml }}
           />
 
           <textarea
@@ -826,6 +1051,12 @@ export function SqlEditor({
             value={value}
             onScroll={handleScroll}
             onChange={handleChange}
+            onBlur={() => {
+              if (timeoutRef.current) {
+                clearTimeout(timeoutRef.current);
+                if (onChange) onChange(value);
+              }
+            }}
             onKeyDown={handleKeyDown}
             onSelect={handleSelectionChange}
             onKeyUp={handleSelectionChange}
@@ -836,9 +1067,10 @@ export function SqlEditor({
             }}
             readOnly={!onChange}
             spellCheck="false"
-            className={`absolute inset-0 w-full h-full p-3 bg-transparent text-transparent caret-blue-600 dark:caret-blue-400 resize-none outline-none text-xs font-mono leading-relaxed overflow-y-auto selection:bg-blue-500/30 z-10 transition-colors ${
-              isWrapSql ? 'whitespace-pre-wrap [word-break:break-word]' : 'whitespace-pre'
+            className={`absolute inset-0 w-full h-full bg-transparent text-transparent caret-blue-600 dark:caret-blue-400 resize-none outline-none overflow-auto selection:bg-blue-500/30 z-10 transition-colors ${
+              isWrapSql ? 'whitespace-pre-wrap break-words' : 'whitespace-pre'
             }`}
+            style={editorStyles}
             placeholder={placeholder}
           />
 
@@ -853,7 +1085,7 @@ export function SqlEditor({
                 theme === 'dark' ? 'bg-slate-800 border-slate-600 text-slate-200' : 'bg-white border-slate-300 text-slate-800 shadow-slate-400/30'
               }`}
             >
-              <div className="space-y-0.5 max-h-40 overflow-y-auto">
+              <div className="max-h-40 overflow-y-auto">
                 {suggestions.map((kw, idx) => {
                   const customMatch = customTemplates.find(t => t.keyword === kw);
                   return (
@@ -884,6 +1116,50 @@ export function SqlEditor({
                 })}
               </div>
             </div>
+          )}
+          {/* QUICK ACTIONS POPUP DROPDOWN (Ctrl+Q) */}
+          {showQuickActionsPopup && isQuickActionsEnabled && (
+            <>
+              <div 
+                className="fixed inset-0 z-30" 
+                onClick={() => setShowQuickActionsPopup(false)} 
+              />
+              <div 
+                style={{ top: `${caretPos.top}px`, left: `${caretPos.left}px` }}
+                onMouseDown={(e) => e.preventDefault()}
+                className={`absolute z-40 rounded-lg border shadow-xl p-1.5 w-56 animate-in fade-in duration-150 ${
+                  caretPos.isAbove ? '-translate-y-full' : ''
+                } ${
+                  theme === 'dark' ? 'bg-slate-800 border-slate-600 text-slate-200' : 'bg-white border-slate-300 text-slate-800 shadow-slate-400/30'
+                }`}
+              >
+                <div className={`px-2 py-1 rounded text-xs flex items-center gap-2 border-b mb-0.5 font-mono min-w-0 ${
+                  theme === 'dark' ? 'border-slate-700/60 text-slate-400' : 'border-slate-200 text-slate-500'
+                }`} title={extractedTableName || 'table'}>
+                  <Table className="w-3.5 h-3.5 text-teal-500 shrink-0" />
+                  <span className="truncate">{extractedTableName || 'table'}</span>
+                </div>
+
+                <div className="max-h-60 overflow-y-auto pr-0.5">
+                  {getQuickActionTemplates().map((action, idx) => (
+                    <button
+                      key={action.id || idx}
+                      type="button"
+                      onClick={() => {
+                        setShowQuickActionsPopup(false);
+                        if (onExecuteQuickAction) onExecuteQuickAction(action);
+                      }}
+                      title={action.name}
+                      className={`w-full text-left px-2 py-1 rounded text-xs flex items-center gap-2 transition-colors min-w-0 ${
+                        theme === 'dark' ? 'hover:bg-slate-700 text-slate-200' : 'hover:bg-slate-100 text-slate-800'
+                      }`}
+                    >
+                      <span className="truncate">{action.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
           )}
         </div>
       </div>

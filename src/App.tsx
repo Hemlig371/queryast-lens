@@ -57,25 +57,50 @@ import {
   ChevronsDownUp,
   Square,
   Table,
-  Zap
+  Zap,
+  Shrink,
+  ArrowLeftRight
 } from 'lucide-react';
 
 import { parseSqlToAst, astToGraph, getLayoutedElements } from './utils/astToGraph';
 import { nodeTypes } from './components/CustomNodes';
 import { sqlPresets, SQLPreset } from './components/SQLPresets';
 import { SqlSnippetsManager } from './components/SqlSnippetsManager';
-import { SqlEditor, highlightSqlHtml } from './components/SqlEditor';
+import { SqlEditor, SqlEditorRef, highlightSqlHtml } from './components/SqlEditor';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { SettingsModal, getSavedHotkeys, getSavedFormatterSettings, FormatterSettings, getSavedUiVisibilitySettings, UiVisibilitySettings, QuickActionTemplate, getQuickActionTemplates } from './components/SettingsModal';
 import { VersionHistoryModal } from './components/VersionHistoryModal';
 import { saveVersion, getVersions } from './utils/versionHistory';
 import { format as formatSql } from 'sql-formatter';
 import { connectDuckDbWasmFile, queryDuckDbWasm, disconnectDuckDbWasm, exportDuckDbFile } from './lib/duckdbWasm';
+import { ClickhouseModal } from './components/ClickhouseModal';
+import { ClickhouseConfig, parseClickhouseCopy, getClickhouseUrl, getClickhouseHeaders } from './lib/clickhouse';
 
 export interface EditorTab {
   id: string;
   title: string;
   sql: string;
+}
+
+function getTableSizeBadge(columns: any[]): string | null {
+  const firstCol = columns?.[0];
+  if (firstCol?.table_bytes !== undefined && firstCol?.table_bytes !== null) {
+    const b = Number(firstCol.table_bytes);
+    if (!isNaN(b) && b > 0) {
+      if (b < 1024) return `${b} B`;
+      if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+      if (b < 1024 * 1024 * 1024) return `${(b / (1024 * 1024)).toFixed(1)} MB`;
+      return `${(b / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+    }
+  } else if (firstCol?.estimated_rows !== undefined && firstCol?.estimated_rows !== null) {
+    const r = Number(firstCol.estimated_rows);
+    if (!isNaN(r) && r >= 0) {
+      if (r < 1000) return `~${r} стр.`;
+      if (r < 1000000) return `~${(r / 1000).toFixed(1)}k стр.`;
+      return `~${(r / 1000000).toFixed(1)}M стр.`;
+    }
+  }
+  return null;
 }
 
 const SESSION_STORAGE_KEY = 'sql_visualizer_session_v2';
@@ -93,6 +118,8 @@ interface SavedSession {
   schemaSearchTerm?: string;
   expandedSchemaNodes?: Record<string, boolean>;
   showDuckDbSchemaPanel?: boolean;
+  clickhouseConfig?: ClickhouseConfig | null;
+  activeEngine?: 'duckdb' | 'clickhouse' | null;
 }
 
 const getSavedSession = (): SavedSession | null => {
@@ -129,10 +156,16 @@ export default function App() {
   const [isDuckDbResultVisible, setIsDuckDbResultVisible] = useState<boolean>(false);
   const [isDuckDbResultExpanded, setIsDuckDbResultExpanded] = useState<boolean>(false);
   const [duckDbSelectedCell, setDuckDbSelectedCell] = useState<{ title: string; content: string } | null>(null);
+  const [isTransposed, setIsTransposed] = useState<boolean>(false);
   const [duckDbSchema, setDuckDbSchema] = useState<any[] | null>(null);
   const [schemaSearchTerm, setSchemaSearchTerm] = useState<string>(() => savedSession?.schemaSearchTerm || '');
   const [showDuckDbSchemaPanel, setShowDuckDbSchemaPanel] = useState<boolean>(() => savedSession?.showDuckDbSchemaPanel ?? true);
   const [expandedSchemaNodes, setExpandedSchemaNodes] = useState<Record<string, boolean>>(() => savedSession?.expandedSchemaNodes || {});
+
+  // Clickhouse Integration State
+  const [clickhouseConfig, setClickhouseConfig] = useState<ClickhouseConfig | null>(() => savedSession?.clickhouseConfig || null);
+  const [showClickhouseModal, setShowClickhouseModal] = useState<boolean>(false);
+  const [activeEngine, setActiveEngine] = useState<'duckdb' | 'clickhouse'>(() => savedSession?.activeEngine || 'duckdb');
 
   // Quick Actions & Pagination State
   const [lastExecutedSql, setLastExecutedSql] = useState<string>('');
@@ -258,19 +291,15 @@ export default function App() {
   });
   const [editingTabId, setEditingTabId] = useState<string | null>(null);
 
-  const [sql, setSql] = useState<string>(() => {
-    if (savedSession?.sql) {
-      return savedSession.sql;
-    }
-    const initialTab = (savedSession?.tabs || []).find(t => t.id === (savedSession?.activeTabId || '1'));
-    return initialTab ? initialTab.sql : sqlPresets[0].sql;
-  });
 
+
+  const sqlRef = useRef<string>('');
+  const getActiveTabSql = () => tabs.find(t => t.id === activeTabId)?.sql || '';
   // Keep latest session state in ref to avoid constant disk writes while editing
   const latestSessionRef = useRef({
     tabs,
     activeTabId,
-    sql,
+    sql: sqlRef.current,
     dialect,
     direction,
     theme,
@@ -279,14 +308,16 @@ export default function App() {
     duckDbConnectedPath,
     schemaSearchTerm,
     expandedSchemaNodes,
-    showDuckDbSchemaPanel
+    showDuckDbSchemaPanel,
+    clickhouseConfig,
+    activeEngine
   });
 
   useEffect(() => {
     latestSessionRef.current = {
-      tabs: tabs.map(t => t.id === activeTabId ? { ...t, sql } : t),
+      tabs: tabs.map(t => t.id === activeTabId ? { ...t, sql: sqlRef.current } : t),
       activeTabId,
-      sql,
+      sql: sqlRef.current,
       dialect,
       direction,
       theme,
@@ -295,12 +326,14 @@ export default function App() {
       duckDbConnectedPath,
       schemaSearchTerm,
       expandedSchemaNodes,
-      showDuckDbSchemaPanel
+      showDuckDbSchemaPanel,
+      clickhouseConfig,
+      activeEngine
     };
   }, [
     tabs,
     activeTabId,
-    sql,
+    // sql not in deps
     dialect,
     direction,
     theme,
@@ -309,7 +342,9 @@ export default function App() {
     duckDbConnectedPath,
     schemaSearchTerm,
     expandedSchemaNodes,
-    showDuckDbSchemaPanel
+    showDuckDbSchemaPanel,
+    clickhouseConfig,
+    activeEngine
   ]);
 
   // Auto-reconnect to DuckDB database on application startup if path was saved in session
@@ -378,7 +413,18 @@ export default function App() {
       return;
     }
     try {
-      localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(latestSessionRef.current));
+      const sessionData = { 
+        ...latestSessionRef.current,
+        sql: sqlRef.current,
+        tabs: latestSessionRef.current.tabs.map(t => t.id === latestSessionRef.current.activeTabId ? { ...t, sql: sqlRef.current } : t)
+      };
+      
+      // Не сохранять пароль Clickhouse в локальное хранилище в целях безопасности
+      if (sessionData.clickhouseConfig) {
+        sessionData.clickhouseConfig = { ...sessionData.clickhouseConfig, key: '' };
+      }
+      
+      localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(sessionData));
     } catch (e) {
       console.error('Failed to save session to localStorage', e);
     }
@@ -425,10 +471,6 @@ export default function App() {
     };
   }, [saveSessionToStorage]);
 
-  // Sync current active tab's SQL whenever sql state changes
-  useEffect(() => {
-    setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql } : t));
-  }, [sql, activeTabId]);
 
   const handleConfigureDuckDb = async () => {
     setShowDuckDbConnMenu(false);
@@ -531,9 +573,10 @@ export default function App() {
         if (!contentType.includes("application/json")) {
           const text = await res.text();
           if (text.trim().startsWith("<")) {
-            throw new Error("Received HTML response instead of JSON");
+            const cleanText = text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+            throw new Error(`Server returned HTML (${res.status} ${res.statusText}): ${cleanText.slice(0, 300) || text.slice(0, 300)}`);
           }
-          throw new Error(`Server error (${res.status}): ${text.slice(0, 100)}`);
+          throw new Error(`Server error (${res.status}): ${text.slice(0, 200)}`);
         }
         const data = await res.json();
         if (!res.ok) {
@@ -634,7 +677,48 @@ export default function App() {
   };
 
   const fetchDuckDbSchema = async () => {
-    const schemaQuery = "SELECT c.database_name, c.schema_name, c.table_name, c.column_name, c.data_type, CASE WHEN v.view_name IS NOT NULL THEN 'Views' ELSE 'Tables' END as table_type FROM duckdb_columns() c LEFT JOIN duckdb_views() v ON c.table_name = v.view_name AND c.schema_name = v.schema_name AND c.database_name = v.database_name ORDER BY c.database_name, c.schema_name, table_type, c.table_name, c.column_index";
+    if (activeEngine === 'clickhouse' || (!duckDbConnectedPath && clickhouseConfig)) {
+      if (!clickhouseConfig) return;
+      const schemaQuery = "SELECT c.database AS database_name, c.database AS schema_name, c.table AS table_name, c.name AS column_name, c.type AS data_type, CASE WHEN t.engine LIKE '%View%' THEN 'Views' ELSE 'Tables' END AS table_type, t.total_bytes AS table_bytes FROM system.columns AS c LEFT JOIN system.tables AS t ON c.database = t.database AND c.table = t.name WHERE c.database NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA') ORDER BY c.database, table_type, c.table, c.position FORMAT JSON";
+      try {
+        let data: any = null;
+        try {
+          data = await fetchApiJson('/api/clickhouse/query', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              ...clickhouseConfig,
+              query: schemaQuery,
+            }),
+          });
+        } catch {
+          const url = getClickhouseUrl(clickhouseConfig);
+          const headers = getClickhouseHeaders(clickhouseConfig);
+          const chRes = await fetch(url, {
+            method: 'POST',
+            headers,
+            body: schemaQuery,
+          });
+          const text = await chRes.text();
+          if (chRes.ok) {
+            try {
+              const parsed = JSON.parse(text);
+              data = { success: true, data: parsed.data || parsed };
+            } catch {
+              // ignore
+            }
+          }
+        }
+        if (data && data.data && Array.isArray(data.data)) {
+          setDuckDbSchema(data.data);
+        }
+      } catch (e: any) {
+        console.warn("Failed to fetch ClickHouse schema:", e?.message || e);
+      }
+      return;
+    }
+
+    const schemaQuery = "SELECT c.database_name, c.schema_name, c.table_name, c.column_name, c.data_type, CASE WHEN v.view_name IS NOT NULL THEN 'Views' ELSE 'Tables' END as table_type, t.estimated_size as estimated_rows FROM duckdb_columns() c LEFT JOIN duckdb_views() v ON c.table_name = v.view_name AND c.schema_name = v.schema_name AND c.database_name = v.database_name LEFT JOIN duckdb_tables() t ON c.table_name = t.table_name AND c.schema_name = t.schema_name AND c.database_name = t.database_name ORDER BY c.database_name, c.schema_name, table_type, c.table_name, c.column_index";
     try {
       if (isTauriEnv && !isWasmMode) {
         try {
@@ -674,12 +758,12 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (duckDbConnectedPath && showDuckDbSchemaPanel) {
+    if ((duckDbConnectedPath || clickhouseConfig) && showDuckDbSchemaPanel) {
       fetchDuckDbSchema();
-    } else if (!duckDbConnectedPath) {
+    } else if (!duckDbConnectedPath && !clickhouseConfig) {
       setDuckDbSchema(null);
     }
-  }, [duckDbConnectedPath, showDuckDbSchemaPanel, isWasmMode]);
+  }, [duckDbConnectedPath, clickhouseConfig, activeEngine, showDuckDbSchemaPanel, isWasmMode]);
 
   const handleDisconnectDuckDb = async () => {
     setIsDuckDbRunning(true);
@@ -713,13 +797,19 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (!uiVisibility.showDuckDbConfig) {
-      if (duckDbConnectedPath) {
-        handleDisconnectDuckDb();
+    if (!uiVisibility.showDuckDbConfig && duckDbConnectedPath) {
+      handleDisconnectDuckDb();
+    }
+    if (!uiVisibility.showClickhouseConfig && clickhouseConfig) {
+      setClickhouseConfig(null);
+      if (activeEngine === 'clickhouse') {
+        setActiveEngine('duckdb');
       }
+    }
+    if (!uiVisibility.showDuckDbConfig && !uiVisibility.showClickhouseConfig) {
       setShowDuckDbSchemaPanel(false);
     }
-  }, [uiVisibility.showDuckDbConfig]);
+  }, [uiVisibility.showDuckDbConfig, uiVisibility.showClickhouseConfig, duckDbConnectedPath, clickhouseConfig, activeEngine]);
 
   const duckDbAbortControllerRef = useRef<AbortController | null>(null);
 
@@ -739,21 +829,21 @@ export default function App() {
       return;
     }
 
-    if (!duckDbConnectedPath) {
-      alert("Сначала настройте подключение к БД");
+    if (!duckDbConnectedPath && !clickhouseConfig) {
       return;
     }
 
     handleExecuteDuckDbQuery();
   };
 
-  const executeDuckDbQueryWithPagination = async (queryToExec: string, page: number = 1, pageSizeToUse?: number) => {
+  const executeDuckDbQueryWithPagination = async (queryToExec: string, page: number = 1, pageSizeToUse?: number, isQuickAction?: boolean) => {
     if (!duckDbConnectedPath) {
-      alert("Сначала настройте подключение к БД");
       return;
     }
 
-    setLastExecutedSql(queryToExec);
+    if (!isQuickAction) {
+      setLastExecutedSql(queryToExec);
+    }
     setDuckDbPage(page);
 
     const controller = new AbortController();
@@ -841,8 +931,169 @@ export default function App() {
     }
   };
 
+  const executeClickhouseQueryWithPagination = async (queryToExec: string, page: number = 1, pageSizeToUse?: number, isQuickAction?: boolean) => {
+    if (!clickhouseConfig) {
+      return;
+    }
+
+    if (!isQuickAction) {
+      setLastExecutedSql(queryToExec);
+    }
+    setDuckDbPage(page);
+
+    const controller = new AbortController();
+    duckDbAbortControllerRef.current = controller;
+
+    try {
+      setIsDuckDbRunning(true);
+      setIsDuckDbResultVisible(true);
+      setDuckDbError(null);
+      setDuckDbResults(null);
+      setDuckDbSelectedCell(null);
+
+      const cleanSqlHead = queryToExec
+        .replace(/^(\s*(--[^\n]*\n|\/\*[\s\S]*?\*\/))*/g, '')
+        .trim();
+
+      // Check for COPY (...) TO / FROM
+      const copyCmd = parseClickhouseCopy(cleanSqlHead);
+      if (copyCmd) {
+        if (copyCmd.type === 'COPY_TO') {
+          const data = await fetchApiJson('/api/clickhouse/copy-to', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              ...clickhouseConfig,
+              innerSql: copyCmd.innerSql,
+              filePath: copyCmd.filePath,
+            }),
+            signal: controller.signal,
+          });
+
+          if (data.error) {
+            setDuckDbError(data.error);
+          } else {
+            setDuckDbResults([
+              {
+                Status: 'Success (COPY TO)',
+                File: copyCmd.filePath,
+                Message: data.message || `File saved (${data.bytes || 0} bytes)`,
+              },
+            ]);
+          }
+        } else if (copyCmd.type === 'COPY_FROM') {
+          const data = await fetchApiJson('/api/clickhouse/copy-from', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              ...clickhouseConfig,
+              innerSql: copyCmd.innerSql,
+              filePath: copyCmd.filePath,
+            }),
+            signal: controller.signal,
+          });
+
+          if (data.error) {
+            setDuckDbError(data.error);
+          } else {
+            setDuckDbResults([
+              {
+                Status: 'Success (COPY FROM)',
+                File: copyCmd.filePath,
+                Message: data.message || 'Data successfully loaded into Clickhouse',
+                Response: data.response || 'OK',
+              },
+            ]);
+          }
+        }
+        return;
+      }
+
+      // SELECT / WITH query pagination limit wrapper
+      const maxRows = pageSizeToUse ?? uiVisibility.clickhouseMaxRows ?? uiVisibility.duckDbMaxRows ?? 100;
+      let queryWithLimit = queryToExec.trim();
+
+      if (maxRows > 0 && /^(SELECT|WITH)\b/i.test(cleanSqlHead)) {
+        const stripped = queryWithLimit.replace(/;+$/, '');
+        if (page > 1) {
+          const offset = (page - 1) * maxRows;
+          queryWithLimit = `SELECT * FROM (${stripped}) AS _limited_subquery LIMIT ${maxRows} OFFSET ${offset}`;
+        } else {
+          if (!/\bLIMIT\s+\d+/i.test(cleanSqlHead)) {
+            queryWithLimit = `SELECT * FROM (${stripped}) AS _limited_subquery LIMIT ${maxRows}`;
+          }
+        }
+      }
+
+      if (!/\bFORMAT\b/i.test(queryWithLimit)) {
+        queryWithLimit += ' FORMAT JSON';
+      }
+
+      let data: any = null;
+      try {
+        data = await fetchApiJson('/api/clickhouse/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...clickhouseConfig,
+            query: queryWithLimit,
+          }),
+          signal: controller.signal,
+        });
+      } catch {
+        const url = getClickhouseUrl(clickhouseConfig);
+        const headers = getClickhouseHeaders(clickhouseConfig);
+        const chRes = await fetch(url, {
+          method: 'POST',
+          headers,
+          body: queryWithLimit,
+          signal: controller.signal,
+        });
+        const text = await chRes.text();
+        if (!chRes.ok) {
+          throw new Error(text || `HTTP ${chRes.status}`);
+        }
+        try {
+          const parsed = JSON.parse(text);
+          data = { success: true, data: parsed.data || parsed };
+        } catch {
+          data = { success: true, text };
+        }
+      }
+
+      if (data && data.error) {
+        setDuckDbError(data.error);
+      } else if (data) {
+        if (Array.isArray(data.data)) {
+          setDuckDbResults(data.data.slice(0, maxRows));
+        } else if (typeof data.text === 'string') {
+          setDuckDbResults([{ Response: data.text || 'OK' }]);
+        } else {
+          setDuckDbResults([data.data || { Status: 'OK' }]);
+        }
+      }
+    } catch (err: any) {
+      if (err.name === 'AbortError' || controller.signal?.aborted) {
+        setDuckDbError('Запрос отменен пользователем');
+      } else {
+        setDuckDbError(err.message || 'Ошибка выполнения ClickHouse запроса');
+      }
+    } finally {
+      setIsDuckDbRunning(false);
+      duckDbAbortControllerRef.current = null;
+    }
+  };
+
+  const handleExecuteCurrentEngineQuery = (queryToExec: string, page: number = 1, pageSizeToUse?: number, isQuickAction?: boolean) => {
+    if (activeEngine === 'clickhouse' || (!duckDbConnectedPath && clickhouseConfig)) {
+      executeClickhouseQueryWithPagination(queryToExec, page, pageSizeToUse, isQuickAction);
+    } else {
+      executeDuckDbQueryWithPagination(queryToExec, page, pageSizeToUse, isQuickAction);
+    }
+  };
+
   const handleExecuteDuckDbQuery = async () => {
-    let queryToExecute = sql;
+    let queryToExecute = sqlRef.current;
     const textareas = document.querySelectorAll('textarea');
     for (const textarea of Array.from(textareas)) {
       if (textarea.offsetWidth > 0 && textarea.offsetHeight > 0 && textarea.selectionStart !== textarea.selectionEnd) {
@@ -852,18 +1103,18 @@ export default function App() {
     }
 
     if (!queryToExecute.trim()) return;
-    executeDuckDbQueryWithPagination(queryToExecute, 1);
+    handleExecuteCurrentEngineQuery(queryToExecute, 1);
   };
 
-  const executeSpecificDuckDbQuery = async (queryToExec: string) => {
+  const executeSpecificDuckDbQuery = async (queryToExec: string, isQuickAction?: boolean) => {
     if (!queryToExec.trim()) return;
-    executeDuckDbQueryWithPagination(queryToExec, 1);
+    handleExecuteCurrentEngineQuery(queryToExec, 1, undefined, isQuickAction);
   };
 
   const handleExecuteQuickAction = (qa: QuickActionTemplate) => {
     setShowQuickActionsMenu(false);
     const targetQuery = qa.template.replace(/\{table\}/g, extractedTableName);
-    executeSpecificDuckDbQuery(targetQuery);
+    executeSpecificDuckDbQuery(targetQuery, true);
   };
 
   const handleSelectTab = (targetId: string) => {
@@ -871,7 +1122,7 @@ export default function App() {
     const targetTab = tabs.find(t => t.id === targetId);
     if (!targetTab) return;
     setActiveTabId(targetId);
-    setSql(targetTab.sql);
+    sqlRef.current = targetTab.sql; setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: targetTab.sql } : t));
   };
 
   const handleAddTab = () => {
@@ -885,7 +1136,7 @@ export default function App() {
     };
     setTabs(prev => [...prev, newTab]);
     setActiveTabId(newId);
-    setSql(newTab.sql);
+    sqlRef.current = newTab.sql; setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: newTab.sql } : t));
   };
 
   const handleCloseTab = (e: React.MouseEvent, idToClose: string) => {
@@ -897,7 +1148,7 @@ export default function App() {
       const closedIndex = tabs.findIndex(t => t.id === idToClose);
       const nextActive = nextTabs[Math.max(0, closedIndex - 1)];
       setActiveTabId(nextActive.id);
-      setSql(nextActive.sql);
+      sqlRef.current = nextActive.sql; setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: nextActive.sql } : t));
     }
     setTabs(nextTabs);
   };
@@ -905,11 +1156,11 @@ export default function App() {
   const handleRenameTab = (id: string, newTitle: string) => {
     setTabs(prev => prev.map(t => t.id === id ? { ...t, title: newTitle } : t));
   };
-
-  const sqlRef = useRef(sql);
-  useEffect(() => {
-    sqlRef.current = sql;
-  }, [sql]);
+  const sqlEditorRef = useRef<SqlEditorRef>(null);
+  
+  const handleSqlChange = useCallback((newSql: string) => {
+    sqlRef.current = newSql;
+  }, []);
 
   // Auto-save version into IndexedDB every 5 minutes if current tab SQL differs from the existing latest snapshot
   useEffect(() => {
@@ -952,11 +1203,11 @@ export default function App() {
             sql: content
           };
           setTabs(prev => {
-            const updated = prev.map(t => t.id === activeTabId ? { ...t, sql } : t);
+            const updated = prev.map(t => t.id === activeTabId ? { ...t, sql: sqlRef.current } : t);
             return [...updated, newTab];
           });
           setActiveTabId(newId);
-          setSql(content);
+          sqlRef.current = content; setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: content } : t));
         }
       };
       reader.readAsText(file);
@@ -983,11 +1234,11 @@ export default function App() {
             sql: content
           };
           setTabs(prev => {
-            const updated = prev.map(t => t.id === activeTabId ? { ...t, sql } : t);
+            const updated = prev.map(t => t.id === activeTabId ? { ...t, sql: sqlRef.current } : t);
             return [...updated, newTab];
           });
           setActiveTabId(newId);
-          setSql(content);
+          sqlRef.current = content; setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: content } : t));
         }
       };
       reader.readAsText(file, 'windows-1251');
@@ -996,7 +1247,7 @@ export default function App() {
   };
 
   const handleSaveSqlFile = async () => {
-    if (!sql.trim()) return;
+    if (!sqlRef.current.trim()) return;
 
     const activeTab = tabs.find(t => t.id === activeTabId);
     let suggestedName = activeTab ? activeTab.title : 'query.sql';
@@ -1017,7 +1268,7 @@ export default function App() {
         });
 
         const writable = await handle.createWritable();
-        await writable.write(sql);
+        await writable.write(sqlRef.current);
         await writable.close();
         return;
       } catch (err: any) {
@@ -1028,7 +1279,7 @@ export default function App() {
       }
     }
 
-    const blob = new Blob([sql], { type: 'text/plain;charset=utf-8' });
+    const blob = new Blob([sqlRef.current], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -1038,23 +1289,23 @@ export default function App() {
   };
 
   const handleInsertSnippet = (snippetSql: string, replaceMode?: boolean) => {
-    if (replaceMode || !sql.trim()) {
-      setSql(snippetSql);
+    if (replaceMode || !sqlRef.current.trim()) {
+      sqlRef.current = snippetSql; setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: snippetSql } : t));
     } else {
-      setSql(prev => prev + '\n\n' + snippetSql);
+      sqlRef.current = prev => prev + '\n\n' + snippetSql; setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: prev => prev + '\n\n' + snippetSql } : t));
     }
   };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        if (e.defaultPrevented) return;
-        setIsMaximizedSql(false);
+      if ((uiVisibility.showDuckDbConfig || uiVisibility.showClickhouseConfig) && (e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        handleExecuteDuckDb();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [duckDbConnectedPath, clickhouseConfig, isDuckDbRunning, activeEngine]);
 
   const [expandedQueries, setExpandedQueries] = useState<Set<string>>(new Set());
 
@@ -1506,7 +1757,7 @@ export default function App() {
           nodeCount: nodes.length,
           edgeCount: edges.length,
         },
-        sql,
+    // sql not in deps
         nodes: nodes.map((n: any) => ({
           id: n.id,
           type: n.type,
@@ -1804,10 +2055,9 @@ export default function App() {
       if (combo === (currentHotkeys.visualize || 'Ctrl+Enter')) {
         e.preventDefault();
         e.stopPropagation();
-        if (currentIsMaximizedSql && currentUiVisibility.showDuckDbConfig && currentDuckDbConnectedPath) {
+        currentHandleVisualize();
+        if (currentUiVisibility.showDuckDbConfig || currentUiVisibility.showClickhouseConfig) {
           currentHandleExecuteDuckDb();
-        } else {
-          currentHandleVisualize();
         }
       } else if (combo === (currentHotkeys.saveFile || 'Ctrl+S')) {
         e.preventDefault();
@@ -1864,11 +2114,11 @@ export default function App() {
   }, []);
 
   const handleVisualize = (
-    queryText = sql,
+    queryText = sqlRef.current,
     currentDialect = dialect,
     currentDir = direction
   ) => {
-    if (queryText === sql) {
+    if (queryText === sqlRef.current) {
       const textareas = document.querySelectorAll('textarea');
       for (const textarea of Array.from(textareas)) {
         if (textarea.offsetWidth > 0 && textarea.offsetHeight > 0 && textarea.selectionStart !== textarea.selectionEnd) {
@@ -1946,7 +2196,7 @@ export default function App() {
     const preset = sqlPresets.find(p => p.id === presetId);
     if (preset) {
       setActivePresetId(presetId);
-      setSql(preset.sql);
+      sqlRef.current = preset.sql; setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: preset.sql } : t));
       setDialect(preset.dialect);
       handleVisualize(preset.sql, preset.dialect, direction);
     }
@@ -1954,19 +2204,19 @@ export default function App() {
 
   const handleDialectChange = (newDialect: 'PostgreSQL' | 'Oracle' | 'Clickhouse') => {
     setDialect(newDialect);
-    handleVisualize(sql, newDialect, direction);
+    handleVisualize(sqlRef.current, newDialect, direction);
   };
 
   const handleSortToggle = () => {
     const newVal = !showSortNodes;
     setShowSortNodes(newVal);
-    handleVisualize(sql, dialect, direction, newVal, showLimitNodes);
+    handleVisualize(sqlRef.current, dialect, direction, newVal, showLimitNodes);
   };
 
   const handleLimitToggle = () => {
     const newVal = !showLimitNodes;
     setShowLimitNodes(newVal);
-    handleVisualize(sql, dialect, direction, showSortNodes, newVal);
+    handleVisualize(sqlRef.current, dialect, direction, showSortNodes, newVal);
   };
 
   const handleDirectionChange = (newDir: 'LR' | 'TB') => {
@@ -1979,93 +2229,119 @@ export default function App() {
   };
 
   const handleCopySql = () => {
-    navigator.clipboard.writeText(sql);
+    navigator.clipboard.writeText(sqlRef.current);
     setCopied('sql');
     setTimeout(() => setCopied(false), 2000);
   };
 
   const handleFormatSql = () => {
-    const currentSqlText = sqlRef.current || sql;
-    if (!currentSqlText.trim()) return;
-
     const cfg = formatterSettingsRef.current || formatterSettings;
+    const sel = sqlEditorRef.current?.getSelection();
 
-    const primaryLang =
-      dialect === 'PostgreSQL' ? 'postgresql' :
-      dialect === 'MySQL' ? 'mysql' :
-      dialect === 'SQLite' ? 'sqlite' : 'sql';
+    const doFormat = (text: string) => {
+      const primaryLang =
+        dialect === 'PostgreSQL' ? 'postgresql' :
+        dialect === 'MySQL' ? 'mysql' :
+        dialect === 'SQLite' ? 'sqlite' : 'sql';
 
-    const fallbackLangs = [primaryLang, 'mysql', 'sqlite', 'sql'].filter(
-      (lang, index, self) => self.indexOf(lang) === index
-    );
+      const fallbackLangs = [primaryLang, 'mysql', 'sqlite', 'sql'].filter(
+        (lang, index, self) => self.indexOf(lang) === index
+      );
 
-    for (const lang of fallbackLangs) {
-      try {
-        let formatted = formatSql(currentSqlText, {
-          language: lang as any,
-          keywordCase: cfg.keywordCase,
-          tabWidth: cfg.tabWidth,
-          useTabs: cfg.useTabs,
-          expressionWidth: cfg.expressionWidth,
-          denseOperators: cfg.denseOperators,
-        });
+      for (const lang of fallbackLangs) {
+        try {
+          let formatted = formatSql(text, {
+            language: lang as any,
+            keywordCase: cfg.keywordCase,
+            tabWidth: cfg.tabWidth,
+            useTabs: cfg.useTabs,
+            expressionWidth: cfg.expressionWidth,
+            denseOperators: cfg.denseOperators,
+          });
 
-        // Apply custom column line wrapping if expressionWidth >= 0
-        if (cfg.expressionWidth >= 0) {
-          const maxWidth = cfg.expressionWidth;
-          const indent = cfg.useTabs ? '\t' : ' '.repeat(cfg.tabWidth || 2);
+          // Apply custom column line wrapping if expressionWidth >= 0
+          if (cfg.expressionWidth >= 0) {
+            const maxWidth = cfg.expressionWidth;
+            const indent = cfg.useTabs ? '\t' : ' '.repeat(cfg.tabWidth || 2);
 
-          formatted = formatted.replace(
-            /(SELECT|GROUP BY|ORDER BY|INSERT INTO|VALUES)\s+([\s\S]+?)(?=\n\s*(?:FROM|WHERE|GROUP BY|ORDER BY|HAVING|LIMIT|JOIN|LEFT|RIGHT|INNER|OUTER|CROSS|UNION|RETURNING|WINDOW|SET|VALUES|;|$))/gi,
-            (match, keyword, items) => {
-              if (items.includes('--') || items.includes('/*') || /\bSELECT\b/i.test(items)) {
-                return match;
-              }
+            formatted = formatted.replace(
+              /(SELECT|GROUP BY|ORDER BY|INSERT INTO|VALUES)\s+([\s\S]+?)(?=\n\s*(?:FROM|WHERE|GROUP BY|ORDER BY|HAVING|LIMIT|JOIN|LEFT|RIGHT|INNER|OUTER|CROSS|UNION|RETURNING|WINDOW|SET|VALUES|;|$))/gi,
+              (match, keyword, items) => {
+                if (items.includes('--') || items.includes('/*') || /\bSELECT\b/i.test(items)) {
+                  return match;
+                }
+                const rawLines = items
+                  .split('\n')
+                  .map((s) => s.trim())
+                  .filter(Boolean);
+                if (rawLines.length === 0) return match;
 
-              const rawLines = items
-                .split('\n')
-                .map((s) => s.trim())
-                .filter(Boolean);
-
-              if (rawLines.length === 0) return match;
-
-              const lines: string[] = [];
-              let currentLine = keyword;
-
-              for (let i = 0; i < rawLines.length; i++) {
-                const item = rawLines[i];
-                if (currentLine === keyword) {
-                  if ((currentLine + ' ' + item).length <= maxWidth || rawLines.length === 1) {
-                    currentLine += ' ' + item;
+                const lines: string[] = [];
+                let currentLine = keyword;
+                for (let i = 0; i < rawLines.length; i++) {
+                  const item = rawLines[i];
+                  if (currentLine === keyword) {
+                    if ((currentLine + ' ' + item).length <= maxWidth || rawLines.length === 1) {
+                      currentLine += ' ' + item;
+                    } else {
+                      lines.push(currentLine);
+                      currentLine = indent + item;
+                    }
                   } else {
-                    lines.push(currentLine);
-                    currentLine = indent + item;
-                  }
-                } else {
-                  const testLine = currentLine + ' ' + item;
-                  if (testLine.length <= maxWidth) {
-                    currentLine = testLine;
-                  } else {
-                    lines.push(currentLine);
-                    currentLine = indent + item;
+                    if ((currentLine + ' ' + item).length <= maxWidth) {
+                      currentLine += ' ' + item;
+                    } else {
+                      lines.push(currentLine);
+                      currentLine = indent + item;
+                    }
                   }
                 }
-              }
-              if (currentLine) {
                 lines.push(currentLine);
+                return lines.join('\n');
               }
-
-              return lines.join('\n');
-            }
-          );
+            );
+          }
+          return formatted;
+        } catch (e) {
+          // Ignore syntax errors, try next dialect
         }
-
-        setSql(formatted);
-        return;
-      } catch {
-        // Try next fallback dialect
       }
+      throw new Error('Не удалось отформатировать (ошибка синтаксиса)');
+    };
+
+    if (sel && sel.text.trim()) {
+      try {
+        const formatted = doFormat(sel.text);
+        sqlEditorRef.current?.replaceSelection(formatted);
+      } catch (e) {
+        console.warn('Format error', e);
+      }
+      return;
     }
+
+    const currentSqlText = sqlRef.current;
+    if (!currentSqlText.trim()) return;
+
+    try {
+      const formatted = doFormat(currentSqlText);
+      sqlRef.current = formatted; setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: formatted } : t));
+    } catch (e) {
+      console.warn('Format error', e);
+    }
+  };
+
+  const handleCompactSql = () => {
+    const sel = sqlEditorRef.current?.getSelection();
+    if (sel && sel.text) {
+      const compacted = sel.text.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ');
+      sqlEditorRef.current?.replaceSelection(compacted);
+      return;
+    }
+
+    const currentSqlText = sqlRef.current;
+    if (!currentSqlText) return;
+    const compacted = currentSqlText.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ');
+    sqlRef.current = compacted; setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: compacted } : t));
   };
 
   const handleNodeClick = (_event: any, node: any) => {
@@ -2080,14 +2356,19 @@ export default function App() {
         
         {/* LEFT PANEL: INPUT & CONFIG (40% WIDTH) */}
         {showLeftPanel && (
-        <aside id="control-panel" className={`w-[40%] min-w-[380px] max-w-[580px] border-r flex flex-col p-4 space-y-4 shrink-0 transition-colors ${
+        <aside id="control-panel" className={`w-[40%] min-w-[380px] max-w-[580px] border-r flex flex-col shrink-0 transition-colors ${
           theme === 'dark' ? 'bg-slate-750/50 border-slate-600' : 'bg-slate-300/80 border-slate-400/60'
         }`}>
           
-          {/* CODE EDITOR WORKSPACE */}
-          <div className="flex-1 flex flex-col space-y-1.5 min-h-0 relative">
-            <div className="flex items-center justify-between min-h-[28px]">
-              <label className={`text-xs font-bold uppercase tracking-wider leading-none ${theme === 'dark' ? 'text-slate-200' : 'text-slate-700'}`}>SQL Query</label>
+          {/* LEFT PANEL TOP BAR */}
+          <div className={`flex items-center justify-between px-4 h-11 border-b shrink-0 select-none transition-colors ${
+            theme === 'dark' ? 'bg-slate-750 border-slate-600' : 'bg-slate-300/80 border-slate-400/60'
+          }`}>
+            <div className="flex items-center gap-2.5">
+              <h3 className={`font-bold text-sm ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>
+                SQL Query
+              </h3>
+            </div>
               <div className="flex items-center gap-1.5 relative">
                 {/* HIDDEN FILE INPUT FOR OPEN SQL FILE */}
                 <input 
@@ -2109,7 +2390,7 @@ export default function App() {
                 {uiVisibility.showOpenFile && (
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className={`flex items-center justify-center gap-1 text-xs px-2 py-1 rounded-md font-semibold transition-colors ${
+                  className={`flex items-center justify-center gap-1 text-xs px-2.5 py-1 rounded-md font-semibold transition-colors ${
                     theme === 'dark' 
                       ? 'text-amber-300 hover:text-amber-100 bg-amber-950/40 hover:bg-amber-900/60 border border-amber-500/30' 
                       : 'text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 shadow-2xs'
@@ -2125,7 +2406,7 @@ export default function App() {
                 {uiVisibility.showSaveFile && (
                 <button
                   onClick={handleSaveSqlFile}
-                  className={`flex items-center justify-center gap-1 text-xs px-2 py-1 rounded-md font-semibold transition-colors ${
+                  className={`flex items-center justify-center gap-1 text-xs px-2.5 py-1 rounded-md font-semibold transition-colors ${
                     theme === 'dark' 
                       ? 'text-emerald-300 hover:text-emerald-100 bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-500/30' 
                       : 'text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 shadow-2xs'
@@ -2140,7 +2421,7 @@ export default function App() {
                 {uiVisibility.showSnippets && (
                 <button
                   onClick={() => setShowSnippetsModal(true)}
-                  className={`flex items-center justify-center gap-1 text-xs px-2 py-1 rounded-md font-semibold transition-colors ${
+                  className={`flex items-center justify-center gap-1 text-xs px-2.5 py-1 rounded-md font-semibold transition-colors ${
                     theme === 'dark' 
                       ? 'text-blue-300 hover:text-blue-100 bg-blue-900/40 hover:bg-blue-800/60 border border-blue-500/40' 
                       : 'text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200 shadow-2xs'
@@ -2154,7 +2435,7 @@ export default function App() {
                 {uiVisibility.showMaximizeButton && (
                 <button
                   onClick={() => setIsMaximizedSql(true)}
-                  className={`flex items-center justify-center gap-1 text-xs px-2 py-1 rounded-md font-semibold transition-colors ${
+                  className={`flex items-center justify-center gap-1 text-xs px-2.5 py-1 rounded-md font-semibold transition-colors ${
                     theme === 'dark' 
                       ? 'text-slate-300 hover:text-slate-100 bg-slate-700/60 hover:bg-slate-700 border border-slate-600' 
                       : 'text-slate-700 hover:text-slate-900 bg-slate-200/80 hover:bg-slate-300 border border-slate-300'
@@ -2168,32 +2449,23 @@ export default function App() {
               </div>
             </div>
 
-            {/* SYNTAX HIGHLIGHTED SQL EDITOR */}
-            <ErrorBoundary title="Ошибка редактора SQL" theme={theme}>
-              <SqlEditor
-                value={sql}
-                onChange={setSql}
+          {/* LEFT PANEL CONTENT */}
+          <div className="flex-1 flex flex-col p-4 space-y-4 min-h-0 overflow-y-auto">
+            {/* CODE EDITOR WORKSPACE */}
+            <div className="flex-1 flex flex-col min-h-0 relative">
+              {/* SYNTAX HIGHLIGHTED SQL EDITOR */}
+              <ErrorBoundary title="Ошибка редактора SQL" theme={theme}>
+                <SqlEditor editorRef={sqlEditorRef}
+                value={getActiveTabSql()}
+                onChange={handleSqlChange}
                 isWrapSql={isWrapSql}
                 theme={theme}
+                onCompactSql={handleCompactSql}
+                onExecuteQuickAction={handleExecuteQuickAction}
+                extractedTableName={extractedTableName}
+                isQuickActionsEnabled={uiVisibility.showDuckDbConfig || uiVisibility.showClickhouseConfig}
               />
-            </ErrorBoundary>
-
-            {/* SYNTAX ERROR LOG PANEL */}
-            {error && !error.includes("Not a SELECT query") && (
-              <div className={`p-3 border rounded-md shadow-lg absolute bottom-1.5 left-1.5 right-1.5 max-h-40 overflow-y-auto transition-all ${
-                theme === 'dark' ? 'bg-red-950/95 border-red-500/40 text-slate-200' : 'bg-red-50 border-red-200 text-red-900 shadow-md'
-              }`}>
-                <div className="flex items-start gap-2">
-                  <X className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
-                  <div className="text-xs">
-                    <div className="font-bold text-red-600 dark:text-red-300">Parser Syntax Error</div>
-                    <div className="font-mono text-[10px] mt-1 break-words leading-normal select-text text-red-700 dark:text-red-400/95">
-                      {error}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+              </ErrorBoundary>
           </div>
 
           {/* VISUALIZE ACTION BAR */}
@@ -2296,6 +2568,19 @@ export default function App() {
             </button>
             )}
 
+            {/* COMPACT SQL BUTTON */}
+            {uiVisibility.showCompactSql !== false && (
+            <button
+              onClick={handleCompactSql}
+              className={`p-1.5 rounded-md transition-all shrink-0 ${
+                theme === 'dark' ? 'text-slate-300 hover:text-slate-100 hover:bg-slate-700/50' : 'text-slate-700 hover:text-slate-900 hover:bg-slate-200/50'
+              }`}
+              title="Формат в одну строку"
+            >
+              <Shrink className="w-3.5 h-3.5" />
+            </button>
+            )}
+
             {/* COPY SQL BUTTON */}
             {uiVisibility.showCopySql && (
             <button
@@ -2321,9 +2606,10 @@ export default function App() {
               onClick={() => handleVisualize()}
               className="flex-1 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-md shadow-md shadow-blue-900/20 active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5"
             >
-              <Play className="w-3 h-3 fill-white" />
+              <Play className="w-3 h-3 fill-current" />
               <span>Visualize</span>
             </button>
+          </div>
           </div>
         </aside>
         )}
@@ -2348,20 +2634,20 @@ export default function App() {
                 }`}>
                   <button
                     onClick={() => handleDirectionChange('LR')}
-                    className={`px-2.5 py-1 rounded text-[10px] font-mono transition-all ${
+                    className={`px-2.5 py-1 rounded text-xs transition-all ${
                       direction === 'LR' 
                         ? 'bg-blue-600 text-white font-bold' 
-                        : theme === 'dark' ? 'text-slate-300 hover:text-slate-100' : 'text-slate-700 hover:text-slate-900'
+                        : theme === 'dark' ? 'text-slate-300 hover:text-slate-100 font-normal' : 'text-slate-700 hover:text-slate-900 font-normal'
                     }`}
                   >
                     LR
                   </button>
                   <button
                     onClick={() => handleDirectionChange('TB')}
-                    className={`px-2.5 py-1 rounded text-[10px] font-mono transition-all ${
+                    className={`px-2.5 py-1 rounded text-xs transition-all ${
                       direction === 'TB' 
                         ? 'bg-blue-600 text-white font-bold' 
-                        : theme === 'dark' ? 'text-slate-300 hover:text-slate-100' : 'text-slate-700 hover:text-slate-900'
+                        : theme === 'dark' ? 'text-slate-300 hover:text-slate-100 font-normal' : 'text-slate-700 hover:text-slate-900 font-normal'
                     }`}
                   >
                     TB
@@ -2381,10 +2667,10 @@ export default function App() {
                   <>
                     <button
                       onClick={handleSortToggle}
-                      className={`px-2.5 py-1 rounded text-[10px] font-mono transition-all ${
+                      className={`px-2.5 py-1 rounded text-xs transition-all ${
                         showSortNodes 
                           ? 'bg-emerald-600 text-white font-bold' 
-                          : theme === 'dark' ? 'text-slate-300 hover:text-slate-100' : 'text-slate-700 hover:text-slate-900'
+                          : theme === 'dark' ? 'text-slate-300 hover:text-slate-100 font-normal' : 'text-slate-700 hover:text-slate-900 font-normal'
                       }`}
                       title="Toggle visualization of ORDER BY (Sort) nodes"
                     >
@@ -2392,10 +2678,10 @@ export default function App() {
                     </button>
                     <button
                       onClick={handleLimitToggle}
-                      className={`px-2.5 py-1 rounded text-[10px] font-mono transition-all ${
+                      className={`px-2.5 py-1 rounded text-xs transition-all ${
                         showLimitNodes 
                           ? 'bg-emerald-600 text-white font-bold' 
-                          : theme === 'dark' ? 'text-slate-300 hover:text-slate-100' : 'text-slate-700 hover:text-slate-900'
+                          : theme === 'dark' ? 'text-slate-300 hover:text-slate-100 font-normal' : 'text-slate-700 hover:text-slate-900 font-normal'
                       }`}
                       title="Toggle visualization of LIMIT / OFFSET nodes"
                     >
@@ -2406,10 +2692,10 @@ export default function App() {
                   {uiVisibility.showLineageFocus && (
                   <button
                     onClick={() => setLineageHighlightMode(!lineageHighlightMode)}
-                    className={`px-2.5 py-1 rounded text-[10px] font-mono transition-all flex items-center gap-1 ${
+                    className={`px-2.5 py-1 rounded text-xs transition-all flex items-center gap-1 ${
                       lineageHighlightMode 
                         ? 'bg-purple-600 text-white font-bold shadow-xs' 
-                        : theme === 'dark' ? 'text-slate-300 hover:text-slate-100' : 'text-slate-700 hover:text-slate-900'
+                        : theme === 'dark' ? 'text-slate-300 hover:text-slate-100 font-normal' : 'text-slate-700 hover:text-slate-900 font-normal'
                     }`}
                     title="Подсветка взаимосвязей (Data Lineage) выделенного узла"
                   >
@@ -2764,7 +3050,7 @@ export default function App() {
                 </div>
               </div>
             )}
-            </ErrorBoundary>
+              </ErrorBoundary>
 
             {/* RAW AST OVERLAY SIDEBAR */}
             {showAstPreview && (
@@ -2992,20 +3278,6 @@ export default function App() {
                 </button>
                 )}
 
-                {(uiVisibility.showWin1251Button ?? true) && (
-                <button
-                  onClick={() => win1251FileInputRef.current?.click()}
-                  className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded transition-all ${
-                    theme === 'dark' 
-                      ? 'text-slate-300 hover:text-slate-100' 
-                      : 'text-slate-700 hover:text-slate-900'
-                  }`}
-                  title="Открыть файл в кодировке Windows-1251"
-                >
-                  <span>Win-1251</span>
-                </button>
-                )}
-
                 {uiVisibility.showSaveFile && (
                 <button
                   onClick={handleSaveSqlFile}
@@ -3056,19 +3328,24 @@ export default function App() {
                   className="hidden" 
                 />
 
-                {uiVisibility.showDuckDbConfig && (
-                <div className="flex items-center gap-1 relative">
-                  <button
-                    onClick={() => setShowDuckDbConnMenu(!showDuckDbConnMenu)}
+                {(uiVisibility.showDuckDbConfig || uiVisibility.showClickhouseConfig) && (
+                <div className="flex items-center gap-1.5">
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowDuckDbConnMenu(!showDuckDbConnMenu)}
                     className={`flex items-center gap-1 text-xs px-2.5 h-[26px] rounded font-semibold transition-colors ${
-                      theme === 'dark' 
-                        ? 'text-teal-300 hover:text-teal-100 bg-teal-950/40 hover:bg-teal-900/60 border border-teal-500/30' 
-                        : 'text-teal-800 hover:text-teal-950 bg-teal-100 hover:bg-teal-200 border border-teal-300 shadow-2xs'
+                      clickhouseConfig
+                        ? theme === 'dark' 
+                          ? 'text-amber-300 hover:text-amber-100 bg-amber-950/40 hover:bg-amber-900/60 border border-amber-500/30' 
+                          : 'text-amber-800 hover:text-amber-950 bg-amber-50 hover:bg-amber-100 border border-amber-300 shadow-2xs'
+                        : theme === 'dark' 
+                          ? 'text-teal-300 hover:text-teal-100 bg-teal-950/40 hover:bg-teal-900/60 border border-teal-500/30' 
+                          : 'text-teal-800 hover:text-teal-950 bg-teal-100 hover:bg-teal-200 border border-teal-300 shadow-2xs'
                     }`}
-                    title={duckDbConnectedPath ? `Изменить DB: ${duckDbConnectedPath}` : "Настроить подключение DB"}
+                    title="Настроить подключение DB"
                   >
-                    <Database className={`w-3.5 h-3.5 ${duckDbConnectedPath ? 'text-teal-500' : 'text-slate-400'}`} />
-                    <span>{duckDbConnectedPath ? 'DB (Connected)' : 'Connect DB'}</span>
+                    <Database className={`w-3.5 h-3.5 ${clickhouseConfig ? 'text-amber-500' : duckDbConnectedPath ? 'text-teal-500' : 'text-slate-400'}`} />
+                    <span>{duckDbConnectedPath ? 'DuckDB (Connected)' : clickhouseConfig ? 'Clickhouse (Connected)' : 'Connect DB'}</span>
                     <ChevronDown className="w-3 h-3 opacity-70 ml-0.5" />
                   </button>
 
@@ -3078,32 +3355,71 @@ export default function App() {
                         className="fixed inset-0 z-30" 
                         onClick={() => setShowDuckDbConnMenu(false)} 
                       />
-                      <div className={`absolute top-full mt-1 left-0 z-40 rounded-lg border shadow-xl p-1.5 w-56 animate-in fade-in duration-150 ${
+                      <div className={`absolute top-full mt-1 right-0 z-40 rounded-lg border shadow-xl p-1.5 w-60 animate-in fade-in duration-150 ${
                         theme === 'dark' ? 'bg-slate-800 border-slate-600 text-slate-200' : 'bg-white border-slate-300 text-slate-800'
                       }`}>
-                        <button
-                          onClick={handleConfigureDuckDb}
-                          className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center gap-2 transition-colors ${
-                            theme === 'dark' ? 'hover:bg-slate-700 text-slate-200' : 'hover:bg-slate-100 text-slate-800'
-                          }`}
-                        >
-                          <FolderOpen className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                          <span>Открыть файл БД</span>
-                        </button>
-                        <button
-                          onClick={handleCreateDuckDbFile}
-                          className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center gap-2 transition-colors ${
-                            theme === 'dark' ? 'hover:bg-slate-700 text-emerald-300' : 'hover:bg-slate-100 text-emerald-700'
-                          }`}
-                        >
-                          <Plus className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                          <span>Создать новую БД (.duckdb)</span>
-                        </button>
+                        {uiVisibility.showDuckDbConfig && (
+                          <>
+                            <button
+                              onClick={() => {
+                                setShowDuckDbConnMenu(false);
+                                setClickhouseConfig(null);
+                                setActiveEngine('duckdb');
+                                handleConfigureDuckDb();
+                              }}
+                              className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center gap-2 transition-colors ${
+                                theme === 'dark' ? 'hover:bg-slate-700 text-slate-200' : 'hover:bg-slate-100 text-slate-800'
+                              }`}
+                            >
+                              <FolderOpen className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                              <span>Открыть файл DuckDB</span>
+                            </button>
+                            <button
+                              onClick={() => {
+                                setShowDuckDbConnMenu(false);
+                                setClickhouseConfig(null);
+                                setActiveEngine('duckdb');
+                                handleCreateDuckDbFile();
+                              }}
+                              className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center gap-2 transition-colors ${
+                                theme === 'dark' ? 'hover:bg-slate-700 text-emerald-300' : 'hover:bg-slate-100 text-emerald-700'
+                              }`}
+                            >
+                              <Plus className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                              <span>Создать новую БД (.duckdb)</span>
+                            </button>
+                          </>
+                        )}
+
+                        {uiVisibility.showDuckDbConfig && uiVisibility.showClickhouseConfig && (
+                          <div className={`my-1 border-t ${theme === 'dark' ? 'border-slate-700/60' : 'border-slate-200'}`} />
+                        )}
+
+                        {uiVisibility.showClickhouseConfig && (
+                          <button
+                            onClick={() => {
+                              setShowDuckDbConnMenu(false);
+                              if (duckDbConnectedPath) {
+                                handleDisconnectDuckDb();
+                              }
+                              setActiveEngine('clickhouse');
+                              setShowClickhouseModal(true);
+                            }}
+                            className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center gap-2 transition-colors ${
+                              theme === 'dark' ? 'hover:bg-slate-700 text-slate-200' : 'hover:bg-slate-100 text-slate-800'
+                            }`}
+                          >
+                            <Database className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                            <span>Подключить Clickhouse</span>
+                          </button>
+                        )}
                       </div>
                     </>
                   )}
+
+                  </div>
                   {duckDbConnectedPath && (
-                    <>
+                    <div className="flex items-center gap-1">
                       {!showDuckDbSchemaPanel && (
                         <button
                           onClick={() => setShowDuckDbSchemaPanel(true)}
@@ -3112,7 +3428,7 @@ export default function App() {
                               ? 'text-blue-400 hover:bg-blue-950/40 border border-blue-500/30' 
                               : 'text-blue-600 hover:bg-blue-100 border border-blue-300 shadow-2xs'
                           }`}
-                          title="Показать схему DB"
+                          title="Показать схему DuckDB"
                         >
                           <Database className="w-3.5 h-3.5" />
                         </button>
@@ -3124,11 +3440,48 @@ export default function App() {
                             ? 'text-red-400 hover:bg-red-950/40 border border-red-500/30' 
                             : 'text-red-600 hover:bg-red-100 border border-red-300 shadow-2xs'
                         }`}
-                        title="Отключить DB"
+                        title="Отключить DuckDB"
                       >
                         <X className="w-3.5 h-3.5" />
                       </button>
-                    </>
+                    </div>
+                  )}
+
+                  {clickhouseConfig && (
+                    <div className="flex items-center gap-1">
+                      {!showDuckDbSchemaPanel && (
+                        <button
+                          onClick={() => setShowDuckDbSchemaPanel(true)}
+                          className={`flex items-center justify-center h-[26px] w-[26px] rounded transition-colors ${
+                            theme === 'dark' 
+                              ? 'text-blue-400 hover:bg-blue-950/40 border border-blue-500/30' 
+                              : 'text-blue-600 hover:bg-blue-100 border border-blue-300 shadow-2xs'
+                          }`}
+                          title="Показать схему Clickhouse"
+                        >
+                          <Database className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => {
+                          setClickhouseConfig(null);
+                          if (activeEngine === 'clickhouse') {
+                            setActiveEngine('duckdb');
+                          }
+                          if (!duckDbConnectedPath) {
+                            setShowDuckDbSchemaPanel(false);
+                          }
+                        }}
+                        className={`flex items-center justify-center h-[26px] w-[26px] rounded transition-colors ${
+                          theme === 'dark' 
+                            ? 'text-red-400 hover:bg-red-950/40 border border-red-500/30' 
+                            : 'text-red-600 hover:bg-red-100 border border-red-300 shadow-2xs'
+                        }`}
+                        title="Отключить Clickhouse"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   )}
                 </div>
                 )}
@@ -3236,11 +3589,15 @@ export default function App() {
                 {/* BODY */}
                 <div className="flex-1 p-3.5 flex flex-col min-h-0 relative">
                   <ErrorBoundary title="Ошибка редактора SQL" theme={theme}>
-                    <SqlEditor
-                      value={sql}
-                      onChange={setSql}
+                    <SqlEditor editorRef={sqlEditorRef}
+                      value={getActiveTabSql()}
+                      onChange={handleSqlChange}
                       isWrapSql={isWrapSql}
                       theme={theme}
+                      onCompactSql={handleCompactSql}
+                      onExecuteQuickAction={handleExecuteQuickAction}
+                      extractedTableName={extractedTableName}
+                      isQuickActionsEnabled={uiVisibility.showDuckDbConfig || uiVisibility.showClickhouseConfig}
                     />
                   </ErrorBoundary>
                 </div>
@@ -3299,7 +3656,7 @@ export default function App() {
                           <span className="truncate">{dbName}</span>
                         </div>
                         {expandedSchemaNodes[`db-${dbName}`] && (
-                          <div className="pl-3 border-l ml-3 border-slate-400/20 mt-1">
+                          <div className="pl-2 border-l ml-2 border-slate-400/20 mt-1">
                             {Object.entries(schemas).map(([schemaName, types]) => (
                               <div key={schemaName} className="mb-1">
                                 <div 
@@ -3310,7 +3667,7 @@ export default function App() {
                                   <span className="truncate">{schemaName}</span>
                                 </div>
                                 {expandedSchemaNodes[`sch-${dbName}-${schemaName}`] && (
-                                  <div className="pl-3 border-l ml-3 border-slate-400/20 mt-1">
+                                  <div className="pl-2 border-l ml-2 border-slate-400/20 mt-1">
                                     {Object.entries(types).map(([typeName, tables]) => (
                                       <div key={typeName} className="mb-1">
                                         <div 
@@ -3321,34 +3678,46 @@ export default function App() {
                                           <span className="truncate">{typeName}</span>
                                         </div>
                                         {expandedSchemaNodes[`type-${dbName}-${schemaName}-${typeName}`] && (
-                                          <div className="pl-3 border-l ml-3 border-slate-400/20 mt-1">
-                                            {Object.entries(tables).map(([tableName, columns]) => (
-                                              <div key={tableName} className="mb-1">
-                                                <div 
-                                                  className={`group text-[11px] font-medium px-2 py-1 flex items-center justify-between rounded cursor-pointer select-none transition-colors ${theme === 'dark' ? 'hover:bg-slate-800' : 'hover:bg-slate-200'}`}
-                                                  onClick={() => {
-                                                    toggleSchemaNode(`tbl-${dbName}-${schemaName}-${tableName}`);
-                                                    navigator.clipboard.writeText(`${dbName}.${schemaName}.${tableName}`);
-                                                  }}
-                                                  title="Нажмите, чтобы развернуть и скопировать название таблицы"
-                                                >
-                                                  <div className={`flex items-center gap-1.5 truncate ${theme === 'dark' ? 'text-blue-400' : 'text-blue-700'}`}>
-                                                    <Layout className="w-3 h-3 opacity-70 shrink-0" />
-                                                    <span className="truncate" title={tableName}>{tableName}</span>
-                                                  </div>
-                                                  <button
-                                                    onClick={(e) => {
-                                                      e.stopPropagation();
-                                                      const cols = (columns as any[]).map(c => `"${c.column_name}"`).join(', ');
-                                                      const sel = `SELECT ${cols} FROM "${dbName}"."${schemaName}"."${tableName}"`;
-                                                      navigator.clipboard.writeText(sel);
+                                          <div className="pl-2 border-l ml-2 border-slate-400/20 mt-1">
+                                            {Object.entries(tables).map(([tableName, columns]) => {
+                                              const sizeBadge = getTableSizeBadge(columns as any[]);
+                                              return (
+                                                <div key={tableName} className="mb-1">
+                                                  <div 
+                                                    className={`group text-[11px] font-medium px-2 py-1 flex items-center justify-between gap-1 rounded cursor-pointer select-none transition-colors ${theme === 'dark' ? 'hover:bg-slate-800' : 'hover:bg-slate-200'}`}
+                                                    onClick={() => {
+                                                      toggleSchemaNode(`tbl-${dbName}-${schemaName}-${tableName}`);
+                                                      const tablePath = dbName === schemaName ? `${dbName}.${tableName}` : `${dbName}.${schemaName}.${tableName}`;
+                                                      navigator.clipboard.writeText(tablePath);
                                                     }}
-                                                    className={`p-1 rounded shrink-0 opacity-0 group-hover:opacity-100 transition-opacity ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-300 text-slate-500 hover:text-slate-800'}`}
-                                                    title="Копировать SELECT"
+                                                    title="Нажмите, чтобы развернуть и скопировать название таблицы"
                                                   >
-                                                    <Copy className="w-3 h-3" />
-                                                  </button>
-                                                </div>
+                                                    <div className={`flex items-center gap-1.5 truncate ${theme === 'dark' ? 'text-blue-400' : 'text-blue-700'}`}>
+                                                      <Layout className="w-3 h-3 opacity-70 shrink-0" />
+                                                      <span className="truncate" title={tableName}>{tableName}</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-1 shrink-0">
+                                                      {sizeBadge && (
+                                                        <span className="text-[9px] px-1 py-0.2 rounded bg-slate-500/15 text-slate-400 font-mono">
+                                                          {sizeBadge}
+                                                        </span>
+                                                      )}
+                                                      <button
+                                                        onClick={(e) => {
+                                                          e.stopPropagation();
+                                                          const cols = (columns as any[]).map(c => `"${c.column_name}"`).join(', ');
+                                                          const sel = dbName === schemaName
+                                                            ? `SELECT ${cols} FROM "${dbName}"."${tableName}"`
+                                                            : `SELECT ${cols} FROM "${dbName}"."${schemaName}"."${tableName}"`;
+                                                          navigator.clipboard.writeText(sel);
+                                                        }}
+                                                        className={`p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-300 text-slate-500 hover:text-slate-800'}`}
+                                                        title="Копировать SELECT"
+                                                      >
+                                                        <Copy className="w-3 h-3" />
+                                                      </button>
+                                                    </div>
+                                                  </div>
                                                 {expandedSchemaNodes[`tbl-${dbName}-${schemaName}-${tableName}`] && (
                                                   <div className="pl-4 mt-0.5 space-y-0.5">
                                                     {(columns as any[]).map((col: any, idx: number) => (
@@ -3365,7 +3734,8 @@ export default function App() {
                                                   </div>
                                                 )}
                                               </div>
-                                            ))}
+                                            );
+                                          })}
                                           </div>
                                         )}
                                       </div>
@@ -3383,8 +3753,8 @@ export default function App() {
               )}
             </div>
 
-            {/* DUCKDB RESULTS PANEL */}
-            {isMaximizedSql && uiVisibility.showDuckDbConfig && isDuckDbResultVisible && (
+            {/* DUCKDB / CLICKHOUSE RESULTS PANEL */}
+            {isMaximizedSql && (uiVisibility.showDuckDbConfig || uiVisibility.showClickhouseConfig) && isDuckDbResultVisible && (
               <div className={`border-t flex flex-col shrink-0 transition-colors ${
                 theme === 'dark' ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300'
               }`} style={{ height: isDuckDbResultExpanded ? '70vh' : '35vh' }}>
@@ -3396,6 +3766,7 @@ export default function App() {
                       <Database className="w-3.5 h-3.5 text-teal-500" />
                       Результат запроса
                     </span>
+
                     {duckDbResults && (
                       <div className="flex items-center gap-2 text-xs shrink-0">
                         <div className={`flex items-center gap-1 px-2.5 py-1 rounded transition-all ${
@@ -3407,7 +3778,7 @@ export default function App() {
                         <div className="flex items-center gap-1">
                           <button
                             disabled={duckDbPage <= 1 || isDuckDbRunning}
-                            onClick={() => executeDuckDbQueryWithPagination(lastExecutedSql, duckDbPage - 1)}
+                            onClick={() => handleExecuteCurrentEngineQuery(lastExecutedSql, duckDbPage - 1)}
                             className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded transition-all font-mono disabled:opacity-30 disabled:cursor-not-allowed ${
                               theme === 'dark' ? 'text-slate-300 hover:text-slate-100 hover:bg-slate-700/40' : 'text-slate-700 hover:text-slate-900 hover:bg-slate-400/30'
                             }`}
@@ -3422,7 +3793,7 @@ export default function App() {
                           </span>
                           <button
                             disabled={isDuckDbRunning || !duckDbResults || duckDbResults.length < (uiVisibility.duckDbMaxRows ?? 100)}
-                            onClick={() => executeDuckDbQueryWithPagination(lastExecutedSql, duckDbPage + 1)}
+                            onClick={() => handleExecuteCurrentEngineQuery(lastExecutedSql, duckDbPage + 1)}
                             className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded transition-all font-mono disabled:opacity-30 disabled:cursor-not-allowed ${
                               theme === 'dark' ? 'text-slate-300 hover:text-slate-100 hover:bg-slate-700/40' : 'text-slate-700 hover:text-slate-900 hover:bg-slate-400/30'
                             }`}
@@ -3436,20 +3807,31 @@ export default function App() {
                   </div>
 
                   <div className="flex items-center gap-1 shrink-0">
+                    {/* CANCEL QUERY BUTTON */}
+                    {isDuckDbRunning && (
+                      <button
+                        onClick={handleCancelDuckDbQuery}
+                        className="flex items-center justify-center gap-1 text-xs px-2 h-6 rounded font-semibold bg-red-600 hover:bg-red-700 text-white transition-colors mr-1 shadow-2xs shrink-0"
+                        title="Отменить выполнение текущего запроса"
+                      >
+                        <Square className="w-3 h-3 fill-white shrink-0" />
+                        <span>Отменить</span>
+                      </button>
+                    )}
+
                     {/* QUICK ACTIONS BUTTON AND DROPDOWN */}
                     <div className="relative">
                       <button
                         onClick={() => setShowQuickActionsMenu(!showQuickActionsMenu)}
                         disabled={!duckDbResults || duckDbResults.length === 0 || isDuckDbRunning}
-                        className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded font-semibold transition-colors border ${
+                        className={`h-6 w-6 flex items-center justify-center rounded transition-colors disabled:opacity-40 ${
                           theme === 'dark'
-                            ? 'text-amber-300 hover:text-amber-100 bg-transparent hover:bg-amber-950/40 border-amber-500/30 disabled:opacity-40 disabled:hover:bg-transparent'
-                            : 'text-amber-800 hover:text-amber-950 bg-transparent hover:bg-amber-50 border-amber-300 shadow-2xs disabled:opacity-40 disabled:hover:bg-transparent'
+                            ? 'hover:bg-slate-700 text-slate-400'
+                            : 'hover:bg-slate-200 text-slate-500'
                         }`}
                         title="Быстрые действия над результатами"
                       >
-                        <Zap className="w-3.5 h-3.5 shrink-0" />
-                        <ChevronDown className="w-3 h-3 opacity-60 shrink-0" />
+                        <Zap className="w-4 h-4" />
                       </button>
 
                       {showQuickActionsMenu && (
@@ -3461,19 +3843,19 @@ export default function App() {
                           <div className={`absolute top-full mt-1 right-0 z-40 rounded-lg border shadow-xl p-1.5 w-56 animate-in fade-in duration-150 ${
                             theme === 'dark' ? 'bg-slate-800 border-slate-600 text-slate-200' : 'bg-white border-slate-300 text-slate-800'
                           }`}>
-                            <div className={`px-2 py-1.5 rounded text-xs flex items-center gap-2 border-b mb-1 font-mono min-w-0 ${
+                            <div className={`px-2 py-1 rounded text-xs flex items-center gap-2 border-b mb-0.5 font-mono min-w-0 ${
                               theme === 'dark' ? 'border-slate-700/60 text-slate-400' : 'border-slate-200 text-slate-500'
                             }`} title={extractedTableName}>
                               <Table className="w-3.5 h-3.5 text-teal-500 shrink-0" />
                               <span className="truncate">{extractedTableName}</span>
                             </div>
-                            <div className="max-h-60 overflow-y-auto space-y-0.5 pr-0.5">
+                            <div className="max-h-60 overflow-y-auto pr-0.5">
                               {quickActions.map((action) => (
                                 <button
                                   key={action.id}
                                   onClick={() => handleExecuteQuickAction(action)}
                                   title={action.name}
-                                  className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center gap-2 transition-colors min-w-0 ${
+                                  className={`w-full text-left px-2 py-1 rounded text-xs flex items-center gap-2 transition-colors min-w-0 ${
                                     theme === 'dark' ? 'hover:bg-slate-700 text-slate-200' : 'hover:bg-slate-100 text-slate-800'
                                   }`}
                                 >
@@ -3486,23 +3868,44 @@ export default function App() {
                       )}
                     </div>
 
-                    {isDuckDbRunning && (
-                      <button
-                        onClick={handleCancelDuckDbQuery}
-                        className="flex items-center justify-center gap-1 text-xs px-2 h-6 rounded font-semibold bg-red-600 hover:bg-red-700 text-white transition-colors mr-1 shadow-2xs"
-                        title="Отменить выполнение текущего запроса"
-                      >
-                        <Square className="w-3 h-3 fill-white shrink-0" />
-                        <span>Отменить</span>
-                      </button>
-                    )}
+                    {/* TRANSPOSE BUTTON */}
+                    <button
+                      type="button"
+                      onClick={() => setIsTransposed(!isTransposed)}
+                      disabled={!duckDbResults || duckDbResults.length === 0}
+                      className={`h-6 w-6 flex items-center justify-center rounded transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${
+                        isTransposed
+                          ? 'bg-teal-600 text-white hover:bg-teal-500'
+                          : theme === 'dark'
+                            ? 'hover:bg-slate-700 text-slate-400'
+                            : 'hover:bg-slate-200 text-slate-500'
+                      }`}
+                      title={isTransposed ? "Обычный вид таблицы" : "Транспонировать таблицу (строки <-> столбцы)"}
+                    >
+                      <ArrowLeftRight className="w-4 h-4" />
+                    </button>
                     <button 
                       onClick={() => {
                         if (duckDbError) {
                           navigator.clipboard.writeText(duckDbError);
                         } else if (duckDbResults && duckDbResults.length > 0) {
-                          const csv = [Object.keys(duckDbResults[0]).join('\t'), ...duckDbResults.map(r => Object.values(r).join('\t'))].join('\n');
-                          navigator.clipboard.writeText(csv);
+                          if (isTransposed) {
+                            const headers = ['Поле \\ №', ...pagedResults.map((_, i) => `#${(duckDbPage - 1) * (uiVisibility.duckDbMaxRows || 100) + i + 1}`)];
+                            const rows = Object.keys(duckDbResults[0]).map(colKey => [
+                              colKey,
+                              ...pagedResults.map(r => r[colKey] === null ? 'null' : String(r[colKey]))
+                            ]);
+                            const csv = [headers.join('\t'), ...rows.map(r => r.join('\t'))].join('\n');
+                            navigator.clipboard.writeText(csv);
+                          } else {
+                            const headers = ['#', ...Object.keys(duckDbResults[0])];
+                            const rows = pagedResults.map((r, i) => [
+                              (duckDbPage - 1) * (uiVisibility.duckDbMaxRows || 100) + i + 1,
+                              ...Object.values(r).map(v => v === null ? 'null' : String(v))
+                            ]);
+                            const csv = [headers.join('\t'), ...rows.map(r => r.join('\t'))].join('\n');
+                            navigator.clipboard.writeText(csv);
+                          }
                         }
                       }}
                       className={`h-6 w-6 flex items-center justify-center rounded transition-colors ${
@@ -3552,44 +3955,112 @@ export default function App() {
                         Error: {duckDbError}
                       </div>
                     ) : duckDbResults && duckDbResults.length > 0 ? (
-                      <table className="w-full text-left border-collapse text-xs">
-                        <thead className={`sticky top-0 z-10 ${theme === 'dark' ? 'bg-slate-800 shadow-sm' : 'bg-slate-100 shadow-sm'}`}>
-                          <tr className={`divide-x ${theme === 'dark' ? 'divide-slate-700' : 'divide-slate-300'}`}>
-                            {Object.keys(duckDbResults[0]).map((col) => (
-                              <th 
-                                key={col} 
-                                className={`px-3 py-2 font-semibold border-b max-w-[180px] overflow-hidden text-ellipsis whitespace-nowrap cursor-pointer transition-colors ${
-                                  theme === 'dark' ? 'border-slate-700 text-slate-300 hover:bg-slate-700' : 'border-slate-300 text-slate-700 hover:bg-slate-200'
-                                }`}
-                                title={col.length > 200 ? col.substring(0, 200) + '...' : col}
-                                onClick={() => setDuckDbSelectedCell({ title: 'Столбец', content: col })}
-                              >
-                                {col}
+                      isTransposed ? (
+                        <table className="w-full text-left border-separate border-spacing-0 text-xs">
+                          <thead className="sticky top-0 z-20">
+                            <tr>
+                              <th className={`sticky top-0 left-0 z-30 px-3 py-2 font-semibold border-b-[1.5px] border-r-[1.5px] whitespace-nowrap min-w-[140px] max-w-[200px] ${
+                                theme === 'dark' ? 'border-b-slate-600 border-r-slate-600 text-slate-200 bg-slate-800' : 'border-b-slate-300 border-r-slate-300 text-slate-800 bg-slate-100'
+                              }`}>
+                                Поле \ №
                               </th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {pagedResults.map((row, i) => (
-                            <tr key={i} className={`border-b transition-colors divide-x ${
-                              theme === 'dark' ? 'border-slate-800 hover:bg-slate-800/50 divide-slate-700' : 'border-slate-200 hover:bg-slate-50 divide-slate-200'
-                            }`}>
-                              {Object.values(row).map((val: any, j) => (
+                              {pagedResults.map((_, i) => {
+                                const rowNum = (duckDbPage - 1) * (uiVisibility.duckDbMaxRows || 100) + i + 1;
+                                return (
+                                  <th
+                                    key={i}
+                                    className={`sticky top-0 z-20 px-3 py-2 font-semibold border-b-[1.5px] border-r whitespace-nowrap text-center min-w-[80px] max-w-[200px] ${
+                                      theme === 'dark' ? 'border-b-slate-600 border-r-slate-700/80 text-slate-200 bg-slate-800' : 'border-b-slate-300 border-r-slate-200 text-slate-800 bg-slate-100'
+                                    }`}
+                                  >
+                                    #{rowNum}
+                                  </th>
+                                );
+                              })}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {Object.keys(pagedResults[0]).map((colKey) => (
+                              <tr key={colKey}>
                                 <td 
-                                  key={j} 
-                                  className={`px-3 py-1.5 whitespace-nowrap overflow-hidden text-ellipsis max-w-[288px] cursor-pointer transition-colors ${
-                                    theme === 'dark' ? 'text-slate-400 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-200'
+                                  className={`sticky left-0 z-10 px-3 py-1.5 font-semibold whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px] cursor-pointer transition-colors border-r-[1.5px] border-b ${
+                                    theme === 'dark' ? 'bg-slate-800 text-slate-300 hover:bg-slate-700 border-r-slate-600 border-b-slate-700/80' : 'bg-slate-100 text-slate-800 hover:bg-slate-200 border-r-slate-300 border-b-slate-200'
                                   }`}
-                                  title={val === null ? 'null' : String(val).length > 200 ? String(val).substring(0, 200) + '...' : String(val)}
-                                  onClick={() => setDuckDbSelectedCell({ title: 'Значение', content: val === null ? 'null' : String(val) })}
+                                  title={colKey}
+                                  onClick={() => setDuckDbSelectedCell({ title: 'Столбец', content: colKey })}
                                 >
-                                  {val === null ? <span className="opacity-50 italic">null</span> : String(val)}
+                                  {colKey}
                                 </td>
+                                {pagedResults.map((row, i) => {
+                                  const val = row[colKey];
+                                  return (
+                                    <td
+                                      key={i}
+                                      className={`px-3 py-1.5 whitespace-nowrap overflow-hidden text-ellipsis max-w-[288px] cursor-pointer transition-colors border-r border-b ${
+                                        theme === 'dark' ? 'border-r-slate-700/80 border-b-slate-700/80 text-slate-400 hover:bg-slate-700' : 'border-r-slate-200 border-b-slate-200 text-slate-600 hover:bg-slate-200'
+                                      }`}
+                                      title={val === null ? 'null' : String(val).length > 200 ? String(val).substring(0, 200) + '...' : String(val)}
+                                      onClick={() => setDuckDbSelectedCell({ title: 'Значение', content: val === null ? 'null' : String(val) })}
+                                    >
+                                      {val === null ? <span className="opacity-50 italic">null</span> : String(val)}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      ) : (
+                        <table className="w-full text-left border-separate border-spacing-0 text-xs">
+                          <thead className="sticky top-0 z-20">
+                            <tr>
+                              <th className={`sticky top-0 left-0 z-30 px-2 py-2 font-semibold border-b-[1.5px] border-r-[1.5px] text-center w-12 shrink-0 select-none ${
+                                theme === 'dark' ? 'border-b-slate-600 border-r-slate-600 text-slate-200 bg-slate-800' : 'border-b-slate-300 border-r-slate-300 text-slate-800 bg-slate-100'
+                              }`}>
+                                #
+                              </th>
+                              {Object.keys(duckDbResults[0]).map((col) => (
+                                <th 
+                                  key={col} 
+                                  className={`sticky top-0 z-20 px-3 py-2 font-semibold border-b-[1.5px] border-r max-w-[180px] overflow-hidden text-ellipsis whitespace-nowrap cursor-pointer transition-colors ${
+                                    theme === 'dark' ? 'border-b-slate-600 border-r-slate-700/80 text-slate-200 bg-slate-800 hover:bg-slate-700' : 'border-b-slate-300 border-r-slate-200 text-slate-800 bg-slate-100 hover:bg-slate-200'
+                                  }`}
+                                  title={col.length > 200 ? col.substring(0, 200) + '...' : col}
+                                  onClick={() => setDuckDbSelectedCell({ title: 'Столбец', content: col })}
+                                >
+                                  {col}
+                                </th>
                               ))}
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody>
+                            {pagedResults.map((row, i) => {
+                              const rowNum = (duckDbPage - 1) * (uiVisibility.duckDbMaxRows || 100) + i + 1;
+                              return (
+                                <tr key={i}>
+                                  <td className={`sticky left-0 z-10 px-2 py-1.5 text-center font-mono text-[11px] select-none shrink-0 border-r-[1.5px] border-b ${
+                                    theme === 'dark' ? 'text-slate-300 bg-slate-900 border-r-slate-600 border-b-slate-700/80' : 'text-slate-600 bg-slate-100 border-r-slate-300 border-b-slate-200'
+                                  }`}>
+                                    {rowNum}
+                                  </td>
+                                  {Object.values(row).map((val: any, j) => (
+                                    <td 
+                                      key={j} 
+                                      className={`px-3 py-1.5 whitespace-nowrap overflow-hidden text-ellipsis max-w-[288px] cursor-pointer transition-colors border-r border-b ${
+                                        theme === 'dark' ? 'border-r-slate-700/80 border-b-slate-700/80 text-slate-400 hover:bg-slate-700' : 'border-r-slate-200 border-b-slate-200 text-slate-600 hover:bg-slate-200'
+                                      }`}
+                                      title={val === null ? 'null' : String(val).length > 200 ? String(val).substring(0, 200) + '...' : String(val)}
+                                      onClick={() => setDuckDbSelectedCell({ title: 'Значение', content: val === null ? 'null' : String(val) })}
+                                    >
+                                      {val === null ? <span className="opacity-50 italic">null</span> : String(val)}
+                                    </td>
+                                  ))}
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      )
                     ) : duckDbResults && duckDbResults.length === 0 ? (
                       <div className={`p-4 text-xs italic ${theme === 'dark' ? 'text-slate-500' : 'text-slate-400'}`}>
                         Запрос выполнен успешно. Данные отсутствуют.
@@ -3694,12 +4165,6 @@ export default function App() {
                 </div>
                 )}
 
-                <div className="text-xs text-slate-500 dark:text-slate-400 border-l border-slate-600/40 pl-3">
-                  <kbd className="px-1.5 py-0.5 rounded border text-[10px] bg-slate-200 dark:bg-slate-700 border-slate-300 dark:border-slate-600 font-mono">Esc</kbd> чтобы выйти
-                </div>
-
-                <div className="h-4 w-px bg-slate-400/40 dark:bg-slate-600" />
-
                 {(uiVisibility.showSearchSql ?? true) && (
                 <button
                   onClick={(e) => {
@@ -3746,6 +4211,18 @@ export default function App() {
                 </button>
                 )}
 
+                {uiVisibility.showCompactSql !== false && (
+                <button
+                  onClick={handleCompactSql}
+                  className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded transition-all ${
+                    theme === 'dark' ? 'text-slate-300 hover:text-slate-100' : 'text-slate-700 hover:text-slate-900'
+                  }`}
+                  title="Формат в одну строку (Ctrl+Shift+U)"
+                >
+                  <Shrink className="w-3.5 h-3.5" />
+                </button>
+                )}
+
                 {uiVisibility.showCopySql && (
                 <button
                   onClick={handleCopySql}
@@ -3758,10 +4235,24 @@ export default function App() {
                   <span>{copied === 'sql' ? 'Copied!' : 'Copy SQL'}</span>
                 </button>
                 )}
+
+                {(uiVisibility.showWin1251Button ?? true) && (
+                <button
+                  onClick={() => win1251FileInputRef.current?.click()}
+                  className={`flex items-center gap-1 text-xs px-2 py-1 rounded transition-all ${
+                    theme === 'dark' 
+                      ? 'text-slate-300 hover:text-slate-100' 
+                      : 'text-slate-700 hover:text-slate-900'
+                  }`}
+                  title="Открыть файл в кодировке Windows-1251"
+                >
+                  <span>Win-1251</span>
+                </button>
+                )}
               </div>
 
               <div className="flex items-center gap-2">
-                {uiVisibility.showDuckDbConfig && (duckDbResults !== null || duckDbError !== null) && !isDuckDbResultVisible && (
+                {(uiVisibility.showDuckDbConfig || uiVisibility.showClickhouseConfig) && (duckDbResults !== null || duckDbError !== null) && !isDuckDbResultVisible && (
                   <button
                     onClick={() => setIsDuckDbResultVisible(true)}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold text-xs shadow-sm transition-all ${
@@ -3775,7 +4266,7 @@ export default function App() {
                     <span>Результат</span>
                   </button>
                 )}
-                {uiVisibility.showDuckDbConfig && (
+                {(uiVisibility.showDuckDbConfig || uiVisibility.showClickhouseConfig) && (
                 <button
                   onClick={handleExecuteDuckDb}
                   disabled={isDuckDbRunning}
@@ -3834,15 +4325,38 @@ export default function App() {
       <VersionHistoryModal
         isOpen={showHistoryModal}
         onClose={() => setShowHistoryModal(false)}
-        currentSql={sql}
+        currentSql={getActiveTabSql()}
         currentDialect={dialect}
         onRestoreVersion={(restoredSql, restoredDialect) => {
-          setSql(restoredSql);
+          sqlRef.current = restoredSql; setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: restoredSql } : t));
           setDialect(restoredDialect);
           handleVisualize(restoredSql, restoredDialect, direction);
         }}
         theme={theme}
         uiVisibility={uiVisibility}
+      />
+
+      {/* CLICKHOUSE CONFIG MODAL */}
+      <ClickhouseModal
+        isOpen={showClickhouseModal}
+        onClose={() => setShowClickhouseModal(false)}
+        config={clickhouseConfig}
+        onConnect={(cfg) => {
+          if (duckDbConnectedPath) {
+            handleDisconnectDuckDb();
+          }
+          setClickhouseConfig(cfg);
+          setActiveEngine('clickhouse');
+          setShowDuckDbSchemaPanel(true);
+        }}
+        onDisconnect={() => {
+          setClickhouseConfig(null);
+          if (activeEngine === 'clickhouse') {
+            setActiveEngine('duckdb');
+          }
+        }}
+        theme={theme}
+        fetchApiJson={fetchApiJson}
       />
 
     </div>

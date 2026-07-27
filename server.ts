@@ -105,6 +105,194 @@ app.post("/api/duckdb/query", (req, res) => {
   }
 });
 
+// ClickHouse proxy endpoints
+app.post("/api/clickhouse/test", async (req, res) => {
+  const { protocol, host, user, key, database } = req.body;
+  if (!host) {
+    return res.status(400).json({ error: "Host is required" });
+  }
+
+  try {
+    const cleanHost = host.replace(/^https?:\/\//i, '');
+    const dbParam = database ? `?database=${encodeURIComponent(database)}` : '';
+    const url = `${protocol || 'http'}://${cleanHost}/${dbParam}`;
+
+    const chRes = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'X-ClickHouse-User': user || 'default',
+        'X-ClickHouse-Key': key || '',
+        'Content-Type': 'text/plain;charset=utf-8'
+      },
+      body: 'SELECT 1'
+    });
+
+    const responseText = await chRes.text();
+    if (!chRes.ok) {
+      return res.status(chRes.status).json({ error: responseText || `HTTP ${chRes.status}` });
+    }
+
+    res.json({ success: true, text: responseText.trim() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.post("/api/clickhouse/query", async (req, res) => {
+  const { protocol, host, user, key, database, query } = req.body;
+  if (!host || !query) {
+    return res.status(400).json({ error: "Host and query are required" });
+  }
+
+  try {
+    const cleanHost = host.replace(/^https?:\/\//i, '');
+    const dbParam = database ? `?database=${encodeURIComponent(database)}` : '';
+    const url = `${protocol || 'http'}://${cleanHost}/${dbParam}`;
+
+    const chRes = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'X-ClickHouse-User': user || 'default',
+        'X-ClickHouse-Key': key || '',
+        'Content-Type': 'text/plain;charset=utf-8'
+      },
+      body: query
+    });
+
+    const responseText = await chRes.text();
+    if (!chRes.ok) {
+      return res.status(chRes.status).json({ error: responseText || `HTTP ${chRes.status}` });
+    }
+
+    try {
+      const json = JSON.parse(responseText);
+      res.json({ success: true, data: json.data || json });
+    } catch {
+      res.json({ success: true, text: responseText });
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.post("/api/clickhouse/copy-to", async (req, res) => {
+  const { protocol, host, user, key, database, innerSql, filePath } = req.body;
+  if (!host || !innerSql || !filePath) {
+    return res.status(400).json({ error: "Host, innerSql and filePath are required" });
+  }
+
+  try {
+    const cleanHost = host.replace(/^https?:\/\//i, '');
+    const dbParam = database ? `?database=${encodeURIComponent(database)}` : '';
+    const url = `${protocol || 'http'}://${cleanHost}/${dbParam}`;
+
+    let sqlToExec = innerSql.trim().replace(/;+$/, '');
+    if (!/\bFORMAT\b/i.test(sqlToExec)) {
+      const ext = path.extname(filePath).toLowerCase();
+      if (ext === '.csv') {
+        sqlToExec += ' FORMAT CSVWithNames';
+      } else if (ext === '.tsv' || ext === '.tab') {
+        sqlToExec += ' FORMAT TSVWithNames';
+      } else if (ext === '.json') {
+        sqlToExec += ' FORMAT JSONEachRow';
+      } else {
+        sqlToExec += ' FORMAT Parquet';
+      }
+    }
+
+    const chRes = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'X-ClickHouse-User': user || 'default',
+        'X-ClickHouse-Key': key || '',
+        'Content-Type': 'text/plain;charset=utf-8'
+      },
+      body: sqlToExec
+    });
+
+    if (!chRes.ok) {
+      const errorText = await chRes.text();
+      return res.status(chRes.status).json({ error: errorText || `HTTP ${chRes.status}` });
+    }
+
+    const arrayBuffer = await chRes.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    const dir = path.dirname(filePath);
+    if (dir && dir !== '.' && !fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(filePath, buffer);
+
+    res.json({
+      success: true,
+      message: `Файл успешно сохранен: ${filePath}`,
+      bytes: buffer.length
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.post("/api/clickhouse/copy-from", async (req, res) => {
+  const { protocol, host, user, key, database, innerSql, filePath } = req.body;
+  if (!host || !innerSql || !filePath) {
+    return res.status(400).json({ error: "Host, innerSql and filePath are required" });
+  }
+
+  try {
+    if (!fs.existsSync(filePath)) {
+      return res.status(400).json({ error: `Файл не найден по пути: ${filePath}` });
+    }
+
+    const fileBuffer = fs.readFileSync(filePath);
+    const cleanHost = host.replace(/^https?:\/\//i, '');
+    const ext = path.extname(filePath).toLowerCase();
+
+    let target = innerSql.trim();
+    if (!/^INSERT INTO/i.test(target)) {
+      target = `INSERT INTO ${target}`;
+    }
+    if (!/\bFORMAT\b/i.test(target)) {
+      if (ext === '.csv') {
+        target += ' FORMAT CSVWithNames';
+      } else if (ext === '.tsv' || ext === '.tab') {
+        target += ' FORMAT TSVWithNames';
+      } else if (ext === '.json') {
+        target += ' FORMAT JSONEachRow';
+      } else {
+        target += ' FORMAT Parquet';
+      }
+    }
+
+    const dbParam = database ? `?database=${encodeURIComponent(database)}&query=${encodeURIComponent(target)}` : `?query=${encodeURIComponent(target)}`;
+    const url = `${protocol || 'http'}://${cleanHost}/${dbParam}`;
+
+    const chRes = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'X-ClickHouse-User': user || 'default',
+        'X-ClickHouse-Key': key || '',
+        'Content-Type': 'application/octet-stream'
+      },
+      body: fileBuffer
+    });
+
+    const responseText = await chRes.text();
+    if (!chRes.ok) {
+      return res.status(chRes.status).json({ error: responseText || `HTTP ${chRes.status}` });
+    }
+
+    res.json({
+      success: true,
+      message: `Данные из файла ${filePath} успешно загружены в Clickhouse`,
+      response: responseText || 'OK'
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

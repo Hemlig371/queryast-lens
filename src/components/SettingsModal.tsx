@@ -58,11 +58,14 @@ export interface UiVisibilitySettings {
   showHistory: boolean;
   showDuckDbConfig?: boolean;
   duckDbMaxRows?: number;
+  showClickhouseConfig?: boolean;
+  clickhouseMaxRows?: number;
   showSearchSql?: boolean;
   showOpenFile: boolean;
   showWin1251Button?: boolean;
   showSaveFile: boolean;
   showFormatSql: boolean;
+  showCompactSql?: boolean;
   showCopySql: boolean;
   showMaximizeButton: boolean;
   showLayoutDirection: boolean;
@@ -109,11 +112,14 @@ export const DEFAULT_UI_VISIBILITY: UiVisibilitySettings = {
   showHistory: true,
   showDuckDbConfig: true,
   duckDbMaxRows: 100,
+  showClickhouseConfig: true,
+  clickhouseMaxRows: 100,
   showSearchSql: true,
   showOpenFile: true,
   showWin1251Button: true,
   showSaveFile: true,
   showFormatSql: true,
+  showCompactSql: true,
   showCopySql: true,
   showMaximizeButton: true,
   showLayoutDirection: true,
@@ -227,9 +233,23 @@ export const DEFAULT_HOTKEYS: HotkeyBinding[] = [
     defaultKey: 'Ctrl+Shift+F'
   },
   {
+    id: 'compactSql',
+    label: 'Формат в одну строку',
+    description: 'Заменить переносы строк на пробелы и удалить двойные пробелы',
+    category: 'Редактор',
+    defaultKey: 'Ctrl+Shift+U'
+  },
+  {
+    id: 'quickActionsMenu',
+    label: 'Меню быстрых действий',
+    description: 'Вызвать меню быстрых действий под курсором в редакторе',
+    category: 'Редактор',
+    defaultKey: 'Ctrl+Q'
+  },
+  {
     id: 'openSnippets',
-    label: 'Конструктор и сниппеты',
-    description: 'Открыть окно готовых сниппетов и генератора SQL',
+    label: 'Конструктор и шаблоны',
+    description: 'Открыть окно готовых шаблонов и генератора SQL',
     category: 'Редактор',
     defaultKey: 'Ctrl+K'
   },
@@ -615,6 +635,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     localStorage.setItem(UI_VISIBILITY_STORAGE_KEY, JSON.stringify(updated));
   };
 
+  const updateClickhouseMaxRows = (val: number) => {
+    const updated = { ...uiVisibility, clickhouseMaxRows: val };
+    onUpdateUiVisibility(updated);
+    localStorage.setItem(UI_VISIBILITY_STORAGE_KEY, JSON.stringify(updated));
+  };
+
   const categories: ('Редактор' | 'Вкладки' | 'Граф' | 'Общие')[] = ['Редактор', 'Вкладки', 'Граф', 'Общие'];
 
   return (
@@ -713,15 +739,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   {[
                     { key: 'showEditorToggleBtn', label: 'Кнопка «Скрыть редактор»', desc: 'Кнопка скрытия левой панели' },
                     { key: 'showDuckDbConfig', label: 'Интеграция DuckDB', desc: 'Кнопки подключения и выполнения кода' },
+                    { key: 'showClickhouseConfig', label: 'Интеграция Clickhouse (http/https)', desc: 'Кнопки подключения и выполнения Clickhouse HTTP(S) запросов' },
                     { key: 'showSearchSql', label: 'Кнопка «Поиск»', desc: 'Поиск и замена текста в редакторе (Ctrl+F)' },
                     { key: 'showOpenFile', label: 'Открыть файл (.sql)', desc: 'Загрузка файла с диска' },
                     { key: 'showWin1251Button', label: 'Кнопка «Win-1251»', desc: 'Открытие файла в кодировке Windows-1251' },
                     { key: 'showSaveFile', label: 'Сохранить файл (.sql)', desc: 'Скачивание текущего SQL' },
-                    { key: 'showSnippets', label: 'Сниппеты и Конструктор', desc: 'Библиотека готовых фрагментов' },
+                    { key: 'showSnippets', label: 'Шаблоны и Конструктор', desc: 'Библиотека готовых фрагментов' },
                     { key: 'showHistory', label: 'История версий', desc: 'История снимков и автосохранений' },
                     { key: 'showMaximizeButton', label: 'Кнопка «Развернуть»', desc: 'Разворот редактора на весь экран' },
                     { key: 'showPresets', label: 'Кнопка «Пресеты»', desc: 'Быстрый выбор готовых SQL запросов' },
                     { key: 'showFormatSql', label: 'Кнопка «Формат»', desc: 'Авто-форматирование SQL' },
+                    { key: 'showCompactSql', label: 'Кнопка «Схлопнуть в строку»', desc: 'Замена переносов строк на пробелы' },
                     { key: 'showCopySql', label: 'Кнопка «Copy SQL»', desc: 'Копирование текста в буфер обмена' },
                   ].map((item) => {
                     const isChecked = Boolean(uiVisibility[item.key as keyof UiVisibilitySettings]);
@@ -758,6 +786,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 onChange={e => {
                                   const val = parseInt(e.target.value);
                                   if (!isNaN(val) && val > 0) updateDuckDbMaxRows(val);
+                                }}
+                                className={`w-16 px-1.5 py-0.5 text-xs rounded border outline-none ${theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'}`}
+                              />
+                            </div>
+                          )}
+                          {item.key === 'showClickhouseConfig' && isChecked && (
+                            <div className="mt-2 flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                              <span className="text-[10px]">Max rows:</span>
+                              <input 
+                                type="number" 
+                                min="1" 
+                                step="10"
+                                value={uiVisibility.clickhouseMaxRows ?? 100} 
+                                onChange={e => {
+                                  const val = parseInt(e.target.value);
+                                  if (!isNaN(val) && val > 0) updateClickhouseMaxRows(val);
                                 }}
                                 className={`w-16 px-1.5 py-0.5 text-xs rounded border outline-none ${theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'}`}
                               />
@@ -822,14 +866,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <h3 className={`text-xs uppercase font-bold tracking-wider border-b pb-1 ${
                   theme === 'dark' ? 'text-slate-400 border-slate-700/50' : 'text-slate-900 border-slate-300'
                 }`}>
-                  Библиотека сниппетов (Окно)
+                  Библиотека шаблонов (Окно)
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   {[
-                    { key: 'showSnippetSearch', label: 'Поиск по сниппетам', desc: 'Поле глобального поиска сниппетов' },
-                    { key: 'showSnippetCategories', label: 'Категории сниппетов', desc: 'Вкладки диалектов и разделов' },
-                    { key: 'showSnippetFavorites', label: 'Избранное', desc: 'Возможность отмечать сниппеты звездочкой' },
-                    { key: 'showSnippetCreateBtn', label: 'Конструктор сниппетов', desc: 'Кнопка и форма «+ Создать сниппет»' },
+                    { key: 'showSnippetSearch', label: 'Поиск по шаблонам', desc: 'Поле глобального поиска шаблонов' },
+                    { key: 'showSnippetCategories', label: 'Категории шаблонов', desc: 'Вкладки диалектов и разделов' },
+                    { key: 'showSnippetFavorites', label: 'Избранное', desc: 'Возможность отмечать шаблоны звездочкой' },
+                    { key: 'showSnippetCreateBtn', label: 'Конструктор шаблонов', desc: 'Кнопка и форма «+ Создать шаблон»' },
                   ].map((item) => {
                     const isChecked = Boolean(uiVisibility[item.key as keyof UiVisibilitySettings]);
                     return (
@@ -1540,7 +1584,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   ? 'bg-slate-750 hover:bg-slate-700 border-slate-600 text-slate-200'
                   : 'bg-white hover:bg-slate-50 border-slate-300 text-slate-800 shadow-2xs'
               }`}
-              title="Экспортировать все настройки, сниппеты и историю в JSON файл"
+              title="Экспортировать все настройки, шаблоны и историю в JSON файл"
             >
               <Download className="w-3.5 h-3.5 text-blue-500" />
               <span>Экспорт данных</span>

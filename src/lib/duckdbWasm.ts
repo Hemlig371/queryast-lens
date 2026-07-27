@@ -89,14 +89,6 @@ async function preloadTauriFilesFromQuery(db: any, sqlQuery: string) {
   }
 }
 
-// Normalize SQL string to convert Windows single backslashes in path literals to forward slashes
-export function sanitizeSqlPaths(sql: string): string {
-  return sql.replace(/['"]([a-zA-Z]:\\[^'"]+)['"]/g, (_, path) => {
-    return `'${path.replace(/\\/g, '/')}'`;
-  }).replace(/['"](\\\\[^'"]+)['"]/g, (_, path) => {
-    return `'${path.replace(/\\/g, '/')}'`;
-  });
-}
 
 export async function getDuckDbWasm() {
   if (dbInstance) return dbInstance;
@@ -164,7 +156,7 @@ export async function queryDuckDbWasm(sqlQuery: string) {
   }
 
   await preloadTauriFilesFromQuery(db, sqlQuery);
-  const cleanQuery = sanitizeSqlPaths(sqlQuery);
+  const cleanQuery = sqlQuery;
 
   // Check if query is COPY ... TO 'path'
   const isCopyQuery = /COPY\b[\s\S]*?\bTO\b\s*['"]([^'"]+)['"]/i.exec(sqlQuery);
