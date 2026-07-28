@@ -148,6 +148,8 @@ export default function App() {
   
   // DuckDB Integration State
   const [duckDbConnectedPath, setDuckDbConnectedPath] = useState<string | null>(null);
+  const [recentDuckDbPath, setRecentDuckDbPath] = useState<string | null>(null);
+  const [recentClickhouseConfigs, setRecentClickhouseConfigs] = useState<ClickhouseConfig[]>([]);
   const [isWasmMode, setIsWasmMode] = useState<boolean>(false);
   const [showDuckDbConnMenu, setShowDuckDbConnMenu] = useState<boolean>(false);
   const [duckDbResults, setDuckDbResults] = useState<any[] | null>(null);
@@ -173,6 +175,21 @@ export default function App() {
   const [duckDbPageSize, setDuckDbPageSize] = useState<number>(50);
   const [showQuickActionsMenu, setShowQuickActionsMenu] = useState<boolean>(false);
   const [quickActions, setQuickActions] = useState<QuickActionTemplate[]>(getQuickActionTemplates);
+
+  useEffect(() => {
+    if (duckDbConnectedPath) {
+      setRecentDuckDbPath(duckDbConnectedPath);
+    }
+  }, [duckDbConnectedPath]);
+
+  useEffect(() => {
+    if (clickhouseConfig) {
+      setRecentClickhouseConfigs(prev => {
+        const filtered = prev.filter(c => !(c.host === clickhouseConfig.host && c.user === clickhouseConfig.user));
+        return [clickhouseConfig, ...filtered].slice(0, 3);
+      });
+    }
+  }, [clickhouseConfig]);
 
   useEffect(() => {
     const updateQuickActions = () => {
@@ -471,6 +488,40 @@ export default function App() {
     };
   }, [saveSessionToStorage]);
 
+
+  const handleConnectToRecentClickhouse = async (cfg: ClickhouseConfig) => {
+    setShowDuckDbConnMenu(false);
+    if (duckDbConnectedPath || clickhouseConfig) {
+      await handleDisconnectDuckDb();
+    }
+    setClickhouseConfig(cfg);
+    setActiveEngine('clickhouse');
+    setShowDuckDbSchemaPanel(true);
+  };
+
+  const handleConnectToRecentDuckDb = async (dbPath: string) => {
+    setShowDuckDbConnMenu(false);
+    if (duckDbConnectedPath || clickhouseConfig) {
+      await handleDisconnectDuckDb();
+    }
+    setClickhouseConfig(null);
+    setActiveEngine('duckdb');
+    if (isTauriEnv) {
+      setIsDuckDbRunning(true);
+      try {
+        const path = await tauriInvoke<string>('connect_db', { path: dbPath });
+        setDuckDbConnectedPath(path || dbPath);
+        setIsWasmMode(false);
+        setShowDuckDbSchemaPanel(true);
+        setDuckDbError(null);
+      } catch (err: any) {
+        setDuckDbError("Ошибка подключения к DuckDB: " + (err.message || String(err)));
+        setIsDuckDbResultVisible(true);
+      } finally {
+        setIsDuckDbRunning(false);
+      }
+    }
+  };
 
   const handleConfigureDuckDb = async () => {
     setShowDuckDbConnMenu(false);
@@ -3627,6 +3678,18 @@ export default function App() {
                               <Plus className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                               <span>Создать новую БД (.duckdb)</span>
                             </button>
+                            {recentDuckDbPath && recentDuckDbPath !== duckDbConnectedPath && (
+                              <button
+                                onClick={() => handleConnectToRecentDuckDb(recentDuckDbPath)}
+                                className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center gap-2 transition-colors mt-1 ${
+                                  theme === 'dark' ? 'hover:bg-slate-700/50 text-slate-300' : 'hover:bg-slate-50 text-slate-600'
+                                }`}
+                                title={recentDuckDbPath}
+                              >
+                                <Database className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                                <span className="truncate">{recentDuckDbPath.split(/[/\\]/).pop()}</span>
+                              </button>
+                            )}
                           </>
                         )}
 
@@ -3635,22 +3698,43 @@ export default function App() {
                         )}
 
                         {uiVisibility.showClickhouseConfig && (
-                          <button
-                            onClick={() => {
-                              setShowDuckDbConnMenu(false);
-                              if (duckDbConnectedPath) {
-                                handleDisconnectDuckDb();
+                          <>
+                            <button
+                              onClick={() => {
+                                setShowDuckDbConnMenu(false);
+                                if (duckDbConnectedPath) {
+                                  handleDisconnectDuckDb();
+                                }
+                                setActiveEngine('clickhouse');
+                                setShowClickhouseModal(true);
+                              }}
+                              className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center gap-2 transition-colors ${
+                                theme === 'dark' ? 'hover:bg-slate-700 text-slate-200' : 'hover:bg-slate-100 text-slate-800'
+                              }`}
+                            >
+                              <Database className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                              <span>Подключить Clickhouse</span>
+                            </button>
+                            {recentClickhouseConfigs.map((cfg, idx) => {
+                              // Don't show the currently active connection
+                              if (clickhouseConfig && cfg.host === clickhouseConfig.host && cfg.user === clickhouseConfig.user) {
+                                return null;
                               }
-                              setActiveEngine('clickhouse');
-                              setShowClickhouseModal(true);
-                            }}
-                            className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center gap-2 transition-colors ${
-                              theme === 'dark' ? 'hover:bg-slate-700 text-slate-200' : 'hover:bg-slate-100 text-slate-800'
-                            }`}
-                          >
-                            <Database className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                            <span>Подключить Clickhouse</span>
-                          </button>
+                              return (
+                                <button
+                                  key={idx}
+                                  onClick={() => handleConnectToRecentClickhouse(cfg)}
+                                  className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center gap-2 transition-colors mt-1 ${
+                                    theme === 'dark' ? 'hover:bg-slate-700/50 text-slate-300' : 'hover:bg-slate-50 text-slate-600'
+                                  }`}
+                                  title={`${cfg.host} (${cfg.user})`}
+                                >
+                                  <Database className="w-3.5 h-3.5 text-blue-400 shrink-0 opacity-70" />
+                                  <span className="truncate">{cfg.host} - {cfg.user}</span>
+                                </button>
+                              );
+                            })}
+                          </>
                         )}
                       </div>
                     </>
