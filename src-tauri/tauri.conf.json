@@ -12,6 +12,14 @@
   "tauri": {
     "allowlist": {
       "all": true,
+      "http": {
+        "all": true,
+        "request": true,
+        "scope": [
+          "http://**",
+          "https://**"
+        ]
+      },
       "fs": {
         "all": true,
         "readFile": true,
