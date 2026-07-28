@@ -45,7 +45,7 @@ jobs:
       - name: Install web app dependencies
         shell: bash
         run: |
-          rm -f package-lock.json
+          rm -rf package-lock.json bun.lock bun.lockb node_modules
           npm install
 
       - name: Build web application
