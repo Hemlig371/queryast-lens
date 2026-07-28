@@ -16,6 +16,10 @@ serde_json = "1.0"
 tauri = { version = "1.6", features = ["api-all"] }
 duckdb = { version = "1.2", features = ["bundled", "chrono"] }
 chrono = "0.4"
+reqwest = { version = "0.11", features = ["stream"] }
+futures-util = "0.3"
+tokio = { version = "1", features = ["fs", "io-util", "rt-multi-thread", "time", "macros"] }
+tokio-util = { version = "0.7", features = ["codec"] }
 
 [features]
 default = ["custom-protocol"]

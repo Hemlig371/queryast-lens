@@ -69,8 +69,8 @@
     "windows": [
       {
         "title": "QueryAST Lens",
-        "width": 1440,
-        "height": 950,
+        "width": 1600,
+        "height": 1000,
         "resizable": true
       }
     ]

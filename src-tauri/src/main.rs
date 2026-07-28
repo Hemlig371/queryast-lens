@@ -4,12 +4,22 @@
 )]
 
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use duckdb::{Connection, Result, types::ValueRef};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use tauri::State;
+use reqwest::Client;
+use tokio::fs::File;
+use tokio::io::AsyncWriteExt;
+use futures_util::StreamExt;
 
 pub struct DbState(pub Mutex<Option<Connection>>);
+
+pub struct ClickhouseState {
+    pub cancel_flag: Mutex<Option<Arc<AtomicBool>>>,
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct QueryResult {
@@ -198,13 +208,153 @@ fn execute_query(state: State<'_, DbState>, sql: String) -> Result<QueryResult, 
     }
 }
 
+#[derive(Serialize)]
+pub struct ClickhouseCopyResult {
+    pub success: bool,
+    pub message: String,
+    pub bytes: u64,
+}
+
+#[tauri::command]
+async fn clickhouse_copy_to(
+    state: State<'_, ClickhouseState>,
+    url: String,
+    method: String,
+    headers: std::collections::HashMap<String, String>,
+    body: String,
+    file_path: String,
+) -> Result<ClickhouseCopyResult, String> {
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    {
+        let mut guard = state.cancel_flag.lock().unwrap();
+        *guard = Some(cancel_flag.clone());
+    }
+
+    let client = Client::builder()
+        // we might not need to configure certs, but in case let's just let defaults apply
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let req_method = if method.to_uppercase() == "POST" { reqwest::Method::POST } else { reqwest::Method::GET };
+    let mut req = client.request(req_method, &url);
+    
+    for (k, v) in headers {
+        req = req.header(k, v);
+    }
+    let req = req.body(body);
+
+    let res = req.send().await.map_err(|e| e.to_string())?;
+
+    if !res.status().is_success() {
+        let text = res.text().await.unwrap_or_default();
+        return Err(text);
+    }
+
+    let mut file = File::create(&file_path).await.map_err(|e| e.to_string())?;
+    let mut stream = res.bytes_stream();
+    let mut bytes_written: u64 = 0;
+
+    while let Some(chunk_res) = stream.next().await {
+        if cancel_flag.load(Ordering::Relaxed) {
+            // Cancelled!
+            drop(file);
+            let _ = tokio::fs::remove_file(&file_path).await;
+            return Err("Запрос отменен пользователем".to_string());
+        }
+
+        let chunk = chunk_res.map_err(|e| e.to_string())?;
+        file.write_all(&chunk).await.map_err(|e| e.to_string())?;
+        bytes_written += chunk.len() as u64;
+    }
+
+    Ok(ClickhouseCopyResult {
+        success: true,
+        message: format!("Файл успешно сохранен: {}", file_path),
+        bytes: bytes_written,
+    })
+}
+
+#[tauri::command]
+async fn clickhouse_copy_from(
+    state: State<'_, ClickhouseState>,
+    url: String,
+    method: String,
+    headers: std::collections::HashMap<String, String>,
+    file_path: String,
+) -> Result<ClickhouseCopyResult, String> {
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    {
+        let mut guard = state.cancel_flag.lock().unwrap();
+        *guard = Some(cancel_flag.clone());
+    }
+
+    let client = Client::builder().build().map_err(|e| e.to_string())?;
+
+    let file = File::open(&file_path).await.map_err(|e| e.to_string())?;
+    let file_size = file.metadata().await.map_err(|e| e.to_string())?.len();
+
+    let stream = tokio_util::codec::FramedRead::new(file, tokio_util::codec::BytesCodec::new());
+    let stream = stream.map(|res| res.map(|b| b.freeze()));
+
+    let req_method = if method.to_uppercase() == "POST" { reqwest::Method::POST } else { reqwest::Method::GET };
+    let mut req = client.request(req_method, &url);
+    
+    for (k, v) in headers {
+        req = req.header(k, v);
+    }
+    
+    let req = req.body(reqwest::Body::wrap_stream(stream));
+    
+    let send_fut = req.send();
+    tokio::pin!(send_fut);
+    
+    let res = loop {
+        tokio::select! {
+            res_val = &mut send_fut => {
+                break res_val;
+            }
+            _ = tokio::time::sleep(std::time::Duration::from_millis(200)) => {
+                if cancel_flag.load(Ordering::Relaxed) {
+                    return Err("Запрос отменен пользователем".to_string());
+                }
+            }
+        }
+    };
+
+    let res = res.map_err(|e| e.to_string())?;
+
+    if !res.status().is_success() {
+        let text = res.text().await.unwrap_or_default();
+        return Err(text);
+    }
+
+    Ok(ClickhouseCopyResult {
+        success: true,
+        message: format!("Данные из файла {} успешно загружены в Clickhouse", file_path),
+        bytes: file_size,
+    })
+}
+
+#[tauri::command]
+fn cancel_clickhouse_query(state: State<'_, ClickhouseState>) -> Result<(), String> {
+    let guard = state.cancel_flag.lock().map_err(|e| e.to_string())?;
+    if let Some(flag) = &*guard {
+        flag.store(true, Ordering::Relaxed);
+    }
+    Ok(())
+}
+
 fn main() {
   tauri::Builder::default()
     .manage(DbState(Mutex::new(None)))
+    .manage(ClickhouseState { cancel_flag: Mutex::new(None) })
     .invoke_handler(tauri::generate_handler![
       connect_db,
       disconnect_db,
-      execute_query
+      execute_query,
+      clickhouse_copy_to,
+      clickhouse_copy_from,
+      cancel_clickhouse_query
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

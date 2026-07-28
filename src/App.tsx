@@ -74,7 +74,7 @@ import { saveVersion, getVersions } from './utils/versionHistory';
 import { format as formatSql } from 'sql-formatter';
 import { connectDuckDbWasmFile, queryDuckDbWasm, disconnectDuckDbWasm, exportDuckDbFile } from './lib/duckdbWasm';
 import { ClickhouseModal } from './components/ClickhouseModal';
-import { ClickhouseConfig, parseClickhouseCopy, getClickhouseUrl, getClickhouseHeaders, isTauriEnvironment, executeClickhouseQueryTauri, executeClickhouseCopyToTauri, executeClickhouseCopyFromTauri } from './lib/clickhouse';
+import { ClickhouseConfig, parseClickhouseCopy, getClickhouseUrl, getClickhouseHeaders, isTauriEnvironment, executeClickhouseQueryTauri, executeClickhouseCopyToTauri, executeClickhouseCopyFromTauri, cancelClickhouseQueryTauri } from './lib/clickhouse';
 
 export interface EditorTab {
   id: string;
@@ -826,6 +826,12 @@ export default function App() {
       duckDbAbortControllerRef.current.abort();
       duckDbAbortControllerRef.current = null;
     }
+    
+    // Also cancel Clickhouse Tauri query if running
+    if (isTauriEnvironment() && activeEngine === 'clickhouse') {
+      cancelClickhouseQueryTauri().catch(console.error);
+    }
+    
     setIsDuckDbRunning(false);
     setDuckDbError("Запрос отменен пользователем");
   };

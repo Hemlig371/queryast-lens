@@ -127,8 +127,7 @@ export async function executeClickhouseQueryTauri(config: ClickhouseConfig, quer
  * Executes Clickhouse COPY TO query and writes the resulting data as a file to local disk in Tauri.
  */
 export async function executeClickhouseCopyToTauri(config: ClickhouseConfig, innerSql: string, filePath: string): Promise<{ success: boolean; message: string; bytes: number }> {
-  const { fetch: tauriFetch, ResponseType, Body } = await import('@tauri-apps/api/http');
-  const { writeBinaryFile } = await import('@tauri-apps/api/fs');
+  const { invoke } = await import('@tauri-apps/api/tauri');
 
   let sqlToExec = innerSql.trim().replace(/;+$/, '');
   if (!/\bFORMAT\b/i.test(sqlToExec)) {
@@ -147,45 +146,26 @@ export async function executeClickhouseCopyToTauri(config: ClickhouseConfig, inn
   const url = getClickhouseUrl(config);
   const originalHeaders = getClickhouseHeaders(config, 'text/plain;charset=utf-8');
 
-  const response = await tauriFetch(url, {
+  // Instead of tauriFetch which buffers to RAM, we use our Rust streaming command
+  return await invoke('clickhouse_copy_to', {
+    url,
     method: 'POST',
     headers: originalHeaders,
-    body: Body.text(sqlToExec),
-    responseType: ResponseType.Binary
+    body: sqlToExec,
+    filePath: filePath
   });
+}
 
-  if (!response.ok) {
-    const errorText = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
-    throw new Error(errorText || `HTTP status ${response.status}`);
-  }
-
-  const rawData = response.data;
-  let bytes: Uint8Array;
-  if (rawData instanceof Uint8Array) {
-    bytes = rawData;
-  } else if (Array.isArray(rawData)) {
-    bytes = new Uint8Array(rawData);
-  } else {
-    throw new Error("Invalid binary response received from Clickhouse");
-  }
-
-  await writeBinaryFile(filePath, bytes);
-
-  return {
-    success: true,
-    message: `Файл успешно сохранен на локальный диск: ${filePath}`,
-    bytes: bytes.length
-  };
+export async function cancelClickhouseQueryTauri(): Promise<void> {
+  const { invoke } = await import('@tauri-apps/api/tauri');
+  await invoke('cancel_clickhouse_query');
 }
 
 /**
  * Reads a local file from disk in Tauri and streams it into a Clickhouse table (COPY FROM).
  */
 export async function executeClickhouseCopyFromTauri(config: ClickhouseConfig, innerSql: string, filePath: string): Promise<{ success: boolean; message: string; response: string }> {
-  const { fetch: tauriFetch, ResponseType, Body } = await import('@tauri-apps/api/http');
-  const { readBinaryFile } = await import('@tauri-apps/api/fs');
-
-  const fileData = await readBinaryFile(filePath);
+  const { invoke } = await import('@tauri-apps/api/tauri');
 
   let target = innerSql.trim();
   const ext = filePath.split('.').pop()?.toLowerCase();
@@ -207,21 +187,16 @@ export async function executeClickhouseCopyFromTauri(config: ClickhouseConfig, i
   const url = getClickhouseUrl(config, { query: target });
   const originalHeaders = getClickhouseHeaders(config, 'application/octet-stream');
 
-  const response = await tauriFetch(url, {
+  const res: { success: boolean; message: string; bytes: number } = await invoke('clickhouse_copy_from', {
+    url,
     method: 'POST',
     headers: originalHeaders,
-    body: Body.bytes(fileData),
-    responseType: ResponseType.Text
+    filePath: filePath
   });
-
-  if (!response.ok) {
-    const errorText = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
-    throw new Error(errorText || `HTTP status ${response.status}`);
-  }
 
   return {
     success: true,
-    message: `Данные из локального файла ${filePath} успешно загружены в Clickhouse`,
-    response: typeof response.data === 'string' ? response.data : JSON.stringify(response.data)
+    message: res.message,
+    response: `Загружено байт: ${res.bytes}`
   };
 }
