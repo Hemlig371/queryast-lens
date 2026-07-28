@@ -9,7 +9,7 @@ use std::sync::Arc;
 use duckdb::{Connection, Result, types::ValueRef};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
-use tauri::State;
+use tauri::{State, Manager};
 use reqwest::Client;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
@@ -346,6 +346,12 @@ fn cancel_clickhouse_query(state: State<'_, ClickhouseState>) -> Result<(), Stri
 
 fn main() {
   tauri::Builder::default()
+    .plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
+        if let Some(window) = app.get_window("main") {
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    }))
     .manage(DbState(Mutex::new(None)))
     .manage(ClickhouseState { cancel_flag: Mutex::new(None) })
     .invoke_handler(tauri::generate_handler![
