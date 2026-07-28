@@ -49,6 +49,7 @@ export interface FormatterSettings {
   useTabs: boolean;
   expressionWidth: number;
   denseOperators: boolean;
+  autoEscapeWindowsPaths?: boolean;
 }
 
 export interface UiVisibilitySettings {
@@ -103,6 +104,7 @@ export const DEFAULT_FORMATTER_SETTINGS: FormatterSettings = {
   useTabs: false,
   expressionWidth: 120,
   denseOperators: false,
+  autoEscapeWindowsPaths: true,
 };
 
 export const DEFAULT_UI_VISIBILITY: UiVisibilitySettings = {
@@ -205,6 +207,13 @@ export const DEFAULT_HOTKEYS: HotkeyBinding[] = [
     defaultKey: 'Ctrl+Shift+C'
   },
   {
+    id: 'commentBlock',
+    label: 'Комментирование выделения (/* */)',
+    description: 'Обернуть выделенный фрагмент в /* ... */ или раскомментировать его',
+    category: 'Редактор',
+    defaultKey: 'Ctrl+/'
+  },
+  {
     id: 'toggleWrap',
     label: 'Перенос строк в редакторе',
     description: 'Включить/выключить перенос длинных строк',
@@ -268,9 +277,37 @@ export const DEFAULT_HOTKEYS: HotkeyBinding[] = [
     defaultKey: 'Alt+T'
   },
   {
+    id: 'openSettings',
+    label: 'Открыть настройки',
+    description: 'Открыть модальное окно настроек',
+    category: 'Общие',
+    defaultKey: 'Ctrl+,'
+  },
+  {
+    id: 'exportResultsCopy',
+    label: 'Копировать результаты в TSV',
+    description: 'Копирование содержимого таблицы результатов в буфер обмена',
+    category: 'Общие',
+    defaultKey: 'Ctrl+Shift+S'
+  },
+  {
+    id: 'refreshSchema',
+    label: 'Обновить схему базы данных',
+    description: 'Запустить повторное сканирование таблиц и метаданных активного подключения',
+    category: 'Общие',
+    defaultKey: 'Ctrl+R'
+  },
+  {
+    id: 'escapeAction',
+    label: 'Клавиша Esc (Отмена / Закрытие)',
+    description: 'Отмена выполняющегося запроса, закрытие настроек и шаблонов',
+    category: 'Общие',
+    defaultKey: 'Esc'
+  },
+  {
     id: 'toggleMiniMap',
     label: 'Показать / скрыть миникарту',
-    description: 'Включить ли навигатоор-миникарту графа',
+    description: 'Включить навигатор-миникарту графа',
     category: 'Граф',
     defaultKey: 'Alt+M'
   },
@@ -293,18 +330,18 @@ export const DEFAULT_HOTKEYS: HotkeyBinding[] = [
 const STORAGE_KEY = 'sql_visualizer_hotkeys_v1';
 
 export function getSavedHotkeys(): Record<string, string> {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      return JSON.parse(saved);
-    }
-  } catch (e) {
-    console.error('Failed to load hotkeys', e);
-  }
   const defaults: Record<string, string> = {};
   DEFAULT_HOTKEYS.forEach((h) => {
     defaults[h.id] = h.defaultKey;
   });
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      return { ...defaults, ...JSON.parse(saved) };
+    }
+  } catch (e) {
+    console.error('Failed to load hotkeys', e);
+  }
   return defaults;
 }
 
@@ -481,6 +518,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         keyName = 'Enter';
       } else if (e.code === 'Escape' || e.key === 'Escape') {
         keyName = 'Esc';
+      } else if (e.code === 'Slash') {
+        keyName = '/';
+      } else if (e.code === 'Backslash') {
+        keyName = '\\';
+      } else if (e.code === 'Period') {
+        keyName = '.';
+      } else if (e.code === 'Comma') {
+        keyName = ',';
+      } else if (e.code === 'Semicolon') {
+        keyName = ';';
+      } else if (e.code === 'Quote') {
+        keyName = "'";
+      } else if (e.code === 'BracketLeft') {
+        keyName = '[';
+      } else if (e.code === 'BracketRight') {
+        keyName = ']';
+      } else if (e.code === 'Minus') {
+        keyName = '-';
+      } else if (e.code === 'Equal') {
+        keyName = '=';
+      } else if (e.code === 'Backquote') {
+        keyName = '`';
       }
 
       const combo = parts.length > 0 ? `${parts.join('+')}+${keyName}` : keyName;
@@ -749,7 +808,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     { key: 'showMaximizeButton', label: 'Кнопка «Развернуть»', desc: 'Разворот редактора на весь экран' },
                     { key: 'showPresets', label: 'Кнопка «Пресеты»', desc: 'Быстрый выбор готовых SQL запросов' },
                     { key: 'showFormatSql', label: 'Кнопка «Формат»', desc: 'Авто-форматирование SQL' },
-                    { key: 'showCompactSql', label: 'Кнопка «Схлопнуть в строку»', desc: 'Замена переносов строк на пробелы' },
+                    { key: 'showCompactSql', label: 'Кнопка «Формат в одну строку»', desc: 'Замена переносов строк на пробелы' },
                     { key: 'showCopySql', label: 'Кнопка «Copy SQL»', desc: 'Копирование текста в буфер обмена' },
                   ].map((item) => {
                     const isChecked = Boolean(uiVisibility[item.key as keyof UiVisibilitySettings]);
@@ -1146,6 +1205,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </span>
                   </label>
                 </div>
+                <div>
+                  <label className={`font-bold text-xs block mb-1 ${theme === 'dark' ? 'text-slate-200' : 'text-slate-900'}`}>
+                    Пути Windows
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer mt-2">
+                    <input
+                      type="checkbox"
+                      checked={formatterSettings.autoEscapeWindowsPaths ?? true}
+                      onChange={(e) => updateFormatter({ autoEscapeWindowsPaths: e.target.checked })}
+                      className="rounded border-slate-700 text-blue-600 focus:ring-blue-500 w-4 h-4"
+                    />
+                    <span className={`text-xs ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>
+                      Авто-экранирование путей Windows (C:\...) в выражениях FROM/TO
+                    </span>
+                  </label>
+                </div>
               </div>
 
               {/* AUTOCOMPLETE TEMPLATES MANAGER */}
@@ -1155,7 +1230,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="flex items-center justify-between">
                   <div>
                     <label className={`font-bold text-xs block ${theme === 'dark' ? 'text-slate-200' : 'text-slate-900'}`}>
-                      Шаблоны автодополнения SQL (Autocomplete Snippets)
+                      Шаблоны автодополнения SQL (Autocomplete)
                     </label>
                     <p className={`text-[11px] mt-0.5 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>
                       Добавляет, редактирует и удаляет пользовательские шаблоны для выпадающего списка автокомплита

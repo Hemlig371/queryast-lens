@@ -135,6 +135,8 @@ export const highlightSqlHtml = (sqlText: string, theme: 'dark' | 'light', selec
 export interface SqlEditorRef {
   getSelection: () => { start: number; end: number; text: string } | null;
   replaceSelection: (newText: string) => void;
+  setSelectionRange: (start: number, end: number) => void;
+  replaceRange: (newText: string, start: number, end: number, selectionMode?: 'select' | 'start' | 'end' | 'preserve') => void;
 }
 
 const editorStyles: React.CSSProperties = {
@@ -192,22 +194,11 @@ export function SqlEditor({
     }
   }, [propValue]); // do not add value as dependency to avoid infinite loops
 
-  const timeoutRef = useRef<any>(null);
-
-  const pushChange = useCallback((newVal: string, immediate = false) => {
+  const pushChange = useCallback((newVal: string) => {
     setValue(newVal);
-    if (!onChange) return;
-    
-    if (immediate) {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    if (onChange) {
       onChange(newVal);
-      return;
     }
-
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    timeoutRef.current = setTimeout(() => {
-      onChange(newVal);
-    }, 400);
   }, [onChange]);
   useEffect(() => {
     if (editorRef) {
@@ -216,13 +207,27 @@ export function SqlEditor({
           if (!textareaRef.current) return null;
           const start = textareaRef.current.selectionStart;
           const end = textareaRef.current.selectionEnd;
-          if (start === end || start === null || end === null) return null;
+          if (start === null || end === null) return null;
           return { start, end, text: value.slice(start, end) };
         },
         replaceSelection: (newText: string) => {
           if (!textareaRef.current) return;
           textareaRef.current.focus();
           document.execCommand('insertText', false, newText);
+        },
+        setSelectionRange: (start: number, end: number) => {
+          if (!textareaRef.current) return;
+          textareaRef.current.focus();
+          textareaRef.current.setSelectionRange(start, end);
+        },
+        replaceRange: (newText: string, start: number, end: number, selectionMode: 'select' | 'start' | 'end' | 'preserve' = 'preserve') => {
+          if (!textareaRef.current) return;
+          const el = textareaRef.current;
+          el.focus();
+          el.setRangeText(newText, start, end, selectionMode);
+          const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+          nativeInputValueSetter?.call(el, el.value);
+          el.dispatchEvent(new Event('input', { bubbles: true }));
         }
       };
     }
@@ -336,6 +341,28 @@ export function SqlEditor({
         keyName = 'Enter';
       } else if (e.code === 'Escape' || e.key === 'Escape') {
         keyName = 'Esc';
+      } else if (e.code === 'Slash') {
+        keyName = '/';
+      } else if (e.code === 'Backslash') {
+        keyName = '\\';
+      } else if (e.code === 'Period') {
+        keyName = '.';
+      } else if (e.code === 'Comma') {
+        keyName = ',';
+      } else if (e.code === 'Semicolon') {
+        keyName = ';';
+      } else if (e.code === 'Quote') {
+        keyName = "'";
+      } else if (e.code === 'BracketLeft') {
+        keyName = '[';
+      } else if (e.code === 'BracketRight') {
+        keyName = ']';
+      } else if (e.code === 'Minus') {
+        keyName = '-';
+      } else if (e.code === 'Equal') {
+        keyName = '=';
+      } else if (e.code === 'Backquote') {
+        keyName = '`';
       }
 
       const combo = parts.length > 0 ? `${parts.join('+')}+${keyName}` : keyName;
@@ -346,7 +373,7 @@ export function SqlEditor({
       const targetQuickActionsCombo = savedHotkeys.quickActionsMenu || 'Ctrl+Q';
 
       const isSearch = combo === targetSearchCombo || (!e.shiftKey && (e.ctrlKey || e.metaKey) && (e.code === 'KeyF' || e.key?.toLowerCase() === 'f' || e.key?.toLowerCase() === 'а'));
-      const isReplace = combo === targetReplaceCombo || (!e.shiftKey && (e.ctrlKey || e.metaKey) && (e.code === 'KeyH' || e.code === 'KeyR' || e.key?.toLowerCase() === 'h' || e.key?.toLowerCase() === 'r' || e.key?.toLowerCase() === 'р' || e.key?.toLowerCase() === 'к'));
+      const isReplace = combo === targetReplaceCombo || (!e.shiftKey && (e.ctrlKey || e.metaKey) && (e.code === 'KeyH' || e.key?.toLowerCase() === 'h' || e.key?.toLowerCase() === 'р'));
       const isCompact = combo === targetCompactCombo || ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.code === 'KeyU' || e.key?.toLowerCase() === 'u' || e.key?.toLowerCase() === 'г'));
       const isQuickActions = combo === targetQuickActionsCombo || (!e.shiftKey && !e.altKey && (e.ctrlKey || e.metaKey) && (e.code === 'KeyQ' || e.key?.toLowerCase() === 'q' || e.key?.toLowerCase() === 'й'));
 
@@ -715,10 +742,7 @@ export function SqlEditor({
     }
 
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-        if (onChange) onChange(value);
-      }
+      // Synchronous changes are already pushed, no action needed here
     }
 
     // Hotkeys Ctrl+F / Cmd+F and Ctrl+H / Cmd+H for Search & Replace
@@ -826,7 +850,7 @@ export function SqlEditor({
 
         const newBlock = newLines.join('\n');
         const newValue = value.slice(0, lineStart) + newBlock + value.slice(lineEnd);
-        pushChange(newValue, true);
+        pushChange(newValue);
 
         const newStart = Math.max(lineStart, start + startOffsetDelta);
         const newEnd = Math.max(newStart, end + totalLengthDelta);
@@ -843,7 +867,7 @@ export function SqlEditor({
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value.replace(/\r/g, '');
-    pushChange(val, false);
+    pushChange(val);
     handleSelectionChange();
   };
 
@@ -1052,10 +1076,7 @@ export function SqlEditor({
             onScroll={handleScroll}
             onChange={handleChange}
             onBlur={() => {
-              if (timeoutRef.current) {
-                clearTimeout(timeoutRef.current);
-                if (onChange) onChange(value);
-              }
+              // Synchronous changes are already pushed, no action needed on blur
             }}
             onKeyDown={handleKeyDown}
             onSelect={handleSelectionChange}

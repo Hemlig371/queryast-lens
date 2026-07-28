@@ -13,6 +13,13 @@ export interface ClickhouseCopyCommand {
 }
 
 /**
+ * Checks if the application is running in Tauri environment.
+ */
+export function isTauriEnvironment(): boolean {
+  return typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_IPC__' in window);
+}
+
+/**
  * Parses COPY (...) TO 'path' and COPY (...) FROM 'path' commands.
  * Handles both parentheses COPY (SELECT ...) and raw COPY SELECT ...
  */
@@ -78,4 +85,136 @@ export function getClickhouseHeaders(config: ClickhouseConfig, contentType: stri
     headers['X-ClickHouse-Key'] = config.key;
   }
   return headers;
+}
+
+/**
+ * Executes a Clickhouse query natively in Tauri, bypassing browser CORS/Mixed Content.
+ */
+export async function executeClickhouseQueryTauri(config: ClickhouseConfig, query: string): Promise<any> {
+  const { fetch: tauriFetch, ResponseType, Body } = await import('@tauri-apps/api/http');
+
+  const url = getClickhouseUrl(config);
+  const originalHeaders = getClickhouseHeaders(config, 'text/plain;charset=utf-8');
+
+  const response = await tauriFetch(url, {
+    method: 'POST',
+    headers: originalHeaders,
+    body: Body.text(query),
+    responseType: ResponseType.Text
+  });
+
+  const responseText = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
+  if (!response.ok) {
+    throw new Error(responseText || `HTTP status ${response.status}`);
+  }
+
+  try {
+    const parsed = JSON.parse(responseText);
+    return { success: true, data: parsed.data || parsed };
+  } catch {
+    return { success: true, text: responseText.trim() };
+  }
+}
+
+/**
+ * Executes Clickhouse COPY TO query and writes the resulting data as a file to local disk in Tauri.
+ */
+export async function executeClickhouseCopyToTauri(config: ClickhouseConfig, innerSql: string, filePath: string): Promise<{ success: boolean; message: string; bytes: number }> {
+  const { fetch: tauriFetch, ResponseType, Body } = await import('@tauri-apps/api/http');
+  const { writeBinaryFile } = await import('@tauri-apps/api/fs');
+
+  let sqlToExec = innerSql.trim().replace(/;+$/, '');
+  if (!/\bFORMAT\b/i.test(sqlToExec)) {
+    const ext = filePath.split('.').pop()?.toLowerCase();
+    if (ext === 'csv') {
+      sqlToExec += ' FORMAT CSVWithNames';
+    } else if (ext === 'tsv' || ext === 'tab') {
+      sqlToExec += ' FORMAT TSVWithNames';
+    } else if (ext === 'json') {
+      sqlToExec += ' FORMAT JSONEachRow';
+    } else {
+      sqlToExec += ' FORMAT Parquet';
+    }
+  }
+
+  const url = getClickhouseUrl(config);
+  const originalHeaders = getClickhouseHeaders(config, 'text/plain;charset=utf-8');
+
+  const response = await tauriFetch(url, {
+    method: 'POST',
+    headers: originalHeaders,
+    body: Body.text(sqlToExec),
+    responseType: ResponseType.Binary
+  });
+
+  if (!response.ok) {
+    const errorText = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
+    throw new Error(errorText || `HTTP status ${response.status}`);
+  }
+
+  const rawData = response.data;
+  let bytes: Uint8Array;
+  if (rawData instanceof Uint8Array) {
+    bytes = rawData;
+  } else if (Array.isArray(rawData)) {
+    bytes = new Uint8Array(rawData);
+  } else {
+    throw new Error("Invalid binary response received from Clickhouse");
+  }
+
+  await writeBinaryFile(filePath, bytes);
+
+  return {
+    success: true,
+    message: `Файл успешно сохранен на локальный диск: ${filePath}`,
+    bytes: bytes.length
+  };
+}
+
+/**
+ * Reads a local file from disk in Tauri and streams it into a Clickhouse table (COPY FROM).
+ */
+export async function executeClickhouseCopyFromTauri(config: ClickhouseConfig, innerSql: string, filePath: string): Promise<{ success: boolean; message: string; response: string }> {
+  const { fetch: tauriFetch, ResponseType, Body } = await import('@tauri-apps/api/http');
+  const { readBinaryFile } = await import('@tauri-apps/api/fs');
+
+  const fileData = await readBinaryFile(filePath);
+
+  let target = innerSql.trim();
+  const ext = filePath.split('.').pop()?.toLowerCase();
+  if (!/^INSERT INTO/i.test(target)) {
+    target = `INSERT INTO ${target}`;
+  }
+  if (!/\bFORMAT\b/i.test(target)) {
+    if (ext === 'csv') {
+      target += ' FORMAT CSVWithNames';
+    } else if (ext === 'tsv' || ext === 'tab') {
+      target += ' FORMAT TSVWithNames';
+    } else if (ext === 'json') {
+      target += ' FORMAT JSONEachRow';
+    } else {
+      target += ' FORMAT Parquet';
+    }
+  }
+
+  const url = getClickhouseUrl(config, { query: target });
+  const originalHeaders = getClickhouseHeaders(config, 'application/octet-stream');
+
+  const response = await tauriFetch(url, {
+    method: 'POST',
+    headers: originalHeaders,
+    body: Body.bytes(fileData),
+    responseType: ResponseType.Text
+  });
+
+  if (!response.ok) {
+    const errorText = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
+    throw new Error(errorText || `HTTP status ${response.status}`);
+  }
+
+  return {
+    success: true,
+    message: `Данные из локального файла ${filePath} успешно загружены в Clickhouse`,
+    response: typeof response.data === 'string' ? response.data : JSON.stringify(response.data)
+  };
 }

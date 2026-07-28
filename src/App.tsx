@@ -74,7 +74,7 @@ import { saveVersion, getVersions } from './utils/versionHistory';
 import { format as formatSql } from 'sql-formatter';
 import { connectDuckDbWasmFile, queryDuckDbWasm, disconnectDuckDbWasm, exportDuckDbFile } from './lib/duckdbWasm';
 import { ClickhouseModal } from './components/ClickhouseModal';
-import { ClickhouseConfig, parseClickhouseCopy, getClickhouseUrl, getClickhouseHeaders } from './lib/clickhouse';
+import { ClickhouseConfig, parseClickhouseCopy, getClickhouseUrl, getClickhouseHeaders, isTauriEnvironment, executeClickhouseQueryTauri, executeClickhouseCopyToTauri, executeClickhouseCopyFromTauri } from './lib/clickhouse';
 
 export interface EditorTab {
   id: string;
@@ -682,30 +682,38 @@ export default function App() {
       const schemaQuery = "SELECT c.database AS database_name, c.database AS schema_name, c.table AS table_name, c.name AS column_name, c.type AS data_type, CASE WHEN t.engine LIKE '%View%' THEN 'Views' ELSE 'Tables' END AS table_type, t.total_bytes AS table_bytes FROM system.columns AS c LEFT JOIN system.tables AS t ON c.database = t.database AND c.table = t.name WHERE c.database NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA') ORDER BY c.database, table_type, c.table, c.position FORMAT JSON";
       try {
         let data: any = null;
-        try {
-          data = await fetchApiJson('/api/clickhouse/query', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              ...clickhouseConfig,
-              query: schemaQuery,
-            }),
-          });
-        } catch {
-          const url = getClickhouseUrl(clickhouseConfig);
-          const headers = getClickhouseHeaders(clickhouseConfig);
-          const chRes = await fetch(url, {
-            method: 'POST',
-            headers,
-            body: schemaQuery,
-          });
-          const text = await chRes.text();
-          if (chRes.ok) {
-            try {
-              const parsed = JSON.parse(text);
-              data = { success: true, data: parsed.data || parsed };
-            } catch {
-              // ignore
+        if (isTauriEnvironment()) {
+          try {
+            data = await executeClickhouseQueryTauri(clickhouseConfig, schemaQuery);
+          } catch (e: any) {
+            console.warn("Tauri direct Clickhouse schema fetch failed:", e);
+          }
+        } else {
+          try {
+            data = await fetchApiJson('/api/clickhouse/query', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                ...clickhouseConfig,
+                query: schemaQuery,
+              }),
+            });
+          } catch {
+            const url = getClickhouseUrl(clickhouseConfig);
+            const headers = getClickhouseHeaders(clickhouseConfig);
+            const chRes = await fetch(url, {
+              method: 'POST',
+              headers,
+              body: schemaQuery,
+            });
+            const text = await chRes.text();
+            if (chRes.ok) {
+              try {
+                const parsed = JSON.parse(text);
+                data = { success: true, data: parsed.data || parsed };
+              } catch {
+                // ignore
+              }
             }
           }
         }
@@ -959,51 +967,83 @@ export default function App() {
       const copyCmd = parseClickhouseCopy(cleanSqlHead);
       if (copyCmd) {
         if (copyCmd.type === 'COPY_TO') {
-          const data = await fetchApiJson('/api/clickhouse/copy-to', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              ...clickhouseConfig,
-              innerSql: copyCmd.innerSql,
-              filePath: copyCmd.filePath,
-            }),
-            signal: controller.signal,
-          });
-
-          if (data.error) {
-            setDuckDbError(data.error);
+          if (isTauriEnvironment()) {
+            try {
+              const res = await executeClickhouseCopyToTauri(clickhouseConfig, copyCmd.innerSql, copyCmd.filePath);
+              setDuckDbResults([
+                {
+                  Status: 'Success (COPY TO)',
+                  File: copyCmd.filePath,
+                  Message: res.message,
+                  Bytes: `${res.bytes} bytes`,
+                },
+              ]);
+            } catch (err: any) {
+              setDuckDbError(err.message || String(err));
+            }
           } else {
-            setDuckDbResults([
-              {
-                Status: 'Success (COPY TO)',
-                File: copyCmd.filePath,
-                Message: data.message || `File saved (${data.bytes || 0} bytes)`,
-              },
-            ]);
+            const data = await fetchApiJson('/api/clickhouse/copy-to', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                ...clickhouseConfig,
+                innerSql: copyCmd.innerSql,
+                filePath: copyCmd.filePath,
+              }),
+              signal: controller.signal,
+            });
+
+            if (data.error) {
+              setDuckDbError(data.error);
+            } else {
+              setDuckDbResults([
+                {
+                  Status: 'Success (COPY TO)',
+                  File: copyCmd.filePath,
+                  Message: data.message || `File saved (${data.bytes || 0} bytes)`,
+                },
+              ]);
+            }
           }
         } else if (copyCmd.type === 'COPY_FROM') {
-          const data = await fetchApiJson('/api/clickhouse/copy-from', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              ...clickhouseConfig,
-              innerSql: copyCmd.innerSql,
-              filePath: copyCmd.filePath,
-            }),
-            signal: controller.signal,
-          });
-
-          if (data.error) {
-            setDuckDbError(data.error);
+          if (isTauriEnvironment()) {
+            try {
+              const res = await executeClickhouseCopyFromTauri(clickhouseConfig, copyCmd.innerSql, copyCmd.filePath);
+              setDuckDbResults([
+                {
+                  Status: 'Success (COPY FROM)',
+                  File: copyCmd.filePath,
+                  Message: res.message,
+                  Response: res.response || 'OK',
+                },
+              ]);
+            } catch (err: any) {
+              setDuckDbError(err.message || String(err));
+            }
           } else {
-            setDuckDbResults([
-              {
-                Status: 'Success (COPY FROM)',
-                File: copyCmd.filePath,
-                Message: data.message || 'Data successfully loaded into Clickhouse',
-                Response: data.response || 'OK',
-              },
-            ]);
+            const data = await fetchApiJson('/api/clickhouse/copy-from', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                ...clickhouseConfig,
+                innerSql: copyCmd.innerSql,
+                filePath: copyCmd.filePath,
+              }),
+              signal: controller.signal,
+            });
+
+            if (data.error) {
+              setDuckDbError(data.error);
+            } else {
+              setDuckDbResults([
+                {
+                  Status: 'Success (COPY FROM)',
+                  File: copyCmd.filePath,
+                  Message: data.message || 'Data successfully loaded into Clickhouse',
+                  Response: data.response || 'OK',
+                },
+              ]);
+            }
           }
         }
         return;
@@ -1030,34 +1070,42 @@ export default function App() {
       }
 
       let data: any = null;
-      try {
-        data = await fetchApiJson('/api/clickhouse/query', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ...clickhouseConfig,
-            query: queryWithLimit,
-          }),
-          signal: controller.signal,
-        });
-      } catch {
-        const url = getClickhouseUrl(clickhouseConfig);
-        const headers = getClickhouseHeaders(clickhouseConfig);
-        const chRes = await fetch(url, {
-          method: 'POST',
-          headers,
-          body: queryWithLimit,
-          signal: controller.signal,
-        });
-        const text = await chRes.text();
-        if (!chRes.ok) {
-          throw new Error(text || `HTTP ${chRes.status}`);
-        }
+      if (isTauriEnvironment()) {
         try {
-          const parsed = JSON.parse(text);
-          data = { success: true, data: parsed.data || parsed };
+          data = await executeClickhouseQueryTauri(clickhouseConfig, queryWithLimit);
+        } catch (err: any) {
+          throw new Error(err.message || String(err));
+        }
+      } else {
+        try {
+          data = await fetchApiJson('/api/clickhouse/query', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              ...clickhouseConfig,
+              query: queryWithLimit,
+            }),
+            signal: controller.signal,
+          });
         } catch {
-          data = { success: true, text };
+          const url = getClickhouseUrl(clickhouseConfig);
+          const headers = getClickhouseHeaders(clickhouseConfig);
+          const chRes = await fetch(url, {
+            method: 'POST',
+            headers,
+            body: queryWithLimit,
+            signal: controller.signal,
+          });
+          const text = await chRes.text();
+          if (!chRes.ok) {
+            throw new Error(text || `HTTP ${chRes.status}`);
+          }
+          try {
+            const parsed = JSON.parse(text);
+            data = { success: true, data: parsed.data || parsed };
+          } catch {
+            data = { success: true, text };
+          }
         }
       }
 
@@ -1085,10 +1133,21 @@ export default function App() {
   };
 
   const handleExecuteCurrentEngineQuery = (queryToExec: string, page: number = 1, pageSizeToUse?: number, isQuickAction?: boolean) => {
+    let finalQuery = queryToExec;
+    if (formatterSettings.autoEscapeWindowsPaths ?? true) {
+      finalQuery = finalQuery.replace(/\b(FROM|TO)\s+(['"])(.*?)(['"])/gi, (match, keyword, quote1, innerPath, quote2) => {
+        if (innerPath.includes('\\')) {
+          const escapedPath = innerPath.replace(/\\/g, '/');
+          return `${keyword} ${quote1}${escapedPath}${quote2}`;
+        }
+        return match;
+      });
+    }
+
     if (activeEngine === 'clickhouse' || (!duckDbConnectedPath && clickhouseConfig)) {
-      executeClickhouseQueryWithPagination(queryToExec, page, pageSizeToUse, isQuickAction);
+      executeClickhouseQueryWithPagination(finalQuery, page, pageSizeToUse, isQuickAction);
     } else {
-      executeDuckDbQueryWithPagination(queryToExec, page, pageSizeToUse, isQuickAction);
+      executeDuckDbQueryWithPagination(finalQuery, page, pageSizeToUse, isQuickAction);
     }
   };
 
@@ -1121,8 +1180,15 @@ export default function App() {
     if (targetId === activeTabId) return;
     const targetTab = tabs.find(t => t.id === targetId);
     if (!targetTab) return;
+
+    const currentSql = sqlRef.current;
+
+    // First, save current edits of the old active tab using the captured currentSql
+    setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: currentSql } : t));
+
+    // Now switch to the new active tab
     setActiveTabId(targetId);
-    sqlRef.current = targetTab.sql; setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: targetTab.sql } : t));
+    sqlRef.current = targetTab.sql;
   };
 
   const handleAddTab = () => {
@@ -1134,9 +1200,17 @@ export default function App() {
       title: `Вкладка ${nextNum}`,
       sql: ''
     };
-    setTabs(prev => [...prev, newTab]);
+
+    const currentSql = sqlRef.current;
+
+    // Save current active tab SQL first using the captured currentSql, then add the new tab
+    setTabs(prev => {
+      const updated = prev.map(t => t.id === activeTabId ? { ...t, sql: currentSql } : t);
+      return [...updated, newTab];
+    });
+
     setActiveTabId(newId);
-    sqlRef.current = newTab.sql; setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: newTab.sql } : t));
+    sqlRef.current = '';
   };
 
   const handleCloseTab = (e: React.MouseEvent, idToClose: string) => {
@@ -1148,7 +1222,7 @@ export default function App() {
       const closedIndex = tabs.findIndex(t => t.id === idToClose);
       const nextActive = nextTabs[Math.max(0, closedIndex - 1)];
       setActiveTabId(nextActive.id);
-      sqlRef.current = nextActive.sql; setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: nextActive.sql } : t));
+      sqlRef.current = nextActive.sql;
     }
     setTabs(nextTabs);
   };
@@ -1160,7 +1234,8 @@ export default function App() {
   
   const handleSqlChange = useCallback((newSql: string) => {
     sqlRef.current = newSql;
-  }, []);
+    setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: newSql } : t));
+  }, [activeTabId]);
 
   // Auto-save version into IndexedDB every 5 minutes if current tab SQL differs from the existing latest snapshot
   useEffect(() => {
@@ -1202,12 +1277,13 @@ export default function App() {
             title: file.name,
             sql: content
           };
+          const currentSql = sqlRef.current;
           setTabs(prev => {
-            const updated = prev.map(t => t.id === activeTabId ? { ...t, sql: sqlRef.current } : t);
+            const updated = prev.map(t => t.id === activeTabId ? { ...t, sql: currentSql } : t);
             return [...updated, newTab];
           });
           setActiveTabId(newId);
-          sqlRef.current = content; setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: content } : t));
+          sqlRef.current = content;
         }
       };
       reader.readAsText(file);
@@ -1233,12 +1309,13 @@ export default function App() {
             title: file.name,
             sql: content
           };
+          const currentSql = sqlRef.current;
           setTabs(prev => {
-            const updated = prev.map(t => t.id === activeTabId ? { ...t, sql: sqlRef.current } : t);
+            const updated = prev.map(t => t.id === activeTabId ? { ...t, sql: currentSql } : t);
             return [...updated, newTab];
           });
           setActiveTabId(newId);
-          sqlRef.current = content; setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: content } : t));
+          sqlRef.current = content;
         }
       };
       reader.readAsText(file, 'windows-1251');
@@ -1289,10 +1366,14 @@ export default function App() {
   };
 
   const handleInsertSnippet = (snippetSql: string, replaceMode?: boolean) => {
-    if (replaceMode || !sqlRef.current.trim()) {
-      sqlRef.current = snippetSql; setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: snippetSql } : t));
+    const currentSql = sqlRef.current || '';
+    if (replaceMode || !currentSql.trim()) {
+      sqlRef.current = snippetSql;
+      setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: snippetSql } : t));
     } else {
-      sqlRef.current = prev => prev + '\n\n' + snippetSql; setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: prev => prev + '\n\n' + snippetSql } : t));
+      const newSql = currentSql + '\n\n' + snippetSql;
+      sqlRef.current = newSql;
+      setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: newSql } : t));
     }
   };
 
@@ -1984,6 +2065,15 @@ export default function App() {
       handleCopySql,
       handleFormatSql,
       handleSelectTab,
+      isDuckDbRunning,
+      showSettingsModal,
+      showSnippetsModal,
+      setShowSettingsModal,
+      setShowSnippetsModal,
+      handleCancelDuckDbQuery,
+      handleCopyResultsToClipboard,
+      fetchDuckDbSchema,
+      setShowDuckDbSchemaPanel,
     };
   });
 
@@ -2002,6 +2092,15 @@ export default function App() {
         handleCopySql: currentHandleCopySql,
         handleFormatSql: currentHandleFormatSql,
         handleSelectTab: currentHandleSelectTab,
+        isDuckDbRunning: currentIsDuckDbRunning,
+        showSettingsModal: currentShowSettingsModal,
+        showSnippetsModal: currentShowSnippetsModal,
+        setShowSettingsModal: currentSetShowSettingsModal,
+        setShowSnippetsModal: currentSetShowSnippetsModal,
+        handleCancelDuckDbQuery: currentHandleCancelDuckDbQuery,
+        handleCopyResultsToClipboard: currentHandleCopyResultsToClipboard,
+        fetchDuckDbSchema: currentFetchDuckDbSchema,
+        setShowDuckDbSchemaPanel: currentSetShowDuckDbSchemaPanel,
       } = hotkeysStateRef.current;
 
       const parts: string[] = [];
@@ -2020,6 +2119,28 @@ export default function App() {
         keyName = 'Enter';
       } else if (e.code === 'Escape' || e.key === 'Escape') {
         keyName = 'Esc';
+      } else if (e.code === 'Slash') {
+        keyName = '/';
+      } else if (e.code === 'Backslash') {
+        keyName = '\\';
+      } else if (e.code === 'Period') {
+        keyName = '.';
+      } else if (e.code === 'Comma') {
+        keyName = ',';
+      } else if (e.code === 'Semicolon') {
+        keyName = ';';
+      } else if (e.code === 'Quote') {
+        keyName = "'";
+      } else if (e.code === 'BracketLeft') {
+        keyName = '[';
+      } else if (e.code === 'BracketRight') {
+        keyName = ']';
+      } else if (e.code === 'Minus') {
+        keyName = '-';
+      } else if (e.code === 'Equal') {
+        keyName = '=';
+      } else if (e.code === 'Backquote') {
+        keyName = '`';
       }
 
       const combo = parts.length > 0 ? `${parts.join('+')}+${keyName}` : keyName;
@@ -2071,6 +2192,59 @@ export default function App() {
         e.preventDefault();
         e.stopPropagation();
         currentHandleCopySql();
+      } else if (combo === (currentHotkeys.commentBlock || 'Ctrl+/')) {
+        e.preventDefault();
+        e.stopPropagation();
+        const sel = sqlEditorRef.current?.getSelection();
+        if (sel) {
+          const text = sel.text;
+          if (text === '') {
+            const fullVal = sqlRef.current || '';
+            const pos = sel.start;
+            const lineStart = fullVal.lastIndexOf('\n', pos - 1) + 1;
+            let lineEnd = fullVal.indexOf('\n', pos);
+            if (lineEnd === -1) lineEnd = fullVal.length;
+            
+            const lineText = fullVal.slice(lineStart, lineEnd);
+            let newLineText = '';
+            let diff = 0;
+            
+            if (lineText.startsWith('-- ')) {
+              newLineText = lineText.slice(3);
+              diff = -3;
+            } else if (lineText.startsWith('--')) {
+              newLineText = lineText.slice(2);
+              diff = -2;
+            } else {
+              newLineText = '-- ' + lineText;
+              diff = 3;
+            }
+            
+            sqlEditorRef.current?.replaceRange(newLineText, lineStart, lineEnd, 'start');
+            const newPos = Math.max(lineStart, pos + (pos > lineStart ? diff : 0));
+            sqlEditorRef.current?.setSelectionRange(newPos, newPos);
+          } else {
+            const trimmed = text.trim();
+            if (trimmed.startsWith('/*') && trimmed.endsWith('*/')) {
+              const firstIdx = text.indexOf('/*');
+              const lastIdx = text.lastIndexOf('*/');
+              const before = text.slice(0, firstIdx);
+              const inner = text.slice(firstIdx + 2, lastIdx);
+              const after = text.slice(lastIdx + 2);
+              const newText = before + inner + after;
+              sqlEditorRef.current?.replaceRange(newText, sel.start, sel.end, 'start');
+              const newStart = sel.start;
+              const newEnd = sel.start + newText.length;
+              sqlEditorRef.current?.setSelectionRange(newStart, newEnd);
+            } else {
+              const newText = `/*${text}*/`;
+              sqlEditorRef.current?.replaceRange(newText, sel.start, sel.end, 'start');
+              const newStart = sel.start;
+              const newEnd = sel.start + newText.length;
+              sqlEditorRef.current?.setSelectionRange(newStart, newEnd);
+            }
+          }
+        }
       } else if (combo === (currentHotkeys.toggleWrap || 'Alt+W')) {
         e.preventDefault();
         e.stopPropagation();
@@ -2082,7 +2256,7 @@ export default function App() {
       } else if (combo === (currentHotkeys.openSnippets || 'Ctrl+K')) {
         e.preventDefault();
         e.stopPropagation();
-        setShowSnippetsModal(true);
+        currentSetShowSnippetsModal(true);
       } else if (combo === (currentHotkeys.toggleMaximized || 'Alt+F')) {
         e.preventDefault();
         e.stopPropagation();
@@ -2091,6 +2265,37 @@ export default function App() {
         e.preventDefault();
         e.stopPropagation();
         setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+      } else if (combo === (currentHotkeys.openSettings || 'Ctrl+,')) {
+        e.preventDefault();
+        e.stopPropagation();
+        currentSetShowSettingsModal(true);
+      } else if (combo === (currentHotkeys.exportResultsCopy || 'Ctrl+Shift+S')) {
+        e.preventDefault();
+        e.stopPropagation();
+        currentHandleCopyResultsToClipboard();
+      } else if (combo === (currentHotkeys.refreshSchema || 'Ctrl+R')) {
+        e.preventDefault();
+        e.stopPropagation();
+        currentFetchDuckDbSchema();
+        currentSetShowDuckDbSchemaPanel?.(true);
+      } else if (combo === (currentHotkeys.escapeAction || 'Esc')) {
+        let acted = false;
+        if (currentIsMaximizedSql && currentIsDuckDbRunning) {
+          currentHandleCancelDuckDbQuery();
+          acted = true;
+        }
+        if (currentShowSettingsModal) {
+          currentSetShowSettingsModal(false);
+          acted = true;
+        }
+        if (currentShowSnippetsModal) {
+          currentSetShowSnippetsModal(false);
+          acted = true;
+        }
+        if (acted) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
       } else if (combo === (currentHotkeys.toggleMiniMap || 'Alt+M')) {
         e.preventDefault();
         e.stopPropagation();
@@ -2232,6 +2437,30 @@ export default function App() {
     navigator.clipboard.writeText(sqlRef.current);
     setCopied('sql');
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleCopyResultsToClipboard = () => {
+    if (duckDbError) {
+      navigator.clipboard.writeText(duckDbError);
+    } else if (duckDbResults && duckDbResults.length > 0) {
+      if (isTransposed) {
+        const headers = ['Поле \\ №', ...pagedResults.map((_, i) => `#${(duckDbPage - 1) * (uiVisibility.duckDbMaxRows || 100) + i + 1}`)];
+        const rows = Object.keys(duckDbResults[0]).map(colKey => [
+          colKey,
+          ...pagedResults.map(r => r[colKey] === null ? 'null' : String(r[colKey]))
+        ]);
+        const csv = [headers.join('\t'), ...rows.map(r => r.join('\t'))].join('\n');
+        navigator.clipboard.writeText(csv);
+      } else {
+        const headers = ['#', ...Object.keys(duckDbResults[0])];
+        const rows = pagedResults.map((r, i) => [
+          (duckDbPage - 1) * (uiVisibility.duckDbMaxRows || 100) + i + 1,
+          ...Object.values(r).map(v => v === null ? 'null' : String(v))
+        ]);
+        const csv = [headers.join('\t'), ...rows.map(r => r.join('\t'))].join('\n');
+        navigator.clipboard.writeText(csv);
+      }
+    }
   };
 
   const handleFormatSql = () => {
@@ -2455,16 +2684,20 @@ export default function App() {
             <div className="flex-1 flex flex-col min-h-0 relative">
               {/* SYNTAX HIGHLIGHTED SQL EDITOR */}
               <ErrorBoundary title="Ошибка редактора SQL" theme={theme}>
-                <SqlEditor editorRef={sqlEditorRef}
-                value={getActiveTabSql()}
-                onChange={handleSqlChange}
-                isWrapSql={isWrapSql}
-                theme={theme}
-                onCompactSql={handleCompactSql}
-                onExecuteQuickAction={handleExecuteQuickAction}
-                extractedTableName={extractedTableName}
-                isQuickActionsEnabled={uiVisibility.showDuckDbConfig || uiVisibility.showClickhouseConfig}
-              />
+                {!isMaximizedSql ? (
+                  <SqlEditor editorRef={sqlEditorRef}
+                    value={getActiveTabSql()}
+                    onChange={handleSqlChange}
+                    isWrapSql={isWrapSql}
+                    theme={theme}
+                    onCompactSql={handleCompactSql}
+                    onExecuteQuickAction={handleExecuteQuickAction}
+                    extractedTableName={extractedTableName}
+                    isQuickActionsEnabled={uiVisibility.showDuckDbConfig || uiVisibility.showClickhouseConfig}
+                  />
+                ) : (
+                  <div className="flex-1" />
+                )}
               </ErrorBoundary>
           </div>
 
@@ -3499,7 +3732,7 @@ export default function App() {
                     }`}
                     title="Вернуться к графу"
                   >
-                    <Minimize2 className="w-3.5 h-3.5" />
+                    <Workflow className="w-3 h-3" />
                     <span>Graph</span>
                   </button>
                 </>
@@ -3885,29 +4118,7 @@ export default function App() {
                       <ArrowLeftRight className="w-4 h-4" />
                     </button>
                     <button 
-                      onClick={() => {
-                        if (duckDbError) {
-                          navigator.clipboard.writeText(duckDbError);
-                        } else if (duckDbResults && duckDbResults.length > 0) {
-                          if (isTransposed) {
-                            const headers = ['Поле \\ №', ...pagedResults.map((_, i) => `#${(duckDbPage - 1) * (uiVisibility.duckDbMaxRows || 100) + i + 1}`)];
-                            const rows = Object.keys(duckDbResults[0]).map(colKey => [
-                              colKey,
-                              ...pagedResults.map(r => r[colKey] === null ? 'null' : String(r[colKey]))
-                            ]);
-                            const csv = [headers.join('\t'), ...rows.map(r => r.join('\t'))].join('\n');
-                            navigator.clipboard.writeText(csv);
-                          } else {
-                            const headers = ['#', ...Object.keys(duckDbResults[0])];
-                            const rows = pagedResults.map((r, i) => [
-                              (duckDbPage - 1) * (uiVisibility.duckDbMaxRows || 100) + i + 1,
-                              ...Object.values(r).map(v => v === null ? 'null' : String(v))
-                            ]);
-                            const csv = [headers.join('\t'), ...rows.map(r => r.join('\t'))].join('\n');
-                            navigator.clipboard.writeText(csv);
-                          }
-                        }
-                      }}
+                      onClick={handleCopyResultsToClipboard}
                       className={`h-6 w-6 flex items-center justify-center rounded transition-colors ${
                         theme === 'dark' ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'
                       }`}
@@ -4329,8 +4540,10 @@ export default function App() {
         currentDialect={dialect}
         onRestoreVersion={(restoredSql, restoredDialect) => {
           sqlRef.current = restoredSql; setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: restoredSql } : t));
-          setDialect(restoredDialect);
-          handleVisualize(restoredSql, restoredDialect, direction);
+          if (restoredDialect) {
+            setDialect(restoredDialect as 'PostgreSQL' | 'Oracle' | 'Clickhouse');
+          }
+          handleVisualize(restoredSql, restoredDialect || dialect, direction);
         }}
         theme={theme}
         uiVisibility={uiVisibility}

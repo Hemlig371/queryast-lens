@@ -27,9 +27,10 @@ interface VersionHistoryModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentSql: string;
-  onRestoreVersion?: (sql: string) => void;
+  onRestoreVersion?: (sql: string, dialect?: string) => void;
   theme: 'dark' | 'light';
   uiVisibility?: UiVisibilitySettings;
+  currentDialect?: string;
 }
 
 interface DiffLine {
@@ -89,11 +90,13 @@ function computeLineDiff(oldText: string, newText: string): DiffLine[] {
 export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
   isOpen,
   onClose,
-  currentSql,
+  currentSql: rawCurrentSql,
   onRestoreVersion,
   theme,
-  uiVisibility
+  uiVisibility,
+  currentDialect
 }) => {
+  const currentSql = typeof rawCurrentSql === 'string' ? rawCurrentSql : '';
   const [versions, setVersions] = useState<SqlVersionItem[]>([]);
   const [selectedVersion, setSelectedVersion] = useState<SqlVersionItem | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -152,7 +155,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
   };
 
   const handleRestore = (ver: SqlVersionItem) => {
-    onRestoreVersion(ver.sql);
+    onRestoreVersion?.(ver.sql, currentDialect);
     setRestoredId(ver.id);
     setTimeout(() => {
       setRestoredId(null);
