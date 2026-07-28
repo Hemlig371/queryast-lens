@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, Database, Check, AlertCircle, Loader2, Unplug } from 'lucide-react';
-import { ClickhouseConfig, getClickhouseUrl, getClickhouseHeaders } from '../lib/clickhouse';
+import { ClickhouseConfig, getClickhouseUrl, getClickhouseHeaders, isTauriEnvironment, executeClickhouseQueryTauri } from '../lib/clickhouse';
 
 interface ClickhouseModalProps {
   isOpen: boolean;
@@ -50,51 +50,67 @@ export const ClickhouseModal: React.FC<ClickhouseModalProps> = ({
     setTestResult(null);
 
     try {
-      // First try via backend proxy endpoint
-      try {
-        const proxyData = await fetchApiJson('/api/clickhouse/test', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(currentConfig),
-        });
-
-        if (proxyData && !proxyData.error) {
-          const textRes = proxyData.text || (typeof proxyData.data === 'string' ? proxyData.data : JSON.stringify(proxyData.data));
+      if (isTauriEnvironment()) {
+        try {
+          const res = await executeClickhouseQueryTauri(currentConfig, 'SELECT 1');
+          const textRes = res.text || (typeof res.data === 'string' ? res.data : JSON.stringify(res.data));
           setTestResult({
             success: true,
             message: `Подключение успешно! Ответ на query "SELECT 1" :  ${textRes || '1'}`,
           });
-          setIsTesting(false);
-          return;
-        } else if (proxyData?.error) {
+        } catch (err: any) {
           setTestResult({
             success: false,
-            message: proxyData.error,
+            message: err.message || String(err) || 'Ошибка сети или недоступности хоста ClickHouse (Tauri)',
           });
-          setIsTesting(false);
-          return;
         }
-      } catch (proxyErr: any) {
-        // Fallback: direct HTTP fetch
-        const url = getClickhouseUrl(currentConfig);
-        const headers = getClickhouseHeaders(currentConfig);
-        const res = await fetch(url, {
-          method: 'POST',
-          headers,
-          body: 'SELECT 1',
-        });
+      } else {
+        // First try via backend proxy endpoint
+        try {
+          const proxyData = await fetchApiJson('/api/clickhouse/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(currentConfig),
+          });
 
-        const responseText = await res.text();
-        if (res.ok) {
-          setTestResult({
-            success: true,
-            message: `Подключение успешно! Ответ на query "SELECT 1" :  ${responseText.trim()}`,
+          if (proxyData && !proxyData.error) {
+            const textRes = proxyData.text || (typeof proxyData.data === 'string' ? proxyData.data : JSON.stringify(proxyData.data));
+            setTestResult({
+              success: true,
+              message: `Подключение успешно! Ответ на query "SELECT 1" :  ${textRes || '1'}`,
+            });
+            setIsTesting(false);
+            return;
+          } else if (proxyData?.error) {
+            setTestResult({
+              success: false,
+              message: proxyData.error,
+            });
+            setIsTesting(false);
+            return;
+          }
+        } catch (proxyErr: any) {
+          // Fallback: direct HTTP fetch
+          const url = getClickhouseUrl(currentConfig);
+          const headers = getClickhouseHeaders(currentConfig);
+          const res = await fetch(url, {
+            method: 'POST',
+            headers,
+            body: 'SELECT 1',
           });
-        } else {
-          setTestResult({
-            success: false,
-            message: `Ошибка HTTP ${res.status}: ${responseText.trim() || 'Не удалось подключиться к серверу ClickHouse'}`,
-          });
+
+          const responseText = await res.text();
+          if (res.ok) {
+            setTestResult({
+              success: true,
+              message: `Подключение успешно! Ответ на query "SELECT 1" :  ${responseText.trim()}`,
+            });
+          } else {
+            setTestResult({
+              success: false,
+              message: `Ошибка HTTP ${res.status}: ${responseText.trim() || 'Не удалось подключиться к серверу ClickHouse'}`,
+            });
+          }
         }
       }
     } catch (err: any) {
