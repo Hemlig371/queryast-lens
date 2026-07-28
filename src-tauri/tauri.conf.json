@@ -17,7 +17,11 @@
         "request": true,
         "scope": [
           "http://**",
-          "https://**"
+          "https://**",
+          "http://*/**",
+          "https://*/**",
+          "http://**/*",
+          "https://**/*"
         ]
       },
       "fs": {
