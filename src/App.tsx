@@ -158,8 +158,10 @@ export default function App() {
   const [isDuckDbResultVisible, setIsDuckDbResultVisible] = useState<boolean>(false);
   const [isDuckDbResultExpanded, setIsDuckDbResultExpanded] = useState<boolean>(false);
   const [duckDbSelectedCell, setDuckDbSelectedCell] = useState<{ title: string; content: string } | null>(null);
+  const [isCellZoomed, setIsCellZoomed] = useState<boolean>(false);
   const [isTransposed, setIsTransposed] = useState<boolean>(false);
   const [duckDbSchema, setDuckDbSchema] = useState<any[] | null>(null);
+  const [isSchemaZoomed, setIsSchemaZoomed] = useState<boolean>(false);
   const [schemaSearchTerm, setSchemaSearchTerm] = useState<string>(() => savedSession?.schemaSearchTerm || '');
   const [showDuckDbSchemaPanel, setShowDuckDbSchemaPanel] = useState<boolean>(() => savedSession?.showDuckDbSchemaPanel ?? true);
   const [expandedSchemaNodes, setExpandedSchemaNodes] = useState<Record<string, boolean>>(() => savedSession?.expandedSchemaNodes || {});
@@ -3927,151 +3929,169 @@ export default function App() {
               </div>
 
               {/* SCHEMA BROWSER */}
-              {showDuckDbSchemaPanel && duckDbSchema && groupedDuckDbSchema && (
-                <div className={`w-72 flex flex-col shrink-0 border-l transition-colors ${theme === 'dark' ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-300'}`}>
+              {showDuckDbSchemaPanel && (duckDbConnectedPath || clickhouseConfig) && (
+                <div className={`${isSchemaZoomed ? 'w-[576px]' : 'w-72'} flex flex-col shrink-0 border-l ${theme === 'dark' ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-300'}`}>
                   <div className={`px-3 h-[37px] border-b flex items-center justify-between shrink-0 transition-colors ${theme === 'dark' ? 'border-slate-700 bg-slate-800' : 'border-slate-300 bg-slate-100'}`}>
                     <span className={`text-xs font-semibold flex items-center gap-2 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>
                       <Database className="w-3.5 h-3.5 text-teal-500" />
                       Schema Browser
                     </span>
-                    <button 
-                      onClick={() => setShowDuckDbSchemaPanel(false)}
-                      className={`p-1 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'}`}
-                      title="Закрыть"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                  <div className={`p-2 border-b flex items-center gap-1 shrink-0 transition-colors ${theme === 'dark' ? 'border-slate-700 bg-slate-800/50' : 'border-slate-300 bg-slate-100/50'}`}>
-                    <div className="relative flex-1">
-                      <Search className="w-3.5 h-3.5 absolute left-2 top-1.5 opacity-50" />
-                      <input 
-                        type="text" 
-                        placeholder="Поиск..." 
-                        value={schemaSearchTerm}
-                        onChange={(e) => setSchemaSearchTerm(e.target.value)}
-                        className={`w-full pl-7 pr-2 py-1 text-xs rounded border transition-colors focus:outline-none focus:ring-1 focus:ring-blue-500 ${theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-300 placeholder-slate-500' : 'bg-slate-50 border-slate-300 text-slate-700 placeholder-slate-400'}`}
-                      />
+                    <div className="flex items-center gap-1">
+                      <button 
+                        onClick={() => setIsSchemaZoomed(!isSchemaZoomed)}
+                        className={`p-1 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-200 text-slate-500 hover:text-slate-800'}`}
+                        title={isSchemaZoomed ? "Стандартный размер" : "Увеличить в 2 раза"}
+                      >
+                        {isSchemaZoomed ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+                      </button>
+                      <button 
+                        onClick={() => setShowDuckDbSchemaPanel(false)}
+                        className={`p-1 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-200 text-slate-500 hover:text-slate-800'}`}
+                        title="Закрыть"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
                     </div>
-                    <button 
-                      onClick={handleExpandAllSchemaNodes}
-                      className={`p-1.5 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-200 text-slate-500 hover:text-slate-800'}`}
-                      title="Развернуть все"
-                    >
-                      <ChevronsUpDown className="w-3.5 h-3.5" />
-                    </button>
-                    <button 
-                      onClick={() => setExpandedSchemaNodes({})}
-                      className={`p-1.5 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-200 text-slate-500 hover:text-slate-800'}`}
-                      title="Свернуть все"
-                    >
-                      <ChevronsDownUp className="w-3.5 h-3.5" />
-                    </button>
                   </div>
-                  <div className="flex-1 overflow-y-auto p-2">
-                    {Object.entries(groupedDuckDbSchema).map(([dbName, schemas]) => (
-                      <div key={dbName} className="mb-1">
-                        <div 
-                          className={`text-xs font-bold px-2 py-1 flex items-center gap-1.5 rounded cursor-pointer select-none transition-colors ${theme === 'dark' ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-200 text-slate-800'}`}
-                          onClick={() => toggleSchemaNode(`db-${dbName}`)}
-                        >
-                          <Database className="w-3.5 h-3.5 opacity-70" />
-                          <span className="truncate">{dbName}</span>
+
+                  {duckDbSchema && groupedDuckDbSchema ? (
+                    <>
+                      <div className={`p-2 border-b flex items-center gap-1 shrink-0 transition-colors ${theme === 'dark' ? 'border-slate-700 bg-slate-800/50' : 'border-slate-300 bg-slate-100/50'}`}>
+                        <div className="relative flex-1">
+                          <Search className="w-3.5 h-3.5 absolute left-2 top-1.5 opacity-50" />
+                          <input 
+                            type="text" 
+                            placeholder="Поиск..." 
+                            value={schemaSearchTerm}
+                            onChange={(e) => setSchemaSearchTerm(e.target.value)}
+                            className={`w-full pl-7 pr-2 py-1 text-xs rounded border transition-colors focus:outline-none focus:ring-1 focus:ring-blue-500 ${theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-300 placeholder-slate-500' : 'bg-slate-50 border-slate-300 text-slate-700 placeholder-slate-400'}`}
+                          />
                         </div>
-                        {expandedSchemaNodes[`db-${dbName}`] && (
-                          <div className="pl-2 border-l ml-2 border-slate-400/20 mt-1">
-                            {Object.entries(schemas).map(([schemaName, types]) => (
-                              <div key={schemaName} className="mb-1">
-                                <div 
-                                  className={`text-[11px] font-semibold px-2 py-1 flex items-center gap-1.5 rounded cursor-pointer select-none transition-colors ${theme === 'dark' ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-200 text-slate-700'}`}
-                                  onClick={() => toggleSchemaNode(`sch-${dbName}-${schemaName}`)}
-                                >
-                                  <FileText className="w-3 h-3 opacity-70" />
-                                  <span className="truncate">{schemaName}</span>
-                                </div>
-                                {expandedSchemaNodes[`sch-${dbName}-${schemaName}`] && (
-                                  <div className="pl-2 border-l ml-2 border-slate-400/20 mt-1">
-                                    {Object.entries(types).map(([typeName, tables]) => (
-                                      <div key={typeName} className="mb-1">
-                                        <div 
-                                          className={`text-[11px] font-semibold px-2 py-1 flex items-center gap-1.5 rounded cursor-pointer select-none transition-colors ${theme === 'dark' ? 'hover:bg-slate-800 text-slate-500' : 'hover:bg-slate-200 text-slate-600'}`}
-                                          onClick={() => toggleSchemaNode(`type-${dbName}-${schemaName}-${typeName}`)}
-                                        >
-                                          <Folder className="w-3 h-3 opacity-70" />
-                                          <span className="truncate">{typeName}</span>
-                                        </div>
-                                        {expandedSchemaNodes[`type-${dbName}-${schemaName}-${typeName}`] && (
-                                          <div className="pl-2 border-l ml-2 border-slate-400/20 mt-1">
-                                            {Object.entries(tables).map(([tableName, columns]) => {
-                                              const sizeBadge = getTableSizeBadge(columns as any[]);
-                                              return (
-                                                <div key={tableName} className="mb-1">
-                                                  <div 
-                                                    className={`group text-[11px] font-medium px-2 py-1 flex items-center justify-between gap-1 rounded cursor-pointer select-none transition-colors ${theme === 'dark' ? 'hover:bg-slate-800' : 'hover:bg-slate-200'}`}
-                                                    onClick={() => {
-                                                      toggleSchemaNode(`tbl-${dbName}-${schemaName}-${tableName}`);
-                                                      const tablePath = dbName === schemaName ? `${dbName}.${tableName}` : `${dbName}.${schemaName}.${tableName}`;
-                                                      navigator.clipboard.writeText(tablePath);
-                                                    }}
-                                                    title="Нажмите, чтобы развернуть и скопировать название таблицы"
-                                                  >
-                                                    <div className={`flex items-center gap-1.5 truncate ${theme === 'dark' ? 'text-blue-400' : 'text-blue-700'}`}>
-                                                      <Layout className="w-3 h-3 opacity-70 shrink-0" />
-                                                      <span className="truncate" title={tableName}>{tableName}</span>
-                                                    </div>
-                                                    <div className="flex items-center gap-1 shrink-0">
-                                                      {sizeBadge && (
-                                                        <span className="text-[9px] px-1 py-0.2 rounded bg-slate-500/15 text-slate-400 font-mono">
-                                                          {sizeBadge}
-                                                        </span>
-                                                      )}
-                                                      <button
-                                                        onClick={(e) => {
-                                                          e.stopPropagation();
-                                                          const cols = (columns as any[]).map(c => `"${c.column_name}"`).join(', ');
-                                                          const sel = dbName === schemaName
-                                                            ? `SELECT ${cols} FROM "${dbName}"."${tableName}"`
-                                                            : `SELECT ${cols} FROM "${dbName}"."${schemaName}"."${tableName}"`;
-                                                          navigator.clipboard.writeText(sel);
-                                                        }}
-                                                        className={`p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-300 text-slate-500 hover:text-slate-800'}`}
-                                                        title="Копировать SELECT"
-                                                      >
-                                                        <Copy className="w-3 h-3" />
-                                                      </button>
-                                                    </div>
-                                                  </div>
-                                                {expandedSchemaNodes[`tbl-${dbName}-${schemaName}-${tableName}`] && (
-                                                  <div className="pl-4 mt-0.5 space-y-0.5">
-                                                    {(columns as any[]).map((col: any, idx: number) => (
-                                                      <div 
-                                                        key={idx} 
-                                                        className={`cursor-pointer text-[10px] flex items-center justify-between gap-2 px-1.5 py-0.5 rounded transition-colors ${theme === 'dark' ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-200'}`}
-                                                        onClick={() => navigator.clipboard.writeText(col.column_name)}
-                                                        title="Нажмите, чтобы скопировать название поля"
-                                                      >
-                                                        <span className="font-mono truncate" title={col.column_name}>{col.column_name}</span>
-                                                        <span className="text-[9px] opacity-60 shrink-0 font-mono">{col.data_type}</span>
-                                                      </div>
-                                                    ))}
-                                                  </div>
-                                                )}
-                                              </div>
-                                            );
-                                          })}
-                                          </div>
-                                        )}
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                        <button 
+                          onClick={handleExpandAllSchemaNodes}
+                          className={`p-1.5 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-200 text-slate-500 hover:text-slate-800'}`}
+                          title="Развернуть все"
+                        >
+                          <ChevronsUpDown className="w-3.5 h-3.5" />
+                        </button>
+                        <button 
+                          onClick={() => setExpandedSchemaNodes({})}
+                          className={`p-1.5 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-200 text-slate-500 hover:text-slate-800'}`}
+                          title="Свернуть все"
+                        >
+                          <ChevronsDownUp className="w-3.5 h-3.5" />
+                        </button>
                       </div>
-                    ))}
-                  </div>
+                      <div className="flex-1 overflow-y-auto p-2 text-xs">
+                        {Object.entries(groupedDuckDbSchema).map(([dbName, schemas]) => (
+                          <div key={dbName} className="mb-1">
+                            <div 
+                              className={`text-xs font-bold px-2 py-1 flex items-center gap-1.5 rounded cursor-pointer select-none transition-colors ${theme === 'dark' ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-200 text-slate-800'}`}
+                              onClick={() => toggleSchemaNode(`db-${dbName}`)}
+                            >
+                              <Database className="w-3.5 h-3.5 opacity-70" />
+                              <span className="truncate">{dbName}</span>
+                            </div>
+                            {expandedSchemaNodes[`db-${dbName}`] && (
+                              <div className="pl-2 border-l ml-2 border-slate-400/20 mt-1">
+                                {Object.entries(schemas).map(([schemaName, types]) => (
+                                  <div key={schemaName} className="mb-1">
+                                    <div 
+                                      className={`text-[11px] font-semibold px-2 py-1 flex items-center gap-1.5 rounded cursor-pointer select-none transition-colors ${theme === 'dark' ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-200 text-slate-700'}`}
+                                      onClick={() => toggleSchemaNode(`sch-${dbName}-${schemaName}`)}
+                                    >
+                                      <FileText className="w-3 h-3 opacity-70" />
+                                      <span className="truncate">{schemaName}</span>
+                                    </div>
+                                    {expandedSchemaNodes[`sch-${dbName}-${schemaName}`] && (
+                                      <div className="pl-2 border-l ml-2 border-slate-400/20 mt-1">
+                                        {Object.entries(types).map(([typeName, tables]) => (
+                                          <div key={typeName} className="mb-1">
+                                            <div 
+                                              className={`text-[11px] font-semibold px-2 py-1 flex items-center gap-1.5 rounded cursor-pointer select-none transition-colors ${theme === 'dark' ? 'hover:bg-slate-800 text-slate-500' : 'hover:bg-slate-200 text-slate-600'}`}
+                                              onClick={() => toggleSchemaNode(`type-${dbName}-${schemaName}-${typeName}`)}
+                                            >
+                                              <Folder className="w-3 h-3 opacity-70" />
+                                              <span className="truncate">{typeName}</span>
+                                            </div>
+                                            {expandedSchemaNodes[`type-${dbName}-${schemaName}-${typeName}`] && (
+                                              <div className="pl-2 border-l ml-2 border-slate-400/20 mt-1">
+                                                {Object.entries(tables).map(([tableName, columns]) => {
+                                                  const sizeBadge = getTableSizeBadge(columns as any[]);
+                                                  return (
+                                                    <div key={tableName} className="mb-1">
+                                                      <div 
+                                                        className={`group text-[11px] font-medium px-2 py-1 flex items-center justify-between gap-1 rounded cursor-pointer select-none transition-colors ${theme === 'dark' ? 'hover:bg-slate-800' : 'hover:bg-slate-200'}`}
+                                                        onClick={() => {
+                                                          toggleSchemaNode(`tbl-${dbName}-${schemaName}-${tableName}`);
+                                                          const tablePath = dbName === schemaName ? `${dbName}.${tableName}` : `${dbName}.${schemaName}.${tableName}`;
+                                                          navigator.clipboard.writeText(tablePath);
+                                                        }}
+                                                        title="Нажмите, чтобы развернуть и скопировать название таблицы"
+                                                      >
+                                                        <div className={`flex items-center gap-1.5 truncate ${theme === 'dark' ? 'text-blue-400' : 'text-blue-700'}`}>
+                                                          <Layout className="w-3 h-3 opacity-70 shrink-0" />
+                                                          <span className="truncate" title={tableName}>{tableName}</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-1 shrink-0">
+                                                          {sizeBadge && (
+                                                            <span className="text-[9px] px-1 py-0.2 rounded bg-slate-500/15 text-slate-400 font-mono">
+                                                              {sizeBadge}
+                                                            </span>
+                                                          )}
+                                                          <button
+                                                            onClick={(e) => {
+                                                              e.stopPropagation();
+                                                              const cols = (columns as any[]).map(c => `"${c.column_name}"`).join(', ');
+                                                              const sel = dbName === schemaName
+                                                                ? `SELECT ${cols} FROM "${dbName}"."${tableName}"`
+                                                                : `SELECT ${cols} FROM "${dbName}"."${schemaName}"."${tableName}"`;
+                                                              navigator.clipboard.writeText(sel);
+                                                            }}
+                                                            className={`p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-300 text-slate-500 hover:text-slate-800'}`}
+                                                            title="Копировать SELECT"
+                                                          >
+                                                            <Copy className="w-3 h-3" />
+                                                          </button>
+                                                        </div>
+                                                      </div>
+                                                    {expandedSchemaNodes[`tbl-${dbName}-${schemaName}-${tableName}`] && (
+                                                      <div className="pl-4 mt-0.5 space-y-0.5">
+                                                        {(columns as any[]).map((col: any, idx: number) => (
+                                                          <div 
+                                                            key={idx} 
+                                                            className={`cursor-pointer text-[10px] flex items-center justify-between gap-2 px-1.5 py-0.5 rounded transition-colors ${theme === 'dark' ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-200'}`}
+                                                            onClick={() => navigator.clipboard.writeText(col.column_name)}
+                                                            title="Нажмите, чтобы скопировать название поля"
+                                                          >
+                                                            <span className="font-mono truncate" title={col.column_name}>{col.column_name}</span>
+                                                            <span className="text-[9px] opacity-60 shrink-0 font-mono">{col.data_type}</span>
+                                                          </div>
+                                                        ))}
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                );
+                                              })}
+                                              </div>
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex-1 flex flex-col items-center justify-center p-6 text-center opacity-50">
+                      <span className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>Схема не загружена или пуста</span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -4369,18 +4389,34 @@ export default function App() {
                     ) : null}
                   </div>
                   {duckDbSelectedCell && (
-                    <div className={`w-72 border-l flex flex-col shrink-0 ${theme === 'dark' ? 'border-slate-700 bg-slate-900' : 'border-slate-300 bg-slate-50'}`}>
+                    <div className={`${isCellZoomed ? 'w-[576px]' : 'w-72'} border-l flex flex-col shrink-0 ${theme === 'dark' ? 'border-slate-700 bg-slate-900' : 'border-slate-300 bg-slate-50'}`}>
                       <div className={`flex items-center justify-between px-3 py-1.5 border-b shrink-0 ${theme === 'dark' ? 'border-slate-700' : 'border-slate-200'}`}>
-                        <span className={`text-xs font-semibold ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>
+                        <span className={`text-xs font-semibold truncate max-w-[180px] ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>
                           {duckDbSelectedCell.title}
                         </span>
-                        <button 
-                          onClick={() => setDuckDbSelectedCell(null)}
-                          className={`p-1 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'}`}
-                          title="Закрыть"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <button 
+                            onClick={() => navigator.clipboard.writeText(duckDbSelectedCell.content)}
+                            className={`p-1 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'}`}
+                            title="Скопировать значение"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+                          <button 
+                            onClick={() => setIsCellZoomed(!isCellZoomed)}
+                            className={`p-1 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'}`}
+                            title={isCellZoomed ? "Стандартный размер" : "Увеличить в 2 раза"}
+                          >
+                            {isCellZoomed ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+                          </button>
+                          <button 
+                            onClick={() => setDuckDbSelectedCell(null)}
+                            className={`p-1 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'}`}
+                            title="Закрыть"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
                       <div className={`flex-1 overflow-auto p-3 text-xs whitespace-pre-wrap select-text [word-break:break-word] ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>
                         {duckDbSelectedCell.content}
