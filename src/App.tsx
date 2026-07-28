@@ -161,6 +161,7 @@ export default function App() {
   const [isCellZoomed, setIsCellZoomed] = useState<boolean>(false);
   const [isTransposed, setIsTransposed] = useState<boolean>(false);
   const [duckDbSchema, setDuckDbSchema] = useState<any[] | null>(null);
+  const [isSchemaLoading, setIsSchemaLoading] = useState<boolean>(false);
   const [isSchemaZoomed, setIsSchemaZoomed] = useState<boolean>(false);
   const [schemaSearchTerm, setSchemaSearchTerm] = useState<string>(() => savedSession?.schemaSearchTerm || '');
   const [showDuckDbSchemaPanel, setShowDuckDbSchemaPanel] = useState<boolean>(() => savedSession?.showDuckDbSchemaPanel ?? true);
@@ -730,91 +731,96 @@ export default function App() {
   };
 
   const fetchDuckDbSchema = async () => {
-    if (activeEngine === 'clickhouse' || (!duckDbConnectedPath && clickhouseConfig)) {
-      if (!clickhouseConfig) return;
-      const schemaQuery = "SELECT c.database AS database_name, c.database AS schema_name, c.table AS table_name, c.name AS column_name, c.type AS data_type, CASE WHEN t.engine LIKE '%View%' THEN 'Views' ELSE 'Tables' END AS table_type, t.total_bytes AS table_bytes FROM system.columns AS c LEFT JOIN system.tables AS t ON c.database = t.database AND c.table = t.name WHERE c.database NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA') ORDER BY c.database, table_type, c.table, c.position FORMAT JSON";
-      try {
-        let data: any = null;
-        if (isTauriEnvironment()) {
-          try {
-            data = await executeClickhouseQueryTauri(clickhouseConfig, schemaQuery);
-          } catch (e: any) {
-            console.warn("Tauri direct Clickhouse schema fetch failed:", e);
-          }
-        } else {
-          try {
-            data = await fetchApiJson('/api/clickhouse/query', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                ...clickhouseConfig,
-                query: schemaQuery,
-              }),
-            });
-          } catch {
-            const url = getClickhouseUrl(clickhouseConfig);
-            const headers = getClickhouseHeaders(clickhouseConfig);
-            const chRes = await fetch(url, {
-              method: 'POST',
-              headers,
-              body: schemaQuery,
-            });
-            const text = await chRes.text();
-            if (chRes.ok) {
-              try {
-                const parsed = JSON.parse(text);
-                data = { success: true, data: parsed.data || parsed };
-              } catch {
-                // ignore
+    setIsSchemaLoading(true);
+    try {
+      if (activeEngine === 'clickhouse' || (!duckDbConnectedPath && clickhouseConfig)) {
+        if (!clickhouseConfig) return;
+        const schemaQuery = "SELECT c.database AS database_name, c.database AS schema_name, c.table AS table_name, c.name AS column_name, c.type AS data_type, CASE WHEN t.engine LIKE '%View%' THEN 'Views' ELSE 'Tables' END AS table_type, t.total_bytes AS table_bytes FROM system.columns AS c LEFT JOIN system.tables AS t ON c.database = t.database AND c.table = t.name WHERE c.database NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA') ORDER BY c.database, table_type, c.table, c.position FORMAT JSON";
+        try {
+          let data: any = null;
+          if (isTauriEnvironment()) {
+            try {
+              data = await executeClickhouseQueryTauri(clickhouseConfig, schemaQuery);
+            } catch (e: any) {
+              console.warn("Tauri direct Clickhouse schema fetch failed:", e);
+            }
+          } else {
+            try {
+              data = await fetchApiJson('/api/clickhouse/query', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  ...clickhouseConfig,
+                  query: schemaQuery,
+                }),
+              });
+            } catch {
+              const url = getClickhouseUrl(clickhouseConfig);
+              const headers = getClickhouseHeaders(clickhouseConfig);
+              const chRes = await fetch(url, {
+                method: 'POST',
+                headers,
+                body: schemaQuery,
+              });
+              const text = await chRes.text();
+              if (chRes.ok) {
+                try {
+                  const parsed = JSON.parse(text);
+                  data = { success: true, data: parsed.data || parsed };
+                } catch {
+                  // ignore
+                }
               }
             }
           }
+          if (data && data.data && Array.isArray(data.data)) {
+            setDuckDbSchema(data.data);
+          }
+        } catch (e: any) {
+          console.warn("Failed to fetch ClickHouse schema:", e?.message || e);
         }
-        if (data && data.data && Array.isArray(data.data)) {
-          setDuckDbSchema(data.data);
+        return;
+      }
+
+      const schemaQuery = "SELECT c.database_name, c.schema_name, c.table_name, c.column_name, c.data_type, CASE WHEN v.view_name IS NOT NULL THEN 'Views' ELSE 'Tables' END as table_type, t.estimated_size as estimated_rows FROM duckdb_columns() c LEFT JOIN duckdb_views() v ON c.table_name = v.view_name AND c.schema_name = v.schema_name AND c.database_name = v.database_name LEFT JOIN duckdb_tables() t ON c.table_name = t.table_name AND c.schema_name = t.schema_name AND c.database_name = t.database_name ORDER BY c.database_name, c.schema_name, table_type, c.table_name, c.column_index";
+      try {
+        if (isTauriEnv && !isWasmMode) {
+          try {
+            const res = await tauriInvoke<{ columns: string[]; rows: any[][] }>('execute_query', {
+              sql: schemaQuery
+            });
+            const parsed = (res?.rows || []).map(row => {
+              const obj: Record<string, any> = {};
+              (res.columns || []).forEach((col, idx) => {
+                obj[col] = row[idx];
+              });
+              return obj;
+            });
+            setDuckDbSchema(parsed);
+            return;
+          } catch (tauriErr) {
+            console.warn("Tauri schema query failed, trying backend/wasm:", tauriErr);
+          }
+        }
+
+        if (isWasmMode) {
+          const rows = await queryDuckDbWasm(schemaQuery);
+          setDuckDbSchema(rows);
+        } else {
+          const data = await fetchApiJson("/api/duckdb/query", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ query: schemaQuery })
+          });
+          if (data.data) {
+            setDuckDbSchema(data.data);
+          }
         }
       } catch (e: any) {
-        console.warn("Failed to fetch ClickHouse schema:", e?.message || e);
+        console.warn("Failed to fetch schema:", e?.message || e);
       }
-      return;
-    }
-
-    const schemaQuery = "SELECT c.database_name, c.schema_name, c.table_name, c.column_name, c.data_type, CASE WHEN v.view_name IS NOT NULL THEN 'Views' ELSE 'Tables' END as table_type, t.estimated_size as estimated_rows FROM duckdb_columns() c LEFT JOIN duckdb_views() v ON c.table_name = v.view_name AND c.schema_name = v.schema_name AND c.database_name = v.database_name LEFT JOIN duckdb_tables() t ON c.table_name = t.table_name AND c.schema_name = t.schema_name AND c.database_name = t.database_name ORDER BY c.database_name, c.schema_name, table_type, c.table_name, c.column_index";
-    try {
-      if (isTauriEnv && !isWasmMode) {
-        try {
-          const res = await tauriInvoke<{ columns: string[]; rows: any[][] }>('execute_query', {
-            sql: schemaQuery
-          });
-          const parsed = (res?.rows || []).map(row => {
-            const obj: Record<string, any> = {};
-            (res.columns || []).forEach((col, idx) => {
-              obj[col] = row[idx];
-            });
-            return obj;
-          });
-          setDuckDbSchema(parsed);
-          return;
-        } catch (tauriErr) {
-          console.warn("Tauri schema query failed, trying backend/wasm:", tauriErr);
-        }
-      }
-
-      if (isWasmMode) {
-        const rows = await queryDuckDbWasm(schemaQuery);
-        setDuckDbSchema(rows);
-      } else {
-        const data = await fetchApiJson("/api/duckdb/query", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query: schemaQuery })
-        });
-        if (data.data) {
-          setDuckDbSchema(data.data);
-        }
-      }
-    } catch (e: any) {
-      console.warn("Failed to fetch schema:", e?.message || e);
+    } finally {
+      setIsSchemaLoading(false);
     }
   };
 
@@ -3934,7 +3940,13 @@ export default function App() {
                   <div className={`px-3 h-[37px] border-b flex items-center justify-between shrink-0 transition-colors ${theme === 'dark' ? 'border-slate-700 bg-slate-800' : 'border-slate-300 bg-slate-100'}`}>
                     <span className={`text-xs font-semibold flex items-center gap-2 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>
                       <Database className="w-3.5 h-3.5 text-teal-500" />
-                      Schema Browser
+                      <span>Schema Browser</span>
+                      {isSchemaLoading && (
+                        <span className="flex items-center gap-1 text-[10px] font-normal text-blue-400 animate-pulse ml-1">
+                          <Loader2 className="w-3 h-3 animate-spin text-blue-400" />
+                          <span>Обновление...</span>
+                        </span>
+                      )}
                     </span>
                     <div className="flex items-center gap-1">
                       <button 
@@ -4087,6 +4099,11 @@ export default function App() {
                         ))}
                       </div>
                     </>
+                  ) : isSchemaLoading ? (
+                    <div className="flex-1 flex flex-col items-center justify-center p-6 text-center gap-2">
+                      <Loader2 className="w-5 h-5 animate-spin text-blue-400" />
+                      <span className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>Загрузка схемы базы данных...</span>
+                    </div>
                   ) : (
                     <div className="flex-1 flex flex-col items-center justify-center p-6 text-center opacity-50">
                       <span className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>Схема не загружена или пуста</span>
@@ -4701,4 +4718,3 @@ export default function App() {
     </div>
   );
 }
-
