@@ -43,8 +43,10 @@ jobs:
           echo "Preparing Windows build environment..."
 
       - name: Install web app dependencies
-        #run: npm ci
-        run: npm install
+        shell: bash
+        run: |
+          rm -f package-lock.json
+          npm install
 
       - name: Build web application
         run: npm run build
