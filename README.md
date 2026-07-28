@@ -25,3 +25,6 @@ A technical application for visualizing, formatting, and executing SQL queries. 
 * **SQL Editing**: Multi-tab SQL editor featuring autocomplete, version history tracking (IndexedDB), and automatic code formatting (`sql-formatter`).
 * **Export Capabilities**: Exports visual node graphs to image formats (PNG, SVG, JPEG) and structural data formats (JSON, XML, Mermaid, Draw.io).
 * **Workspace Management**: Local persistence of user sessions, active tabs, and database configurations, including full workspace state import/export (JSON).
+
+
+*for macos need terminal cmd `xattr -cr /Applications/"QueryAST Lens.app"`*
