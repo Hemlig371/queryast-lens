@@ -67,6 +67,13 @@ export function getClickhouseUrl(config: ClickhouseConfig, queryParams?: Record<
   if (queryParams) {
     Object.entries(queryParams).forEach(([k, v]) => params.set(k, v));
   }
+  
+  // Добавляем безопасный параметр, чтобы избежать маршрутизации на статический сайт (как на play.clickhouse.com) 
+  // когда база данных не указана и строка параметров пустая.
+  if (params.toString() === '') {
+    params.set('default_format', 'JSON');
+  }
+
   const queryString = params.toString();
   return `${config.protocol || 'http'}://${cleanHost}/${queryString ? '?' + queryString : ''}`;
 }
