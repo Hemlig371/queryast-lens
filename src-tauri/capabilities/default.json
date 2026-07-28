@@ -9,36 +9,33 @@
     {
       "identifier": "fs:allow-read-text",
       "allow": [
-        { "path": "C:\\**" },
-        { "path": "D:\\**" },
-        { "path": "E:\\**" },
-        { "path": "F:\\**" },
-        { "path": "\\\\**" },
-        { "path": "$HOME\\**" },
+        { "path": "C:/**" },
+        { "path": "D:/**" },
+        { "path": "E:/**" },
+        { "path": "F:/**" },
+        { "path": "$HOME/**" },
         { "path": "**" }
       ]
     },
     {
       "identifier": "fs:allow-read-binary",
       "allow": [
-        { "path": "C:\\**" },
-        { "path": "D:\\**" },
-        { "path": "E:\\**" },
-        { "path": "F:\\**" },
-        { "path": "\\\\**" },
-        { "path": "$HOME\\**" },
+        { "path": "C:/**" },
+        { "path": "D:/**" },
+        { "path": "E:/**" },
+        { "path": "F:/**" },
+        { "path": "$HOME/**" },
         { "path": "**" }
       ]
     },
     {
       "identifier": "fs:allow-exists",
       "allow": [
-        { "path": "C:\\**" },
-        { "path": "D:\\**" },
-        { "path": "E:\\**" },
-        { "path": "F:\\**" },
-        { "path": "\\\\**" },
-        { "path": "$HOME\\**" },
+        { "path": "C:/**" },
+        { "path": "D:/**" },
+        { "path": "E:/**" },
+        { "path": "F:/**" },
+        { "path": "$HOME/**" },
         { "path": "**" }
       ]
     }
