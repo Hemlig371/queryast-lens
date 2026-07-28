@@ -293,7 +293,7 @@ export default function App() {
 
 
 
-  const sqlRef = useRef<string>('');
+  const sqlRef = useRef<string>(tabs.find(t => t.id === activeTabId)?.sql || '');
   const getActiveTabSql = () => tabs.find(t => t.id === activeTabId)?.sql || '';
   // Keep latest session state in ref to avoid constant disk writes while editing
   const latestSessionRef = useRef({
@@ -2321,7 +2321,7 @@ export default function App() {
 
   // Initial load
   useEffect(() => {
-    handleVisualize(sqlPresets[0].sql, 'PostgreSQL', 'LR');
+    handleVisualize(sqlRef.current, dialect, direction);
   }, []);
 
   const handleVisualize = (
