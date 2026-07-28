@@ -114,8 +114,10 @@ app.post("/api/clickhouse/test", async (req, res) => {
 
   try {
     const cleanHost = host.replace(/^https?:\/\//i, '');
-    const dbParam = database ? `?database=${encodeURIComponent(database)}` : '';
-    const url = `${protocol || 'http'}://${cleanHost}/${dbParam}`;
+    const params = new URLSearchParams();
+    if (database) params.set('database', database);
+    if (params.toString() === '') params.set('default_format', 'JSON');
+    const url = `${protocol || 'http'}://${cleanHost}/?${params.toString()}`;
 
     const chRes = await fetch(url, {
       method: 'POST',
@@ -146,8 +148,10 @@ app.post("/api/clickhouse/query", async (req, res) => {
 
   try {
     const cleanHost = host.replace(/^https?:\/\//i, '');
-    const dbParam = database ? `?database=${encodeURIComponent(database)}` : '';
-    const url = `${protocol || 'http'}://${cleanHost}/${dbParam}`;
+    const params = new URLSearchParams();
+    if (database) params.set('database', database);
+    if (params.toString() === '') params.set('default_format', 'JSON');
+    const url = `${protocol || 'http'}://${cleanHost}/?${params.toString()}`;
 
     const chRes = await fetch(url, {
       method: 'POST',
@@ -183,8 +187,10 @@ app.post("/api/clickhouse/copy-to", async (req, res) => {
 
   try {
     const cleanHost = host.replace(/^https?:\/\//i, '');
-    const dbParam = database ? `?database=${encodeURIComponent(database)}` : '';
-    const url = `${protocol || 'http'}://${cleanHost}/${dbParam}`;
+    const params = new URLSearchParams();
+    if (database) params.set('database', database);
+    if (params.toString() === '') params.set('default_format', 'JSON');
+    const url = `${protocol || 'http'}://${cleanHost}/?${params.toString()}`;
 
     let sqlToExec = innerSql.trim().replace(/;+$/, '');
     if (!/\bFORMAT\b/i.test(sqlToExec)) {
@@ -265,8 +271,10 @@ app.post("/api/clickhouse/copy-from", async (req, res) => {
       }
     }
 
-    const dbParam = database ? `?database=${encodeURIComponent(database)}&query=${encodeURIComponent(target)}` : `?query=${encodeURIComponent(target)}`;
-    const url = `${protocol || 'http'}://${cleanHost}/${dbParam}`;
+    const params = new URLSearchParams();
+    if (database) params.set('database', database);
+    params.set('query', target);
+    const url = `${protocol || 'http'}://${cleanHost}/?${params.toString()}`;
 
     const chRes = await fetch(url, {
       method: 'POST',
