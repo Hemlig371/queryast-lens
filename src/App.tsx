@@ -2241,7 +2241,9 @@ export default function App() {
       if (combo === (currentHotkeys.visualize || 'Ctrl+Enter')) {
         e.preventDefault();
         e.stopPropagation();
-        currentHandleVisualize();
+        if (!currentIsMaximizedSql) {
+          currentHandleVisualize();
+        }
         if (currentUiVisibility.showDuckDbConfig || currentUiVisibility.showClickhouseConfig) {
           currentHandleExecuteDuckDb();
         }
