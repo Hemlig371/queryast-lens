@@ -297,18 +297,85 @@ export function SqlEditor({
       return;
     }
     if (!onChange) return;
+
+    const convertInlineDash = (sql: string) => {
+      return sql
+        .split('\n')
+        .map((line) => {
+          let inString: string | null = null;
+          let inBlock = false;
+          let codeFound = false;
+          let dashIdx = -1;
+          for (let i = 0; i < line.length; i++) {
+            const char = line[i];
+            const next = line[i + 1];
+            if (inString) {
+              if (char === inString && line[i - 1] !== '\\') inString = null;
+            } else if (inBlock) {
+              if (char === '*' && next === '/') { inBlock = false; i++; }
+            } else if (char === "'" || char === '"' || char === '`') {
+              inString = char; codeFound = true;
+            } else if (char === '/' && next === '*') {
+              inBlock = true; i++;
+            } else if (char === '-' && next === '-') {
+              dashIdx = i; break;
+            } else if (char !== ' ' && char !== '\t' && char !== '\r') {
+              codeFound = true;
+            }
+          }
+          if (dashIdx !== -1 && codeFound) {
+            const before = line.slice(0, dashIdx);
+            const cText = line.slice(dashIdx + 2).replace(/\*\//g, '* /');
+            return `${before}/* ${cText.trim()} */`;
+          }
+          return line;
+        })
+        .join('\n');
+    };
+
+    const compactText = (text: string) => {
+      if (!text) return text;
+      const pre = convertInlineDash(text);
+      const lines = pre.split('\n');
+      const chunks: Array<{ type: 'comment' | 'code'; lines: string[] }> = [];
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('--')) {
+          chunks.push({ type: 'comment', lines: [trimmed] });
+        } else {
+          if (chunks.length > 0 && chunks[chunks.length - 1].type === 'code') {
+            chunks[chunks.length - 1].lines.push(line);
+          } else {
+            chunks.push({ type: 'code', lines: [line] });
+          }
+        }
+      }
+      const res: string[] = [];
+      for (const c of chunks) {
+        if (c.type === 'comment') {
+          res.push(c.lines[0]);
+        } else {
+          const block = c.lines.join('\n').trim();
+          if (block) {
+            res.push(block.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' '));
+          }
+        }
+      }
+      return res.join('\n');
+    };
+
     if (textareaRef.current) {
       const start = textareaRef.current.selectionStart;
       const end = textareaRef.current.selectionEnd;
       if (start !== null && end !== null && start !== end) {
         const selected = value.slice(start, end);
-        const compacted = selected.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ');
+        const compacted = compactText(selected);
         textareaRef.current.focus();
         document.execCommand('insertText', false, compacted);
         return;
       }
     }
-    const compacted = value.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ');
+    const compacted = compactText(value);
     if (textareaRef.current) {
       textareaRef.current.focus();
       textareaRef.current.select();

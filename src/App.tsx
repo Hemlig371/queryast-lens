@@ -31,6 +31,7 @@ import {
   Maximize2,
   Minimize2,
   RefreshCw,
+  Zap,
   Sparkles,
   Info,
   Sun,
@@ -59,8 +60,12 @@ import {
   Table,
   Zap,
   Shrink,
-  ArrowLeftRight
+  ArrowLeftRight,
+  BarChart3,
+  TableProperties
 } from 'lucide-react';
+
+import { DataStatsViewer } from './components/DataStatsViewer';
 
 import { parseSqlToAst, astToGraph, getLayoutedElements } from './utils/astToGraph';
 import { nodeTypes } from './components/CustomNodes';
@@ -75,6 +80,7 @@ import { format as formatSql } from 'sql-formatter';
 import { connectDuckDbWasmFile, queryDuckDbWasm, disconnectDuckDbWasm, exportDuckDbFile } from './lib/duckdbWasm';
 import { ClickhouseModal } from './components/ClickhouseModal';
 import { ClickhouseConfig, parseClickhouseCopy, getClickhouseUrl, getClickhouseHeaders, isTauriEnvironment, executeClickhouseQueryTauri, executeClickhouseCopyToTauri, executeClickhouseCopyFromTauri, cancelClickhouseQueryTauri } from './lib/clickhouse';
+import { getSchemaCache, saveSchemaCache } from './utils/schemaDbCache';
 
 export interface EditorTab {
   id: string;
@@ -160,7 +166,24 @@ export default function App() {
   const [duckDbSelectedCell, setDuckDbSelectedCell] = useState<{ title: string; content: string } | null>(null);
   const [isCellZoomed, setIsCellZoomed] = useState<boolean>(false);
   const [isTransposed, setIsTransposed] = useState<boolean>(false);
+  const [resultsViewMode, setResultsViewMode] = useState<'table' | 'chart' | 'summarize'>('table');
+  const [summarizeResults, setSummarizeResults] = useState<any[] | null>(null);
+  const preChartExpandedRef = useRef<boolean>(false);
+  const [statsInitialMode, setStatsInitialMode] = useState<{ chartType: 'bar' | 'line' | 'pie' | 'list'; listSubMode: 'categories' | 'columns' }>({
+    chartType: 'list',
+    listSubMode: 'categories',
+  });
+  const activeStatsModeRef = useRef<{ chartType: 'bar' | 'line' | 'pie' | 'list'; listSubMode: 'categories' | 'columns' }>({
+    chartType: 'list',
+    listSubMode: 'categories',
+  });
   const [duckDbSchema, setDuckDbSchema] = useState<any[] | null>(null);
+  const [tableColumnsMap, setTableColumnsMap] = useState<Record<string, any[]>>({});
+  const [loadingTableCols, setLoadingTableCols] = useState<Record<string, boolean>>({});
+  const tableColumnsMapRef = useRef<Record<string, any[]>>({});
+  useEffect(() => {
+    tableColumnsMapRef.current = tableColumnsMap;
+  }, [tableColumnsMap]);
   const [isSchemaLoading, setIsSchemaLoading] = useState<boolean>(false);
   const [isSchemaZoomed, setIsSchemaZoomed] = useState<boolean>(false);
   const [schemaSearchTerm, setSchemaSearchTerm] = useState<string>(() => savedSession?.schemaSearchTerm || '');
@@ -207,20 +230,81 @@ export default function App() {
   const extractedTableName = useMemo(() => {
     if (!lastExecutedSql.trim()) return 'table';
     const cleanSql = lastExecutedSql.replace(/^(\s*(--[^\n]*\n|\/\*[\s\S]*?\*\/))*/g, '').trim();
-    const match = cleanSql.match(/\bFROM\s+([^\s;(),]+)/i);
-    if (match && match[1]) {
-      const rawTable = match[1].trim();
-      if (rawTable.startsWith('(')) {
-        return `(${cleanSql.replace(/;+$/, '')}) AS _sub`;
-      }
-      return rawTable;
+
+    const fromMatch = cleanSql.match(/\bFROM\s+/i);
+    if (!fromMatch || fromMatch.index === undefined) {
+      return `(${cleanSql.replace(/;+$/, '')}) AS _sub`;
     }
+
+    const afterFrom = cleanSql.slice(fromMatch.index + fromMatch[0].length).trim();
+    if (!afterFrom) return 'table';
+
+    // 1. Single-quoted string file path / table: 'path/to/file.parquet' or 's3://...'
+    const singleQuoteMatch = afterFrom.match(/^('(?:''|[^'\\]|\\.)*')/);
+    if (singleQuoteMatch) {
+      return singleQuoteMatch[1];
+    }
+
+    // 2. Function call or Parenthesized expression / subquery: read_parquet(...) or (SELECT ...)
+    if (/^(?:[a-zA-Z0-9_$]+\s*)?\(/.test(afterFrom)) {
+      let parenCount = 0;
+      let inString: string | null = null;
+      let endIndex = -1;
+
+      for (let i = 0; i < afterFrom.length; i++) {
+        const char = afterFrom[i];
+        if (inString) {
+          if (char === inString && afterFrom[i - 1] !== '\\') {
+            inString = null;
+          }
+        } else if (char === "'" || char === '"') {
+          inString = char;
+        } else if (char === '(') {
+          parenCount++;
+        } else if (char === ')') {
+          parenCount--;
+          if (parenCount === 0) {
+            endIndex = i;
+            break;
+          }
+        }
+      }
+
+      if (endIndex !== -1) {
+        const extracted = afterFrom.slice(0, endIndex + 1).trim();
+        if (extracted.startsWith('(')) {
+          return `${extracted} AS _sub`;
+        }
+        return extracted;
+      }
+    }
+
+    // 3. Table name (can be qualified with dots, e.g. "default"."actors", db.schema.table, `db`.`tbl`)
+    const identPartRegex = /^(?:"(?:""|[^"\\]|\\.)*"|`(?:``|[^`\\]|\\.)*`|\[[^\]]+\]|[^\s;(),."']+)/;
+    let curr = afterFrom;
+    let matchLength = 0;
+
+    while (curr.length > 0) {
+      const partMatch = curr.match(identPartRegex);
+      if (!partMatch) break;
+      matchLength += partMatch[0].length;
+      curr = curr.slice(partMatch[0].length);
+
+      const dotMatch = curr.match(/^\s*\.\s*/);
+      if (dotMatch) {
+        matchLength += dotMatch[0].length;
+        curr = curr.slice(dotMatch[0].length);
+      } else {
+        break;
+      }
+    }
+
+    if (matchLength > 0) {
+      return afterFrom.slice(0, matchLength).trim();
+    }
+
     return `(${cleanSql.replace(/;+$/, '')}) AS _sub`;
   }, [lastExecutedSql]);
-
-  const pagedResults = useMemo(() => {
-    return duckDbResults || [];
-  }, [duckDbResults]);
 
   const prevDuckDbPathRef = useRef<string | null>(duckDbConnectedPath);
   useEffect(() => {
@@ -237,18 +321,224 @@ export default function App() {
     setExpandedSchemaNodes(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
+  const fetchTableColumns = async (dbName: string, schemaName: string, tableName: string, tableType: string) => {
+    const tableKey = `${dbName}.${schemaName}.${tableName}`;
+    if (tableColumnsMapRef.current[tableKey] && tableColumnsMapRef.current[tableKey].length > 0) return;
+
+    setLoadingTableCols(prev => ({ ...prev, [tableKey]: true }));
+
+    try {
+      let columns: any[] = [];
+
+      if (activeEngine === 'clickhouse' || (!duckDbConnectedPath && !isWasmMode && clickhouseConfig)) {
+        if (!clickhouseConfig) return;
+        const colQuery = `SELECT name AS column_name, type AS data_type FROM system.columns WHERE database = '${dbName.replace(/'/g, "''")}' AND table = '${tableName.replace(/'/g, "''")}' ORDER BY position FORMAT JSON`;
+        let data: any = null;
+        if (isTauriEnvironment()) {
+          try {
+            data = await executeClickhouseQueryTauri(clickhouseConfig, colQuery);
+          } catch (e) {
+            console.warn("Tauri CH table cols query failed:", e);
+          }
+        } else {
+          try {
+            data = await fetchApiJson('/api/clickhouse/query', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ...clickhouseConfig, query: colQuery }),
+            });
+          } catch {
+            const url = getClickhouseUrl(clickhouseConfig);
+            const headers = getClickhouseHeaders(clickhouseConfig);
+            const chRes = await fetch(url, { method: 'POST', headers, body: colQuery });
+            const text = await chRes.text();
+            if (chRes.ok) {
+              try {
+                const parsed = JSON.parse(text);
+                data = { success: true, data: parsed.data || parsed };
+              } catch {}
+            }
+          }
+        }
+        if (data && data.data && Array.isArray(data.data)) {
+          columns = data.data;
+        } else if (data && Array.isArray(data)) {
+          columns = data;
+        }
+      } else {
+        // DuckDB
+        if (tableType === 'Macros') {
+          const macroInfoQuery = `SELECT function_name, parameters, return_type, description FROM duckdb_functions() WHERE function_name = '${tableName.replace(/'/g, "''")}' AND schema_name = '${schemaName.replace(/'/g, "''")}' AND database_name = '${dbName.replace(/'/g, "''")}'`;
+          let rows: any[] = [];
+          try {
+            if (isTauriEnv && !isWasmMode) {
+              const res = await tauriInvoke<{ columns: string[]; rows: any[][] }>('execute_query', { sql: macroInfoQuery });
+              rows = (res?.rows || []).map(r => {
+                const obj: Record<string, any> = {};
+                (res.columns || []).forEach((c, i) => { obj[c] = r[i]; });
+                return obj;
+              });
+            } else if (isWasmMode) {
+              rows = await queryDuckDbWasm(macroInfoQuery);
+            } else {
+              const data = await fetchApiJson("/api/duckdb/query", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ query: macroInfoQuery })
+              });
+              if (data.data) rows = data.data;
+            }
+          } catch (e) {
+            console.warn("Failed to fetch macro details:", e);
+          }
+
+          if (rows && rows.length > 0) {
+            const m = rows[0];
+            const params = Array.isArray(m.parameters) ? m.parameters.join(', ') : (m.parameters || '');
+            columns = [
+              { column_name: `(${params})`, data_type: m.return_type || 'macro' }
+            ];
+            if (m.description) {
+              columns.push({ column_name: m.description, data_type: 'info' });
+            }
+          } else {
+            columns = [{ column_name: 'macro()', data_type: 'macro' }];
+          }
+        } else {
+          const colQuery = `SELECT column_name, data_type FROM duckdb_columns() WHERE database_name = '${dbName.replace(/'/g, "''")}' AND schema_name = '${schemaName.replace(/'/g, "''")}' AND table_name = '${tableName.replace(/'/g, "''")}' ORDER BY column_index`;
+          try {
+            if (isTauriEnv && !isWasmMode) {
+              const res = await tauriInvoke<{ columns: string[]; rows: any[][] }>('execute_query', { sql: colQuery });
+              columns = (res?.rows || []).map(r => {
+                const obj: Record<string, any> = {};
+                (res.columns || []).forEach((c, i) => { obj[c] = r[i]; });
+                return obj;
+              });
+            } else if (isWasmMode) {
+              columns = await queryDuckDbWasm(colQuery);
+            } else {
+              const data = await fetchApiJson("/api/duckdb/query", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ query: colQuery })
+              });
+              if (data.data) columns = data.data;
+            }
+          } catch (e) {
+            console.warn("duckdb_columns() query failed:", e);
+          }
+
+          // Fallback 1: information_schema.columns
+          if (!columns || columns.length === 0) {
+            try {
+              const fallbackColQuery = `SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '${tableName.replace(/'/g, "''")}' AND (table_schema = '${schemaName.replace(/'/g, "''")}' OR table_schema = 'main') ORDER BY ordinal_position`;
+              if (isWasmMode) {
+                columns = await queryDuckDbWasm(fallbackColQuery);
+              } else if (isTauriEnv && !isWasmMode) {
+                const res = await tauriInvoke<{ columns: string[]; rows: any[][] }>('execute_query', { sql: fallbackColQuery });
+                columns = (res?.rows || []).map(r => {
+                  const obj: Record<string, any> = {};
+                  (res.columns || []).forEach((c, i) => { obj[c] = r[i]; });
+                  return obj;
+                });
+              } else {
+                const data = await fetchApiJson("/api/duckdb/query", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ query: fallbackColQuery })
+                });
+                if (data.data) columns = data.data;
+              }
+            } catch (e2) {
+              console.warn("Fallback information_schema.columns failed:", e2);
+            }
+          }
+
+          // Fallback 2: DESCRIBE "table"
+          if (!columns || columns.length === 0) {
+            try {
+              const describeQuery = `DESCRIBE "${tableName.replace(/"/g, '""')}"`;
+              let descRows: any[] = [];
+              if (isWasmMode) {
+                descRows = await queryDuckDbWasm(describeQuery);
+              } else if (isTauriEnv && !isWasmMode) {
+                const res = await tauriInvoke<{ columns: string[]; rows: any[][] }>('execute_query', { sql: describeQuery });
+                descRows = (res?.rows || []).map(r => {
+                  const obj: Record<string, any> = {};
+                  (res.columns || []).forEach((c, i) => { obj[c] = r[i]; });
+                  return obj;
+                });
+              } else {
+                const data = await fetchApiJson("/api/duckdb/query", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ query: describeQuery })
+                });
+                if (data.data) descRows = data.data;
+              }
+              if (descRows && descRows.length > 0) {
+                columns = descRows.map(r => ({
+                  column_name: r.column_name || r.Field || r.name || Object.values(r)[0],
+                  data_type: r.column_type || r.Type || r.type || Object.values(r)[1] || 'TEXT'
+                })).filter(c => c.column_name);
+              }
+            } catch (e3) {
+              console.warn("DESCRIBE table failed:", e3);
+            }
+          }
+        }
+      }
+
+      if (columns && columns.length > 0) {
+        setTableColumnsMap(prev => {
+          const updated = { ...prev, [tableKey]: columns };
+          const isCH = activeEngine === 'clickhouse' || (!duckDbConnectedPath && !isWasmMode && clickhouseConfig);
+          const dbKey = isCH && clickhouseConfig
+            ? `clickhouse:${clickhouseConfig.host}:${clickhouseConfig.user}:${clickhouseConfig.database || 'default'}`
+            : `duckdb:${duckDbConnectedPath || (isWasmMode ? 'wasm' : 'local')}`;
+          if (duckDbSchema) {
+            saveSchemaCache({
+              dbKey,
+              timestamp: Date.now(),
+              tables: duckDbSchema,
+              tableColumnsMap: updated,
+            });
+          }
+          return updated;
+        });
+      }
+    } catch (e: any) {
+      console.warn(`Failed to fetch columns for ${tableKey}:`, e);
+    } finally {
+      setLoadingTableCols(prev => ({ ...prev, [tableKey]: false }));
+    }
+  };
+
+  const handleToggleTableNode = async (dbName: string, schemaName: string, tableName: string, tableType: string) => {
+    const nodeKey = `tbl-${dbName}-${schemaName}-${tableName}`;
+    const tableKey = `${dbName}.${schemaName}.${tableName}`;
+    
+    const isCurrentlyExpanded = !!expandedSchemaNodes[nodeKey];
+    setExpandedSchemaNodes(prev => ({ ...prev, [nodeKey]: !isCurrentlyExpanded }));
+    
+    const tablePath = dbName === schemaName ? `${dbName}.${tableName}` : `${dbName}.${schemaName}.${tableName}`;
+    navigator.clipboard.writeText(tablePath);
+
+    if (!isCurrentlyExpanded && !tableColumnsMapRef.current[tableKey]) {
+      await fetchTableColumns(dbName, schemaName, tableName, tableType);
+    }
+  };
+
   const handleExpandAllSchemaNodes = () => {
     if (!groupedDuckDbSchema) return;
     const nextState: Record<string, boolean> = {};
     Object.entries(groupedDuckDbSchema).forEach(([dbName, schemas]: any) => {
+      if (dbName.toLowerCase() === 'system') return;
       nextState[`db-${dbName}`] = true;
       Object.entries(schemas).forEach(([schemaName, types]: any) => {
         nextState[`sch-${dbName}-${schemaName}`] = true;
         Object.entries(types).forEach(([typeName, tables]: any) => {
           nextState[`type-${dbName}-${schemaName}-${typeName}`] = true;
-          Object.entries(tables).forEach(([tableName, cols]: any) => {
-            nextState[`tbl-${dbName}-${schemaName}-${tableName}`] = true;
-          });
         });
       });
     });
@@ -257,28 +547,39 @@ export default function App() {
 
   const groupedDuckDbSchema = useMemo(() => {
     if (!duckDbSchema) return null;
-    const tree: Record<string, Record<string, Record<string, Record<string, any[]>>>> = {};
+    const tree: Record<string, Record<string, Record<string, Record<string, { info: any; columns?: any[] }>>>> = {};
     const term = schemaSearchTerm.toLowerCase();
     
-    duckDbSchema.forEach(col => {
-      const tblMatch = col.table_name.toLowerCase().includes(term);
-      const colMatch = col.column_name.toLowerCase().includes(term);
-      if (term && !tblMatch && !colMatch) return;
+    duckDbSchema.forEach(item => {
+      const tblName = item.table_name || item.name || '';
+      const tblMatch = tblName.toLowerCase().includes(term);
       
-      const db = col.database_name;
-      const sch = col.schema_name;
-      const type = col.table_type === 'Views' ? 'Views' : 'Tables';
-      const tbl = col.table_name;
+      const db = item.database_name || item.database || 'main';
+      const sch = item.schema_name || item.schema || 'main';
+      const type = item.table_type === 'Views' ? 'Views' : item.table_type === 'Macros' ? 'Macros' : 'Tables';
+      const tbl = tblName;
+      if (!tbl) return;
+      const tableKey = `${db}.${sch}.${tbl}`;
+      const cachedCols = tableColumnsMap[tableKey];
+
+      let colMatch = false;
+      if (term && cachedCols && Array.isArray(cachedCols)) {
+        colMatch = cachedCols.some((c: any) => (c.column_name || '').toLowerCase().includes(term));
+      }
+
+      if (term && !tblMatch && !colMatch) return;
       
       if (!tree[db]) tree[db] = {};
       if (!tree[db][sch]) tree[db][sch] = {};
       if (!tree[db][sch][type]) tree[db][sch][type] = {};
-      if (!tree[db][sch][type][tbl]) tree[db][sch][type][tbl] = [];
       
-      tree[db][sch][type][tbl].push(col);
+      tree[db][sch][type][tbl] = {
+        info: item,
+        columns: cachedCols || null,
+      };
     });
     return tree;
-  }, [duckDbSchema, schemaSearchTerm]);
+  }, [duckDbSchema, tableColumnsMap, schemaSearchTerm]);
 
   const [showSnippetsModal, setShowSnippetsModal] = useState<boolean>(false);
   const [showPresetsDropdown, setShowPresetsDropdown] = useState<boolean>(false);
@@ -288,6 +589,12 @@ export default function App() {
   const [hotkeys, setHotkeys] = useState<Record<string, string>>(() => getSavedHotkeys());
   const [formatterSettings, setFormatterSettings] = useState<FormatterSettings>(() => getSavedFormatterSettings());
   const [uiVisibility, setUiVisibility] = useState<UiVisibilitySettings>(() => getSavedUiVisibilitySettings());
+
+  const pagedResults = useMemo(() => {
+    if (!duckDbResults) return [];
+    const maxRows = uiVisibility.clickhouseMaxRows ?? uiVisibility.duckDbMaxRows ?? 100;
+    return maxRows > 0 ? duckDbResults.slice(0, maxRows) : duckDbResults;
+  }, [duckDbResults, uiVisibility.clickhouseMaxRows, uiVisibility.duckDbMaxRows]);
   const formatterSettingsRef = useRef<FormatterSettings>(formatterSettings);
   useEffect(() => {
     formatterSettingsRef.current = formatterSettings;
@@ -730,94 +1037,211 @@ export default function App() {
     }
   };
 
-  const fetchDuckDbSchema = async () => {
+  const fetchDuckDbSchema = async (forceRefresh: boolean = false) => {
+    if (!duckDbConnectedPath && !clickhouseConfig && !isWasmMode) return;
     setIsSchemaLoading(true);
+
+    if (forceRefresh) {
+      setTableColumnsMap({});
+      tableColumnsMapRef.current = {};
+      setExpandedSchemaNodes({});
+    }
+
+    const isCH = activeEngine === 'clickhouse' || (!duckDbConnectedPath && !isWasmMode && clickhouseConfig);
+    const dbKey = isCH && clickhouseConfig
+      ? `clickhouse:${clickhouseConfig.host}:${clickhouseConfig.user}:${clickhouseConfig.database || 'default'}`
+      : `duckdb:${duckDbConnectedPath || (isWasmMode ? 'wasm' : 'local')}`;
+
     try {
-      if (activeEngine === 'clickhouse' || (!duckDbConnectedPath && clickhouseConfig)) {
+      if (isCH) {
         if (!clickhouseConfig) return;
-        const schemaQuery = "SELECT c.database AS database_name, c.database AS schema_name, c.table AS table_name, c.name AS column_name, c.type AS data_type, CASE WHEN t.engine LIKE '%View%' THEN 'Views' ELSE 'Tables' END AS table_type, t.total_bytes AS table_bytes FROM system.columns AS c LEFT JOIN system.tables AS t ON c.database = t.database AND c.table = t.name WHERE c.database NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA') ORDER BY c.database, table_type, c.table, c.position FORMAT JSON";
-        try {
-          let data: any = null;
-          if (isTauriEnvironment()) {
-            try {
-              data = await executeClickhouseQueryTauri(clickhouseConfig, schemaQuery);
-            } catch (e: any) {
-              console.warn("Tauri direct Clickhouse schema fetch failed:", e);
-            }
-          } else {
-            try {
-              data = await fetchApiJson('/api/clickhouse/query', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  ...clickhouseConfig,
-                  query: schemaQuery,
-                }),
-              });
-            } catch {
-              const url = getClickhouseUrl(clickhouseConfig);
-              const headers = getClickhouseHeaders(clickhouseConfig);
-              const chRes = await fetch(url, {
-                method: 'POST',
-                headers,
-                body: schemaQuery,
-              });
-              const text = await chRes.text();
-              if (chRes.ok) {
-                try {
-                  const parsed = JSON.parse(text);
-                  data = { success: true, data: parsed.data || parsed };
-                } catch {
-                  // ignore
-                }
+        const schemaQuery = "SELECT database AS database_name, database AS schema_name, name AS table_name, CASE WHEN engine LIKE '%View%' THEN 'Views' ELSE 'Tables' END AS table_type, total_bytes AS table_bytes FROM system.tables ORDER BY database, table_type, name FORMAT JSON";
+        let data: any = null;
+        if (isTauriEnvironment()) {
+          try {
+            data = await executeClickhouseQueryTauri(clickhouseConfig, schemaQuery);
+          } catch (e: any) {
+            console.warn("Tauri direct Clickhouse schema fetch failed:", e);
+          }
+        } else {
+          try {
+            data = await fetchApiJson('/api/clickhouse/query', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                ...clickhouseConfig,
+                query: schemaQuery,
+              }),
+            });
+          } catch {
+            const url = getClickhouseUrl(clickhouseConfig);
+            const headers = getClickhouseHeaders(clickhouseConfig);
+            const chRes = await fetch(url, {
+              method: 'POST',
+              headers,
+              body: schemaQuery,
+            });
+            const text = await chRes.text();
+            if (chRes.ok) {
+              try {
+                const parsed = JSON.parse(text);
+                data = { success: true, data: parsed.data || parsed };
+              } catch {
+                // ignore
               }
             }
           }
-          if (data && data.data && Array.isArray(data.data)) {
-            setDuckDbSchema(data.data);
-          }
-        } catch (e: any) {
-          console.warn("Failed to fetch ClickHouse schema:", e?.message || e);
+        }
+        if (data && data.data && Array.isArray(data.data)) {
+          setDuckDbSchema(data.data);
+          saveSchemaCache({
+            dbKey,
+            timestamp: Date.now(),
+            tables: data.data,
+            tableColumnsMap: tableColumnsMapRef.current || {},
+          });
         }
         return;
       }
 
-      const schemaQuery = "SELECT c.database_name, c.schema_name, c.table_name, c.column_name, c.data_type, CASE WHEN v.view_name IS NOT NULL THEN 'Views' ELSE 'Tables' END as table_type, t.estimated_size as estimated_rows FROM duckdb_columns() c LEFT JOIN duckdb_views() v ON c.table_name = v.view_name AND c.schema_name = v.schema_name AND c.database_name = v.database_name LEFT JOIN duckdb_tables() t ON c.table_name = t.table_name AND c.schema_name = t.schema_name AND c.database_name = t.database_name ORDER BY c.database_name, c.schema_name, table_type, c.table_name, c.column_index";
+      // DuckDB schema fetching (Tables, Views, Macros)
+      let tables: any[] = [];
+      const tablesAndViewsQuery = "SELECT t.database_name, t.schema_name, t.table_name, 'Tables' as table_type, t.estimated_size as estimated_rows FROM duckdb_tables() t UNION ALL SELECT v.database_name, v.schema_name, v.view_name as table_name, 'Views' as table_type, NULL as estimated_rows FROM duckdb_views() v ORDER BY database_name, schema_name, table_type, table_name";
+
       try {
         if (isTauriEnv && !isWasmMode) {
           try {
             const res = await tauriInvoke<{ columns: string[]; rows: any[][] }>('execute_query', {
-              sql: schemaQuery
+              sql: tablesAndViewsQuery
             });
-            const parsed = (res?.rows || []).map(row => {
+            tables = (res?.rows || []).map(row => {
               const obj: Record<string, any> = {};
               (res.columns || []).forEach((col, idx) => {
                 obj[col] = row[idx];
               });
               return obj;
             });
-            setDuckDbSchema(parsed);
-            return;
           } catch (tauriErr) {
             console.warn("Tauri schema query failed, trying backend/wasm:", tauriErr);
           }
-        }
-
-        if (isWasmMode) {
-          const rows = await queryDuckDbWasm(schemaQuery);
-          setDuckDbSchema(rows);
+        } else if (isWasmMode) {
+          tables = await queryDuckDbWasm(tablesAndViewsQuery);
         } else {
           const data = await fetchApiJson("/api/duckdb/query", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ query: schemaQuery })
+            body: JSON.stringify({ query: tablesAndViewsQuery })
           });
           if (data.data) {
-            setDuckDbSchema(data.data);
+            tables = data.data;
           }
         }
       } catch (e: any) {
-        console.warn("Failed to fetch schema:", e?.message || e);
+        console.warn("Failed to fetch duckdb tables and views:", e?.message || e);
+      }
+
+      // Fallback 1: information_schema.tables if primary query produced no tables
+      if (!tables || tables.length === 0) {
+        const fallbackQuery = "SELECT table_catalog as database_name, table_schema as schema_name, table_name, CASE WHEN table_type = 'VIEW' THEN 'Views' ELSE 'Tables' END as table_type FROM information_schema.tables ORDER BY table_catalog, table_schema, table_type, table_name";
+        try {
+          if (isWasmMode) {
+            tables = await queryDuckDbWasm(fallbackQuery);
+          } else if (isTauriEnv && !isWasmMode) {
+            const res = await tauriInvoke<{ columns: string[]; rows: any[][] }>('execute_query', { sql: fallbackQuery });
+            tables = (res?.rows || []).map(row => {
+              const obj: Record<string, any> = {};
+              (res.columns || []).forEach((col, idx) => { obj[col] = row[idx]; });
+              return obj;
+            });
+          } else {
+            const data = await fetchApiJson("/api/duckdb/query", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ query: fallbackQuery })
+            });
+            if (data.data) tables = data.data;
+          }
+        } catch (e2) {
+          console.warn("Fallback DuckDB schema query failed:", e2);
+        }
+      }
+
+      // Fallback 2: SHOW ALL TABLES if still empty
+      if (!tables || tables.length === 0) {
+        try {
+          let showRows: any[] = [];
+          if (isWasmMode) {
+            showRows = await queryDuckDbWasm("SHOW ALL TABLES;");
+          } else if (isTauriEnv && !isWasmMode) {
+            const res = await tauriInvoke<{ columns: string[]; rows: any[][] }>('execute_query', { sql: "SHOW ALL TABLES;" });
+            showRows = (res?.rows || []).map(row => {
+              const obj: Record<string, any> = {};
+              (res.columns || []).forEach((col, idx) => { obj[col] = row[idx]; });
+              return obj;
+            });
+          } else {
+            const data = await fetchApiJson("/api/duckdb/query", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ query: "SHOW ALL TABLES;" })
+            });
+            if (data.data) showRows = data.data;
+          }
+
+          if (showRows && showRows.length > 0) {
+            tables = showRows.map(r => ({
+              database_name: r.database || r.database_name || 'memory',
+              schema_name: r.schema || r.schema_name || 'main',
+              table_name: r.name || r.table_name || '',
+              table_type: r.temporary ? 'Temporary' : 'Tables'
+            })).filter(r => r.table_name);
+          }
+        } catch (e3) {
+          console.warn("SHOW ALL TABLES failed:", e3);
+        }
+      }
+
+      // Fetch DuckDB Macros
+      try {
+        const macrosQuery = "SELECT DISTINCT f.database_name, f.schema_name, f.function_name as table_name, 'Macros' as table_type, NULL as estimated_rows FROM duckdb_functions() f WHERE f.function_type LIKE '%macro%' ORDER BY database_name, schema_name, table_name";
+        let macroRows: any[] = [];
+        if (isTauriEnv && !isWasmMode) {
+          const res = await tauriInvoke<{ columns: string[]; rows: any[][] }>('execute_query', { sql: macrosQuery });
+          macroRows = (res?.rows || []).map(row => {
+            const obj: Record<string, any> = {};
+            (res.columns || []).forEach((col, idx) => {
+              obj[col] = row[idx];
+            });
+            return obj;
+          });
+        } else if (isWasmMode) {
+          macroRows = await queryDuckDbWasm(macrosQuery);
+        } else {
+          const data = await fetchApiJson("/api/duckdb/query", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ query: macrosQuery })
+          });
+          if (data.data) {
+            macroRows = data.data;
+          }
+        }
+
+        if (macroRows && macroRows.length > 0) {
+          tables = [...tables, ...macroRows];
+        }
+      } catch (macroErr) {
+        console.warn("Could not fetch DuckDB macros:", macroErr);
+      }
+
+      if (tables) {
+        setDuckDbSchema(tables);
+        saveSchemaCache({
+          dbKey,
+          timestamp: Date.now(),
+          tables,
+          tableColumnsMap: tableColumnsMapRef.current || {},
+        });
       }
     } finally {
       setIsSchemaLoading(false);
@@ -825,11 +1249,41 @@ export default function App() {
   };
 
   useEffect(() => {
-    if ((duckDbConnectedPath || clickhouseConfig) && showDuckDbSchemaPanel) {
-      fetchDuckDbSchema();
-    } else if (!duckDbConnectedPath && !clickhouseConfig) {
-      setDuckDbSchema(null);
-    }
+    let isMounted = true;
+    const loadSchema = async () => {
+      if ((duckDbConnectedPath || clickhouseConfig || isWasmMode) && showDuckDbSchemaPanel) {
+        const isCH = activeEngine === 'clickhouse' || (!duckDbConnectedPath && !isWasmMode && clickhouseConfig);
+        const dbKey = isCH && clickhouseConfig
+          ? `clickhouse:${clickhouseConfig.host}:${clickhouseConfig.user}:${clickhouseConfig.database || 'default'}`
+          : `duckdb:${duckDbConnectedPath || (isWasmMode ? 'wasm' : 'local')}`;
+
+        const cached = await getSchemaCache(dbKey);
+        if (cached && cached.tables && cached.tables.length > 0) {
+          if (isMounted) {
+            setDuckDbSchema(cached.tables);
+            if (cached.tableColumnsMap) {
+              setTableColumnsMap(cached.tableColumnsMap);
+            }
+          }
+          const STALE_MS = 3 * 24 * 60 * 60 * 1000;
+          const isStale = (Date.now() - cached.timestamp) > STALE_MS;
+          if (isStale) {
+            fetchDuckDbSchema(true);
+          }
+        } else {
+          fetchDuckDbSchema(true);
+        }
+      } else if (!duckDbConnectedPath && !clickhouseConfig && !isWasmMode) {
+        setDuckDbSchema(null);
+        setTableColumnsMap({});
+      }
+    };
+
+    loadSchema();
+
+    return () => {
+      isMounted = false;
+    };
   }, [duckDbConnectedPath, clickhouseConfig, activeEngine, showDuckDbSchemaPanel, isWasmMode]);
 
   const handleDisconnectDuckDb = async () => {
@@ -890,6 +1344,13 @@ export default function App() {
     if (isTauriEnvironment() && activeEngine === 'clickhouse') {
       cancelClickhouseQueryTauri().catch(console.error);
     }
+
+    // Cancel DuckDB Tauri query if running natively
+    if (isTauriEnv) {
+      tauriInvoke('cancel_duckdb_query').catch(() => {
+        tauriInvoke('cancel_query').catch(() => {});
+      });
+    }
     
     setIsDuckDbRunning(false);
     setDuckDbError("Запрос отменен пользователем");
@@ -927,6 +1388,7 @@ export default function App() {
       setIsDuckDbResultVisible(true);
       setDuckDbError(null);
       setDuckDbResults(null);
+      setSummarizeResults(null);
       setDuckDbSelectedCell(null);
 
       const maxRows = pageSizeToUse ?? uiVisibility.duckDbMaxRows ?? 100;
@@ -936,7 +1398,7 @@ export default function App() {
         .replace(/^(\s*(--[^\n]*\n|\/\*[\s\S]*?\*\/))*/g, '')
         .trim();
 
-      if (maxRows > 0 && /^(SELECT|WITH)\b/i.test(cleanSqlHead)) {
+      if (maxRows > 0 && /^(SELECT|WITH|FROM)\b/i.test(cleanSqlHead)) {
         const stripped = finalQuery.replace(/;+$/, '');
         if (page > 1) {
           const offset = (page - 1) * maxRows;
@@ -961,7 +1423,7 @@ export default function App() {
             });
             return obj;
           });
-          setDuckDbResults(parsed.slice(0, maxRows));
+          setDuckDbResults(parsed);
         } catch (tauriErr: any) {
           if (controller.signal.aborted) throw new Error("Запрос отменен пользователем");
           let errMsg = typeof tauriErr === 'string' ? tauriErr : (tauriErr?.message || String(tauriErr));
@@ -973,7 +1435,7 @@ export default function App() {
       } else if (isWasmMode) {
         const rows = await queryDuckDbWasm(queryWithLimit);
         if (controller.signal.aborted) throw new Error("Запрос отменен пользователем");
-        setDuckDbResults(rows.slice(0, maxRows));
+        setDuckDbResults(rows);
       } else {
         const data = await fetchApiJson("/api/duckdb/query", {
           method: "POST",
@@ -985,7 +1447,7 @@ export default function App() {
         if (data.error) {
           setDuckDbError(data.error);
         } else {
-          setDuckDbResults((data.data || []).slice(0, maxRows));
+          setDuckDbResults(data.data || []);
         }
       }
     } catch (err: any) {
@@ -1118,7 +1580,7 @@ export default function App() {
       const maxRows = pageSizeToUse ?? uiVisibility.clickhouseMaxRows ?? uiVisibility.duckDbMaxRows ?? 100;
       let queryWithLimit = queryToExec.trim();
 
-      if (maxRows > 0 && /^(SELECT|WITH)\b/i.test(cleanSqlHead)) {
+      if (maxRows > 0 && /^(SELECT|WITH|FROM)\b/i.test(cleanSqlHead)) {
         const stripped = queryWithLimit.replace(/;+$/, '');
         if (page > 1) {
           const offset = (page - 1) * maxRows;
@@ -1178,7 +1640,7 @@ export default function App() {
         setDuckDbError(data.error);
       } else if (data) {
         if (Array.isArray(data.data)) {
-          setDuckDbResults(data.data.slice(0, maxRows));
+          setDuckDbResults(data.data);
         } else if (typeof data.text === 'string') {
           setDuckDbResults([{ Response: data.text || 'OK' }]);
         } else {
@@ -1198,6 +1660,7 @@ export default function App() {
   };
 
   const handleExecuteCurrentEngineQuery = (queryToExec: string, page: number = 1, pageSizeToUse?: number, isQuickAction?: boolean) => {
+    setResultsViewMode('table');
     let finalQuery = queryToExec;
     if (formatterSettings.autoEscapeWindowsPaths ?? true) {
       finalQuery = finalQuery.replace(/\b(FROM|TO)\s+(['"])(.*?)(['"])/gi, (match, keyword, quote1, innerPath, quote2) => {
@@ -2139,6 +2602,12 @@ export default function App() {
       handleCopyResultsToClipboard,
       fetchDuckDbSchema,
       setShowDuckDbSchemaPanel,
+      resultsViewMode,
+      setResultsViewMode,
+      isDuckDbResultExpanded,
+      setIsDuckDbResultExpanded,
+      setStatsInitialMode,
+      activeStatsModeRef,
     };
   });
 
@@ -2166,6 +2635,12 @@ export default function App() {
         handleCopyResultsToClipboard: currentHandleCopyResultsToClipboard,
         fetchDuckDbSchema: currentFetchDuckDbSchema,
         setShowDuckDbSchemaPanel: currentSetShowDuckDbSchemaPanel,
+        resultsViewMode: currentResultsViewMode,
+        setResultsViewMode: currentSetResultsViewMode,
+        isDuckDbResultExpanded: currentIsDuckDbResultExpanded,
+        setIsDuckDbResultExpanded: currentSetIsDuckDbResultExpanded,
+        setStatsInitialMode: currentSetStatsInitialMode,
+        activeStatsModeRef: currentActiveStatsModeRef,
       } = hotkeysStateRef.current;
 
       const parts: string[] = [];
@@ -2371,18 +2846,23 @@ export default function App() {
         e.preventDefault();
         e.stopPropagation();
         setShowExportMenu((prev) => !prev);
+      } else if (combo === (currentHotkeys.toggleColumnStats || 'Alt+Q')) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (currentResultsViewMode === 'chart') {
+          currentSetResultsViewMode('table');
+          currentSetIsDuckDbResultExpanded(preChartExpandedRef.current);
+        } else {
+          preChartExpandedRef.current = currentIsDuckDbResultExpanded;
+          currentSetResultsViewMode('chart');
+          currentSetIsDuckDbResultExpanded(true);
+          currentSetStatsInitialMode({ chartType: 'list', listSubMode: 'columns' });
+        }
       }
     };
 
     window.addEventListener('keydown', handleGlobalKeyDown, true);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown, true);
-  }, []);
-
-  const debounceTimerRef = useRef<any>(null);
-
-  // Initial load
-  useEffect(() => {
-    handleVisualize(sqlRef.current, dialect, direction);
   }, []);
 
   const handleVisualize = (
@@ -2398,11 +2878,6 @@ export default function App() {
           break;
         }
       }
-    }
-
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-      debounceTimerRef.current = null;
     }
 
     if (!queryText.trim()) {
@@ -2470,25 +2945,15 @@ export default function App() {
       setActivePresetId(presetId);
       sqlRef.current = preset.sql; setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: preset.sql } : t));
       setDialect(preset.dialect);
-      handleVisualize(preset.sql, preset.dialect, direction);
     }
   };
 
-  const handleDialectChange = (newDialect: 'PostgreSQL' | 'Oracle' | 'Clickhouse') => {
-    setDialect(newDialect);
-    handleVisualize(sqlRef.current, newDialect, direction);
-  };
-
   const handleSortToggle = () => {
-    const newVal = !showSortNodes;
-    setShowSortNodes(newVal);
-    handleVisualize(sqlRef.current, dialect, direction, newVal, showLimitNodes);
+    setShowSortNodes(!showSortNodes);
   };
 
   const handleLimitToggle = () => {
-    const newVal = !showLimitNodes;
-    setShowLimitNodes(newVal);
-    handleVisualize(sqlRef.current, dialect, direction, showSortNodes, newVal);
+    setShowLimitNodes(!showLimitNodes);
   };
 
   const handleDirectionChange = (newDir: 'LR' | 'TB') => {
@@ -2530,23 +2995,162 @@ export default function App() {
     }
   };
 
+  const convertInlineDashComments = (sql: string): string => {
+    const lines = sql.split('\n');
+    return lines
+      .map((line) => {
+        let inString: string | null = null;
+        let inBlockComment = false;
+        let codeFoundBeforeDash = false;
+        let dashIndex = -1;
+
+        for (let i = 0; i < line.length; i++) {
+          const char = line[i];
+          const nextChar = line[i + 1];
+
+          if (inString) {
+            if (char === inString && line[i - 1] !== '\\') {
+              inString = null;
+            }
+          } else if (inBlockComment) {
+            if (char === '*' && nextChar === '/') {
+              inBlockComment = false;
+              i++;
+            }
+          } else if (char === "'" || char === '"' || char === '`') {
+            inString = char;
+            codeFoundBeforeDash = true;
+          } else if (char === '/' && nextChar === '*') {
+            inBlockComment = true;
+            i++;
+          } else if (char === '-' && nextChar === '-') {
+            dashIndex = i;
+            break;
+          } else if (char !== ' ' && char !== '\t' && char !== '\r') {
+            codeFoundBeforeDash = true;
+          }
+        }
+
+        if (dashIndex !== -1 && codeFoundBeforeDash) {
+          const before = line.slice(0, dashIndex);
+          const commentText = line.slice(dashIndex + 2);
+          const safeCommentText = commentText.replace(/\*\//g, '* /');
+          return `${before}/* ${safeCommentText.trim()} */`;
+        }
+
+        return line;
+      })
+      .join('\n');
+  };
+
+  const compactSql = (text: string): string => {
+    if (!text) return text;
+
+    const preprocessed = convertInlineDashComments(text);
+    const lines = preprocessed.split('\n');
+
+    const chunks: Array<{ type: 'comment' | 'code'; lines: string[] }> = [];
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      const isStandaloneComment = trimmed.startsWith('--');
+
+      if (isStandaloneComment) {
+        chunks.push({ type: 'comment', lines: [trimmed] });
+      } else {
+        if (chunks.length > 0 && chunks[chunks.length - 1].type === 'code') {
+          chunks[chunks.length - 1].lines.push(line);
+        } else {
+          chunks.push({ type: 'code', lines: [line] });
+        }
+      }
+    }
+
+    const resultLines: string[] = [];
+
+    for (const chunk of chunks) {
+      if (chunk.type === 'comment') {
+        resultLines.push(chunk.lines[0]);
+      } else {
+        const codeBlock = chunk.lines.join('\n').trim();
+        if (codeBlock) {
+          const compacted = codeBlock.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ');
+          resultLines.push(compacted);
+        }
+      }
+    }
+
+    return resultLines.join('\n');
+  };
+
   const handleFormatSql = () => {
     const cfg = formatterSettingsRef.current || formatterSettings;
     const sel = sqlEditorRef.current?.getSelection();
 
     const doFormat = (text: string) => {
       const primaryLang =
-        dialect === 'PostgreSQL' ? 'postgresql' :
+        dialect === 'PostgreSQL' || dialect === 'Oracle' || dialect === 'Clickhouse' ? 'postgresql' :
         dialect === 'MySQL' ? 'mysql' :
-        dialect === 'SQLite' ? 'sqlite' : 'sql';
+        dialect === 'SQLite' ? 'sqlite' : 'postgresql';
 
-      const fallbackLangs = [primaryLang, 'mysql', 'sqlite', 'sql'].filter(
+      const fallbackLangs = [primaryLang, 'postgresql', 'mysql', 'sqlite', 'sql'].filter(
         (lang, index, self) => self.indexOf(lang) === index
       );
 
+      const smartSplitByComma = (str: string): string[] => {
+        const result: string[] = [];
+        let current = '';
+        let parenDepth = 0;
+        let inString: string | null = null;
+        let inBlockComment = false;
+
+        for (let i = 0; i < str.length; i++) {
+          const char = str[i];
+          const nextChar = str[i + 1];
+
+          if (inString) {
+            current += char;
+            if (char === inString && str[i - 1] !== '\\') {
+              inString = null;
+            }
+          } else if (inBlockComment) {
+            current += char;
+            if (char === '*' && nextChar === '/') {
+              current += '/';
+              inBlockComment = false;
+              i++;
+            }
+          } else if (char === '/' && nextChar === '*') {
+            inBlockComment = true;
+            current += '/*';
+            i++;
+          } else if (char === "'" || char === '"' || char === '`') {
+            inString = char;
+            current += char;
+          } else if (char === '(' || char === '[' || char === '{') {
+            parenDepth++;
+            current += char;
+          } else if (char === ')' || char === ']' || char === '}') {
+            if (parenDepth > 0) parenDepth--;
+            current += char;
+          } else if (char === ',' && parenDepth === 0) {
+            result.push(current.trim());
+            current = '';
+          } else {
+            current += char;
+          }
+        }
+        if (current.trim().length > 0 || result.length > 0) {
+          result.push(current.trim());
+        }
+        return result.filter(Boolean);
+      };
+
+      const preprocessedText = convertInlineDashComments(text);
+
       for (const lang of fallbackLangs) {
         try {
-          let formatted = formatSql(text, {
+          let formatted = formatSql(preprocessedText, {
             language: lang as any,
             keywordCase: cfg.keywordCase,
             tabWidth: cfg.tabWidth,
@@ -2555,45 +3159,112 @@ export default function App() {
             denseOperators: cfg.denseOperators,
           });
 
-          // Apply custom column line wrapping if expressionWidth >= 0
+          // Apply custom clause line wrapping if expressionWidth >= 0
           if (cfg.expressionWidth >= 0) {
             const maxWidth = cfg.expressionWidth;
             const indent = cfg.useTabs ? '\t' : ' '.repeat(cfg.tabWidth || 2);
 
+            // 1. Clean up WITH clause line breaks and align CTE definitions
             formatted = formatted.replace(
-              /(SELECT|GROUP BY|ORDER BY|INSERT INTO|VALUES)\s+([\s\S]+?)(?=\n\s*(?:FROM|WHERE|GROUP BY|ORDER BY|HAVING|LIMIT|JOIN|LEFT|RIGHT|INNER|OUTER|CROSS|UNION|RETURNING|WINDOW|SET|VALUES|;|$))/gi,
-              (match, keyword, items) => {
-                if (items.includes('--') || items.includes('/*') || /\bSELECT\b/i.test(items)) {
+              /(^|\n)(\s*)WITH\s+([\s\S]+?)(?=\n\s*(?:SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|;|$))/gi,
+              (match, prefix, baseIndent, body) => {
+                const singleLineWith = `${baseIndent}WITH ${body.replace(/\s+/g, ' ')}`;
+                if (singleLineWith.length <= maxWidth) {
+                  return prefix + singleLineWith;
+                }
+                const cleanedBody = body.replace(
+                  /^(\s*)([a-zA-Z0-9_"]+)\s+AS\s*\(/gim,
+                  (_, __, cteName) => `${baseIndent}${indent}${cteName} AS (`
+                );
+                return `${prefix}${baseIndent}WITH ${cleanedBody.trim()}`;
+              }
+            );
+
+            // 2. Custom clause line wrapping with baseIndent preservation, smartSplitByComma, and window function handling
+            const clauseRegex =
+              /(^|\n)(\s*)(SELECT|FROM|WHERE|GROUP BY|ORDER BY|HAVING|LIMIT|OFFSET|JOIN|LEFT JOIN|RIGHT JOIN|INNER JOIN|OUTER JOIN|CROSS JOIN|FULL JOIN|LEFT OUTER JOIN|RIGHT OUTER JOIN|FULL OUTER JOIN|ON|SET|VALUES|INSERT INTO|UPDATE|DELETE FROM|ARRAY JOIN|LEFT ARRAY JOIN|SETTINGS|FORMAT)\b([\s\S]+?)(?=\n\s*(?:SELECT|FROM|WHERE|GROUP BY|ORDER BY|HAVING|LIMIT|OFFSET|JOIN|LEFT JOIN|RIGHT JOIN|INNER JOIN|OUTER JOIN|CROSS JOIN|FULL JOIN|LEFT OUTER JOIN|RIGHT OUTER JOIN|FULL OUTER JOIN|ON|SET|VALUES|INSERT INTO|UPDATE|DELETE FROM|ARRAY JOIN|LEFT ARRAY JOIN|SETTINGS|FORMAT|WITH|;|$))/gi;
+
+            formatted = formatted.replace(
+              clauseRegex,
+              (match, prefix, baseIndent, keyword, items) => {
+                if (/\bSELECT\b/i.test(items)) {
                   return match;
                 }
-                const rawLines = items
-                  .split('\n')
-                  .map((s) => s.trim())
-                  .filter(Boolean);
-                if (rawLines.length === 0) return match;
 
-                const lines: string[] = [];
-                let currentLine = keyword;
-                for (let i = 0; i < rawLines.length; i++) {
-                  const item = rawLines[i];
-                  if (currentLine === keyword) {
-                    if ((currentLine + ' ' + item).length <= maxWidth || rawLines.length === 1) {
-                      currentLine += ' ' + item;
-                    } else {
-                      lines.push(currentLine);
-                      currentLine = indent + item;
+                const lines = items.split('\n');
+                const chunks: Array<{ type: 'code' | 'comment'; text: string }> = [];
+                let currentCodeLines: string[] = [];
+
+                for (const line of lines) {
+                  const trimmed = line.trim();
+                  if (trimmed.startsWith('--')) {
+                    if (currentCodeLines.length > 0) {
+                      chunks.push({ type: 'code', text: currentCodeLines.join('\n') });
+                      currentCodeLines = [];
                     }
+                    chunks.push({ type: 'comment', text: trimmed });
                   } else {
-                    if ((currentLine + ' ' + item).length <= maxWidth) {
-                      currentLine += ' ' + item;
-                    } else {
-                      lines.push(currentLine);
-                      currentLine = indent + item;
+                    currentCodeLines.push(line);
+                  }
+                }
+                if (currentCodeLines.length > 0) {
+                  chunks.push({ type: 'code', text: currentCodeLines.join('\n') });
+                }
+
+                const hasCommentChunks = chunks.some((c) => c.type === 'comment');
+                const formattedLines: string[] = [];
+
+                for (const chunk of chunks) {
+                  if (chunk.type === 'comment') {
+                    formattedLines.push(`${baseIndent}${indent}${chunk.text}`);
+                  } else {
+                    const rawItems = smartSplitByComma(chunk.text);
+                    if (rawItems.length === 0) continue;
+
+                    const processedItems = rawItems.map((item) => {
+                      const collapsed = item.replace(/\s+/g, ' ').trim();
+                      if (collapsed.length <= maxWidth && /\bOVER\s*\(/i.test(item)) {
+                        return collapsed;
+                      }
+                      return item.trim();
+                    });
+
+                    let currentLine = `${baseIndent}${indent}`;
+                    let firstInChunk = true;
+
+                    for (let i = 0; i < processedItems.length; i++) {
+                      const item = processedItems[i];
+                      const isLast = i === processedItems.length - 1;
+                      const itemWithComma = item + (isLast ? '' : ',');
+
+                      if (firstInChunk) {
+                        currentLine += itemWithComma;
+                        firstInChunk = false;
+                      } else if ((currentLine + ' ' + itemWithComma).length <= maxWidth) {
+                        currentLine += ' ' + itemWithComma;
+                      } else {
+                        formattedLines.push(currentLine);
+                        currentLine = `${baseIndent}${indent}${itemWithComma}`;
+                      }
+                    }
+                    if (currentLine.trim()) {
+                      formattedLines.push(currentLine);
                     }
                   }
                 }
-                lines.push(currentLine);
-                return lines.join('\n');
+
+                if (formattedLines.length === 0) return match;
+
+                if (!hasCommentChunks) {
+                  const singleLine = `${baseIndent}${keyword} ${formattedLines
+                    .map((l) => l.trim())
+                    .join(' ')}`;
+                  if (singleLine.length <= maxWidth) {
+                    return prefix + singleLine;
+                  }
+                }
+
+                return prefix + `${baseIndent}${keyword}\n${formattedLines.join('\n')}`;
               }
             );
           }
@@ -2629,15 +3300,16 @@ export default function App() {
   const handleCompactSql = () => {
     const sel = sqlEditorRef.current?.getSelection();
     if (sel && sel.text) {
-      const compacted = sel.text.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ');
+      const compacted = compactSql(sel.text);
       sqlEditorRef.current?.replaceSelection(compacted);
       return;
     }
 
     const currentSqlText = sqlRef.current;
     if (!currentSqlText) return;
-    const compacted = currentSqlText.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ');
-    sqlRef.current = compacted; setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: compacted } : t));
+    const compacted = compactSql(currentSqlText);
+    sqlRef.current = compacted;
+    setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: compacted } : t));
   };
 
   const handleNodeClick = (_event: any, node: any) => {
@@ -3946,11 +4618,18 @@ export default function App() {
                       {isSchemaLoading && (
                         <span className="flex items-center gap-1 text-[10px] font-normal text-blue-400 animate-pulse ml-1">
                           <Loader2 className="w-3 h-3 animate-spin text-blue-400" />
-                          <span>Обновление...</span>
+                          <span>Загрузка...</span>
                         </span>
                       )}
                     </span>
                     <div className="flex items-center gap-1">
+                      <button 
+                        onClick={() => fetchDuckDbSchema(true)}
+                        className={`p-1 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-200 text-slate-500 hover:text-slate-800'}`}
+                        title="Обновить схему (Ctrl+R)"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isSchemaLoading ? 'animate-spin text-blue-400' : ''}`} />
+                      </button>
                       <button 
                         onClick={() => setIsSchemaZoomed(!isSchemaZoomed)}
                         className={`p-1 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-200 text-slate-500 hover:text-slate-800'}`}
@@ -3997,13 +4676,20 @@ export default function App() {
                         </button>
                       </div>
                       <div className="flex-1 overflow-y-auto p-2 text-xs">
-                        {Object.entries(groupedDuckDbSchema).map(([dbName, schemas]) => (
+                        {Object.keys(groupedDuckDbSchema).length > 0 ? (
+                          Object.entries(groupedDuckDbSchema)
+                            .sort(([dbA], [dbB]) => {
+                              if (dbA.toLowerCase() === 'system') return 1;
+                              if (dbB.toLowerCase() === 'system') return -1;
+                              return dbA.localeCompare(dbB);
+                            })
+                            .map(([dbName, schemas]) => (
                           <div key={dbName} className="mb-1">
                             <div 
                               className={`text-xs font-bold px-2 py-1 flex items-center gap-1.5 rounded cursor-pointer select-none transition-colors ${theme === 'dark' ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-200 text-slate-800'}`}
                               onClick={() => toggleSchemaNode(`db-${dbName}`)}
                             >
-                              <Database className="w-3.5 h-3.5 opacity-70" />
+                              <Database className={`w-3.5 h-3.5 ${dbName.toLowerCase() === 'system' ? 'opacity-35' : 'opacity-70'}`} />
                               <span className="truncate">{dbName}</span>
                             </div>
                             {expandedSchemaNodes[`db-${dbName}`] && (
@@ -4030,22 +4716,37 @@ export default function App() {
                                             </div>
                                             {expandedSchemaNodes[`type-${dbName}-${schemaName}-${typeName}`] && (
                                               <div className="pl-2 border-l ml-2 border-slate-400/20 mt-1">
-                                                {Object.entries(tables).map(([tableName, columns]) => {
-                                                  const sizeBadge = getTableSizeBadge(columns as any[]);
+                                                {Object.entries(tables).map(([tableName, tableData]: any) => {
+                                                  const itemInfo = tableData.info || {};
+                                                  const cols = tableData.columns;
+                                                  const tableKey = `${dbName}.${schemaName}.${tableName}`;
+                                                  const sizeBadge = getTableSizeBadge([itemInfo]);
+                                                  const isLoadingCols = !!loadingTableCols[tableKey];
+                                                  const isExpanded = !!expandedSchemaNodes[`tbl-${dbName}-${schemaName}-${tableName}`];
+
                                                   return (
                                                     <div key={tableName} className="mb-1">
                                                       <div 
                                                         className={`group text-[11px] font-medium px-2 py-1 flex items-center justify-between gap-1 rounded cursor-pointer select-none transition-colors ${theme === 'dark' ? 'hover:bg-slate-800' : 'hover:bg-slate-200'}`}
-                                                        onClick={() => {
-                                                          toggleSchemaNode(`tbl-${dbName}-${schemaName}-${tableName}`);
-                                                          const tablePath = dbName === schemaName ? `${dbName}.${tableName}` : `${dbName}.${schemaName}.${tableName}`;
-                                                          navigator.clipboard.writeText(tablePath);
-                                                        }}
-                                                        title="Нажмите, чтобы развернуть и скопировать название таблицы"
+                                                        onClick={() => handleToggleTableNode(dbName, schemaName, tableName, itemInfo.table_type)}
+                                                        title="Нажмите, чтобы развернуть и скопировать название"
                                                       >
-                                                        <div className={`flex items-center gap-1.5 truncate ${theme === 'dark' ? 'text-blue-400' : 'text-blue-700'}`}>
-                                                          <Layout className="w-3 h-3 opacity-70 shrink-0" />
+                                                        <div className={`flex items-center gap-1.5 truncate ${
+                                                          theme === 'dark' ? 'text-blue-400' : 'text-blue-700'
+                                                        }`}>
+                                                          {itemInfo.table_type === 'Macros' ? (
+                                                            <span className="font-serif italic font-bold text-[11px] leading-none shrink-0 opacity-80 select-none pr-0.5" title="Нажмите, чтобы развернуть и скопировать название">
+                                                              fx
+                                                            </span>
+                                                          ) : itemInfo.table_type === 'Views' ? (
+                                                            <FileText className="w-3 h-3 opacity-80 shrink-0" />
+                                                          ) : (
+                                                            <Layout className="w-3 h-3 opacity-70 shrink-0" />
+                                                          )}
                                                           <span className="truncate" title={tableName}>{tableName}</span>
+                                                          {isLoadingCols && (
+                                                            <Loader2 className="w-2.5 h-2.5 animate-spin text-blue-400 shrink-0 ml-1" />
+                                                          )}
                                                         </div>
                                                         <div className="flex items-center gap-1 shrink-0">
                                                           {sizeBadge && (
@@ -4056,37 +4757,54 @@ export default function App() {
                                                           <button
                                                             onClick={(e) => {
                                                               e.stopPropagation();
-                                                              const cols = (columns as any[]).map(c => `"${c.column_name}"`).join(', ');
-                                                              const sel = dbName === schemaName
-                                                                ? `SELECT ${cols} FROM "${dbName}"."${tableName}"`
-                                                                : `SELECT ${cols} FROM "${dbName}"."${schemaName}"."${tableName}"`;
+                                                              let sel = '';
+                                                              if (itemInfo.table_type === 'Macros') {
+                                                                sel = dbName === schemaName ? `SELECT "${dbName}"."${tableName}"()` : `SELECT "${dbName}"."${schemaName}"."${tableName}"()`;
+                                                              } else {
+                                                                const colList = cols && cols.length > 0 ? cols.map((c: any) => `"${c.column_name}"`).join(', ') : '*';
+                                                                sel = dbName === schemaName
+                                                                  ? `SELECT ${colList} FROM "${dbName}"."${tableName}"`
+                                                                  : `SELECT ${colList} FROM "${dbName}"."${schemaName}"."${tableName}"`;
+                                                              }
                                                               navigator.clipboard.writeText(sel);
                                                             }}
                                                             className={`p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-300 text-slate-500 hover:text-slate-800'}`}
-                                                            title="Копировать SELECT"
+                                                            title={itemInfo.table_type === 'Macros' ? "Копировать вызов макроса" : "Копировать SELECT"}
                                                           >
                                                             <Copy className="w-3 h-3" />
                                                           </button>
                                                         </div>
                                                       </div>
-                                                    {expandedSchemaNodes[`tbl-${dbName}-${schemaName}-${tableName}`] && (
-                                                      <div className="pl-4 mt-0.5 space-y-0.5">
-                                                        {(columns as any[]).map((col: any, idx: number) => (
-                                                          <div 
-                                                            key={idx} 
-                                                            className={`cursor-pointer text-[10px] flex items-center justify-between gap-2 px-1.5 py-0.5 rounded transition-colors ${theme === 'dark' ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-200'}`}
-                                                            onClick={() => navigator.clipboard.writeText(col.column_name)}
-                                                            title="Нажмите, чтобы скопировать название поля"
-                                                          >
-                                                            <span className="font-mono truncate" title={col.column_name}>{col.column_name}</span>
-                                                            <span className="text-[9px] opacity-60 shrink-0 font-mono">{col.data_type}</span>
-                                                          </div>
-                                                        ))}
-                                                      </div>
-                                                    )}
-                                                  </div>
-                                                );
-                                              })}
+
+                                                      {isExpanded && (
+                                                        <div className="pl-4 mt-0.5 space-y-0.5">
+                                                          {isLoadingCols ? (
+                                                            <div className="flex items-center gap-1.5 py-1 text-[10px] text-blue-400 animate-pulse">
+                                                              <Loader2 className="w-3 h-3 animate-spin" />
+                                                              <span>Загрузка...</span>
+                                                            </div>
+                                                          ) : cols && cols.length > 0 ? (
+                                                            cols.map((col: any, idx: number) => (
+                                                              <div 
+                                                                key={idx} 
+                                                                className={`cursor-pointer text-[10px] flex items-center justify-between gap-2 px-1.5 py-0.5 rounded transition-colors ${theme === 'dark' ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-200'}`}
+                                                                onClick={() => navigator.clipboard.writeText(col.column_name)}
+                                                                title="Нажмите, чтобы скопировать"
+                                                              >
+                                                                <span className="font-mono truncate" title={col.column_name}>{col.column_name}</span>
+                                                                <span className="text-[9px] opacity-60 shrink-0 font-mono">{col.data_type}</span>
+                                                              </div>
+                                                            ))
+                                                          ) : (
+                                                            <div className="text-[10px] opacity-50 px-1 py-0.5 italic">
+                                                              Данные отсутствуют
+                                                            </div>
+                                                          )}
+                                                        </div>
+                                                      )}
+                                                    </div>
+                                                  );
+                                                })}
                                               </div>
                                             )}
                                           </div>
@@ -4098,7 +4816,21 @@ export default function App() {
                               </div>
                             )}
                           </div>
-                        ))}
+                        ))
+                        ) : (
+                          <div className="py-8 text-center opacity-70 flex flex-col items-center justify-center gap-1.5">
+                            <Database className="w-5 h-5 opacity-40" />
+                            <span>{schemaSearchTerm ? 'Ничего не найдено по запросу' : 'Таблицы не найдены (БД пуста)'}</span>
+                            {schemaSearchTerm && (
+                              <button 
+                                onClick={() => setSchemaSearchTerm('')}
+                                className="text-[11px] text-blue-400 hover:underline mt-1"
+                              >
+                                Сбросить фильтр
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </>
                   ) : isSchemaLoading ? (
@@ -4230,11 +4962,139 @@ export default function App() {
                       )}
                     </div>
 
+                    {/* DUCKDB SUMMARIZE BUTTON */}
+                    {activeEngine === 'duckdb' && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!duckDbResults || duckDbResults.length === 0) return;
+
+                          if (resultsViewMode === 'summarize') {
+                            setResultsViewMode('table');
+                            setIsDuckDbResultExpanded(preChartExpandedRef.current);
+                            return;
+                          }
+
+                          if (resultsViewMode === 'table') {
+                            preChartExpandedRef.current = isDuckDbResultExpanded;
+                          }
+                          setIsDuckDbResultExpanded(true);
+
+                          if (summarizeResults && summarizeResults.length > 0) {
+                            setResultsViewMode('summarize');
+                            return;
+                          }
+
+                          setIsDuckDbRunning(true);
+                          setDuckDbError(null);
+
+                          const runRawQuery = async (sqlToRun: string): Promise<any[]> => {
+                            if (isTauriEnv && !isWasmMode) {
+                              const res = await tauriInvoke<{ columns: string[]; rows: any[][] }>('execute_query', { sql: sqlToRun });
+                              return (res?.rows || []).map(row => {
+                                const obj: Record<string, any> = {};
+                                (res.columns || []).forEach((col, idx) => {
+                                  obj[col] = row[idx];
+                                });
+                                return obj;
+                              });
+                            } else if (isWasmMode) {
+                              return await queryDuckDbWasm(sqlToRun);
+                            } else {
+                              const data = await fetchApiJson('/api/duckdb/query', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ query: sqlToRun })
+                              });
+                              if (data.error) throw new Error(data.error);
+                              return data.data || [];
+                            }
+                          };
+
+                          try {
+                            const strippedSql = (lastExecutedSql || '').trim().replace(/;+$/, '');
+                            let targetTable = extractedTableName;
+                            if (!targetTable || targetTable === 'table') {
+                              targetTable = '';
+                            }
+
+                            let sqlToRun = targetTable ? `SUMMARIZE ${targetTable}` : (strippedSql ? `SUMMARIZE (${strippedSql})` : '');
+                            if (!sqlToRun) {
+                              throw new Error('Нет таблицы или SQL-запроса для выполнения SUMMARIZE');
+                            }
+
+                            let rows: any[] | null = null;
+                            try {
+                              rows = await runRawQuery(sqlToRun);
+                            } catch (firstErr: any) {
+                              if (targetTable && strippedSql) {
+                                rows = await runRawQuery(`SUMMARIZE (${strippedSql})`);
+                              } else {
+                                throw firstErr;
+                              }
+                            }
+
+                            if (rows && rows.length > 0) {
+                              setSummarizeResults(rows);
+                              setResultsViewMode('summarize');
+                            } else {
+                              throw new Error('База данных вернула пустой результат для SUMMARIZE');
+                            }
+                          } catch (err: any) {
+                            console.error("SUMMARIZE execution error:", err);
+                            setDuckDbError(err?.message || String(err));
+                          } finally {
+                            setIsDuckDbRunning(false);
+                          }
+                        }}
+                        disabled={!duckDbResults || duckDbResults.length === 0}
+                        className={`h-6 w-6 flex items-center justify-center rounded transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${
+                          resultsViewMode === 'summarize'
+                            ? 'bg-amber-600 text-white hover:bg-amber-500 font-medium'
+                            : theme === 'dark'
+                              ? 'hover:bg-slate-700 text-slate-400'
+                              : 'hover:bg-slate-200 text-slate-500'
+                        }`}
+                        title={resultsViewMode === 'summarize' ? "Вернуться к таблице" : "Экспресс-статистика по столбцам (SUMMARIZE)"}
+                      >
+                        <TableProperties className="w-4 h-4" />
+                      </button>
+                    )}
+
+                    {/* CHART / ANALYTICS MODE TOGGLE BUTTON */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (resultsViewMode === 'chart') {
+                          setResultsViewMode('table');
+                          setIsDuckDbResultExpanded(preChartExpandedRef.current);
+                        } else {
+                          if (resultsViewMode === 'table') {
+                            preChartExpandedRef.current = isDuckDbResultExpanded;
+                          }
+                          setResultsViewMode('chart');
+                          setIsDuckDbResultExpanded(true);
+                          setStatsInitialMode({ chartType: 'list', listSubMode: 'categories' });
+                        }
+                      }}
+                      disabled={!duckDbResults || duckDbResults.length === 0}
+                      className={`h-6 w-6 flex items-center justify-center rounded transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${
+                        resultsViewMode === 'chart'
+                          ? 'bg-teal-600 text-white hover:bg-teal-500 font-medium'
+                          : theme === 'dark'
+                            ? 'hover:bg-slate-700 text-slate-400'
+                            : 'hover:bg-slate-200 text-slate-500'
+                      }`}
+                      title={resultsViewMode === 'chart' ? "Вернуться к таблице" : "Визуализировать результаты (Графики)"}
+                    >
+                      <BarChart3 className="w-4 h-4" />
+                    </button>
+
                     {/* TRANSPOSE BUTTON */}
                     <button
                       type="button"
                       onClick={() => setIsTransposed(!isTransposed)}
-                      disabled={!duckDbResults || duckDbResults.length === 0}
+                      disabled={!duckDbResults || duckDbResults.length === 0 || resultsViewMode === 'chart' || resultsViewMode === 'summarize'}
                       className={`h-6 w-6 flex items-center justify-center rounded transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${
                         isTransposed
                           ? 'bg-teal-600 text-white hover:bg-teal-500'
@@ -4295,7 +5155,24 @@ export default function App() {
                         Error: {duckDbError}
                       </div>
                     ) : duckDbResults && duckDbResults.length > 0 ? (
-                      isTransposed ? (
+                      resultsViewMode === 'summarize' ? (
+                        <DataStatsViewer
+                          data={summarizeResults || duckDbResults}
+                          theme={theme}
+                          isSummarizeMode={true}
+                          tableName={extractedTableName}
+                        />
+                      ) : resultsViewMode === 'chart' ? (
+                        <DataStatsViewer
+                          data={duckDbResults}
+                          theme={theme}
+                          initialChartType={statsInitialMode.chartType}
+                          initialListSubMode={statsInitialMode.listSubMode}
+                          onSubModeChange={(ct, sm) => {
+                            activeStatsModeRef.current = { chartType: ct, listSubMode: sm };
+                          }}
+                        />
+                      ) : isTransposed ? (
                         <table className="w-full text-left border-separate border-spacing-0 text-xs">
                           <thead className="sticky top-0 z-20">
                             <tr>
@@ -4688,7 +5565,6 @@ export default function App() {
           if (restoredDialect) {
             setDialect(restoredDialect as 'PostgreSQL' | 'Oracle' | 'Clickhouse');
           }
-          handleVisualize(restoredSql, restoredDialect || dialect, direction);
         }}
         theme={theme}
         uiVisibility={uiVisibility}

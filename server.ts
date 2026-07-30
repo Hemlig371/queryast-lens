@@ -1,10 +1,19 @@
 import express from "express";
-import duckdb from "duckdb";
 import path from "path";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
 
-const { Database } = duckdb;
+let duckdbModule: any = null;
+async function loadDuckDbModule() {
+  if (duckdbModule) return duckdbModule;
+  try {
+    const imported = await import("duckdb");
+    duckdbModule = imported.default || imported;
+  } catch (e) {
+    console.warn("DuckDB native module failed to load in server.ts:", e);
+  }
+  return duckdbModule;
+}
 
 const app = express();
 app.use(express.json());
@@ -24,26 +33,33 @@ const PORT = 3000;
 
 // Healthcheck endpoint
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", mode: "native_duckdb_server" });
+  res.json({ status: "ok", mode: duckdbModule ? "native_duckdb_server" : "wasm_duckdb_server" });
 });
 
 // Global duckdb connection for the server
-let db: Database | null = null;
+let db: any = null;
 let currentDbPath: string | null = null;
 
-app.post("/api/duckdb/connect", (req, res) => {
+app.post("/api/duckdb/connect", async (req, res) => {
   try {
     let { dbPath } = req.body;
     if (!dbPath) {
       return res.status(400).json({ error: "dbPath is required" });
     }
 
-    // Remove directory fallback for DuckDB file
-    if (db) {
-      db.close();
+    const duckdb = await loadDuckDbModule();
+    if (!duckdb || !duckdb.Database) {
+      return res.status(500).json({ error: "Native DuckDB is not available on this server environment. Use WASM mode." });
     }
 
-    db = new Database(dbPath);
+    // Remove directory fallback for DuckDB file
+    if (db) {
+      if (typeof db.close === 'function') {
+        db.close();
+      }
+    }
+
+    db = new duckdbModule.Database(dbPath);
     currentDbPath = dbPath;
     res.json({ success: true, path: dbPath });
   } catch (error: any) {
@@ -302,6 +318,7 @@ app.post("/api/clickhouse/copy-from", async (req, res) => {
 });
 
 async function startServer() {
+  await loadDuckDbModule();
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },

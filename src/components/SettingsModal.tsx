@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Keyboard, RotateCcw, Settings, AlignLeft, Eye, Download, Upload, Plus, Trash2, Edit3, Check, Code, Zap } from 'lucide-react';
 import { AutocompleteTemplate, DEFAULT_AUTOCOMPLETE_TEMPLATES, getCustomAutocompleteTemplates } from './SqlEditor';
 import { getVersions, importVersions, SqlVersionItem } from '../utils/versionHistory';
+import { getAllSchemaCacheEntries, importSchemaCacheEntries, SchemaCacheEntry } from '../utils/schemaDbCache';
 
 export interface QuickActionTemplate {
   id: string;
@@ -282,6 +283,13 @@ export const DEFAULT_HOTKEYS: HotkeyBinding[] = [
     description: 'Открыть модальное окно настроек',
     category: 'Общие',
     defaultKey: 'Ctrl+,'
+  },
+  {
+    id: 'toggleColumnStats',
+    label: 'Графики: Статистика по столбцам',
+    description: 'Открыть графики в режиме статистики по столбцам (повторное нажатие закрывает)',
+    category: 'Общие',
+    defaultKey: 'Alt+Q'
   },
   {
     id: 'exportResultsCopy',
@@ -604,6 +612,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         console.warn('Failed to get IndexedDB versions for export:', err);
       }
 
+      // Add IndexedDB schema cache at the very end of the JSON file
+      try {
+        const schemaCaches = await getAllSchemaCacheEntries();
+        backupData['sql_visualizer_schema_cache_data'] = schemaCaches;
+      } catch (err) {
+        console.warn('Failed to get IndexedDB schema caches for export:', err);
+      }
+
       const workspaceBundle = {
         version: 1,
         app: 'QueryAST Lens Workspace Bundle',
@@ -652,6 +668,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           if (key === 'sql_visualizer_version_history' || key === 'versionHistory') {
             if (Array.isArray(value)) {
               await importVersions(value as SqlVersionItem[]);
+            }
+          } else if (key === 'sql_visualizer_schema_cache_data' || key === 'schemaCache' || key === 'schemaCacheData') {
+            if (Array.isArray(value)) {
+              await importSchemaCacheEntries(value as SchemaCacheEntry[]);
             }
           } else if (typeof value === 'string') {
             localStorage.setItem(key, value);
@@ -796,9 +816,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   {[
-                    { key: 'showEditorToggleBtn', label: 'Кнопка «Скрыть редактор»', desc: 'Кнопка скрытия левой панели' },
                     { key: 'showDuckDbConfig', label: 'Интеграция DuckDB', desc: 'Кнопки подключения и выполнения кода' },
                     { key: 'showClickhouseConfig', label: 'Интеграция Clickhouse (http/https)', desc: 'Кнопки подключения и выполнения Clickhouse HTTP(S) запросов' },
+                    { key: 'showEditorToggleBtn', label: 'Кнопка «Скрыть редактор»', desc: 'Кнопка скрытия левой панели' },
                     { key: 'showSearchSql', label: 'Кнопка «Поиск»', desc: 'Поиск и замена текста в редакторе (Ctrl+F)' },
                     { key: 'showOpenFile', label: 'Открыть файл (.sql)', desc: 'Загрузка файла с диска' },
                     { key: 'showWin1251Button', label: 'Кнопка «Win-1251»', desc: 'Открытие файла в кодировке Windows-1251' },
