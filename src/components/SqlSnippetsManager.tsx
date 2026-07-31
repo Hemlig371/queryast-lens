@@ -1528,13 +1528,13 @@ export function SqlSnippetsManager({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 flex items-center justify-center p-2 sm:p-5 animate-in fade-in duration-200">
-      <div className={`w-full max-w-5xl h-[90vh] border rounded-xl flex flex-col shadow-2xl overflow-hidden transition-colors ${
+    <div className="fixed inset-0 z-50 bg-slate-950/80 flex items-center justify-center p-2 sm:p-3 animate-in fade-in duration-200">
+      <div className={`w-full max-w-[96vw] xl:max-w-6xl h-[94vh] border rounded-xl flex flex-col shadow-2xl overflow-hidden transition-colors ${
         theme === 'dark' ? 'bg-slate-850 border-slate-700 text-slate-200' : 'bg-slate-100 border-slate-300 text-slate-800'
       }`}>
         
         {/* HEADER */}
-        <div className={`flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-b shrink-0 ${
+        <div className={`flex flex-wrap items-center justify-between gap-3 px-4 py-2 border-b shrink-0 ${
           theme === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-slate-200/80 border-slate-300'
         }`}>
           <div className="flex items-center gap-3">
