@@ -3325,12 +3325,12 @@ export default function App() {
         {/* LEFT PANEL: INPUT & CONFIG (40% WIDTH) */}
         {showLeftPanel && (
         <aside id="control-panel" className={`w-[40%] min-w-[380px] max-w-[580px] border-r flex flex-col shrink-0 transition-colors ${
-          theme === 'dark' ? 'bg-slate-750/50 border-slate-600' : 'bg-slate-300/80 border-slate-400/60'
+          theme === 'dark' ? 'bg-slate-750/50 border-slate-600' : 'bg-slate-200/80 border-slate-400/60'
         }`}>
           
           {/* LEFT PANEL TOP BAR */}
           <div className={`flex items-center justify-between px-4 h-11 border-b shrink-0 select-none transition-colors ${
-            theme === 'dark' ? 'bg-slate-750 border-slate-600' : 'bg-slate-300/80 border-slate-400/60'
+            theme === 'dark' ? 'bg-slate-750 border-slate-600' : 'bg-slate-200/80 border-slate-400/60'
           }`}>
             <div className="flex items-center gap-2.5">
               <h3 className={`font-bold text-sm ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>
@@ -3358,14 +3358,14 @@ export default function App() {
                 {uiVisibility.showOpenFile && (
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className={`flex items-center justify-center gap-1 text-xs px-2.5 py-1 rounded-md font-semibold transition-colors ${
+                  className={`flex items-center justify-center gap-1 text-xs px-1.5 py-1 font-normal transition-colors ${
                     theme === 'dark' 
-                      ? 'text-amber-300 hover:text-amber-100 bg-amber-950/40 hover:bg-amber-900/60 border border-amber-500/30' 
-                      : 'text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 shadow-2xs'
+                      ? 'text-slate-300 hover:text-slate-100' 
+                      : 'text-slate-700 hover:text-slate-900'
                   }`}
                   title="Открыть SQL файл с диска (UTF-8)"
                 >
-                  <FolderOpen className="w-3 h-3 text-amber-500" />
+                  <FolderOpen className="w-3.5 h-3.5 text-amber-500" />
                   <span>Открыть</span>
                 </button>
                 )}
@@ -3374,14 +3374,14 @@ export default function App() {
                 {uiVisibility.showSaveFile && (
                 <button
                   onClick={handleSaveSqlFile}
-                  className={`flex items-center justify-center gap-1 text-xs px-2.5 py-1 rounded-md font-semibold transition-colors ${
+                  className={`flex items-center justify-center gap-1 text-xs px-1.5 py-1 font-normal transition-colors ${
                     theme === 'dark' 
-                      ? 'text-emerald-300 hover:text-emerald-100 bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-500/30' 
-                      : 'text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 shadow-2xs'
+                      ? 'text-slate-300 hover:text-slate-100' 
+                      : 'text-slate-700 hover:text-slate-900'
                   }`}
                   title="Сохранить SQL в .sql файл"
                 >
-                  <FileDown className="w-3 h-3 text-emerald-500" />
+                  <FileDown className="w-3.5 h-3.5 text-emerald-500" />
                   <span>Сохранить</span>
                 </button>
                 )}
@@ -3389,28 +3389,28 @@ export default function App() {
                 {uiVisibility.showSnippets && (
                 <button
                   onClick={() => setShowSnippetsModal(true)}
-                  className={`flex items-center justify-center gap-1 text-xs px-2.5 py-1 rounded-md font-semibold transition-colors ${
+                  className={`flex items-center justify-center gap-1 text-xs px-2.5 h-[26px] rounded-md font-semibold transition-colors ${
                     theme === 'dark' 
-                      ? 'text-blue-300 hover:text-blue-100 bg-blue-900/40 hover:bg-blue-800/60 border border-blue-500/40' 
-                      : 'text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200 shadow-2xs'
+                      ? 'bg-slate-700 border border-slate-600 text-slate-200 hover:bg-slate-600' 
+                      : 'bg-white border border-slate-300 text-slate-800 hover:bg-slate-50 shadow-2xs'
                   }`}
                   title="Библиотека шаблонов SQL"
                 >
-                  <Layers className="w-3 h-3 text-blue-500" />
+                  <Layers className="w-3.5 h-3.5 text-blue-500" />
                 </button>
                 )}
 
                 {uiVisibility.showMaximizeButton && (
                 <button
                   onClick={() => setIsMaximizedSql(true)}
-                  className={`flex items-center justify-center gap-1 text-xs px-2.5 py-1 rounded-md font-semibold transition-colors ${
+                  className={`flex items-center justify-center gap-1 text-xs px-2.5 h-[26px] rounded-md font-semibold transition-colors ${
                     theme === 'dark' 
-                      ? 'text-slate-300 hover:text-slate-100 bg-slate-700/60 hover:bg-slate-700 border border-slate-600' 
-                      : 'text-slate-700 hover:text-slate-900 bg-slate-200/80 hover:bg-slate-300 border border-slate-300'
+                      ? 'bg-slate-700 border border-slate-600 text-slate-200 hover:bg-slate-600' 
+                      : 'bg-white border border-slate-300 text-slate-800 hover:bg-slate-50 shadow-2xs'
                   }`}
                   title="Открыть SQL Query редактор"
                 >
-                  <Maximize2 className="w-3 h-3" />
+                  <Maximize2 className="w-3.5 h-3.5" />
                   <span>Editor</span>
                 </button>
                 )}
@@ -3593,7 +3593,7 @@ export default function App() {
           
           {/* CANVAS CONTROLS HEADER */}
           <div className={`flex items-center justify-between px-4 h-11 border-b z-10 select-none transition-colors ${
-            theme === 'dark' ? 'bg-slate-750 border-slate-600 text-slate-200' : 'bg-slate-300/80 border-slate-400/60 text-slate-800'
+            theme === 'dark' ? 'bg-slate-750 border-slate-600 text-slate-200' : 'bg-slate-200/80 border-slate-400/60 text-slate-800'
           }`}>
             <div className="flex items-center gap-3 text-xs">
               {uiVisibility.showLayoutDirection && (
@@ -4238,10 +4238,10 @@ export default function App() {
                 {uiVisibility.showOpenFile && (
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded font-semibold transition-colors ${
+                  className={`flex items-center gap-1 text-xs px-1.5 py-1 font-normal transition-colors ${
                     theme === 'dark' 
-                      ? 'text-amber-300 hover:text-amber-100 bg-amber-950/40 hover:bg-amber-900/60 border border-amber-500/30' 
-                      : 'text-amber-800 hover:text-amber-950 bg-amber-50 hover:bg-amber-100 border border-amber-300 shadow-2xs'
+                      ? 'text-slate-300 hover:text-slate-100' 
+                      : 'text-slate-700 hover:text-slate-900'
                   }`}
                   title="Открыть SQL файл с диска (UTF-8)"
                 >
@@ -4253,10 +4253,10 @@ export default function App() {
                 {uiVisibility.showSaveFile && (
                 <button
                   onClick={handleSaveSqlFile}
-                  className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded font-semibold transition-colors ${
+                  className={`flex items-center gap-1 text-xs px-1.5 py-1 font-normal transition-colors ${
                     theme === 'dark' 
-                      ? 'text-emerald-300 hover:text-emerald-100 bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-500/30' 
-                      : 'text-emerald-800 hover:text-emerald-950 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 shadow-2xs'
+                      ? 'text-slate-300 hover:text-slate-100' 
+                      : 'text-slate-700 hover:text-slate-900'
                   }`}
                   title="Сохранить SQL в .sql файл"
                 >
@@ -4268,10 +4268,10 @@ export default function App() {
                 {uiVisibility.showSnippets && (
                 <button
                   onClick={() => setShowSnippetsModal(true)}
-                  className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded font-semibold transition-colors ${
+                  className={`flex items-center justify-center gap-1 text-xs px-2.5 h-[26px] rounded-md font-semibold transition-colors ${
                     theme === 'dark' 
-                      ? 'text-blue-300 hover:text-blue-100 bg-blue-900/40 hover:bg-blue-800/60 border border-blue-500/40' 
-                      : 'text-blue-800 hover:text-blue-950 bg-blue-50 hover:bg-blue-100 border border-blue-300 shadow-2xs'
+                      ? 'bg-transparent border border-slate-600 text-slate-200 hover:bg-slate-700/60' 
+                      : 'bg-white border border-slate-300 text-slate-800 hover:bg-slate-50 shadow-2xs'
                   }`}
                   title="Библиотека шаблонов SQL"
                 >
@@ -4282,14 +4282,14 @@ export default function App() {
                 {uiVisibility.showHistory && (
                 <button
                   onClick={() => setShowHistoryModal(true)}
-                  className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded font-semibold transition-colors ${
+                  className={`flex items-center justify-center gap-1 text-xs px-2.5 h-[26px] rounded-md font-semibold transition-colors ${
                     theme === 'dark' 
-                      ? 'text-purple-300 hover:text-purple-100 bg-purple-950/40 hover:bg-purple-900/60 border border-purple-500/30' 
-                      : 'text-purple-800 hover:text-purple-950 bg-purple-100 hover:bg-purple-200 border border-purple-300 shadow-2xs'
+                      ? 'bg-transparent border border-slate-600 text-slate-200 hover:bg-slate-700/60' 
+                      : 'bg-white border border-slate-300 text-slate-800 hover:bg-slate-50 shadow-2xs'
                   }`}
                   title="История версий SQL"
                 >
-                  <History className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                  <History className="w-3.5 h-3.5 text-purple-500" />
                 </button>
                 )}
 
@@ -4497,14 +4497,14 @@ export default function App() {
 
                   <button
                     onClick={() => setIsMaximizedSql(false)}
-                    className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold border transition-all ${
+                    className={`flex items-center justify-center gap-1.5 px-3 h-[26px] rounded-md text-xs font-semibold transition-colors ${
                       theme === 'dark' 
-                        ? 'bg-slate-700 border-slate-600 text-slate-200 hover:bg-slate-600' 
-                        : 'bg-white border-slate-300 text-slate-800 hover:bg-slate-50 shadow-2xs'
+                        ? 'bg-slate-700 border border-slate-600 text-slate-200 hover:bg-slate-600' 
+                        : 'bg-white border border-slate-300 text-slate-800 hover:bg-slate-50 shadow-2xs'
                     }`}
                     title="Вернуться к графу"
                   >
-                    <Workflow className="w-3 h-3" />
+                    <Workflow className="w-3.5 h-3.5" />
                     <span>Graph</span>
                   </button>
                 </>
