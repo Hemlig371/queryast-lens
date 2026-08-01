@@ -14,7 +14,7 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from 'recharts';
-import { BarChart3, PieChart as PieIcon, TrendingUp, Info, List, Copy, Check, TableProperties } from 'lucide-react';
+import { BarChart3, PieChart as PieIcon, TrendingUp, Info, List, Copy, Check, TableProperties, RefreshCw, Loader2 } from 'lucide-react';
 
 interface DataStatsViewerProps {
   data: Record<string, any>[];
@@ -24,6 +24,9 @@ interface DataStatsViewerProps {
   onSubModeChange?: (chartType: 'bar' | 'line' | 'pie' | 'list', listSubMode: 'categories' | 'columns') => void;
   isSummarizeMode?: boolean;
   tableName?: string;
+  lastExecutedSql?: string;
+  activeEngine?: 'duckdb' | 'clickhouse' | null;
+  onExecuteQuery?: (sql: string) => Promise<any[]>;
 }
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658'];
@@ -42,6 +45,9 @@ export const DataStatsViewer: React.FC<DataStatsViewerProps> = ({
   onSubModeChange,
   isSummarizeMode = false,
   tableName,
+  lastExecutedSql,
+  activeEngine,
+  onExecuteQuery,
 }) => {
   if (!data || data.length === 0) {
     return (
@@ -234,6 +240,210 @@ export const DataStatsViewer: React.FC<DataStatsViewerProps> = ({
     const initialY = numericCols[0] || columns[1] || columns[0] || '';
     return colAnalysis[initialY]?.type !== 'number' ? 'count' : 'sum';
   });
+
+  const [selectedLimit, setSelectedLimit] = useState<'1M' | '10M' | '50M' | '100M' | 'ALL'>('1M');
+  const [isFetchingRemote, setIsFetchingRemote] = useState<boolean>(false);
+  const [remoteError, setRemoteError] = useState<string | null>(null);
+  const [remoteStats, setRemoteStats] = useState<Record<string, { count: number; nullPct: number; uniqueCount: any; sum?: number; avg?: number; min?: any; max?: any }> | null>(null);
+  const [remoteStatsInfo, setRemoteStatsInfo] = useState<{ limit: string; totalCount?: number } | null>(null);
+
+  const handleFetchDatasetStats = async () => {
+    if (!onExecuteQuery || isFetchingRemote) return;
+
+    setIsFetchingRemote(true);
+    setRemoteError(null);
+
+    try {
+      const isClickhouse = activeEngine === 'clickhouse';
+
+      let target = tableName?.trim();
+      if (!target || target.toLowerCase() === 'table') {
+        const stripped = (lastExecutedSql || '').trim().replace(/;+$/, '');
+        if (stripped) {
+          target = `(${stripped})`;
+        }
+      } else {
+        if (/^\s*SELECT\b/i.test(target) || target.includes(' ')) {
+          target = `(${target})`;
+        }
+      }
+
+      if (!target) {
+        throw new Error('Не указано имя таблицы или SQL-запрос для выполнения агрегации');
+      }
+
+      let limitClause = '';
+      switch (selectedLimit) {
+        case '1M':
+          limitClause = 'LIMIT 1000000';
+          break;
+        case '10M':
+          limitClause = 'LIMIT 10000000';
+          break;
+        case '50M':
+          limitClause = 'LIMIT 50000000';
+          break;
+        case '100M':
+          limitClause = 'LIMIT 100000000';
+          break;
+        case 'ALL':
+          limitClause = '';
+          break;
+      }
+
+      let query = '';
+      if (isClickhouse) {
+        query = `WITH src AS (
+    SELECT * FROM ${target} ${limitClause}
+)
+
+SELECT 'total_count' AS metric, COLUMNS('.*') APPLY count 
+FROM src
+
+UNION ALL
+
+SELECT 'null_count' AS metric, COLUMNS('.*') APPLY (x -> countIf(isNull(x) OR toString(x) = '')) 
+FROM src
+
+UNION ALL
+
+SELECT 'null_percent' AS metric, COLUMNS('.*') APPLY (x -> round(countIf(isNull(x) OR toString(x) = '') * 100.0 / count(), 2)) 
+FROM src
+
+UNION ALL
+
+SELECT 'unique_count' AS metric, COLUMNS('.*') APPLY uniqExact 
+FROM src
+
+UNION ALL
+
+SELECT 'sum' AS metric, COLUMNS('.*') APPLY (x -> round(sum(toFloat64OrDefault(toString(x), 0.0)), 4)) 
+FROM src`;
+      } else {
+        query = `WITH src AS (
+    SELECT * FROM ${target} ${limitClause}
+)
+
+SELECT 'metric' AS metric, COLUMNS(*)::DOUBLE FROM src WHERE 1=0
+
+UNION ALL
+
+SELECT 'total_count' AS metric, count(COLUMNS(*))::DOUBLE FROM src
+
+UNION ALL
+
+SELECT 'null_count' AS metric, sum(CASE WHEN COLUMNS(*) IS NULL OR CAST(COLUMNS(*) AS VARCHAR) = '' THEN 1 ELSE 0 END)::DOUBLE FROM src
+
+UNION ALL
+
+SELECT 'null_percent' AS metric, round(sum(CASE WHEN COLUMNS(*) IS NULL OR CAST(COLUMNS(*) AS VARCHAR) = '' THEN 1 ELSE 0 END) * 100.0 / NULLIF(count(*), 0), 2)::DOUBLE FROM src
+
+UNION ALL
+
+SELECT 'unique_count' AS metric, count(DISTINCT COLUMNS(*))::DOUBLE FROM src
+
+UNION ALL
+
+SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 4)::DOUBLE FROM src`;
+      }
+
+      const rows = await onExecuteQuery(query);
+
+      if (!rows || rows.length === 0) {
+        throw new Error('База данных вернула пустой результат');
+      }
+
+      const parsed: Record<string, { count: number; nullPct: number; uniqueCount: any; sum?: number; avg?: number; min?: any; max?: any }> = {};
+
+      const metricMap: Record<string, Record<string, any>> = {};
+      rows.forEach((r) => {
+        if (r.metric) metricMap[String(r.metric)] = r;
+      });
+
+      if (metricMap['total_count'] || metricMap['null_count']) {
+        const totalCountRow = metricMap['total_count'] || {};
+        const nullCountRow = metricMap['null_count'] || {};
+        const nullPctRow = metricMap['null_percent'] || {};
+        const uniqueCountRow = metricMap['unique_count'] || {};
+        const sumRow = metricMap['sum'] || {};
+
+        const firstRow = rows[0] || {};
+        const colKeys = Object.keys(firstRow).filter((k) => k !== 'metric');
+
+        colKeys.forEach((col) => {
+          const cnt = Number(totalCountRow[col]) || 0;
+          const nCnt = Number(nullCountRow[col]) || 0;
+          const nPct = Number(nullPctRow[col]) || 0;
+          const uCnt = uniqueCountRow[col] !== undefined ? uniqueCountRow[col] : '-';
+          const sVal = sumRow[col] !== undefined && sumRow[col] !== null ? Number(sumRow[col]) : undefined;
+          const validCount = cnt - nCnt;
+          const aVal = sVal !== undefined && validCount > 0 ? Number((sVal / validCount).toFixed(2)) : undefined;
+
+          parsed[col] = {
+            count: cnt,
+            nullPct: nPct,
+            uniqueCount: uCnt,
+            sum: sVal,
+            avg: aVal,
+          };
+        });
+      } else {
+        // Fallback for any standard column-wise summarize result
+        const getVal = (row: Record<string, any>, ...keys: string[]) => {
+          for (const k of keys) {
+            if (row[k] !== undefined && row[k] !== null) return row[k];
+            const lowerK = k.toLowerCase();
+            for (const rk of Object.keys(row)) {
+              if (rk.toLowerCase() === lowerK && row[rk] !== undefined && row[rk] !== null) {
+                return row[rk];
+              }
+            }
+          }
+          return undefined;
+        };
+
+        rows.forEach((row) => {
+          const colName = String(getVal(row, 'column_name', 'name') ?? '');
+          if (!colName) return;
+
+          const countVal = Number(getVal(row, 'count')) || 0;
+          const rawNullPct = getVal(row, 'null_percentage', 'null_pct', 'null_percent');
+          let nullPct = 0;
+          if (typeof rawNullPct === 'number') {
+            nullPct = rawNullPct;
+          } else if (typeof rawNullPct === 'string') {
+            nullPct = parseFloat(rawNullPct.replace('%', '')) || 0;
+          }
+
+          const approxUniq = getVal(row, 'approx_unique', 'unique_count', 'unique');
+          const minVal = getVal(row, 'min');
+          const maxVal = getVal(row, 'max');
+          const avgVal = getVal(row, 'avg');
+
+          parsed[colName] = {
+            count: countVal,
+            nullPct: Number(nullPct.toFixed(1)),
+            uniqueCount: approxUniq !== undefined && approxUniq !== null ? approxUniq : '-',
+            min: minVal,
+            max: maxVal,
+            avg: avgVal !== undefined && avgVal !== null && !isNaN(Number(avgVal)) ? Number(Number(avgVal).toFixed(2)) : undefined,
+          };
+        });
+      }
+
+      setRemoteStats(parsed);
+      const sampleCol = Object.keys(parsed)[0];
+      setRemoteStatsInfo({
+        limit: selectedLimit,
+        totalCount: sampleCol ? parsed[sampleCol]?.count : undefined,
+      });
+    } catch (err: any) {
+      const rawMsg = err?.message !== undefined ? String(err.message) : String(err);
+      setRemoteError(rawMsg || 'Ошибка выполнения SQL запроса');
+    } finally {
+      setIsFetchingRemote(false);
+    }
+  };
 
   useEffect(() => {
     if (initialChartType) {
@@ -507,53 +717,112 @@ export const DataStatsViewer: React.FC<DataStatsViewerProps> = ({
 
               {/* Reference Info Line */}
               {chartType === 'list' && listSubMode === 'columns' ? (
-                <div className={`text-[11px] flex items-center gap-2 flex-wrap ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                  {selectedColumns.length > 0 && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedColumns([])}
-                        className="text-[11px] text-amber-600 dark:text-amber-400 hover:underline transition-opacity shrink-0"
-                      >
-                        Сбросить выбор
-                      </button>
-                      <span>•</span>
-                    </>
-                  )}
-                  <button
-                    type="button"
-                    onClick={handleCopyColumns}
-                    className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium transition-colors shrink-0 ${
-                      selectedColumns.length > 0
-                        ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/40 hover:bg-amber-500/30'
-                        : isDark
-                          ? 'bg-slate-700/50 text-slate-300 hover:bg-slate-700 border border-slate-600/40'
-                          : 'bg-slate-200/60 text-slate-700 hover:bg-slate-200 border border-slate-300/60'
-                    }`}
-                    title={
-                      selectedColumns.length > 0
-                        ? `Скопировать выбранные столбцы (${selectedColumns.length}) [Ctrl+C / Cmd+C]`
-                        : 'Скопировать все столбцы через запятую'
-                    }
-                  >
-                    {copiedCols ? (
+                <div className="flex flex-col gap-1">
+                  <div className={`text-[11px] flex items-center gap-2 flex-wrap ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                    {selectedColumns.length > 0 && (
                       <>
-                        <Check className="w-3 h-3 text-green-500 shrink-0" />
-                        <span>Скопировано!</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3 h-3 shrink-0" />
-                        <span>Скопировать</span>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedColumns([])}
+                          className="text-[11px] text-amber-600 dark:text-amber-400 hover:underline transition-opacity shrink-0"
+                        >
+                          Сбросить выбор
+                        </button>
+                        <span>•</span>
                       </>
                     )}
-                  </button>
-                  <span>•</span>
-                  <span>Статистика по столбцам</span>
-                  <span>•</span>
-                  <span>Столбцов: <b className="font-semibold text-teal-600 dark:text-teal-400">{columns.length}</b></span>
-                  <span>•</span>
-                  <span>Строк: <b className="font-semibold text-teal-600 dark:text-teal-400">{data.length}</b></span>
+                    <button
+                      type="button"
+                      onClick={handleCopyColumns}
+                      className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium transition-colors shrink-0 ${
+                        selectedColumns.length > 0
+                          ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/40 hover:bg-amber-500/30'
+                          : isDark
+                            ? 'bg-slate-700/50 text-slate-300 hover:bg-slate-700 border border-slate-600/40'
+                            : 'bg-slate-200/60 text-slate-700 hover:bg-slate-200 border border-slate-300/60'
+                      }`}
+                      title={
+                        selectedColumns.length > 0
+                          ? `Скопировать выбранные столбцы (${selectedColumns.length}) [Ctrl+C / Cmd+C]`
+                          : 'Скопировать все столбцы через запятую'
+                      }
+                    >
+                      {copiedCols ? (
+                        <>
+                          <Check className="w-3 h-3 text-green-500 shrink-0" />
+                          <span>Скопировано!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3 h-3 shrink-0" />
+                          <span>Скопировать</span>
+                        </>
+                      )}
+                    </button>
+                    <span>•</span>
+                    <span>Столбцов: <b className="font-semibold text-teal-600 dark:text-teal-400">{columns.length}</b></span>
+                    <span>•</span>
+                    <span>Строк: <b className="font-semibold text-teal-600 dark:text-teal-400">{((remoteStatsInfo?.totalCount !== undefined ? remoteStatsInfo.totalCount : data.length) || 0).toLocaleString('ru-RU')}</b></span>
+
+                    {onExecuteQuery && (
+                      <>
+                        <span>•</span>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <select
+                            value={selectedLimit}
+                            onChange={(e) => setSelectedLimit(e.target.value as any)}
+                            disabled={isFetchingRemote}
+                            className={`px-1.5 py-0.5 rounded text-[11px] font-mono font-medium border focus:outline-hidden transition-colors ${
+                              isDark ? 'bg-slate-800 border-slate-600 text-slate-200' : 'bg-white border-slate-300 text-slate-700'
+                            }`}
+                            title="Лимит сканирования датасета в БД"
+                          >
+                            <option value="1M">1 млн</option>
+                            <option value="10M">10 млн</option>
+                            <option value="50M">50 млн</option>
+                            <option value="100M">100 млн</option>
+                            <option value="ALL">ALL</option>
+                          </select>
+
+                          <button
+                            type="button"
+                            onClick={handleFetchDatasetStats}
+                            disabled={isFetchingRemote}
+                            className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors border shrink-0 ${
+                              isFetchingRemote
+                                ? 'bg-amber-600/50 text-white border-amber-600 cursor-not-allowed'
+                                : remoteStats
+                                  ? isDark
+                                    ? 'bg-teal-900/40 text-teal-300 border-teal-500/50 hover:bg-teal-900/60'
+                                    : 'bg-teal-50 text-teal-700 border-teal-300 hover:bg-teal-100'
+                                  : isDark
+                                    ? 'bg-amber-600/20 text-amber-300 border-amber-500/40 hover:bg-amber-600/30'
+                                    : 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
+                            }`}
+                            title="Выполнить SQL агрегацию по всему датасету из базы данных и обновить карточки"
+                          >
+                            {isFetchingRemote ? (
+                              <>
+                                <Loader2 className="w-3 h-3 animate-spin shrink-0" />
+                                <span>Загрузка...</span>
+                              </>
+                            ) : (
+                              <>
+                                <RefreshCw className="w-3 h-3 shrink-0" />
+                                <span>{remoteStats ? 'Обновлено' : 'Обновить по БД'}</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {remoteError && (
+                    <div className="w-full text-red-500 text-[11px] font-mono break-words pt-1 mt-0.5 border-t border-slate-200 dark:border-slate-700/60">
+                      {remoteError}
+                    </div>
+                  )}
                 </div>
               ) : (
                 yAxisCol && colAnalysis[yAxisCol] && (
@@ -562,7 +831,7 @@ export const DataStatsViewer: React.FC<DataStatsViewerProps> = ({
                   }`}>
                     {colAnalysis[yAxisCol].type === 'number' ? (
                       <>
-                        <span>Кол-во значений: <b className="font-semibold text-teal-600 dark:text-teal-400">{colAnalysis[yAxisCol].count}</b></span>
+                        <span>Количество: <b className="font-semibold text-teal-600 dark:text-teal-400">{colAnalysis[yAxisCol].count}</b></span>
                         <span>Уникальных: <b className="font-semibold text-teal-600 dark:text-teal-400">{colAnalysis[yAxisCol].uniqueCount}</b></span>
                         <span>Сумма: <b className="font-semibold text-teal-600 dark:text-teal-400">{colAnalysis[yAxisCol].sum ?? 0}</b></span>
                         <span>Среднее: <b className="font-semibold text-teal-600 dark:text-teal-400">{colAnalysis[yAxisCol].avg ?? 0}</b></span>
@@ -572,8 +841,7 @@ export const DataStatsViewer: React.FC<DataStatsViewerProps> = ({
                       </>
                     ) : (
                       <>
-                        <span className="opacity-75">[Текст]</span>
-                        <span>Кол-во значений: <b className="font-semibold text-teal-600 dark:text-teal-400">{colAnalysis[yAxisCol].count}</b></span>
+                        <span>Количество: <b className="font-semibold text-teal-600 dark:text-teal-400">{colAnalysis[yAxisCol].count}</b></span>
                         <span>Уникальных: <b className="font-semibold text-teal-600 dark:text-teal-400">{colAnalysis[yAxisCol].uniqueCount}</b></span>
                         <span>Пустых: <b className="font-semibold text-teal-600 dark:text-teal-400">{colAnalysis[yAxisCol].nullPct}%</b> ({colAnalysis[yAxisCol].nullCount} из {colAnalysis[yAxisCol].count})</span>
                       </>
@@ -637,12 +905,12 @@ export const DataStatsViewer: React.FC<DataStatsViewerProps> = ({
                 }`}
               >
                 <option value="count" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>Количество (Count)</option>
-                <option value="uniqueCount" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>Кол-во уникальных значений</option>
+                <option value="uniqueCount" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>Уникальных</option>
                 <option value="sum" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>Сумма (Sum)</option>
                 <option value="avg" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>Среднее (Avg)</option>
                 <option value="min" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>Минимум (Min)</option>
                 <option value="max" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>Максимум (Max)</option>
-                <option value="nullPct" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>% пустых (Null %)</option>
+                <option value="nullPct" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>% пустых</option>
               </select>
             </div>
           </div>
@@ -758,7 +1026,14 @@ export const DataStatsViewer: React.FC<DataStatsViewerProps> = ({
                 {columns.map((col) => {
                   const info = colAnalysis[col];
                   if (!info) return null;
-                  const uniqPct = Math.min(100, Math.max(2, (info.uniqueCount / Math.max(1, data.length)) * 100));
+
+                  const remoteCol = remoteStats?.[col];
+                  const displayUnique = remoteCol ? remoteCol.uniqueCount : info.uniqueCount;
+                  const displaySum = remoteCol ? (remoteCol.sum !== undefined ? remoteCol.sum : info.sum) : info.sum;
+                  const displayNullPct = remoteCol ? remoteCol.nullPct : info.nullPct;
+                  const totalCount = remoteCol ? remoteCol.count : data.length;
+
+                  const uniqPct = Math.min(100, Math.max(2, ((typeof displayUnique === 'number' ? displayUnique : Number(displayUnique) || 0) / Math.max(1, totalCount)) * 100));
                   const selectedIdx = selectedColumns.indexOf(col);
                   const isSelected = selectedIdx !== -1;
 
@@ -796,19 +1071,21 @@ export const DataStatsViewer: React.FC<DataStatsViewerProps> = ({
                             {col}
                           </span>
                         </div>
-                        <span className="text-[10px] opacity-60 font-mono px-1 rounded border border-current shrink-0">
-                          {info.type}
-                        </span>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <span className="text-[10px] opacity-60 font-mono px-1 rounded border border-current">
+                            {info.type}
+                          </span>
+                        </div>
                       </div>
                       <div className="relative z-10 flex items-center justify-between gap-1 text-[11px]">
                         <span className="font-mono text-teal-600 dark:text-teal-400 font-medium">
-                          Уникальных: <b>{info.uniqueCount}</b>
+                          Уникальных: <b>{displayUnique}</b>
                         </span>
                         <span className="font-mono opacity-80">
-                          Сумма: <b>{info.sum !== undefined ? info.sum : '-'}</b>
+                          Сумма: <b>{displaySum !== undefined && displaySum !== null ? displaySum : '-'}</b>
                         </span>
                         <span className="font-mono opacity-80">
-                          Пустых: <b className="font-semibold" style={{ color: getNullPctColor(info.nullPct, isDark) }}>{info.nullPct}%</b>
+                          Пустых: <b className="font-semibold" style={{ color: getNullPctColor(displayNullPct, isDark) }}>{displayNullPct}%</b>
                         </span>
                       </div>
                     </div>
@@ -855,6 +1132,7 @@ export const DataStatsViewer: React.FC<DataStatsViewerProps> = ({
                 <XAxis dataKey="name" stroke={textColor} tick={{ fontSize: 11 }} angle={-25} textAnchor="end" />
                 <YAxis stroke={textColor} tick={{ fontSize: 11 }} />
                 <Tooltip
+                  cursor={{ fill: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)' }}
                   contentStyle={{
                     backgroundColor: isDark ? '#1e293b' : '#ffffff',
                     borderColor: isDark ? '#475569' : '#cbd5e1',
@@ -871,6 +1149,7 @@ export const DataStatsViewer: React.FC<DataStatsViewerProps> = ({
                 <XAxis dataKey="name" stroke={textColor} tick={{ fontSize: 11 }} angle={-25} textAnchor="end" />
                 <YAxis stroke={textColor} tick={{ fontSize: 11 }} />
                 <Tooltip
+                  cursor={{ stroke: isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.15)', strokeDasharray: '3 3' }}
                   contentStyle={{
                     backgroundColor: isDark ? '#1e293b' : '#ffffff',
                     borderColor: isDark ? '#475569' : '#cbd5e1',

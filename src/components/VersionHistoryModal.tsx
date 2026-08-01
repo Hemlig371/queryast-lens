@@ -213,7 +213,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
               <h2 className={`text-sm ${
                 theme === 'dark' ? 'text-slate-100' : 'text-slate-800'
               }`}>
-                История версий SQL
+                История версий кода
               </h2>
             </div>
           </div>
@@ -230,7 +230,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
               }`}
               title="Экспорт снимков в JSON файл"
             >
-              <Download className={`w-3.5 h-3.5 ${theme === 'dark' ? 'text-emerald-400' : 'text-emerald-700'}`} />
+              <Download className="w-3.5 h-3.5 text-blue-500" />
               <span>Экспорт</span>
             </button>
             )}

@@ -3,6 +3,8 @@ import { X, Keyboard, RotateCcw, Settings, AlignLeft, Eye, Download, Upload, Plu
 import { AutocompleteTemplate, DEFAULT_AUTOCOMPLETE_TEMPLATES, getCustomAutocompleteTemplates } from './SqlEditor';
 import { getVersions, importVersions, SqlVersionItem } from '../utils/versionHistory';
 import { getAllSchemaCacheEntries, importSchemaCacheEntries, SchemaCacheEntry } from '../utils/schemaDbCache';
+import { loadSnippetsFromDB, saveSnippetsToDB } from '../utils/snippetsStorage';
+import { Snippet } from './SqlSnippetsManager';
 
 export interface QuickActionTemplate {
   id: string;
@@ -259,7 +261,7 @@ export const DEFAULT_HOTKEYS: HotkeyBinding[] = [
   {
     id: 'openSnippets',
     label: 'Конструктор и шаблоны',
-    description: 'Открыть окно готовых шаблонов и генератора SQL',
+    description: 'Открыть окно готовых шаблонов кода',
     category: 'Редактор',
     defaultKey: 'Ctrl+K'
   },
@@ -287,7 +289,7 @@ export const DEFAULT_HOTKEYS: HotkeyBinding[] = [
   {
     id: 'toggleColumnStats',
     label: 'Графики: Статистика по столбцам',
-    description: 'Открыть графики в режиме статистики по столбцам (повторное нажатие закрывает)',
+    description: 'Открыть графики в режиме статистики по столбцам',
     category: 'Общие',
     defaultKey: 'Alt+Q'
   },
@@ -620,6 +622,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         console.warn('Failed to get IndexedDB schema caches for export:', err);
       }
 
+      // Add IndexedDB custom snippets
+      try {
+        const snippets = await loadSnippetsFromDB();
+        backupData['sql_visualizer_snippets'] = snippets;
+      } catch (err) {
+        console.warn('Failed to get IndexedDB snippets for export:', err);
+      }
+
       const workspaceBundle = {
         version: 1,
         app: 'QueryAST Lens Workspace Bundle',
@@ -672,6 +682,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           } else if (key === 'sql_visualizer_schema_cache_data' || key === 'schemaCache' || key === 'schemaCacheData') {
             if (Array.isArray(value)) {
               await importSchemaCacheEntries(value as SchemaCacheEntry[]);
+            }
+          } else if (key === 'sql_visualizer_snippets' || key === 'snippets') {
+            if (Array.isArray(value)) {
+              await saveSnippetsToDB(value as Snippet[]);
             }
           } else if (typeof value === 'string') {
             localStorage.setItem(key, value);

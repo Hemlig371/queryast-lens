@@ -19,6 +19,7 @@ import {
   Database,
   Star
 } from 'lucide-react';
+import { loadSnippetsFromDB, saveSnippetsToDB } from '../utils/snippetsStorage';
 import { SqlEditor, highlightSqlHtml } from './SqlEditor';
 
 export interface Snippet {
@@ -33,12 +34,12 @@ export interface Snippet {
 
 export const POPULAR_SNIPPETS: Snippet[] = [
   // ==========================================
-  // SELECT & ФИЛЬТРАЦИЯ (10 snippets)
+  // SELECT & Фильтрация (10 snippets)
   // ==========================================
   {
     id: 'gen-select-basic',
     title: 'SELECT — Базовый выбор с фильтром и сортировкой',
-    category: 'SELECT & Фильтрация',
+    category: 'Base',
     dialect: 'General',
     description: 'Основной синтаксис выборки колонок, условий WHERE и ограничения LIMIT.',
     sql: `SELECT id, first_name, last_name, email, created_at\nFROM users\nWHERE status = 'active'\n  AND age >= 18\nORDER BY created_at DESC\nLIMIT 50;`
@@ -46,7 +47,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-case-when',
     title: 'CASE WHEN — Условная логика и разметка',
-    category: 'SELECT & Фильтрация',
+    category: 'Base',
     dialect: 'General',
     description: 'Аналог конструкции IF-ELSE для формирования вычисляемых категорий.',
     sql: `SELECT \n    id,\n    amount,\n    CASE \n        WHEN amount >= 100000 THEN 'VIP'\n        WHEN amount >= 25000 THEN 'Gold'\n        WHEN amount >= 5000 THEN 'Silver'\n        ELSE 'Standard'\n    END AS customer_tier\nFROM customer_balances;`
@@ -54,7 +55,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-coalesce-nullif',
     title: 'COALESCE & NULLIF — Защита от NULL и деления на 0',
-    category: 'SELECT & Фильтрация',
+    category: 'Base',
     dialect: 'General',
     description: 'Подстановка первого не-NULL значения и предотвращение ошибки Division by Zero.',
     sql: `SELECT \n    user_id,\n    COALESCE(phone, mobile, email, 'Нет контактов') AS primary_contact,\n    total_revenue / NULLIF(total_clicks, 0) AS revenue_per_click\nFROM campaign_stats;`
@@ -62,7 +63,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-like-ilike',
     title: 'LIKE & Wildcards — Поиск по подстроке',
-    category: 'SELECT & Фильтрация',
+    category: 'Base',
     dialect: 'General',
     description: 'Поиск по шаблону с использованием специального символа % (любая длина).',
     sql: `SELECT id, title, description\nFROM articles\nWHERE title LIKE '%SQL%'\n   OR description LIKE '%database%'\nORDER BY id DESC;`
@@ -70,7 +71,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-between-in',
     title: 'BETWEEN & IN — Диапазоны и перечисления',
-    category: 'SELECT & Фильтрация',
+    category: 'Base',
     dialect: 'General',
     description: 'Лаконичная фильтрация значений в промежутке чисел/дат или из точного списка.',
     sql: `SELECT id, name, price, status\nFROM inventory\nWHERE price BETWEEN 1000 AND 5000\n  AND status IN ('in_stock', 'preorder', 'discounted');`
@@ -78,7 +79,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-distinct',
     title: 'DISTINCT — Выборка уникальных значений',
-    category: 'SELECT & Фильтрация',
+    category: 'Base',
     dialect: 'General',
     description: 'Исключение дубликатов из результата выборки по указанным колонкам.',
     sql: `SELECT DISTINCT category_id, country_code\nFROM customers\nWHERE is_active = true;`
@@ -86,7 +87,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-order-nulls',
     title: 'ORDER BY ... NULLS FIRST / LAST',
-    category: 'SELECT & Фильтрация',
+    category: 'Base',
     dialect: 'General',
     description: 'Явный контроль расположения не заведенных (NULL) значений при сортировке.',
     sql: `SELECT id, name, rating, priority\nFROM tasks\nORDER BY priority DESC NULLS LAST, rating DESC;`
@@ -94,7 +95,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-limit-offset',
     title: 'LIMIT & OFFSET — Постраничный вывод (Pagination)',
-    category: 'SELECT & Фильтрация',
+    category: 'Base',
     dialect: 'General',
     description: 'Извлечение определенной порции данных со смещением для страниц списка.',
     sql: `SELECT id, title, price\nFROM products\nORDER BY id ASC\nLIMIT 20 OFFSET 40;`
@@ -102,7 +103,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-where-or-and',
     title: 'Сложные скобочные условия WHERE (AND / OR)',
-    category: 'SELECT & Фильтрация',
+    category: 'Base',
     dialect: 'General',
     description: 'Правильная группировка логических условий скобками для исключения ошибок приоритета.',
     sql: `SELECT id, user_id, status, amount\nFROM orders\nWHERE (status = 'completed' OR status = 'shipped')\n  AND (amount > 5000 OR is_vip = true)\n  AND is_cancelled = false;`
@@ -110,19 +111,19 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-cast-type',
     title: 'CAST / :: — Приведение типов данных',
-    category: 'SELECT & Фильтрация',
+    category: 'Base',
     dialect: 'General',
     description: 'Преобразование текстовых значений в числа, даты или логические булевы типы.',
     sql: `SELECT \n    id,\n    CAST(price_str AS NUMERIC(10, 2)) AS clean_price,\n    CAST(created_str AS DATE) AS order_date\nFROM raw_imports;`
   },
 
   // ==========================================
-  // АГРЕГАЦИЯ & GROUP BY (7 snippets)
+  // Агрегация & GROUP BY (7 snippets)
   // ==========================================
   {
     id: 'gen-group-by',
     title: 'GROUP BY — Агрегация (COUNT, SUM, AVG, MIN, MAX)',
-    category: 'Агрегация & GROUP BY',
+    category: 'Base',
     dialect: 'General',
     description: 'Группировка записей и вычисление итоговых метрик по категориям.',
     sql: `SELECT \n    category_id,\n    COUNT(*) AS total_items,\n    SUM(price) AS total_value,\n    ROUND(AVG(price), 2) AS avg_price,\n    MIN(price) AS min_price,\n    MAX(price) AS max_price\nFROM products\nWHERE is_available = true\nGROUP BY category_id\nORDER BY total_value DESC;`
@@ -130,7 +131,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-having',
     title: 'HAVING — Фильтрация после группировки',
-    category: 'Агрегация & GROUP BY',
+    category: 'Base',
     dialect: 'General',
     description: 'Фильтрация агрегированных результатов (в отличие от WHERE для строк).',
     sql: `SELECT \n    user_id,\n    COUNT(id) AS total_orders,\n    SUM(amount) AS total_spent\nFROM orders\nGROUP BY user_id\nHAVING COUNT(id) >= 5 AND SUM(amount) > 10000\nORDER BY total_spent DESC;`
@@ -138,7 +139,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-count-distinct',
     title: 'COUNT(DISTINCT) — Подсчет уникальных элементов',
-    category: 'Агрегация & GROUP BY',
+    category: 'Base',
     dialect: 'General',
     description: 'Подсчет количества неповторяющихся сущностей внутри каждой группы.',
     sql: `SELECT \n    region,\n    COUNT(DISTINCT user_id) AS unique_buyers,\n    COUNT(id) AS total_orders\nFROM sales_log\nGROUP BY region;`
@@ -146,7 +147,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-grouping-sets',
     title: 'GROUPING SETS — Множественная группировка',
-    category: 'Агрегация & GROUP BY',
+    category: 'Base',
     dialect: 'General',
     description: 'Вычисление нескольких агрегаций с разным уровнем детализации в одном запросе.',
     sql: `SELECT \n    year,\n    region,\n    category,\n    SUM(amount) AS total_sales\nFROM sales\nGROUP BY GROUPING SETS (\n    (year, region, category),\n    (year, region),\n    (year),\n    ()\n);`
@@ -154,7 +155,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-rollup',
     title: 'ROLLUP — Иерархические подытоги',
-    category: 'Агрегация & GROUP BY',
+    category: 'Base',
     dialect: 'General',
     description: 'Автоматическое формирование промежуточных и общих итогов сверху вниз.',
     sql: `SELECT \n    country,\n    city,\n    SUM(revenue) AS revenue\nFROM store_sales\nGROUP BY ROLLUP (country, city);`
@@ -162,7 +163,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-cube',
     title: 'CUBE — Многомерный комбинаторный анализ',
-    category: 'Агрегация & GROUP BY',
+    category: 'Base',
     dialect: 'General',
     description: 'Генерация абсолютно всех возможных перекрестных подытогов для колонок.',
     sql: `SELECT \n    department_id,\n    job_id,\n    AVG(salary) AS avg_sal\nFROM employees\nGROUP BY CUBE (department_id, job_id);`
@@ -170,7 +171,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-conditional-agg',
     title: 'Условная агрегация через CASE в SUM / COUNT',
-    category: 'Агрегация & GROUP BY',
+    category: 'Base',
     dialect: 'General',
     description: 'Подсчет выборочных показателей по категориям в одной и той же строке.',
     sql: `SELECT \n    merchant_id,\n    SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) AS paid_total,\n    SUM(CASE WHEN status = 'refunded' THEN amount ELSE 0 END) AS refunded_total,\n    COUNT(CASE WHEN status = 'failed' THEN 1 END) AS failed_count\nFROM payments\nGROUP BY merchant_id;`
@@ -182,7 +183,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-inner-join',
     title: 'INNER JOIN — Соединение совпадающих строк',
-    category: 'Соединения (JOIN)',
+    category: 'Base',
     dialect: 'General',
     description: 'Выборка данных только из тех строк, которые присутствуют в обеих таблицах.',
     sql: `SELECT \n    o.id AS order_id,\n    o.order_date,\n    u.name AS customer_name,\n    u.email\nFROM orders o\nINNER JOIN users u ON o.user_id = u.id\nWHERE o.status = 'completed';`
@@ -190,7 +191,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-left-join',
     title: 'LEFT JOIN — Сохранение всех строк левой таблицы',
-    category: 'Соединения (JOIN)',
+    category: 'Base',
     dialect: 'General',
     description: 'Поиск всех пользователей, включая тех, у кого нет ни одного заказа (IS NULL).',
     sql: `SELECT \n    u.id AS user_id,\n    u.name,\n    u.email\nFROM users u\nLEFT JOIN orders o ON u.id = o.user_id\nWHERE o.id IS NULL;`
@@ -198,7 +199,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-full-outer-join',
     title: 'FULL OUTER JOIN — Полное внешнее соединение',
-    category: 'Соединения (JOIN)',
+    category: 'Base',
     dialect: 'General',
     description: 'Возврат всех строк из обеих таблиц с подстановкой NULL при отсутствии связей.',
     sql: `SELECT \n    e.employee_id,\n    e.name AS employee_name,\n    d.department_id,\n    d.department_name\nFROM employees e\nFULL OUTER JOIN departments d ON e.department_id = d.id;`
@@ -206,7 +207,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-cross-join',
     title: 'CROSS JOIN — Декартово произведение',
-    category: 'Соединения (JOIN)',
+    category: 'Base',
     dialect: 'General',
     description: 'Генерация всех возможных комбинаций пар строк из двух таблиц.',
     sql: `SELECT \n    p.product_name,\n    s.size_code\nFROM products p\nCROSS JOIN sizes s\nWHERE p.category = 'Apparel';`
@@ -214,7 +215,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-self-join',
     title: 'SELF JOIN — Соединение таблицы с самой собой',
-    category: 'Соединения (JOIN)',
+    category: 'Base',
     dialect: 'General',
     description: 'Сравнение записей внутри одной таблицы (например, сотрудники и менеджеры).',
     sql: `SELECT \n    e.id AS emp_id,\n    e.name AS employee_name,\n    m.name AS manager_name\nFROM employees e\nLEFT JOIN employees m ON e.manager_id = m.id;`
@@ -222,19 +223,19 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-multi-join',
     title: 'Множественное соединение цепочки таблиц',
-    category: 'Соединения (JOIN)',
+    category: 'Base',
     dialect: 'General',
     description: 'Последовательное связывание заказов, клиентов, товаров и категорий.',
     sql: `SELECT \n    o.id AS order_id,\n    c.name AS customer_name,\n    p.title AS product_name,\n    cat.name AS category_name\nFROM orders o\nJOIN customers c ON o.customer_id = c.id\nJOIN order_items oi ON o.id = oi.order_id\nJOIN products p ON oi.product_id = p.id\nJOIN categories cat ON p.category_id = cat.id;`
   },
 
   // ==========================================
-  // ПОДЗАПРОСЫ & CTE (7 snippets)
+  // Подзапросы & CTE (7 snippets)
   // ==========================================
   {
     id: 'gen-cte-basic',
     title: 'WITH (CTE) — Временные обобщенные таблицы',
-    category: 'Подзапросы & CTE',
+    category: 'Base',
     dialect: 'General',
     description: 'Улучшение читаемости сложных запросов за счет выделения логических блоков.',
     sql: `WITH monthly_sales AS (\n    SELECT \n        user_id,\n        SUM(amount) AS total_amount\n    FROM orders\n    WHERE order_date >= '2025-01-01'\n    GROUP BY user_id\n)\nSELECT \n    ms.user_id,\n    u.name,\n    ms.total_amount\nFROM monthly_sales ms\nJOIN users u ON ms.user_id = u.id\nWHERE ms.total_amount > 50000;`
@@ -242,7 +243,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-multiple-ctes',
     title: 'Множественные CTE — Пошаговые подзапросы',
-    category: 'Подзапросы & CTE',
+    category: 'Base',
     dialect: 'General',
     description: 'Цепочка нескольких временных таблиц в одном SQL запросе через запятую.',
     sql: `WITH active_users AS (\n    SELECT id, name FROM users WHERE is_active = true\n),\nuser_orders AS (\n    SELECT user_id, COUNT(*) AS order_count, SUM(total) AS revenue\n    FROM orders\n    GROUP BY user_id\n)\nSELECT \n    au.id,\n    au.name,\n    COALESCE(uo.order_count, 0) AS order_count,\n    COALESCE(uo.revenue, 0) AS revenue\nFROM active_users au\nLEFT JOIN user_orders uo ON au.id = uo.user_id;`
@@ -250,7 +251,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-subquery-in',
     title: 'Подзапрос в WHERE (IN / NOT IN)',
-    category: 'Подзапросы & CTE',
+    category: 'Base',
     dialect: 'General',
     description: 'Фильтрация строк на основе списка значений, полученного из другого подзапроса.',
     sql: `SELECT id, title, price\nFROM products\nWHERE category_id IN (\n    SELECT id \n    FROM categories \n    WHERE is_featured = true\n);`
@@ -258,7 +259,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-subquery-exists',
     title: 'Подзапрос EXISTS / NOT EXISTS',
-    category: 'Подзапросы & CTE',
+    category: 'Base',
     dialect: 'General',
     description: 'Быстрая проверка наличия связанных записей без выгрузки их в память.',
     sql: `SELECT c.id, c.company_name\nFROM customers c\nWHERE EXISTS (\n    SELECT 1 \n    FROM invoices i \n    WHERE i.customer_id = c.id \n      AND i.status = 'unpaid'\n);`
@@ -266,7 +267,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-union-all',
     title: 'UNION & UNION ALL — Объединение множеств',
-    category: 'Подзапросы & CTE',
+    category: 'Base',
     dialect: 'General',
     description: 'Объединение строк из нескольких таблиц с одинаковой структурой (ALL сохраняет дубликаты).',
     sql: `SELECT id, name, 'Customer' AS role FROM customers\nUNION ALL\nSELECT id, name, 'Supplier' AS role FROM suppliers\nORDER BY name;`
@@ -274,7 +275,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-intersect-except',
     title: 'INTERSECT & EXCEPT — Пересечение и разность множеств',
-    category: 'Подзапросы & CTE',
+    category: 'Base',
     dialect: 'General',
     description: 'Поиск общих строк (INTERSECT) или исключение строк из первого набора (EXCEPT).',
     sql: `SELECT user_id FROM newsletter_subscribers\nEXCEPT\nSELECT user_id FROM unsubscribed_users;`
@@ -282,19 +283,19 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-correlated-subquery',
     title: 'Коррелированный подзапрос в проекции SELECT',
-    category: 'Подзапросы & CTE',
+    category: 'Base',
     dialect: 'General',
     description: 'Подсчет точечных метрик для каждой отдельной строки внешнего запроса.',
     sql: `SELECT \n    u.id,\n    u.name,\n    (SELECT MAX(o.created_at) FROM orders o WHERE o.user_id = u.id) AS last_order_date\nFROM users u;`
   },
 
   // ==========================================
-  // ОКОННЫЕ ФУНКЦИИ (6 snippets)
+  // Оконные функции (6 snippets)
   // ==========================================
   {
     id: 'gen-row-number',
     title: 'ROW_NUMBER() — Ранжирование и топ-1 в группе',
-    category: 'Оконные функции',
+    category: 'Base',
     dialect: 'General',
     description: 'Присвоение уникального порядкового номера строке внутри каждой секции.',
     sql: `WITH ranked_orders AS (\n    SELECT \n        id,\n        user_id,\n        amount,\n        created_at,\n        ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY amount DESC) AS rn\n    FROM orders\n)\nSELECT * \nFROM ranked_orders \nWHERE rn = 1;`
@@ -302,7 +303,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-rank-dense-rank',
     title: 'RANK & DENSE_RANK — Порядковые ранги',
-    category: 'Оконные функции',
+    category: 'Base',
     dialect: 'General',
     description: 'Ранжирование с пропуском повторов (RANK) или без пропусков (DENSE_RANK).',
     sql: `SELECT \n    employee_id,\n    department_id,\n    salary,\n    RANK() OVER (PARTITION BY department_id ORDER BY salary DESC) AS rank_num,\n    DENSE_RANK() OVER (PARTITION BY department_id ORDER BY salary DESC) AS dense_rank_num\nFROM employees;`
@@ -310,7 +311,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-running-total',
     title: 'Нарастающий итог (Running Total)',
-    category: 'Оконные функции',
+    category: 'Base',
     dialect: 'General',
     description: 'Вычисление накопительного суммарного итога от начала периода до текущей строки.',
     sql: `SELECT \n    order_date,\n    amount,\n    SUM(amount) OVER (ORDER BY order_date ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_total\nFROM daily_sales;`
@@ -318,7 +319,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-lead-lag',
     title: 'LEAD & LAG — Доступ к соседним строкам',
-    category: 'Оконные функции',
+    category: 'Base',
     dialect: 'General',
     description: 'Получение значений из предыдущей (LAG) или следующей (LEAD) строки без JOIN.',
     sql: `SELECT \n    user_id,\n    created_at,\n    amount,\n    LAG(amount, 1) OVER (PARTITION BY user_id ORDER BY created_at) AS prev_amount,\n    LEAD(amount, 1) OVER (PARTITION BY user_id ORDER BY created_at) AS next_amount\nFROM orders;`
@@ -326,7 +327,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-first-last-value',
     title: 'FIRST_VALUE & LAST_VALUE — Граничные значения группы',
-    category: 'Оконные функции',
+    category: 'Base',
     dialect: 'General',
     description: 'Получение первого и последнего элемента в отсортированной группе.',
     sql: `SELECT \n    user_id,\n    amount,\n    FIRST_VALUE(amount) OVER (PARTITION BY user_id ORDER BY created_at) AS initial_purchase,\n    LAST_VALUE(amount) OVER (PARTITION BY user_id ORDER BY created_at ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS latest_purchase\nFROM orders;`
@@ -334,7 +335,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-moving-average',
     title: 'Скользящее среднее (Moving Average)',
-    category: 'Оконные функции',
+    category: 'Base',
     dialect: 'General',
     description: 'Расчет сглаженного среднего показателя за окно из 3 предшествующих дней.',
     sql: `SELECT \n    sale_date,\n    revenue,\n    AVG(revenue) OVER (ORDER BY sale_date ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS moving_avg_3d\nFROM daily_metrics;`
@@ -346,7 +347,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-insert-values',
     title: 'INSERT INTO ... VALUES — Вставка нескольких строк',
-    category: 'Модификация данных (DML)',
+    category: 'Base',
     dialect: 'General',
     description: 'Добавление сразу нескольких записей в таблицу за одну операцию.',
     sql: `INSERT INTO categories (name, slug, is_active, display_order)\nVALUES \n    ('Электроника', 'electronics', true, 1),\n    ('Одежда', 'apparel', true, 2),\n    ('Книги', 'books', false, 3);`
@@ -354,7 +355,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-insert-select',
     title: 'INSERT INTO ... SELECT — Вставка из подзапроса',
-    category: 'Модификация данных (DML)',
+    category: 'Base',
     dialect: 'General',
     description: 'Копирование или архивный перенос данных из одной таблицы в другую.',
     sql: `INSERT INTO archive_orders (id, user_id, amount, created_at)\nSELECT id, user_id, amount, created_at\nFROM orders\nWHERE created_at < '2024-01-01';`
@@ -362,7 +363,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-update-basic',
     title: 'UPDATE — Изменение записей с фильтром',
-    category: 'Модификация данных (DML)',
+    category: 'Base',
     dialect: 'General',
     description: 'Обновление значения полей для всех строк, удовлетворяющих условию WHERE.',
     sql: `UPDATE products\nSET \n    price = price * 1.10,\n    updated_at = CURRENT_TIMESTAMP\nWHERE category_id = 5 \n  AND stock_quantity > 0;`
@@ -370,7 +371,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-update-join',
     title: 'UPDATE по условию подзапроса',
-    category: 'Модификация данных (DML)',
+    category: 'Base',
     dialect: 'General',
     description: 'Изменение статуса пользователей на основе условий из связанной таблицы.',
     sql: `UPDATE users\nSET is_vip = true\nWHERE id IN (\n    SELECT user_id \n    FROM orders \n    GROUP BY user_id \n    HAVING SUM(amount) > 100000\n);`
@@ -378,7 +379,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-delete-basic',
     title: 'DELETE FROM — Безопасное удаление строк',
-    category: 'Модификация данных (DML)',
+    category: 'Base',
     dialect: 'General',
     description: 'Удаление устаревших данных с обязательным использованием условий WHERE.',
     sql: `DELETE FROM temp_sessions\nWHERE last_activity < CURRENT_TIMESTAMP - INTERVAL '7 days';`
@@ -386,19 +387,19 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-upsert-generic',
     title: 'MERGE / UPSERT — Совмещенная вставка или обновление',
-    category: 'Модификация данных (DML)',
+    category: 'Base',
     dialect: 'General',
     description: 'Обновление суествующих записей или добавление новых при отсутствии совпадений.',
     sql: `MERGE INTO target_table t\nUSING source_table s\nON (t.id = s.id)\nWHEN MATCHED THEN\n  UPDATE SET t.val = s.val, t.updated_at = CURRENT_TIMESTAMP\nWHEN NOT MATCHED THEN\n  INSERT (id, val, created_at) VALUES (s.id, s.val, CURRENT_TIMESTAMP);`
   },
 
   // ==========================================
-  // СХЕМА И ТАБЛИЦЫ (DDL) (4 snippets)
+  // Схема и Таблицы (DDL) (4 snippets)
   // ==========================================
   {
     id: 'gen-create-table',
     title: 'CREATE TABLE — Таблица с PK, FK и CHECK',
-    category: 'Схема и Таблицы (DDL)',
+    category: 'Base',
     dialect: 'General',
     description: 'Создание таблицы с внешними ключами, каскадным удалением и валидацией.',
     sql: `CREATE TABLE IF NOT EXISTS orders (\n    id BIGINT PRIMARY KEY,\n    user_id BIGINT NOT NULL,\n    status VARCHAR(50) DEFAULT 'pending',\n    total_amount NUMERIC(12, 2) NOT NULL CHECK (total_amount >= 0),\n    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n    CONSTRAINT fk_orders_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE\n);`
@@ -406,7 +407,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-alter-table',
     title: 'ALTER TABLE — Изменение колонок таблицы',
-    category: 'Схема и Таблицы (DDL)',
+    category: 'Base',
     dialect: 'General',
     description: 'Добавление новых колонок, изменение ограничений и удаление неиспользуемых полей.',
     sql: `ALTER TABLE users \n    ADD COLUMN IF NOT EXISTS phone_number VARCHAR(20),\n    ALTER COLUMN email SET NOT NULL,\n    DROP COLUMN IF EXISTS legacy_token;`
@@ -414,7 +415,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-create-index',
     title: 'CREATE INDEX — Создание индексов',
-    category: 'Схема и Таблицы (DDL)',
+    category: 'Base',
     dialect: 'General',
     description: 'Создание уникального или частичного индекса для ускорения поиска по колонкам.',
     sql: `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_active \nON users (email) \nWHERE is_deleted = false;`
@@ -422,19 +423,19 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-create-view',
     title: 'CREATE VIEW — Сохранение готового представления',
-    category: 'Схема и Таблицы (DDL)',
+    category: 'Base',
     dialect: 'General',
     description: 'Виртуальная таблица на основе готового запроса для упрощения аналитики.',
     sql: `CREATE OR REPLACE VIEW v_active_customer_stats AS\nSELECT \n    u.id AS user_id,\n    u.email,\n    COUNT(o.id) AS total_orders,\n    COALESCE(SUM(o.amount), 0) AS total_spent\nFROM users u\nLEFT JOIN orders o ON u.id = o.user_id AND o.status = 'completed'\nWHERE u.status = 'active'\nGROUP BY u.id, u.email;`
   },
 
   // ==========================================
-  // ФУНКЦИИ СТРОК & ДАТ (4 snippets)
+  // Функции строк & дат (4 snippets)
   // ==========================================
   {
     id: 'gen-string-functions',
     title: 'Текстовые функции (CONCAT, LOWER, UPPER)',
-    category: 'Функции строк & дат',
+    category: 'Base',
     dialect: 'General',
     description: 'Форматирование строк, сшивка полей, нормализация регистра и подстроки.',
     sql: `SELECT \n    id,\n    CONCAT(UPPER(last_name), ' ', first_name) AS full_name_formatted,\n    LOWER(email) AS clean_email,\n    SUBSTRING(phone FROM 1 FOR 4) AS country_code,\n    LENGTH(description) AS desc_length\nFROM client_profiles;`
@@ -442,7 +443,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-date-functions',
     title: 'Работа с датами и интервалами времени',
-    category: 'Функции строк & дат',
+    category: 'Base',
     dialect: 'General',
     description: 'Вычисление разницы дат, смещение временных меток через INTERVAL.',
     sql: `SELECT \n    id,\n    created_at,\n    CURRENT_DATE AS today,\n    created_at + INTERVAL '30 days' AS expiration_date\nFROM subscriptions\nWHERE created_at >= CURRENT_DATE - INTERVAL '90 days';`
@@ -450,7 +451,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-string-split',
     title: 'Замена и зачистка подстрок (REPLACE, TRIM)',
-    category: 'Функции строк & дат',
+    category: 'Base',
     dialect: 'General',
     description: 'Удаление лишних пробелов и замена символов в текстовых колонках.',
     sql: `SELECT \n    id,\n    TRIM(raw_phone) AS clean_phone,\n    REPLACE(REPLACE(raw_phone, ' ', ''), '-', '') AS digits_only\nFROM user_contacts;`
@@ -458,7 +459,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   {
     id: 'gen-date-diff',
     title: 'Извлечение частей даты (EXTRACT / DATE_PART)',
-    category: 'Функции строк & дат',
+    category: 'Base',
     dialect: 'General',
     description: 'Выделение года, месяца, дня недели или часа из метки времени.',
     sql: `SELECT \n    id,\n    EXTRACT(YEAR FROM created_at) AS order_year,\n    EXTRACT(MONTH FROM created_at) AS order_month,\n    EXTRACT(DOW FROM created_at) AS day_of_week\nFROM orders;`
@@ -493,7 +494,7 @@ export const POPULAR_SNIPPETS: Snippet[] = [
   },
   {
     id: 'pg-window-lead-lag',
-    title: 'Оконные функции LEAD / LAG (Сравнение строк)',
+    title: 'Base LEAD / LAG (Сравнение строк)',
     category: 'PostgreSQL',
     dialect: 'PostgreSQL',
     description: 'Сравнение текущего заказа с предыдущим и следующим для каждого пользователя.',
@@ -1145,7 +1146,7 @@ export function SqlSnippetsManager({
   const [customSnippets, setCustomSnippets] = useState<Snippet[]>([]);
   const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<string>('Избранное');
+  const [selectedCategory, setSelectedCategory] = useState<string>('Все');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isCreating, setIsCreating] = useState<boolean>(false);
   const [editingSnippetId, setEditingSnippetId] = useState<string | null>(null);
@@ -1163,22 +1164,34 @@ export function SqlSnippetsManager({
 
   // Load custom snippets, favorites and deleted IDs
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
-      if (saved) {
-        setCustomSnippets(JSON.parse(saved));
+    const loadSnippets = async () => {
+      try {
+        let snippets = await loadSnippetsFromDB();
+        if (snippets.length === 0) {
+          const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (parsed && parsed.length > 0) {
+              snippets = parsed;
+              await saveSnippetsToDB(snippets);
+            }
+          }
+        }
+        setCustomSnippets(snippets);
+      } catch (e) {
+        console.error('Failed to load snippets from DB', e);
       }
-    } catch (e) {
-      console.error('Failed to parse custom snippets from localStorage', e);
-    }
+    };
+    loadSnippets();
     try {
       const savedFavs = localStorage.getItem(LOCAL_STORAGE_FAVORITES_KEY);
       if (savedFavs) {
-        setFavoriteIds(JSON.parse(savedFavs));
+                setFavoriteIds(JSON.parse(savedFavs));
       }
     } catch (e) {
       console.error('Failed to parse favorites from localStorage', e);
     }
+
     try {
       const savedDeleted = localStorage.getItem(LOCAL_STORAGE_DELETED_KEY);
       if (savedDeleted) {
@@ -1198,11 +1211,9 @@ export function SqlSnippetsManager({
 
   const saveCustomSnippetsToStorage = (snippets: Snippet[]) => {
     setCustomSnippets(snippets);
-    try {
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(snippets));
-    } catch (e) {
-      console.error('Failed to save custom snippets to localStorage', e);
-    }
+    saveSnippetsToDB(snippets).catch(e => {
+      console.error('Failed to save custom snippets to IndexedDB', e);
+    });
   };
 
   const toggleFavorite = (id: string, e: React.MouseEvent) => {
@@ -1416,18 +1427,21 @@ export function SqlSnippetsManager({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+
   // Export to JSON
   const handleExportJson = () => {
     const listToExport = customSnippets.length > 0 ? customSnippets : POPULAR_SNIPPETS;
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(listToExport, null, 2));
+    const blob = new Blob([JSON.stringify(listToExport, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
     const downloadAnchor = document.createElement('a');
-    downloadAnchor.setAttribute("href", dataStr);
-    downloadAnchor.setAttribute("download", `sql_snippets_${new Date().toISOString().slice(0,10)}.json`);
+    downloadAnchor.href = url;
+    downloadAnchor.download = `sql_snippets_${new Date().toISOString().slice(0,10)}.json`;
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
+    URL.revokeObjectURL(url);
   };
-
+  
   // Export to CSV
   const handleExportCsv = () => {
     const listToExport = customSnippets.length > 0 ? customSnippets : POPULAR_SNIPPETS;
@@ -1453,9 +1467,9 @@ export function SqlSnippetsManager({
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
-  };
+  };  
 
-  // Import from JSON or CSV
+  // Import from JSON
   const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -1481,26 +1495,6 @@ export function SqlSnippetsManager({
               isCustom: true
             }));
           }
-        } else if (file.name.endsWith('.csv')) {
-          const lines = content.split(/\r?\n/).filter(line => line.trim().length > 0);
-          if (lines.length > 1) {
-            for (let i = 1; i < lines.length; i++) {
-              const line = lines[i];
-              const matches = line.match(/(?:^|,)(?:"([^"]*)"|([^,]*))/g);
-              if (matches && matches.length >= 4) {
-                const clean = matches.map(m => m.replace(/^,?"?|"$/g, '').replace(/""/g, '"'));
-                imported.push({
-                  id: clean[0] || `custom-${Date.now()}-${i}`,
-                  title: clean[1] || 'Импортированный шаблон',
-                  category: clean[2] || 'Импорт',
-                  dialect: (clean[3] as any) || 'General',
-                  description: clean[4] || '',
-                  sql: clean[5] || clean[clean.length - 1] || '',
-                  isCustom: true
-                });
-              }
-            }
-          }
         }
 
         if (imported.length > 0) {
@@ -1514,16 +1508,15 @@ export function SqlSnippetsManager({
         }
       } catch (err) {
         console.error('Import error:', err);
-        alert('Ошибка при чтении файла. Проверьте валидность JSON/CSV.');
+        alert('Ошибка при чтении файла. Проверьте валидность JSON.');
       }
     };
 
-    if (file.name.endsWith('.json') || file.name.endsWith('.csv')) {
+    if (file.name.endsWith('.json')) {
       reader.readAsText(file);
     } else {
-      alert('Пожалуйста, выберите файл .json или .csv');
+      alert('Пожалуйста, выберите файл .json');
     }
-
     e.target.value = '';
   };
 
@@ -1543,26 +1536,12 @@ export function SqlSnippetsManager({
             </div>
             <div>
               <h3 className="font-bold text-sm sm:text-base flex items-center gap-2">
-                Библиотека SQL шаблонов
+                Библиотека шаблонов
               </h3>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            {/* EXPORT JSON */}
-            <button
-              onClick={handleExportJson}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-                theme === 'dark' 
-                  ? 'bg-slate-750 border-slate-600 text-slate-200 hover:bg-slate-700' 
-                  : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50 shadow-xs'
-              }`}
-              title="Экспортировать шаблоны в JSON файл"
-            >
-              <FileJson className="w-3.5 h-3.5 text-blue-500" />
-              <span className="hidden sm:inline">Экспорт JSON</span>
-            </button>
-
             {/* EXPORT CSV */}
             <button
               onClick={handleExportCsv}
@@ -1575,6 +1554,20 @@ export function SqlSnippetsManager({
             >
               <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500" />
               <span className="hidden sm:inline">Экспорт CSV</span>
+            </button>
+
+            {/* EXPORT JSON */}
+            <button
+              onClick={handleExportJson}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                theme === 'dark' 
+                  ? 'bg-slate-750 border-slate-600 text-slate-200 hover:bg-slate-700' 
+                  : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50 shadow-xs'
+              }`}
+              title="Экспортировать шаблоны в JSON файл"
+            >
+              <Download className="w-3.5 h-3.5 text-blue-500" />
+              <span className="hidden sm:inline">Экспорт</span>
             </button>
 
             {/* IMPORT */}
@@ -1594,7 +1587,7 @@ export function SqlSnippetsManager({
               type="file" 
               ref={fileInputRef} 
               onChange={handleImportFile} 
-              accept=".json,.csv" 
+              accept=".json" 
               className="hidden" 
             />
 
@@ -1801,7 +1794,7 @@ export function SqlSnippetsManager({
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-400 mb-1">SQL Код с подсветкой синтаксиса *</label>
+                  <label className="block text-[11px] font-semibold text-slate-400 mb-1">Код с подсветкой синтаксиса SQL *</label>
                   <div className="h-44 flex flex-col">
                     <SqlEditor
                       value={formSql}
@@ -1943,7 +1936,7 @@ export function SqlSnippetsManager({
                                 ? 'bg-slate-750 border-slate-600 text-slate-300 hover:text-white' 
                                 : 'bg-slate-100 border-slate-300 text-slate-600 hover:text-slate-900'
                             }`}
-                            title="Скопировать SQL код"
+                            title="Скопировать код"
                           >
                             {copiedId === snippet.id ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
                           </button>

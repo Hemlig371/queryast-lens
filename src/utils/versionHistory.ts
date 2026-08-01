@@ -97,6 +97,31 @@ export async function getVersions(): Promise<SqlVersionItem[]> {
   }
 }
 
+export async function getLatestVersion(): Promise<SqlVersionItem | null> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const index = store.index('timestamp');
+      const req = index.openCursor(null, 'prev');
+      
+      req.onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
+        if (cursor) {
+          resolve(cursor.value);
+        } else {
+          resolve(null);
+        }
+      };
+      req.onerror = () => reject(req.error);
+    });
+  } catch (e) {
+    console.warn('Failed to load latest version from IndexedDB', e);
+    return null;
+  }
+}
+
 export async function deleteVersion(id: string): Promise<void> {
   const db = await openDB();
   return new Promise((resolve, reject) => {

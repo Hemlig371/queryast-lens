@@ -21,110 +21,96 @@ export interface SchemaCacheEntry {
 
 const DB_NAME = 'sql_visualizer_schema_cache';
 const STORE_NAME = 'schemas';
-const DB_VERSION = 1;
+const DB_VERSION = 3;
 
 let dbPromise: Promise<IDBDatabase | null> | null = null;
 
-function getDb(): Promise<IDBDatabase | null> {
+function getDb(): Promise<IDBDatabase> {
   if (!dbPromise) {
-    dbPromise = new Promise((resolve) => {
+    dbPromise = new Promise((resolve, reject) => {
       if (typeof window === 'undefined' || !window.indexedDB) {
-        resolve(null);
+        reject(new Error('IndexedDB is not supported'));
         return;
       }
-      try {
-        const request = indexedDB.open(DB_NAME, DB_VERSION);
-        request.onupgradeneeded = (event: any) => {
-          const db = event.target.result;
-          if (!db.objectStoreNames.contains(STORE_NAME)) {
-            db.createObjectStore(STORE_NAME, { keyPath: 'dbKey' });
-          }
-        };
-        request.onsuccess = (event: any) => {
-          resolve(event.target.result);
-        };
-        request.onerror = (err) => {
-          console.warn('IndexedDB open error:', err);
-          dbPromise = null;
-          resolve(null);
-        };
-      } catch (e) {
-        console.warn('IndexedDB exception:', e);
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      request.onupgradeneeded = (event: any) => {
+        const db = event.target.result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          db.createObjectStore(STORE_NAME, { keyPath: 'dbKey' });
+        }
+      };
+      request.onsuccess = (event: any) => {
+        resolve(event.target.result);
+      };
+      request.onerror = (err: any) => {
         dbPromise = null;
-        resolve(null);
-      }
+        reject(err.target?.error || err);
+      };
     });
   }
-  return dbPromise;
+  return dbPromise as Promise<IDBDatabase>;
 }
 
 export async function getSchemaCache(dbKey: string): Promise<SchemaCacheEntry | null> {
-  const db = await getDb();
-  if (!db) return null;
+  try {
+    const db = await getDb();
+    if (!db) return null;
 
-  return new Promise((resolve) => {
-    try {
+    return await new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readonly');
       const store = tx.objectStore(STORE_NAME);
       const req = store.get(dbKey);
-      req.onsuccess = () => {
-        resolve(req.result || null);
-      };
-      req.onerror = () => {
-        resolve(null);
-      };
-    } catch (e) {
-      console.warn('getSchemaCache error:', e);
-      resolve(null);
-    }
-  });
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+  } catch (e) {
+    console.error('getSchemaCache error:', e);
+    return null;
+  }
 }
 
 export async function saveSchemaCache(entry: SchemaCacheEntry): Promise<void> {
-  const db = await getDb();
-  if (!db) return;
+  try {
+    const db = await getDb();
+    if (!db) return;
 
-  return new Promise((resolve) => {
-    try {
+    await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
       store.put(entry);
       tx.oncomplete = () => resolve();
-      tx.onerror = (e) => {
-        console.warn('saveSchemaCache error:', e);
-        resolve();
-      };
-    } catch (e) {
-      console.warn('saveSchemaCache exception:', e);
-      resolve();
-    }
-  });
+      tx.onerror = (e) => reject(tx.error || e);
+    });
+  } catch (e) {
+    console.error('saveSchemaCache error:', e);
+  }
 }
 
 export async function getAllSchemaCacheEntries(): Promise<SchemaCacheEntry[]> {
-  const db = await getDb();
-  if (!db) return [];
+  try {
+    const db = await getDb();
+    if (!db) return [];
 
-  return new Promise((resolve) => {
-    try {
+    return await new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readonly');
       const store = tx.objectStore(STORE_NAME);
       const req = store.getAll();
       req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => resolve([]);
-    } catch (e) {
-      console.warn('getAllSchemaCacheEntries error:', e);
-      resolve([]);
-    }
-  });
+      req.onerror = () => reject(req.error);
+    });
+  } catch (e) {
+    console.error('getAllSchemaCacheEntries error:', e);
+    return [];
+  }
 }
 
 export async function importSchemaCacheEntries(entries: SchemaCacheEntry[]): Promise<void> {
-  const db = await getDb();
-  if (!db || !Array.isArray(entries)) return;
+  if (!Array.isArray(entries)) return;
+  try {
+    const db = await getDb();
+    if (!db) return;
 
-  return new Promise((resolve) => {
-    try {
+    await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
       entries.forEach((entry) => {
@@ -133,10 +119,9 @@ export async function importSchemaCacheEntries(entries: SchemaCacheEntry[]): Pro
         }
       });
       tx.oncomplete = () => resolve();
-      tx.onerror = () => resolve();
-    } catch (e) {
-      console.warn('importSchemaCacheEntries error:', e);
-      resolve();
-    }
-  });
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) {
+    console.error('importSchemaCacheEntries error:', e);
+  }
 }

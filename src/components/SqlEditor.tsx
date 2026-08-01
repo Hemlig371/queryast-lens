@@ -383,7 +383,7 @@ export function SqlEditor({
     }
   };
 
-  // Global capture keyboard listener to prevent browser hijack of Ctrl+H / Cmd+H / Ctrl+F / Ctrl+R / Ctrl+Q / Ctrl+Shift+U
+  // Global capture keyboard listener to prevent browser hijack of Ctrl+H / Cmd+H / Ctrl+F / Ctrl+Q / Ctrl+Shift+U
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       const activeEl = document.activeElement;
@@ -938,6 +938,26 @@ export function SqlEditor({
     handleSelectionChange();
   };
 
+  useLayoutEffect(() => {
+    const handleNativeScroll = () => {
+      if (textareaRef.current) {
+        if (lineNumbersRef.current) {
+          lineNumbersRef.current.scrollTop = textareaRef.current.scrollTop;
+        }
+        if (highlightRef.current) {
+          highlightRef.current.scrollTop = textareaRef.current.scrollTop;
+          highlightRef.current.scrollLeft = textareaRef.current.scrollLeft;
+        }
+      }
+    };
+    
+    const ta = textareaRef.current;
+    if (ta) {
+      ta.addEventListener('scroll', handleNativeScroll, { passive: true });
+      return () => ta.removeEventListener('scroll', handleNativeScroll);
+    }
+  }, []);
+
   useEffect(() => {
     updateAutocomplete();
   }, [value]);
@@ -1026,7 +1046,7 @@ export function SqlEditor({
               <button
                 type="button"
                 onClick={() => setShowReplace(!showReplace)}
-                title="Переключить замену (Ctrl+H / Ctrl+R)"
+                title="Переключить замену (Ctrl+H)"
                 className={`px-1.5 py-1 rounded transition-colors text-[10px] font-semibold flex items-center gap-1 ${
                   showReplace
                     ? 'bg-emerald-600 text-white'
@@ -1140,7 +1160,6 @@ export function SqlEditor({
           <textarea
             ref={textareaRef}
             value={value}
-            onScroll={handleScroll}
             onChange={handleChange}
             onBlur={() => {
               // Synchronous changes are already pushed, no action needed on blur
