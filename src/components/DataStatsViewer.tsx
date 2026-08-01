@@ -297,27 +297,27 @@ export const DataStatsViewer: React.FC<DataStatsViewerProps> = ({
     SELECT * FROM ${target} ${limitClause}
 )
 
-SELECT 'total_count' AS metric, COLUMNS('.*') APPLY count 
+SELECT 'total_count' AS metric, COLUMNS('.*') APPLY (x -> toFloat64(count(x)))
 FROM src
 
 UNION ALL
 
-SELECT 'null_count' AS metric, COLUMNS('.*') APPLY (x -> countIf(isNull(x) OR toString(x) = '')) 
+SELECT 'null_count' AS metric, COLUMNS('.*') APPLY (x -> toFloat64(countIf(isNull(x) OR toString(x) = '')))
 FROM src
 
 UNION ALL
 
-SELECT 'null_percent' AS metric, COLUMNS('.*') APPLY (x -> round(countIf(isNull(x) OR toString(x) = '') * 100.0 / count(), 2)) 
+SELECT 'null_percent' AS metric, COLUMNS('.*') APPLY (x -> round(toFloat64(countIf(isNull(x) OR toString(x) = '')) * 100.0 / count(), 2))
 FROM src
 
 UNION ALL
 
-SELECT 'unique_count' AS metric, COLUMNS('.*') APPLY uniqExact 
+SELECT 'unique_count' AS metric, COLUMNS('.*') APPLY (x -> toFloat64(uniqExact(x)))
 FROM src
 
 UNION ALL
 
-SELECT 'sum' AS metric, COLUMNS('.*') APPLY (x -> round(sum(toFloat64OrDefault(toString(x), 0.0)), 4)) 
+SELECT 'sum' AS metric, COLUMNS('.*') APPLY (x -> round(sum(toFloat64OrDefault(toString(x), 0.0)), 4))
 FROM src`;
       } else {
         query = `WITH src AS (
@@ -353,10 +353,30 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
         throw new Error('База данных вернула пустой результат');
       }
 
+      let processedRows = rows;
+      if (isClickhouse) {
+        const prefix = 'toFloat64(count(';
+        const suffix = '))';
+        processedRows = rows.map((row) => {
+          const newRow: Record<string, any> = {};
+          Object.entries(row).forEach(([key, val]) => {
+            if (key === 'metric') {
+              newRow[key] = val;
+            } else if (key.startsWith(prefix) && key.endsWith(suffix)) {
+              const cleanKey = key.slice(prefix.length, key.length - suffix.length);
+              newRow[cleanKey] = val;
+            } else {
+              newRow[key] = val;
+            }
+          });
+          return newRow;
+        });
+      }
+
       const parsed: Record<string, { count: number; nullPct: number; uniqueCount: any; sum?: number; avg?: number; min?: any; max?: any }> = {};
 
       const metricMap: Record<string, Record<string, any>> = {};
-      rows.forEach((r) => {
+      processedRows.forEach((r) => {
         if (r.metric) metricMap[String(r.metric)] = r;
       });
 
@@ -367,7 +387,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
         const uniqueCountRow = metricMap['unique_count'] || {};
         const sumRow = metricMap['sum'] || {};
 
-        const firstRow = rows[0] || {};
+        const firstRow = processedRows[0] || {};
         const colKeys = Object.keys(firstRow).filter((k) => k !== 'metric');
 
         colKeys.forEach((col) => {
@@ -402,7 +422,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
           return undefined;
         };
 
-        rows.forEach((row) => {
+        processedRows.forEach((row) => {
           const colName = String(getVal(row, 'column_name', 'name') ?? '');
           if (!colName) return;
 
