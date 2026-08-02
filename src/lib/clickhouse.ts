@@ -94,32 +94,43 @@ export function getClickhouseHeaders(config: ClickhouseConfig, contentType: stri
   return headers;
 }
 
+let currentActiveClickhouseConfig: ClickhouseConfig | null = null;
+let currentQueryId: string | null = null;
+
 /**
  * Executes a Clickhouse query natively in Tauri, bypassing browser CORS/Mixed Content.
  */
 export async function executeClickhouseQueryTauri(config: ClickhouseConfig, query: string): Promise<any> {
   const { fetch: tauriFetch, ResponseType, Body } = await import('@tauri-apps/api/http');
 
-  const url = getClickhouseUrl(config);
+  currentQueryId = 'ql_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+  currentActiveClickhouseConfig = config;
+
+  const url = getClickhouseUrl(config, { query_id: currentQueryId });
   const originalHeaders = getClickhouseHeaders(config, 'text/plain;charset=utf-8');
 
-  const response = await tauriFetch(url, {
-    method: 'POST',
-    headers: originalHeaders,
-    body: Body.text(query),
-    responseType: ResponseType.Text
-  });
-
-  const responseText = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
-  if (!response.ok) {
-    throw new Error(responseText || `HTTP status ${response.status}`);
-  }
-
   try {
-    const parsed = JSON.parse(responseText);
-    return { success: true, data: parsed.data || parsed };
-  } catch {
-    return { success: true, text: responseText.trim() };
+    const response = await tauriFetch(url, {
+      method: 'POST',
+      headers: originalHeaders,
+      body: Body.text(query),
+      responseType: ResponseType.Text
+    });
+
+    const responseText = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
+    if (!response.ok) {
+      throw new Error(responseText || `HTTP status ${response.status}`);
+    }
+
+    try {
+      const parsed = JSON.parse(responseText);
+      return { success: true, data: parsed.data || parsed };
+    } catch {
+      return { success: true, text: responseText.trim() };
+    }
+  } finally {
+    currentQueryId = null;
+    currentActiveClickhouseConfig = null;
   }
 }
 
@@ -159,6 +170,23 @@ export async function executeClickhouseCopyToTauri(config: ClickhouseConfig, inn
 export async function cancelClickhouseQueryTauri(): Promise<void> {
   const { invoke } = await import('@tauri-apps/api/tauri');
   await invoke('cancel_clickhouse_query');
+  
+  if (currentQueryId && currentActiveClickhouseConfig) {
+    const { fetch: tauriFetch, Body } = await import('@tauri-apps/api/http');
+    const killQuery = `KILL QUERY WHERE query_id = '${currentQueryId}'`;
+    const url = getClickhouseUrl(currentActiveClickhouseConfig);
+    const headers = getClickhouseHeaders(currentActiveClickhouseConfig, 'text/plain;charset=utf-8');
+    
+    try {
+      await tauriFetch(url, {
+        method: 'POST',
+        headers,
+        body: Body.text(killQuery)
+      });
+    } catch (e) {
+      console.warn("Failed to send KILL QUERY to ClickHouse", e);
+    }
+  }
 }
 
 /**

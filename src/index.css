@@ -43,3 +43,7 @@
   background: #334155;
 }
 
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+

@@ -133,10 +133,16 @@ export const ClickhouseModal: React.FC<ClickhouseModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
-      <div className={`w-full max-w-md rounded-xl border shadow-2xl overflow-hidden flex flex-col ${
-        theme === 'dark' ? 'bg-slate-850 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'
-      }`}>
+    <div className="fixed inset-0 z-50 bg-slate-950/80 flex items-center justify-center p-4 animate-in fade-in duration-150">
+      <div 
+        style={{
+          width: 'calc(min(480px, 90vw) / var(--zoom-scale, 1))',
+          maxHeight: 'calc(90vh / var(--zoom-scale, 1))',
+        }}
+        className={`rounded-xl border shadow-2xl overflow-hidden flex flex-col ${
+          theme === 'dark' ? 'bg-slate-850 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'
+        }`}
+      >
         {/* HEADER */}
         <div className={`flex items-center justify-between px-4 py-3 border-b select-none ${
           theme === 'dark' ? 'bg-slate-800/80 border-slate-700' : 'bg-slate-100 border-slate-200'

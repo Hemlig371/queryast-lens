@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { toBlob } from 'html-to-image';
 import {
   BarChart,
   Bar,
@@ -14,7 +15,7 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from 'recharts';
-import { BarChart3, PieChart as PieIcon, TrendingUp, Info, List, Copy, Check, TableProperties, RefreshCw, Loader2 } from 'lucide-react';
+import { BarChart3, PieChart as PieIcon, TrendingUp, Info, List, Copy, Check, TableProperties, RefreshCw, Loader2, Image as ImageIcon } from 'lucide-react';
 
 interface DataStatsViewerProps {
   data: Record<string, any>[];
@@ -234,8 +235,54 @@ export const DataStatsViewer: React.FC<DataStatsViewerProps> = ({
   const [yAxisCol, setYAxisCol] = useState<string>(numericCols[0] || columns[1] || columns[0] || '');
   const [chartType, setChartType] = useState<'bar' | 'line' | 'pie' | 'list'>(initialChartType || 'list');
   const [listSubMode, setListSubMode] = useState<'categories' | 'columns'>(initialListSubMode || 'categories');
+  const [barLayout, setBarLayout] = useState<'horizontal' | 'vertical'>('horizontal');
+
+  const handleBarClick = () => {
+    if (chartType !== 'bar') {
+      setChartType('bar');
+    } else {
+      setBarLayout((prev) => (prev === 'horizontal' ? 'vertical' : 'horizontal'));
+    }
+  };
+  const [categoryLimit, setCategoryLimit] = useState<string>('all');
+  const [sortMode, setSortMode] = useState<'alphabet' | 'desc' | 'asc'>('alphabet');
   const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
   const [copiedCols, setCopiedCols] = useState<boolean>(false);
+  const [copiedChartImage, setCopiedChartImage] = useState<boolean>(false);
+  const chartContainerRef = useRef<HTMLDivElement>(null);
+
+  const handleCopyChartAsImage = async () => {
+    if (!chartContainerRef.current) return;
+    const chartEl =
+      chartContainerRef.current.querySelector<HTMLElement>('.recharts-responsive-container') ||
+      chartContainerRef.current.querySelector<HTMLElement>('.recharts-wrapper') ||
+      chartContainerRef.current;
+
+    try {
+      const blob = await toBlob(chartEl, {
+        pixelRatio: 2,
+        backgroundColor: undefined, // transparent background
+        filter: (node) => {
+          if (node instanceof HTMLElement) {
+            if (node.tagName === 'BUTTON' || node.classList.contains('recharts-tooltip-wrapper')) {
+              return false;
+            }
+          }
+          return true;
+        },
+      });
+
+      if (blob) {
+        await navigator.clipboard.write([
+          new ClipboardItem({ 'image/png': blob }),
+        ]);
+        setCopiedChartImage(true);
+        setTimeout(() => setCopiedChartImage(false), 2000);
+      }
+    } catch (err) {
+      console.error('Failed to copy chart image using html-to-image:', err);
+    }
+  };
   const [aggMode, setAggMode] = useState<'sum' | 'avg' | 'min' | 'max' | 'count' | 'uniqueCount' | 'nullPct'>(() => {
     const initialY = numericCols[0] || columns[1] || columns[0] || '';
     return colAnalysis[initialY]?.type !== 'number' ? 'count' : 'sum';
@@ -520,7 +567,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (chartType !== 'list' || listSubMode !== 'columns') return;
-      if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'c' || e.code === 'KeyC')) {
+      if ((e.ctrlKey || e.metaKey) && e.code === 'KeyC') {
         const activeTag = document.activeElement?.tagName.toLowerCase();
         if (activeTag === 'input' || activeTag === 'textarea') return;
         if (selectedColumns.length > 0) {
@@ -535,7 +582,27 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
     return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [chartType, listSubMode, selectedColumns, columns]);
 
-  // Prepare chart data (limit to first 60 categories or 50 rows)
+  const totalCategoryCount = useMemo(() => {
+    if (!xAxisCol) return 0;
+    const isCategorical =
+      chartType === 'pie' ||
+      chartType === 'list' ||
+      colAnalysis[xAxisCol]?.type !== 'number' ||
+      (colAnalysis[xAxisCol]?.uniqueCount || 0) < data.length;
+
+    let count = 0;
+    if (isCategorical) {
+      const set = new Set();
+      data.forEach((row) => set.add(String(row[xAxisCol] ?? 'null')));
+      count = set.size;
+    } else {
+      count = data.length;
+    }
+    const maxCap = isCategorical ? 60 : 50;
+    return Math.min(count, maxCap);
+  }, [data, xAxisCol, chartType, colAnalysis]);
+
+  // Prepare chart data with category limit and sorting
   const chartData = useMemo(() => {
     if (!xAxisCol) return [];
 
@@ -545,6 +612,11 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
       colAnalysis[xAxisCol]?.type !== 'number' ||
       (colAnalysis[xAxisCol]?.uniqueCount || 0) < data.length;
 
+    const maxCap = isCategorical ? 60 : 50;
+    const limitNum = (chartType === 'list' || categoryLimit === 'all') ? maxCap : Math.min(Number(categoryLimit), maxCap);
+
+    let rawItems: { name: string; value: number; [key: string]: any }[] = [];
+
     if (isCategorical) {
       const groups: Record<string, any[]> = {};
       data.forEach((row) => {
@@ -553,60 +625,72 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
         groups[key].push(row);
       });
 
-      return Object.entries(groups)
-        .slice(0, 60)
-        .map(([name, rows]) => {
-          let val = 0;
-          if (aggMode === 'count') {
-            val = rows.length;
-          } else if (aggMode === 'uniqueCount') {
-            const uniqs = new Set(
-              rows
-                .map((r) => r[yAxisCol])
-                .filter((v) => v !== null && v !== undefined && v !== '')
-            );
-            val = uniqs.size;
-          } else if (aggMode === 'nullPct') {
-            const nulls = rows.filter(
-              (r) => r[yAxisCol] === null || r[yAxisCol] === undefined || r[yAxisCol] === ''
-            ).length;
-            val = Number(((nulls / rows.length) * 100).toFixed(1));
-          } else {
-            const nums = rows
-              .map((row) => row[yAxisCol])
-              .filter(
-                (val) =>
-                  val !== null &&
-                  val !== undefined &&
-                  val !== '' &&
-                  !isNaN(Number(val))
-              )
-              .map(Number);
+      rawItems = Object.entries(groups).map(([name, rows]) => {
+        let val = 0;
+        if (aggMode === 'count') {
+          val = rows.length;
+        } else if (aggMode === 'uniqueCount') {
+          const uniqs = new Set(
+            rows
+              .map((r) => r[yAxisCol])
+              .filter((v) => v !== null && v !== undefined && v !== '')
+          );
+          val = uniqs.size;
+        } else if (aggMode === 'nullPct') {
+          const nulls = rows.filter(
+            (r) => r[yAxisCol] === null || r[yAxisCol] === undefined || r[yAxisCol] === ''
+          ).length;
+          val = Number(((nulls / rows.length) * 100).toFixed(1));
+        } else {
+          const nums = rows
+            .map((row) => row[yAxisCol])
+            .filter(
+              (val) =>
+                val !== null &&
+                val !== undefined &&
+                val !== '' &&
+                !isNaN(Number(val))
+            )
+            .map(Number);
 
-            if (nums.length === 0) {
-              val = 0;
-            } else if (aggMode === 'avg') {
-              const sum = nums.reduce((a, b) => a + b, 0);
-              val = Number((sum / nums.length).toFixed(2));
-            } else if (aggMode === 'min') {
-              val = Math.min(...nums);
-            } else if (aggMode === 'max') {
-              val = Math.max(...nums);
-            } else {
-              val = Number(nums.reduce((a, b) => a + b, 0).toFixed(2));
-            }
+          if (nums.length === 0) {
+            val = 0;
+          } else if (aggMode === 'avg') {
+            const sum = nums.reduce((a, b) => a + b, 0);
+            val = Number((sum / nums.length).toFixed(2));
+          } else if (aggMode === 'min') {
+            val = Math.min(...nums);
+          } else if (aggMode === 'max') {
+            val = Math.max(...nums);
+          } else {
+            val = Number(nums.reduce((a, b) => a + b, 0).toFixed(2));
           }
-          return { name, value: val };
-        });
+        }
+        return { name, value: val };
+      });
+    } else {
+      // Direct mapping
+      rawItems = data.map((row, i) => ({
+        name: String(row[xAxisCol] ?? `#${i + 1}`),
+        value: Number(row[yAxisCol]) || 0,
+        ...row,
+      }));
     }
 
-    // Direct mapping
-    return data.slice(0, 50).map((row, i) => ({
-      name: String(row[xAxisCol] ?? `#${i + 1}`),
-      value: Number(row[yAxisCol]) || 0,
-      ...row,
-    }));
-  }, [data, xAxisCol, yAxisCol, chartType, colAnalysis, aggMode]);
+    // Sort items before slicing
+    rawItems.sort((a, b) => {
+      if (sortMode === 'desc') {
+        return b.value - a.value || a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+      }
+      if (sortMode === 'asc') {
+        return a.value - b.value || a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+      }
+      // 'alphabet' default
+      return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+    });
+
+    return rawItems.slice(0, limitNum);
+  }, [data, xAxisCol, yAxisCol, chartType, colAnalysis, aggMode, categoryLimit, sortMode]);
 
   const maxVal = useMemo(() => {
     let m = 0;
@@ -710,10 +794,15 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                   <List className="w-3.5 h-3.5" /> Список
                 </button>
                 <button
-                  onClick={() => setChartType('bar')}
+                  onClick={handleBarClick}
                   className={`flex items-center gap-1 px-2 py-1 rounded transition-colors ${
-                    chartType === 'bar' ? (isDark ? 'bg-teal-600 text-white' : 'bg-teal-600 text-white') : 'hover:bg-slate-500/20'
+                    chartType === 'bar'
+                      ? barLayout === 'vertical'
+                        ? 'bg-amber-600 text-white'
+                        : 'bg-teal-600 text-white'
+                      : 'hover:bg-slate-500/20'
                   }`}
+                  title="Нажмите повторно для переключения ориентации (вертикальная / горизонтальная)"
                 >
                   <BarChart3 className="w-3.5 h-3.5" /> Столбцы
                 </button>
@@ -839,7 +928,10 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                   </div>
 
                   {remoteError && (
-                    <div className="w-full text-red-500 text-[11px] font-mono break-words pt-1 mt-0.5 border-t border-slate-200 dark:border-slate-700/60">
+                    <div 
+                      className="w-full text-red-600 dark:text-red-400 text-[11px] font-mono break-words p-1.5 rounded border border-slate-300 dark:border-slate-700 line-clamp-2 leading-tight max-h-[2.3rem] overflow-hidden cursor-help mt-1.5 shrink-0"
+                      title={remoteError.length > 3000 ? remoteError.substring(0, 3000) + '...' : remoteError}
+                    >
                       {remoteError}
                     </div>
                   )}
@@ -876,7 +968,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
         {/* Row 2: Selectors for X, Y, Aggregation */}
         {!isSummarizeMode && !(chartType === 'list' && listSubMode === 'columns') && (
           <div className="flex items-center gap-3 flex-wrap">
-            {/* X Axis Selector */}
+            {/* X Axis Selector & Category Limit Selector */}
             <div className="flex items-center gap-1.5">
               <span className="opacity-70">Ось X (Категория):</span>
               <select
@@ -892,6 +984,23 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                   </option>
                 ))}
               </select>
+
+              {/* Category limit selector right after X axis (only for graphical charts) */}
+              {chartType !== 'list' && (
+                <select
+                  value={categoryLimit}
+                  onChange={(e) => setCategoryLimit(e.target.value)}
+                  className={`px-1.5 py-1 rounded border text-xs font-medium focus:outline-hidden ${
+                    isDark ? 'border-slate-600 text-slate-200 bg-slate-800' : 'border-slate-300 text-slate-800 bg-white'
+                  }`}
+                  title="Количество отображаемых категорий"
+                >
+                  <option value="all">Все ({totalCategoryCount})</option>
+                  <option value="5">5</option>
+                  <option value="10">10</option>
+                  <option value="20">20</option>
+                </select>
+              )}
             </div>
 
             {/* Y Axis Selector */}
@@ -933,12 +1042,46 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                 <option value="nullPct" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>% пустых</option>
               </select>
             </div>
+
+            {/* Category Sorting Selector */}
+            <div className="flex items-center gap-1.5">
+              <span className="opacity-70">Сортировка:</span>
+              <select
+                value={sortMode}
+                onChange={(e) => setSortMode(e.target.value as any)}
+                className={`px-2 py-1 rounded border font-medium focus:outline-hidden ${
+                  isDark ? 'border-slate-600 text-slate-200 bg-slate-800' : 'border-slate-300 text-slate-800 bg-white'
+                }`}
+              >
+                <option value="alphabet" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>По алфавиту</option>
+                <option value="desc" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>По убыванию</option>
+                <option value="asc" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>По возрастанию</option>
+              </select>
+            </div>
           </div>
         )}
       </div>
 
       {/* Chart Canvas / List */}
-      <div className="flex-1 min-h-0 w-full relative">
+      <div className="flex-1 min-h-0 w-full relative" ref={chartContainerRef}>
+        {!isSummarizeMode && chartType !== 'list' && (
+          <button
+            type="button"
+            onClick={handleCopyChartAsImage}
+            className={`absolute top-2 right-2 z-10 p-1.5 rounded-md border transition-all shadow-xs ${
+              isDark
+                ? 'bg-slate-800/80 hover:bg-slate-700 text-slate-300 border-slate-600/60'
+                : 'bg-white/90 hover:bg-slate-100 text-slate-600 border-slate-200'
+            }`}
+            title={copiedChartImage ? "Скопировано в буфер (PNG)!" : "Скопировать график как PNG с прозрачным фоном"}
+          >
+            {copiedChartImage ? (
+              <Check className="w-3.5 h-3.5 text-emerald-500" />
+            ) : (
+              <ImageIcon className="w-3.5 h-3.5" />
+            )}
+          </button>
+        )}
         {isSummarizeMode ? (
           <div className="h-full overflow-y-auto pr-1">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
@@ -1147,10 +1290,39 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
         ) : (
           <ResponsiveContainer width="100%" height="100%">
             {chartType === 'bar' ? (
-              <BarChart data={chartData} margin={{ top: 10, right: 20, left: 10, bottom: 25 }}>
+              <BarChart
+                layout={barLayout}
+                data={chartData}
+                margin={
+                  barLayout === 'vertical'
+                    ? { top: 10, right: 30, left: 20, bottom: 10 }
+                    : { top: 10, right: 20, left: 10, bottom: 25 }
+                }
+              >
                 <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
-                <XAxis dataKey="name" stroke={textColor} tick={{ fontSize: 11 }} angle={-25} textAnchor="end" />
-                <YAxis stroke={textColor} tick={{ fontSize: 11 }} />
+                {barLayout === 'vertical' ? (
+                  <>
+                    <XAxis type="number" stroke={textColor} tick={{ fontSize: 11 }} />
+                    <YAxis
+                      type="category"
+                      dataKey="name"
+                      stroke={textColor}
+                      tick={{ fontSize: 11 }}
+                      width={110}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <XAxis
+                      dataKey="name"
+                      stroke={textColor}
+                      tick={{ fontSize: 11 }}
+                      angle={-25}
+                      textAnchor="end"
+                    />
+                    <YAxis stroke={textColor} tick={{ fontSize: 11 }} />
+                  </>
+                )}
                 <Tooltip
                   cursor={{ fill: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)' }}
                   contentStyle={{
@@ -1161,7 +1333,13 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                     fontSize: '12px',
                   }}
                 />
-                <Bar dataKey="value" fill="#0d9488" radius={[4, 4, 0, 0]} name={yAxisCol || 'Количество'} />
+                <Bar
+                  dataKey="value"
+                  fill="#0d9488"
+                  radius={barLayout === 'vertical' ? [0, 4, 4, 0] : [4, 4, 0, 0]}
+                  name={yAxisCol || 'Количество'}
+                  isAnimationActive={false}
+                />
               </BarChart>
             ) : chartType === 'line' ? (
               <LineChart data={chartData} margin={{ top: 10, right: 20, left: 10, bottom: 25 }}>
@@ -1178,7 +1356,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                     fontSize: '12px',
                   }}
                 />
-                <Line type="monotone" dataKey="value" stroke="#0d9488" strokeWidth={2} dot={{ r: 3 }} name={yAxisCol || 'Значение'} />
+                <Line type="monotone" dataKey="value" stroke="#0d9488" strokeWidth={2} dot={{ r: 3 }} name={yAxisCol || 'Значение'} isAnimationActive={false} />
               </LineChart>
             ) : (
               <PieChart>
@@ -1191,7 +1369,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                     fontSize: '12px',
                   }}
                 />
-                <Pie data={chartData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
+                <Pie data={chartData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label isAnimationActive={false}>
                   {chartData.map((_, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}

@@ -99,6 +99,7 @@ export interface UiVisibilitySettings {
   showExportXml: boolean;
   showExportMermaid: boolean;
   showExportDrawio: boolean;
+  uiScale?: number;
 }
 
 export const DEFAULT_FORMATTER_SETTINGS: FormatterSettings = {
@@ -151,6 +152,7 @@ export const DEFAULT_UI_VISIBILITY: UiVisibilitySettings = {
   showExportXml: true,
   showExportMermaid: true,
   showExportDrawio: true,
+  uiScale: 100,
 };
 
 const FORMATTER_STORAGE_KEY = 'sql_visualizer_formatter_v1';
@@ -734,12 +736,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     localStorage.setItem(UI_VISIBILITY_STORAGE_KEY, JSON.stringify(updated));
   };
 
+  const updateUiScale = (val: number) => {
+    const updated = { ...uiVisibility, uiScale: val };
+    onUpdateUiVisibility(updated);
+    localStorage.setItem(UI_VISIBILITY_STORAGE_KEY, JSON.stringify(updated));
+  };
+
   const categories: ('Редактор' | 'Вкладки' | 'Граф' | 'Общие')[] = ['Редактор', 'Вкладки', 'Граф', 'Общие'];
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 p-4 sm:p-6 flex items-center justify-center animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 bg-slate-950/80 p-3 sm:p-4 flex items-center justify-center animate-in fade-in duration-200">
       <div
-        className={`w-full max-w-2xl border rounded-xl flex flex-col shadow-2xl overflow-hidden max-h-[90vh] transition-colors ${
+        style={{
+          width: 'calc(min(663px, 78vw) / var(--zoom-scale, 1))',
+          height: 'calc(85vh / var(--zoom-scale, 1))',
+          maxWidth: 'calc(96vw / var(--zoom-scale, 1))',
+          maxHeight: 'calc(95vh / var(--zoom-scale, 1))',
+        }}
+        className={`border rounded-xl flex flex-col shadow-2xl overflow-hidden transition-colors ${
           theme === 'dark'
             ? 'bg-slate-850 border-slate-700 text-slate-200'
             : 'bg-white border-slate-300 text-slate-800'
@@ -1088,6 +1102,70 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       </label>
                     );
                   })}
+                </div>
+              </div>
+
+              {/* UI SCALE / ZOOM SETTING */}
+              <div className="space-y-3 pt-1">
+                <h3 className={`text-xs uppercase font-bold tracking-wider border-b pb-1 ${
+                  theme === 'dark' ? 'text-slate-400 border-slate-700/50' : 'text-slate-900 border-slate-300'
+                }`}>
+                  Масштаб интерфейса (Zoom)
+                </h3>
+                <div className={`p-3.5 rounded-lg border space-y-3 ${
+                  theme === 'dark' ? 'bg-slate-800/60 border-slate-700' : 'bg-slate-50 border-slate-200'
+                }`}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-xs font-semibold">Масштаб всего приложения</div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {(uiVisibility.uiScale ?? 100) !== 100 && (
+                        <button
+                          onClick={() => updateUiScale(100)}
+                          className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
+                            theme === 'dark' ? 'bg-slate-700 border-slate-600 text-slate-300 hover:text-white' : 'bg-slate-200 border-slate-300 text-slate-700 hover:text-black'
+                          }`}
+                        >
+                          Сбросить (100%)
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Quick Preset Buttons */}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {[67, 75, 80, 90, 100, 110, 125, 150].map((scaleVal) => (
+                      <button
+                        key={scaleVal}
+                        onClick={() => updateUiScale(scaleVal)}
+                        className={`px-2.5 py-1 text-xs rounded border transition-all ${
+                          (uiVisibility.uiScale ?? 100) === scaleVal
+                            ? 'bg-blue-600 border-blue-500 text-white font-bold shadow-2xs'
+                            : theme === 'dark'
+                            ? 'bg-slate-900/60 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white'
+                            : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                        }`}
+                      >
+                        {scaleVal}%
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Range Slider */}
+                  <div className="flex items-center gap-3 pt-1">
+                    <span className="text-[10px] opacity-60">50%</span>
+                    <input
+                      type="range"
+                      min={50}
+                      max={200}
+                      step={5}
+                      value={uiVisibility.uiScale ?? 100}
+                      onChange={(e) => updateUiScale(Number(e.target.value))}
+                      className="flex-1 accent-blue-500 cursor-pointer h-1.5 bg-slate-700 rounded-lg"
+                    />
+                    <span className="text-[10px] opacity-60">200%</span>
+                  </div>
                 </div>
               </div>
             </div>

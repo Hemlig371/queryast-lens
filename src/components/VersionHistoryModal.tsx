@@ -193,7 +193,13 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-2 sm:p-3 animate-fadeIn">
       <div 
-        className={`w-full max-w-[96vw] xl:max-w-6xl h-[92vh] rounded-xl border shadow-2xl flex flex-col overflow-hidden transition-all ${
+        style={{
+          width: 'calc(92vw / var(--zoom-scale, 1))',
+          height: 'calc(88vh / var(--zoom-scale, 1))',
+          maxWidth: 'calc(96vw / var(--zoom-scale, 1))',
+          maxHeight: 'calc(95vh / var(--zoom-scale, 1))',
+        }}
+        className={`rounded-xl border shadow-2xl flex flex-col overflow-hidden transition-all ${
           theme === 'dark' 
             ? 'bg-slate-900 border-slate-700 text-slate-100' 
             : 'bg-slate-100 border-slate-300 text-slate-800'

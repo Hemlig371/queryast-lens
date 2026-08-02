@@ -1522,9 +1522,17 @@ export function SqlSnippetsManager({
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/80 flex items-center justify-center p-2 sm:p-3 animate-in fade-in duration-200">
-      <div className={`w-full max-w-[96vw] xl:max-w-6xl h-[94vh] border rounded-xl flex flex-col shadow-2xl overflow-hidden transition-colors ${
-        theme === 'dark' ? 'bg-slate-850 border-slate-700 text-slate-200' : 'bg-slate-100 border-slate-300 text-slate-800'
-      }`}>
+      <div 
+        style={{
+          width: 'calc(92vw / var(--zoom-scale, 1))',
+          height: 'calc(90vh / var(--zoom-scale, 1))',
+          maxWidth: 'calc(96vw / var(--zoom-scale, 1))',
+          maxHeight: 'calc(95vh / var(--zoom-scale, 1))',
+        }}
+        className={`border rounded-xl flex flex-col shadow-2xl overflow-hidden transition-colors ${
+          theme === 'dark' ? 'bg-slate-850 border-slate-700 text-slate-200' : 'bg-slate-100 border-slate-300 text-slate-800'
+        }`}
+      >
         
         {/* HEADER */}
         <div className={`flex flex-wrap items-center justify-between gap-3 px-4 py-2 border-b shrink-0 ${
@@ -1630,7 +1638,7 @@ export function SqlSnippetsManager({
           
           {/* LEFT SIDEBAR: CATEGORIES & SEARCH */}
           {(uiVisibility?.showSnippetSearch !== false || uiVisibility?.showSnippetCategories !== false) && (
-          <div className={`w-full md:w-60 border-r flex flex-col p-3 space-y-3 shrink-0 ${
+          <div className={`w-full md:w-60 max-h-[35vh] md:max-h-none border-r flex flex-col p-3 space-y-3 shrink-0 ${
             theme === 'dark' ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-200/50 border-slate-300'
           }`}>
             
@@ -1704,7 +1712,7 @@ export function SqlSnippetsManager({
           )}
 
           {/* RIGHT PANEL: SNIPPETS LIST OR FORM */}
-          <div ref={rightPanelRef} className="flex-1 flex flex-col p-4 overflow-y-auto min-h-0 relative">
+          <div ref={rightPanelRef} className="flex-1 flex flex-col p-4 overflow-y-auto min-h-[120px] relative">
             
             {/* CREATE / EDIT FORM */}
             {isCreating ? (

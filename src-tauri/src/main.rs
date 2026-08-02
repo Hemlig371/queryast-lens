@@ -6,7 +6,7 @@
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use duckdb::{Connection, Result, types::ValueRef};
+use duckdb::{Connection, Result, types::{Value, ValueRef}};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use tauri::{State, Manager};
@@ -155,8 +155,24 @@ fn execute_query(state: State<'_, DbState>, sql: String) -> Result<QueryResult, 
                             JsonValue::String(format!("{}m {}d {}ns", months, days, nanos))
                         }
                         _ => {
-                            let s: Result<String, _> = row.get(col_idx);
-                            s.map(JsonValue::String).unwrap_or_else(|_| JsonValue::Null)
+                            if let Ok(val) = row.get::<_, Value>(col_idx) {
+                                match val {
+                                    Value::Null => JsonValue::Null,
+                                    Value::Text(s) => JsonValue::String(s),
+                                    other => {
+                                        let s = other.to_string();
+                                        if let Ok(parsed_json) = serde_json::from_str::<JsonValue>(&s) {
+                                            parsed_json
+                                        } else {
+                                            JsonValue::String(s)
+                                        }
+                                    }
+                                }
+                            } else if let Ok(s) = row.get::<_, String>(col_idx) {
+                                JsonValue::String(s)
+                            } else {
+                                JsonValue::Null
+                            }
                         }
                     };
                     Ok(v)
