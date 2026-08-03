@@ -125,6 +125,18 @@ export async function getDuckDbWasm() {
   return db;
 }
 
+export async function connectDuckDbWasmMemory() {
+  const db = await getDuckDbWasm();
+  if (connInstance) {
+    try {
+      await connInstance.close();
+    } catch (_) {}
+    connInstance = null;
+  }
+  connInstance = await db.connect();
+  return ":memory:";
+}
+
 export async function connectDuckDbWasmFile(file: File) {
   const db = await getDuckDbWasm();
   if (connInstance) {
