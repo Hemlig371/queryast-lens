@@ -878,6 +878,7 @@ export default function App() {
   const [editingTabId, setEditingTabId] = useState<string | null>(null);
 
   const [isTabsLoaded, setIsTabsLoaded] = useState<boolean>(false);
+  const isTabsLoadedRef = useRef<boolean>(false);
 
   const sqlRef = useRef<string>(tabs.find(t => t.id === activeTabId)?.sql || '');
   const isResultTableHoveredRef = useRef<boolean>(false);
@@ -1076,6 +1077,7 @@ export default function App() {
         console.error("Failed to load tabs from IDB", e);
       } finally {
         setIsTabsLoaded(true);
+        isTabsLoadedRef.current = true;
       }
     };
     loadTabs();
@@ -1195,6 +1197,10 @@ export default function App() {
   }, [activeEngine]);
 
   const saveSessionToStorage = useCallback(async () => {
+    // Prevent saving anything if session tabs have not loaded yet to avoid data loss
+    if (!isTabsLoadedRef.current) {
+      return;
+    }
     // If we just imported local storage, do not overwrite the imported session on page reload/unload
     if (sessionStorage.getItem('sql_is_importing_session') === 'true') {
       return;
@@ -4094,7 +4100,12 @@ export default function App() {
             <div className="flex-1 flex flex-col min-h-0 relative">
               {/* SYNTAX HIGHLIGHTED SQL EDITOR */}
               <ErrorBoundary title="Ошибка редактора SQL" theme={theme}>
-                {!isMaximizedSql ? (
+                {!isTabsLoaded ? (
+                  <div className="flex-1 flex flex-col items-center justify-center p-8 space-y-3">
+                    <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
+                    <span className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>Загрузка сессии...</span>
+                  </div>
+                ) : !isMaximizedSql ? (
                   <SqlEditor editorRef={sqlEditorRef}
                     value={getActiveTabSql()}
                     onChange={handleSqlChange}
@@ -5264,18 +5275,25 @@ export default function App() {
 
                 {/* BODY */}
                 <div className="flex-1 p-3.5 flex flex-col min-h-0 relative">
-                  <ErrorBoundary title="Ошибка редактора SQL" theme={theme}>
-                    <SqlEditor editorRef={sqlEditorRef}
-                      value={getActiveTabSql()}
-                      onChange={handleSqlChange}
-                      isWrapSql={isWrapSql}
-                      theme={theme}
-                      onCompactSql={handleCompactSql}
-                      onExecuteQuickAction={handleExecuteQuickAction}
-                      extractedTableName={extractedTableName}
-                      isQuickActionsEnabled={uiVisibility.showDuckDbConfig || uiVisibility.showClickhouseConfig}
-                    />
-                  </ErrorBoundary>
+                  {!isTabsLoaded ? (
+                    <div className="flex-1 flex flex-col items-center justify-center p-8 space-y-3">
+                      <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
+                      <span className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>Загрузка SQL сессии...</span>
+                    </div>
+                  ) : (
+                    <ErrorBoundary title="Ошибка редактора SQL" theme={theme}>
+                      <SqlEditor editorRef={sqlEditorRef}
+                        value={getActiveTabSql()}
+                        onChange={handleSqlChange}
+                        isWrapSql={isWrapSql}
+                        theme={theme}
+                        onCompactSql={handleCompactSql}
+                        onExecuteQuickAction={handleExecuteQuickAction}
+                        extractedTableName={extractedTableName}
+                        isQuickActionsEnabled={uiVisibility.showDuckDbConfig || uiVisibility.showClickhouseConfig}
+                      />
+                    </ErrorBoundary>
+                  )}
                 </div>
               </div>
 
