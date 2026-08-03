@@ -593,7 +593,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const handleExportLocalStorage = async () => {
     try {
       // First, trigger immediate session save so current in-memory tabs and state are saved
-      window.dispatchEvent(new Event('sql_save_session_now'));
+      await new Promise<void>((resolve) => {
+        window.dispatchEvent(new CustomEvent('sql_save_session_now', { detail: { onComplete: resolve } }));
+      });
 
       const backupData: Record<string, unknown> = {};
       for (let i = 0; i < localStorage.length; i++) {
@@ -709,6 +711,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             localStorage.setItem(key, value);
             importedCount++;
           } else if (value !== null && typeof value === 'object') {
+            localStorage.setItem(key, JSON.stringify(value));
+            importedCount++;
+          } else if (typeof value === 'boolean' || typeof value === 'number') {
             localStorage.setItem(key, JSON.stringify(value));
             importedCount++;
           }
