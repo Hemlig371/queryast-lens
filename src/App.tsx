@@ -1060,11 +1060,6 @@ export default function App() {
 
   useEffect(() => {
     const loadTabs = async () => {
-      // If we just imported local storage session, do not override with IDB
-      if (sessionStorage.getItem('sql_is_importing_session') === 'true') {
-        setIsTabsLoaded(true);
-        return;
-      }
       try {
         const storedTabs = await getSessionTabs();
         if (storedTabs && storedTabs.length > 0) {
