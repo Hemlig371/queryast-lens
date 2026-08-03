@@ -689,6 +689,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           dataObj['sql_visualizer_session_v2'] = dataObj['sql_visualizer_session'];
         }
 
+        // Clear existing local storage so obsolete keys from before the import are removed
+        localStorage.clear();
+
         let importedCount = 0;
         for (const [key, value] of Object.entries(dataObj)) {
           if (key === 'sql_visualizer_version_history' || key === 'versionHistory') {
