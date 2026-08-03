@@ -160,12 +160,8 @@ fn execute_query(state: State<'_, DbState>, sql: String) -> Result<QueryResult, 
                                     Value::Null => JsonValue::Null,
                                     Value::Text(s) => JsonValue::String(s),
                                     other => {
-                                        let s = other.to_string();
-                                        if let Ok(parsed_json) = serde_json::from_str::<JsonValue>(&s) {
-                                            parsed_json
-                                        } else {
-                                            JsonValue::String(s)
-                                        }
+                                        let s = format!("{:?}", other);
+                                        JsonValue::String(s)
                                     }
                                 }
                             } else if let Ok(s) = row.get::<_, String>(col_idx) {
