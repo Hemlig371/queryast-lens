@@ -5149,7 +5149,7 @@ export default function App() {
                                 theme === 'dark' ? 'hover:bg-slate-700 text-slate-200' : 'hover:bg-slate-100 text-slate-800'
                               }`}
                             >
-                              <Cpu className="w-3.5 h-3.5 text-purple-500 shrink-0" />
+                              <Cpu className="w-3.5 h-3.5 text-purple-500 shrink-0 opacity-80" />
                               <span>In-Memory БД (:memory:)</span>
                             </button>
                             {recentDuckDbPath && recentDuckDbPath !== duckDbConnectedPath && (
