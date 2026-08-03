@@ -50,7 +50,7 @@ fn connect_db(state: State<'_, DbState>, path: String) -> Result<String, String>
 
     match res {
         Ok(Ok(conn)) => {
-            let mut db_guard = state.0.lock().map_err(|e| e.to_string())?;
+            let mut db_guard = state.0.lock().unwrap_or_else(|e| e.into_inner());
             *db_guard = Some(conn);
             Ok(path_buf)
         }
@@ -61,14 +61,14 @@ fn connect_db(state: State<'_, DbState>, path: String) -> Result<String, String>
 
 #[tauri::command]
 fn disconnect_db(state: State<'_, DbState>) -> Result<(), String> {
-    let mut db_guard = state.0.lock().map_err(|e| e.to_string())?;
+    let mut db_guard = state.0.lock().unwrap_or_else(|e| e.into_inner());
     *db_guard = None;
     Ok(())
 }
 
 #[tauri::command]
 fn execute_query(state: State<'_, DbState>, sql: String) -> Result<QueryResult, String> {
-    let mut db_guard = state.0.lock().map_err(|e| e.to_string())?;
+    let mut db_guard = state.0.lock().unwrap_or_else(|e| e.into_inner());
     let conn = db_guard
         .as_mut()
         .ok_or_else(|| "No active database connection".to_string())?;
@@ -238,7 +238,7 @@ async fn clickhouse_copy_to(
 ) -> Result<ClickhouseCopyResult, String> {
     let cancel_flag = Arc::new(AtomicBool::new(false));
     {
-        let mut guard = state.cancel_flag.lock().unwrap();
+        let mut guard = state.cancel_flag.lock().unwrap_or_else(|e| e.into_inner());
         *guard = Some(cancel_flag.clone());
     }
 
@@ -296,7 +296,7 @@ async fn clickhouse_copy_from(
 ) -> Result<ClickhouseCopyResult, String> {
     let cancel_flag = Arc::new(AtomicBool::new(false));
     {
-        let mut guard = state.cancel_flag.lock().unwrap();
+        let mut guard = state.cancel_flag.lock().unwrap_or_else(|e| e.into_inner());
         *guard = Some(cancel_flag.clone());
     }
 
@@ -349,7 +349,7 @@ async fn clickhouse_copy_from(
 
 #[tauri::command]
 fn cancel_clickhouse_query(state: State<'_, ClickhouseState>) -> Result<(), String> {
-    let guard = state.cancel_flag.lock().map_err(|e| e.to_string())?;
+    let guard = state.cancel_flag.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(flag) = &*guard {
         flag.store(true, Ordering::Relaxed);
     }
