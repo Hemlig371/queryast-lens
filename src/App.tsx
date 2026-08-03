@@ -67,7 +67,8 @@ import {
   ArrowUp,
   ArrowDown,
   Filter,
-  Columns
+  Columns,
+  Cpu
 } from 'lucide-react';
 
 import { DataStatsViewer } from './components/DataStatsViewer';
@@ -83,7 +84,7 @@ import { VersionHistoryModal } from './components/VersionHistoryModal';
 import { saveVersion, getVersions, getLatestVersion } from './utils/versionHistory';
 import { format as formatSql } from 'sql-formatter';
 import { getSessionTabs, saveSessionTabs } from './utils/sessionStorage';
-import { connectDuckDbWasmFile, queryDuckDbWasm, disconnectDuckDbWasm, exportDuckDbFile } from './lib/duckdbWasm';
+import { connectDuckDbWasmFile, connectDuckDbWasmMemory, queryDuckDbWasm, disconnectDuckDbWasm, exportDuckDbFile } from './lib/duckdbWasm';
 import { ClickhouseModal } from './components/ClickhouseModal';
 import { ClickhouseConfig, parseClickhouseCopy, getClickhouseUrl, getClickhouseHeaders, isTauriEnvironment, executeClickhouseQueryTauri, executeClickhouseCopyToTauri, executeClickhouseCopyFromTauri, cancelClickhouseQueryTauri } from './lib/clickhouse';
 import { getSchemaCache, saveSchemaCache } from './utils/schemaDbCache';
@@ -319,7 +320,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (duckDbConnectedPath) {
+    if (duckDbConnectedPath && duckDbConnectedPath !== ':memory:') {
       setRecentDuckDbPath(duckDbConnectedPath);
     }
   }, [duckDbConnectedPath]);
@@ -1176,6 +1177,18 @@ export default function App() {
           }
         }
 
+        if (!connectedSuccessfully && !isTauriEnv && dbPath === ':memory:') {
+          try {
+            await connectDuckDbWasmMemory();
+            connectedSuccessfully = true;
+            setIsWasmMode(true);
+            setDuckDbConnectedPath(':memory:');
+            setDuckDbError(null);
+          } catch (err) {
+            console.warn("WASM auto-connect to :memory: failed:", err);
+          }
+        }
+
         if (connectedSuccessfully) {
           setShowDuckDbSchemaPanel(true);
         } else {
@@ -1189,12 +1202,12 @@ export default function App() {
     };
 
     autoReconnect();
-  }, [activeEngine]);
+  }, []);
 
   // Remove import flag if present from previous reload
   useEffect(() => {
     sessionStorage.removeItem('sql_is_importing_session');
-  }, [activeEngine]);
+  }, []);
 
   const saveSessionToStorage = useCallback(async () => {
     // Prevent saving anything if session tabs have not loaded yet to avoid data loss
@@ -1324,6 +1337,12 @@ export default function App() {
         });
 
         if (selected && typeof selected === 'string') {
+          if (duckDbConnectedPath || clickhouseConfig) {
+            await handleDisconnectDuckDb();
+          }
+          setClickhouseConfig(null);
+          setActiveEngine('duckdb');
+          
           const dbPath = selected;
           setIsDuckDbRunning(true);
           try {
@@ -1349,6 +1368,66 @@ export default function App() {
     duckDbFileInputRef.current?.click();
   };
 
+  const handleConnectInMemory = async () => {
+    setShowDuckDbConnMenu(false);
+    if (duckDbConnectedPath || clickhouseConfig) {
+      await handleDisconnectDuckDb();
+    }
+    setClickhouseConfig(null);
+    setActiveEngine('duckdb');
+    
+    setIsDuckDbRunning(true);
+    let connectedSuccessfully = false;
+
+    if (isTauriEnv) {
+      try {
+        await tauriInvoke<string>('connect_db', { path: ':memory:' });
+        setDuckDbConnectedPath(':memory:');
+        setIsWasmMode(false);
+        setShowDuckDbSchemaPanel(true);
+        setDuckDbError(null);
+        connectedSuccessfully = true;
+      } catch (tauriErr: any) {
+        console.warn("Tauri native in-memory connection failed, trying server/WASM:", tauriErr);
+      }
+    }
+
+    if (!connectedSuccessfully) {
+      try {
+        const data = await fetchApiJson("/api/duckdb/connect", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dbPath: ':memory:' })
+        });
+        if (data && !data.error) {
+          connectedSuccessfully = true;
+          setIsWasmMode(false);
+          setDuckDbConnectedPath(':memory:');
+          setShowDuckDbSchemaPanel(true);
+          setDuckDbError(null);
+        }
+      } catch (_) {
+        connectedSuccessfully = false;
+      }
+    }
+
+    if (!connectedSuccessfully && !isTauriEnv) {
+      try {
+        await connectDuckDbWasmMemory();
+        connectedSuccessfully = true;
+        setIsWasmMode(true);
+        setDuckDbConnectedPath(':memory:');
+        setShowDuckDbSchemaPanel(true);
+        setDuckDbError(null);
+      } catch (err: any) {
+        setDuckDbError("Ошибка in-memory подключения DuckDB: " + (err.message || String(err)));
+        setIsDuckDbResultVisible(true);
+      }
+    }
+    
+    setIsDuckDbRunning(false);
+  };
+
   const handleCreateDuckDbFile = async () => {
     setShowDuckDbConnMenu(false);
     if (isTauriEnv) {
@@ -1366,6 +1445,12 @@ export default function App() {
         });
 
         if (selected && typeof selected === 'string') {
+          if (duckDbConnectedPath || clickhouseConfig) {
+            await handleDisconnectDuckDb();
+          }
+          setClickhouseConfig(null);
+          setActiveEngine('duckdb');
+
           const dbPath = selected;
           setIsDuckDbRunning(true);
           try {
@@ -1453,6 +1538,12 @@ export default function App() {
   const handleDuckDbFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (duckDbConnectedPath || clickhouseConfig) {
+        await handleDisconnectDuckDb();
+      }
+      setClickhouseConfig(null);
+      setActiveEngine('duckdb');
+
       // @ts-ignore - access non-standard path property for desktop environments
       const dbPath = file.path || file.name;
       
@@ -1739,8 +1830,9 @@ export default function App() {
           ? `clickhouse:${clickhouseConfig.host}:${clickhouseConfig.user}:${clickhouseConfig.database || 'default'}`
           : `duckdb:${duckDbConnectedPath || (isWasmMode ? 'wasm' : 'local')}`;
 
+        const isInMemory = !isCH && duckDbConnectedPath === ':memory:';
         const cached = await getSchemaCache(dbKey);
-        if (cached && cached.tables && cached.tables.length > 0) {
+        if (cached && cached.tables && cached.tables.length > 0 && !isInMemory) {
           if (isMounted) {
             setDuckDbSchema(cached.tables);
             if (cached.tableColumnsMap) {
@@ -4998,8 +5090,12 @@ export default function App() {
                     }`}
                     title="Настроить подключение DB"
                   >
-                    <Database className={`w-3.5 h-3.5 ${clickhouseConfig ? 'text-amber-500' : duckDbConnectedPath ? 'text-teal-500' : 'text-slate-400'}`} />
-                    <span>{duckDbConnectedPath ? 'DuckDB (Connected)' : clickhouseConfig ? 'Clickhouse (Connected)' : 'Connect DB'}</span>
+                    {duckDbConnectedPath === ':memory:' ? (
+                      <Cpu className={`w-3.5 h-3.5 ${clickhouseConfig ? 'text-amber-500' : duckDbConnectedPath ? 'text-teal-500' : 'text-slate-400'}`} />
+                    ) : (
+                      <Database className={`w-3.5 h-3.5 ${clickhouseConfig ? 'text-amber-500' : duckDbConnectedPath ? 'text-teal-500' : 'text-slate-400'}`} />
+                    )}
+                    <span>{duckDbConnectedPath ? (duckDbConnectedPath === ':memory:' ? 'In-Memory (Connected)' : 'DuckDB (Connected)') : clickhouseConfig ? 'Clickhouse (Connected)' : 'Connect DB'}</span>
                     <ChevronDown className="w-3 h-3 opacity-70 ml-0.5" />
                   </button>
 
@@ -5036,23 +5132,40 @@ export default function App() {
                                 handleCreateDuckDbFile();
                               }}
                               className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center gap-2 transition-colors ${
-                                theme === 'dark' ? 'hover:bg-slate-700 text-emerald-300' : 'hover:bg-slate-100 text-emerald-700'
+                                theme === 'dark' ? 'hover:bg-slate-700 text-slate-200' : 'hover:bg-slate-100 text-slate-800'
                               }`}
                             >
                               <Plus className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                               <span>Создать новую БД (.duckdb)</span>
                             </button>
+                            <button
+                              onClick={() => {
+                                setShowDuckDbConnMenu(false);
+                                setClickhouseConfig(null);
+                                setActiveEngine('duckdb');
+                                handleConnectInMemory();
+                              }}
+                              className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center gap-2 transition-colors ${
+                                theme === 'dark' ? 'hover:bg-slate-700 text-slate-200' : 'hover:bg-slate-100 text-slate-800'
+                              }`}
+                            >
+                              <Cpu className="w-3.5 h-3.5 text-purple-500 shrink-0" />
+                              <span>In-Memory БД (:memory:)</span>
+                            </button>
                             {recentDuckDbPath && recentDuckDbPath !== duckDbConnectedPath && (
-                              <button
-                                onClick={() => handleConnectToRecentDuckDb(recentDuckDbPath)}
-                                className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center gap-2 transition-colors mt-1 ${
-                                  theme === 'dark' ? 'hover:bg-slate-700/50 text-slate-300' : 'hover:bg-slate-50 text-slate-600'
-                                }`}
-                                title={recentDuckDbPath}
-                              >
-                                <Database className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                                <span className="truncate">{recentDuckDbPath.split(/[/\\]/).pop()}</span>
-                              </button>
+                              <>
+                                <div className={`my-1 border-t ${theme === 'dark' ? 'border-slate-700/60' : 'border-slate-200'}`} />
+                                <button
+                                  onClick={() => handleConnectToRecentDuckDb(recentDuckDbPath)}
+                                  className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center gap-2 transition-colors mt-1 ${
+                                    theme === 'dark' ? 'hover:bg-slate-700/50 text-slate-300' : 'hover:bg-slate-50 text-slate-600'
+                                  }`}
+                                  title={recentDuckDbPath}
+                                >
+                                  <Database className="w-3.5 h-3.5 text-blue-400 shrink-0 opacity-70" />
+                                  <span className="truncate">{recentDuckDbPath.split(/[/\\]/).pop()}</span>
+                                </button>
+                              </>
                             )}
                           </>
                         )}
@@ -5079,25 +5192,31 @@ export default function App() {
                               <Database className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                               <span>Подключить Clickhouse</span>
                             </button>
-                            {recentClickhouseConfigs.map((cfg, idx) => {
-                              // Don't show the currently active connection
-                              if (clickhouseConfig && cfg.host === clickhouseConfig.host && cfg.user === clickhouseConfig.user) {
-                                return null;
-                              }
-                              return (
-                                <button
-                                  key={idx}
-                                  onClick={() => handleConnectToRecentClickhouse(cfg)}
-                                  className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center gap-2 transition-colors mt-1 ${
-                                    theme === 'dark' ? 'hover:bg-slate-700/50 text-slate-300' : 'hover:bg-slate-50 text-slate-600'
-                                  }`}
-                                  title={`${cfg.host} (${cfg.user})`}
-                                >
-                                  <Database className="w-3.5 h-3.5 text-blue-400 shrink-0 opacity-70" />
-                                  <span className="truncate">{cfg.host} - {cfg.user}</span>
-                                </button>
+                            {(() => {
+                              const validRecentCfgs = recentClickhouseConfigs.filter(cfg => 
+                                !(clickhouseConfig && cfg.host === clickhouseConfig.host && cfg.user === clickhouseConfig.user)
                               );
-                            })}
+                              if (validRecentCfgs.length === 0) return null;
+                              
+                              return (
+                                <>
+                                  <div className={`my-1 border-t ${theme === 'dark' ? 'border-slate-700/60' : 'border-slate-200'}`} />
+                                  {validRecentCfgs.map((cfg, idx) => (
+                                    <button
+                                      key={idx}
+                                      onClick={() => handleConnectToRecentClickhouse(cfg)}
+                                      className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center gap-2 transition-colors mt-1 ${
+                                        theme === 'dark' ? 'hover:bg-slate-700/50 text-slate-300' : 'hover:bg-slate-50 text-slate-600'
+                                      }`}
+                                      title={`${cfg.host} (${cfg.user})`}
+                                    >
+                                      <Database className="w-3.5 h-3.5 text-blue-400 shrink-0 opacity-70" />
+                                      <span className="truncate">{cfg.host} - {cfg.user}</span>
+                                    </button>
+                                  ))}
+                                </>
+                              );
+                            })()}
                           </>
                         )}
                       </div>
