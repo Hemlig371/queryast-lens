@@ -33,21 +33,16 @@ export async function saveSnippetsToDB(snippets: Snippet[]): Promise<void> {
     // Clear old snippets to maintain the exact list
     const clearReq = store.clear();
     clearReq.onsuccess = () => {
-      let completed = 0;
       if (snippets.length === 0) {
-         resolve();
          return;
       }
       for (const item of snippets) {
-        const req = store.put(item);
-        req.onsuccess = req.onerror = () => {
-          completed++;
-          if (completed === snippets.length) {
-            resolve();
-          }
-        };
+        store.put(item);
       }
     };
+    
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
     clearReq.onerror = () => reject(clearReq.error);
   });
 }
