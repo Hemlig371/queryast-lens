@@ -1194,7 +1194,7 @@ export default function App() {
     sessionStorage.removeItem('sql_is_importing_session');
   }, [activeEngine]);
 
-  const saveSessionToStorage = useCallback(() => {
+  const saveSessionToStorage = useCallback(async () => {
     // If we just imported local storage, do not overwrite the imported session on page reload/unload
     if (sessionStorage.getItem('sql_is_importing_session') === 'true') {
       return;
@@ -1216,7 +1216,7 @@ export default function App() {
       const tabsToSave = latestSessionRef.current.tabs.map(t => 
         t.id === latestSessionRef.current.activeTabId ? { ...t, sql: sqlRef.current } : t
       );
-      saveSessionTabs(tabsToSave).catch(e => console.error('Failed to save tabs to IDB', e));
+      await saveSessionTabs(tabsToSave);
     } catch (e) {
       console.error('Failed to save session to localStorage', e);
     }
@@ -1224,8 +1224,11 @@ export default function App() {
 
   // Listen for explicit session save requests (e.g. before exporting workspace)
   useEffect(() => {
-    const handleSaveNow = () => {
-      saveSessionToStorage();
+    const handleSaveNow = async (e: Event) => {
+      await saveSessionToStorage();
+      if (e instanceof CustomEvent && e.detail?.onComplete) {
+        e.detail.onComplete();
+      }
     };
     window.addEventListener('sql_save_session_now', handleSaveNow);
     return () => {
