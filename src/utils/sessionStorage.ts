@@ -43,22 +43,16 @@ export async function saveSessionTabs(tabs: EditorTab[]): Promise<void> {
       const clearReq = store.clear();
       
       clearReq.onsuccess = () => {
-        let count = 0;
         if (tabs.length === 0) {
-           resolve();
            return;
         }
         tabs.forEach((tab, index) => {
-          const req = store.put({ ...tab, _order: index });
-          req.onsuccess = () => {
-            count++;
-            if (count === tabs.length) {
-              resolve();
-            }
-          };
-          req.onerror = (e) => reject(req.error || e);
+          store.put({ ...tab, _order: index });
         });
       };
+      
+      tx.oncomplete = () => resolve();
+      tx.onerror = (e) => reject(tx.error || e);
       clearReq.onerror = (e) => reject(clearReq.error || e);
     });
   } catch (e) {
