@@ -5,6 +5,8 @@ import { getVersions, importVersions, SqlVersionItem } from '../utils/versionHis
 import { getAllSchemaCacheEntries, importSchemaCacheEntries, SchemaCacheEntry } from '../utils/schemaDbCache';
 import { loadSnippetsFromDB, saveSnippetsToDB } from '../utils/snippetsStorage';
 import { Snippet } from './SqlSnippetsManager';
+import { getSessionTabs, saveSessionTabs } from '../utils/sessionStorage';
+import { EditorTab } from '../App';
 
 export interface QuickActionTemplate {
   id: string;
@@ -632,6 +634,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         console.warn('Failed to get IndexedDB snippets for export:', err);
       }
 
+      // Add IndexedDB session tabs
+      try {
+        const sessionTabs = await getSessionTabs();
+        if (sessionTabs) {
+          backupData['sql_visualizer_tabs_session'] = sessionTabs;
+        }
+      } catch (err) {
+        console.warn('Failed to get IndexedDB session tabs for export:', err);
+      }
+
       const workspaceBundle = {
         version: 1,
         app: 'QueryAST Lens Workspace Bundle',
@@ -688,6 +700,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           } else if (key === 'sql_visualizer_snippets' || key === 'snippets') {
             if (Array.isArray(value)) {
               await saveSnippetsToDB(value as Snippet[]);
+            }
+          } else if (key === 'sql_visualizer_tabs_session' || key === 'tabsSession') {
+            if (Array.isArray(value)) {
+              await saveSessionTabs(value as EditorTab[]);
             }
           } else if (typeof value === 'string') {
             localStorage.setItem(key, value);
@@ -1117,8 +1133,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 }`}>
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <div className="text-xs font-semibold">Масштаб всего приложения</div>
-                    </div>
+                      <div className="text-xs font-semibold">Масштаб всего приложения</div>                    </div>
                     <div className="flex items-center gap-2">
                       {(uiVisibility.uiScale ?? 100) !== 100 && (
                         <button
