@@ -18,7 +18,7 @@ use futures_util::StreamExt;
 pub struct DbState(pub Mutex<Option<Connection>>);
 
 pub struct ClickhouseState {
-    pub cancel_flag: Mutex<Option<Arc<AtomicBool>>>,
+    pub cancel_tx: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -236,10 +236,10 @@ async fn clickhouse_copy_to(
     body: String,
     file_path: String,
 ) -> Result<ClickhouseCopyResult, String> {
-    let cancel_flag = Arc::new(AtomicBool::new(false));
+    let (cancel_tx, mut cancel_rx) = tokio::sync::oneshot::channel::<()>();
     {
-        let mut guard = state.cancel_flag.lock().unwrap_or_else(|e| e.into_inner());
-        *guard = Some(cancel_flag.clone());
+        let mut guard = state.cancel_tx.lock().unwrap_or_else(|e| e.into_inner());
+        *guard = Some(cancel_tx);
     }
 
     let client = Client::builder()
@@ -294,10 +294,10 @@ async fn clickhouse_copy_from(
     headers: std::collections::HashMap<String, String>,
     file_path: String,
 ) -> Result<ClickhouseCopyResult, String> {
-    let cancel_flag = Arc::new(AtomicBool::new(false));
+    let (cancel_tx, mut cancel_rx) = tokio::sync::oneshot::channel::<()>();
     {
-        let mut guard = state.cancel_flag.lock().unwrap_or_else(|e| e.into_inner());
-        *guard = Some(cancel_flag.clone());
+        let mut guard = state.cancel_tx.lock().unwrap_or_else(|e| e.into_inner());
+        *guard = Some(cancel_tx);
     }
 
     let client = Client::builder().build().map_err(|e| e.to_string())?;
@@ -320,16 +320,10 @@ async fn clickhouse_copy_from(
     let send_fut = req.send();
     tokio::pin!(send_fut);
     
-    let res = loop {
-        tokio::select! {
-            res_val = &mut send_fut => {
-                break res_val;
-            }
-            _ = tokio::time::sleep(std::time::Duration::from_millis(200)) => {
-                if cancel_flag.load(Ordering::Relaxed) {
-                    return Err("Запрос отменен пользователем".to_string());
-                }
-            }
+    let res = tokio::select! {
+        res_val = &mut send_fut => res_val,
+        _ = &mut cancel_rx => {
+            return Err("Запрос отменен пользователем".to_string());
         }
     };
 
@@ -361,10 +355,10 @@ async fn execute_clickhouse_query_rust(
     headers: std::collections::HashMap<String, String>,
     body: String,
 ) -> Result<ClickhouseQueryResponse, String> {
-    let cancel_flag = Arc::new(AtomicBool::new(false));
+    let (cancel_tx, mut cancel_rx) = tokio::sync::oneshot::channel::<()>();
     {
-        let mut guard = state.cancel_flag.lock().unwrap_or_else(|e| e.into_inner());
-        *guard = Some(cancel_flag.clone());
+        let mut guard = state.cancel_tx.lock().unwrap_or_else(|e| e.into_inner());
+        *guard = Some(cancel_tx);
     }
 
     let client = Client::builder().build().map_err(|e| e.to_string())?;
@@ -379,16 +373,10 @@ async fn execute_clickhouse_query_rust(
     let send_fut = req.send();
     tokio::pin!(send_fut);
     
-    let res = loop {
-        tokio::select! {
-            res_val = &mut send_fut => {
-                break res_val;
-            }
-            _ = tokio::time::sleep(std::time::Duration::from_millis(200)) => {
-                if cancel_flag.load(Ordering::Relaxed) {
-                    return Err("Запрос отменен пользователем".to_string());
-                }
-            }
+    let res = tokio::select! {
+        res_val = &mut send_fut => res_val,
+        _ = &mut cancel_rx => {
+            return Err("Запрос отменен пользователем".to_string());
         }
     };
 
@@ -407,10 +395,8 @@ async fn execute_clickhouse_query_rust(
                     None => break,
                 }
             }
-            _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
-                if cancel_flag.load(Ordering::Relaxed) {
-                    return Err("Запрос отменен пользователем".to_string());
-                }
+            _ = &mut cancel_rx => {
+                return Err("Запрос отменен пользователем".to_string());
             }
         }
     }
@@ -429,9 +415,9 @@ async fn execute_clickhouse_query_rust(
 
 #[tauri::command]
 fn cancel_clickhouse_query(state: State<'_, ClickhouseState>) -> Result<(), String> {
-    let guard = state.cancel_flag.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some(flag) = &*guard {
-        flag.store(true, Ordering::Relaxed);
+    let mut guard = state.cancel_tx.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(tx) = guard.take() {
+        let _ = tx.send(());
     }
     Ok(())
 }
@@ -445,7 +431,7 @@ fn main() {
         }
     }))
     .manage(DbState(Mutex::new(None)))
-    .manage(ClickhouseState { cancel_flag: Mutex::new(None) })
+    .manage(ClickhouseState { cancel_tx: Mutex::new(None) })
     .invoke_handler(tauri::generate_handler![
       connect_db,
       disconnect_db,
