@@ -4774,7 +4774,7 @@ export default function App() {
           </div>
 
           {/* REACT FLOW CANVAS CONTAINER */}
-          <div className={`flex-1 w-full relative min-h-0 ${theme === 'dark' ? 'bg-slate-850' : 'bg-slate-200'}`} style={{ willChange: 'transform', transform: 'translateZ(0)' }}>
+          <div className={`flex-1 w-full relative min-h-0 ${theme === 'dark' ? 'bg-slate-850' : 'bg-slate-200'}`} style={{ willChange: 'transform', transform: 'translateZ(0)', zoom: 1 / ((uiVisibility.uiScale ?? 100) / 100) }}>
             <ErrorBoundary title="Ошибка отображения графа" theme={theme}>
             {/* Grid Pattern Background styled specifically to match the design style */}
             <div className={`absolute inset-0 pointer-events-none opacity-[0.07] dark:opacity-10`} style={{ backgroundImage: 'radial-gradient(#64748b 1px, transparent 1px)', backgroundSize: '24px 24px' }}></div>
