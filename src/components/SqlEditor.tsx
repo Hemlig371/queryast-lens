@@ -930,6 +930,40 @@ export function SqlEditor({
         }, 0);
       }
     }
+
+    const quotePairs: Record<string, string> = {
+      "'": "'",
+      '"': '"',
+      '`': '`',
+      '(': ')',
+      '[': ']',
+      '{': '}',
+    };
+
+    if (quotePairs[e.key] && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const textarea = textareaRef.current;
+      if (textarea) {
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        if (start !== null && end !== null && start < end) {
+          e.preventDefault();
+          const openChar = e.key;
+          const closeChar = quotePairs[openChar];
+          const selectedText = value.slice(start, end);
+          const wrapped = openChar + selectedText + closeChar;
+
+          document.execCommand('insertText', false, wrapped);
+
+          setTimeout(() => {
+            if (textareaRef.current) {
+              textareaRef.current.focus();
+              textareaRef.current.setSelectionRange(start + 1, end + 1);
+            }
+          }, 0);
+          return;
+        }
+      }
+    }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
