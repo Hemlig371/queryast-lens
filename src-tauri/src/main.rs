@@ -266,14 +266,14 @@ async fn clickhouse_copy_to(
     let mut stream = res.bytes_stream();
     let mut bytes_written: u64 = 0;
 
-    while let Some(chunk_res) = stream.next().await {
-        if cancel_flag.load(Ordering::Relaxed) {
-            // Cancelled!
+    while let Some(chunk_res) = tokio::select! {
+        chunk_opt = stream.next() => chunk_opt,
+        _ = &mut cancel_rx => {
             drop(file);
             let _ = tokio::fs::remove_file(&file_path).await;
             return Err("Запрос отменен пользователем".to_string());
         }
-
+    } {
         let chunk = chunk_res.map_err(|e| e.to_string())?;
         file.write_all(&chunk).await.map_err(|e| e.to_string())?;
         bytes_written += chunk.len() as u64;
