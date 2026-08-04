@@ -347,6 +347,86 @@ async fn clickhouse_copy_from(
     })
 }
 
+#[derive(Serialize)]
+pub struct ClickhouseQueryResponse {
+    pub success: bool,
+    pub text: Option<String>,
+}
+
+#[tauri::command]
+async fn execute_clickhouse_query_rust(
+    state: State<'_, ClickhouseState>,
+    url: String,
+    method: String,
+    headers: std::collections::HashMap<String, String>,
+    body: String,
+) -> Result<ClickhouseQueryResponse, String> {
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    {
+        let mut guard = state.cancel_flag.lock().unwrap_or_else(|e| e.into_inner());
+        *guard = Some(cancel_flag.clone());
+    }
+
+    let client = Client::builder().build().map_err(|e| e.to_string())?;
+    let req_method = if method.to_uppercase() == "POST" { reqwest::Method::POST } else { reqwest::Method::GET };
+    
+    let mut req = client.request(req_method, &url);
+    for (k, v) in headers {
+        req = req.header(k, v);
+    }
+    let req = req.body(body);
+    
+    let send_fut = req.send();
+    tokio::pin!(send_fut);
+    
+    let res = loop {
+        tokio::select! {
+            res_val = &mut send_fut => {
+                break res_val;
+            }
+            _ = tokio::time::sleep(std::time::Duration::from_millis(200)) => {
+                if cancel_flag.load(Ordering::Relaxed) {
+                    return Err("Запрос отменен пользователем".to_string());
+                }
+            }
+        }
+    };
+
+    let res = res.map_err(|e| e.to_string())?;
+    let status = res.status();
+    
+    let mut stream = res.bytes_stream();
+    let mut body_bytes = Vec::new();
+    
+    loop {
+        tokio::select! {
+            chunk_opt = stream.next() => {
+                match chunk_opt {
+                    Some(Ok(chunk)) => body_bytes.extend_from_slice(&chunk),
+                    Some(Err(e)) => return Err(e.to_string()),
+                    None => break,
+                }
+            }
+            _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
+                if cancel_flag.load(Ordering::Relaxed) {
+                    return Err("Запрос отменен пользователем".to_string());
+                }
+            }
+        }
+    }
+    
+    let text = String::from_utf8_lossy(&body_bytes).to_string();
+    
+    if !status.is_success() {
+        return Err(text);
+    }
+    
+    Ok(ClickhouseQueryResponse {
+        success: true,
+        text: Some(text),
+    })
+}
+
 #[tauri::command]
 fn cancel_clickhouse_query(state: State<'_, ClickhouseState>) -> Result<(), String> {
     let guard = state.cancel_flag.lock().unwrap_or_else(|e| e.into_inner());
@@ -372,6 +452,7 @@ fn main() {
       execute_query,
       clickhouse_copy_to,
       clickhouse_copy_from,
+      execute_clickhouse_query_rust,
       cancel_clickhouse_query
     ])
     .run(tauri::generate_context!())
