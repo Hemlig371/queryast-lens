@@ -3909,6 +3909,47 @@ export default function App() {
         return result.filter(Boolean);
       };
 
+      const splitBySemicolonIgnoringQuotes = (str: string): string[] => {
+        const statements: string[] = [];
+        let current = '';
+        let inString: string | null = null;
+
+        for (let i = 0; i < str.length; i++) {
+          const char = str[i];
+          if (inString) {
+            current += char;
+            if (char === inString && str[i - 1] !== '\\') {
+              inString = null;
+            }
+          } else if (char === "'" || char === '"' || char === '`') {
+            inString = char;
+            current += char;
+          } else if (char === ';') {
+            statements.push(current);
+            current = '';
+          } else {
+            current += char;
+          }
+        }
+        if (current) {
+          statements.push(current);
+        }
+        return statements;
+      };
+
+      const cleanFormattedSql = (sql: string): string => {
+        const statements = splitBySemicolonIgnoringQuotes(sql);
+        const cleanedStatements = statements.map(stmt => {
+          const trimmed = stmt.trim();
+          if (!trimmed) return '';
+          return trimmed.replace(/\n\s*\n/g, '\n');
+        }).filter(Boolean);
+
+        const hasSemicolon = sql.trim().endsWith(';');
+        if (cleanedStatements.length === 0) return sql;
+        return cleanedStatements.join(';\n\n') + (hasSemicolon ? ';' : '');
+      };
+
       const preprocessedText = convertInlineDashComments(text);
 
       for (const lang of fallbackLangs) {
@@ -3945,7 +3986,7 @@ export default function App() {
 
             // 2. Custom clause line wrapping with baseIndent preservation, smartSplitByComma, and window function handling
             const clauseRegex =
-              /(^|\n)(\s*)(SELECT|FROM|WHERE|GROUP BY|ORDER BY|HAVING|LIMIT|OFFSET|JOIN|LEFT JOIN|RIGHT JOIN|INNER JOIN|OUTER JOIN|CROSS JOIN|FULL JOIN|LEFT OUTER JOIN|RIGHT OUTER JOIN|FULL OUTER JOIN|ON|SET|VALUES|INSERT INTO|UPDATE|DELETE FROM|ARRAY JOIN|LEFT ARRAY JOIN|SETTINGS|FORMAT)\b([\s\S]+?)(?=\n\s*(?:SELECT|FROM|WHERE|GROUP BY|ORDER BY|HAVING|LIMIT|OFFSET|JOIN|LEFT JOIN|RIGHT JOIN|INNER JOIN|OUTER JOIN|CROSS JOIN|FULL JOIN|LEFT OUTER JOIN|RIGHT OUTER JOIN|FULL OUTER JOIN|ON|SET|VALUES|INSERT INTO|UPDATE|DELETE FROM|ARRAY JOIN|LEFT ARRAY JOIN|SETTINGS|FORMAT|WITH|;|$))/gi;
+              /(^|\n)(\s*)(SELECT|FROM|WHERE|GROUP BY|ORDER BY|HAVING|LIMIT|OFFSET|JOIN|LEFT JOIN|RIGHT JOIN|INNER JOIN|OUTER JOIN|CROSS JOIN|FULL JOIN|LEFT OUTER JOIN|RIGHT OUTER JOIN|FULL OUTER JOIN|ON|SET|VALUES|INSERT INTO|UPDATE|DELETE FROM|ARRAY JOIN|LEFT ARRAY JOIN|SETTINGS|FORMAT)\b([\s\S]+?)(?=\n\s*(?:SELECT|FROM|WHERE|GROUP BY|ORDER BY|HAVING|LIMIT|OFFSET|JOIN|LEFT JOIN|RIGHT JOIN|INNER JOIN|OUTER JOIN|CROSS JOIN|FULL JOIN|LEFT OUTER JOIN|RIGHT OUTER JOIN|FULL OUTER JOIN|ON|SET|VALUES|INSERT INTO|UPDATE|DELETE FROM|ARRAY JOIN|LEFT ARRAY JOIN|SETTINGS|FORMAT|WITH)|;|$)/gi;
 
             formatted = formatted.replace(
               clauseRegex,
@@ -3954,7 +3995,7 @@ export default function App() {
                   return match;
                 }
 
-                const lines = items.split('\n');
+                const lines = items.split('\n').filter((l) => l.trim() !== '');
                 const chunks: Array<{ type: 'code' | 'comment'; text: string }> = [];
                 let currentCodeLines: string[] = [];
 
@@ -4031,7 +4072,7 @@ export default function App() {
               }
             );
           }
-          return formatted;
+          return cleanFormattedSql(formatted);
         } catch (e) {
           // Ignore syntax errors, try next dialect
         }
