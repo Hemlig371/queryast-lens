@@ -616,17 +616,21 @@ export function SqlEditor({
   };
 
   const recalculateHeights = useCallback(() => {
+    // Fast path: if word wrap is disabled, we don't need to measure DOM
+    if (!isWrapSql) {
+      const count = value.split('\n').length || 1;
+      setLineHeights(prev => {
+        if (prev.length === count && prev.every(h => h === 20)) return prev;
+        return new Array(count).fill(20);
+      });
+      return;
+    }
+
     if (mirrorRef.current && textareaRef.current) {
       const divs = mirrorRef.current.querySelectorAll('div');
       const count = divs.length;
       if (count === 0) {
-        setLineHeights([20]);
-        return;
-      }
-
-      // Fast path: if word wrap is disabled, all lines have fixed single-line height (20px)
-      if (!isWrapSql) {
-        setLineHeights(new Array(count).fill(20));
+        setLineHeights(prev => (prev.length === 1 && prev[0] === 20) ? prev : [20]);
         return;
       }
 
@@ -661,13 +665,23 @@ export function SqlEditor({
         }
       }
 
-      setLineHeights(heights);
+      setLineHeights(prev => {
+        if (prev.length === heights.length && prev.every((h, i) => h === heights[i])) {
+          return prev;
+        }
+        return heights;
+      });
     }
-  }, [isWrapSql]);
+  }, [isWrapSql, value]);
 
   useLayoutEffect(() => {
     recalculateHeights();
   }, [value, isWrapSql, recalculateHeights]);
+
+  const recalculateHeightsRef = useRef(recalculateHeights);
+  useLayoutEffect(() => {
+    recalculateHeightsRef.current = recalculateHeights;
+  }, [recalculateHeights]);
 
   useEffect(() => {
     if (!textareaRef.current) return;
@@ -675,7 +689,7 @@ export function SqlEditor({
     const observer = new ResizeObserver(() => {
       if (animFrameId) cancelAnimationFrame(animFrameId);
       animFrameId = requestAnimationFrame(() => {
-        recalculateHeights();
+        recalculateHeightsRef.current();
       });
     });
     observer.observe(textareaRef.current);
@@ -683,7 +697,7 @@ export function SqlEditor({
       if (animFrameId) cancelAnimationFrame(animFrameId);
       observer.disconnect();
     };
-  }, [recalculateHeights]);
+  }, []);
 
   // Check cursor and compute suggestions
   const updateAutocomplete = () => {
@@ -1148,18 +1162,18 @@ export function SqlEditor({
       {/* CODE EDITOR BODY AREA */}
       <div className="flex-1 flex flex-row min-h-0 relative overflow-hidden">
         {/* HIDDEN MIRROR DIV FOR EXACT LINE HEIGHT MEASUREMENT */}
-        <div
-          ref={mirrorRef}
-          aria-hidden="true"
-          className={`absolute opacity-0 pointer-events-none -z-50 font-mono text-xs leading-5 p-3 ${
-            isWrapSql ? 'whitespace-pre-wrap [word-break:break-word]' : 'whitespace-pre'
-          }`}
-          style={{ top: 0, left: 0, visibility: 'hidden' }}
-        >
-          {sqlLines.map((line, i) => (
-            <div key={i}>{line || '\u00A0'}</div>
-          ))}
-        </div>
+        {isWrapSql && (
+          <div
+            ref={mirrorRef}
+            aria-hidden="true"
+            className={`absolute opacity-0 pointer-events-none -z-50 font-mono text-xs leading-5 p-3 whitespace-pre-wrap [word-break:break-word]`}
+            style={{ top: 0, left: 0, visibility: 'hidden' }}
+          >
+            {sqlLines.map((line, i) => (
+              <div key={i}>{line || '\u00A0'}</div>
+            ))}
+          </div>
+        )}
 
         {/* LINE NUMBERS */}
         <div 
