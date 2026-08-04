@@ -845,9 +845,13 @@ export default function App() {
             textToCopy = val === null || val === undefined ? 'null' : String(val);
           }
           if (textToCopy) {
+            e.preventDefault();
+            e.stopPropagation();
             navigator.clipboard.writeText(textToCopy);
           }
         } else if (duckDbSelectedCell?.content) {
+          e.preventDefault();
+          e.stopPropagation();
           navigator.clipboard.writeText(duckDbSelectedCell.content);
         }
       }
@@ -2188,7 +2192,7 @@ export default function App() {
         }
       }
 
-      if (!/\bFORMAT\b/i.test(queryWithLimit)) {
+      if (!/\bFORMAT\b/i.test(queryWithLimit) && !/^\s*(CREATE|INSERT|DELETE|ALTER|DROP|TRUNCATE|SET|USE|OPTIMIZE|SYSTEM)\b/i.test(queryWithLimit)) {
         queryWithLimit += ' FORMAT JSON';
       }
 
@@ -2319,7 +2323,7 @@ export default function App() {
     const isClickhouse = activeEngine === 'clickhouse' || (!duckDbConnectedPath && !!clickhouseConfig);
     if (isClickhouse && clickhouseConfig) {
       let queryWithFormat = sqlToRun.trim();
-      if (!/\bFORMAT\b/i.test(queryWithFormat)) {
+      if (!/\bFORMAT\b/i.test(queryWithFormat) && !/^\s*(CREATE|INSERT|DELETE|ALTER|DROP|TRUNCATE|SET|USE|OPTIMIZE|SYSTEM)\b/i.test(queryWithFormat)) {
         queryWithFormat += ' FORMAT JSON';
       }
       
@@ -6032,7 +6036,7 @@ export default function App() {
                             const isClickhouse = activeEngine === 'clickhouse' || (!duckDbConnectedPath && !!clickhouseConfig);
                             if (isClickhouse && clickhouseConfig) {
                               let queryWithFormat = sqlToRun.trim();
-                              if (!/\bFORMAT\b/i.test(queryWithFormat)) {
+                              if (!/\bFORMAT\b/i.test(queryWithFormat) && !/^\s*(CREATE|INSERT|DELETE|ALTER|DROP|TRUNCATE|SET|USE|OPTIMIZE|SYSTEM)\b/i.test(queryWithFormat)) {
                                 queryWithFormat += ' FORMAT JSON';
                               }
                               if (isTauriEnvironment()) {
