@@ -574,12 +574,40 @@ async fn connectorx_copy_to(
     conn_str: String,
     query: String,
     file_path: String,
+    partition_num: Option<usize>,
+    partition_on: Option<String>,
+    partition_range_min: Option<i64>,
+    partition_range_max: Option<i64>,
 ) -> Result<ConnectorxCopyResult, String> {
     tokio::task::spawn_blocking(move || {
         let source_conn = connectorx::source_router::SourceConn::try_from(conn_str.as_str())
             .map_err(|e| format!("Ошибка строки подключения ConnectorX: {}", e))?;
 
-        let queries = vec![connectorx::prelude::CXQuery::from(query.as_str())];
+        let num_parts = partition_num.unwrap_or(1);
+        let part_col = partition_on.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty());
+
+        let queries = if num_parts > 1 && part_col.is_some() && partition_range_min.is_some() && partition_range_max.is_some() {
+            let col = part_col.unwrap();
+            let min = partition_range_min.unwrap();
+            let max = partition_range_max.unwrap();
+            let stripped = query.trim().trim_end_matches(';');
+            let step = (max - min) / (num_parts as i64);
+
+            let mut generated = Vec::new();
+            for i in 0..num_parts {
+                let low = min + (i as i64) * step;
+                let high = if i == num_parts - 1 { max + 1 } else { low + step };
+                let sub_sql = format!(
+                    "SELECT * FROM ({}) AS _part WHERE {} >= {} AND {} < {}",
+                    stripped, col, low, col, high
+                );
+                generated.push(connectorx::prelude::CXQuery::from(sub_sql.as_str()));
+            }
+            generated
+        } else {
+            vec![connectorx::prelude::CXQuery::from(query.as_str())]
+        };
+
         let mut destination = connectorx::destinations::arrow::ArrowDestination::new();
 
         let dispatcher = connectorx::dispatcher::Dispatcher::<_, _, connectorx::destinations::arrow::ArrowDestination>::new(
