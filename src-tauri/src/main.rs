@@ -545,18 +545,12 @@ async fn query_connectorx_preview(
             .map_err(|e| format!("Ошибка строки подключения ConnectorX: {}", e))?;
 
         let queries = vec![connectorx::prelude::CXQuery::from(query.as_str())];
-        let mut destination = connectorx::destinations::arrow::ArrowDestination::new();
 
-        let dispatcher = connectorx::dispatcher::Dispatcher::<_, _, connectorx::destinations::arrow::ArrowDestination>::new(
-            source_conn,
-            &mut destination,
-            queries,
-            None,
-        );
+        let mut destination = connectorx::get_arrow(source_conn, None, &queries)
+            .map_err(|e| format!("Ошибка выполнения запроса ConnectorX: {}", e))?;
 
-        dispatcher.run().map_err(|e| format!("Ошибка выполнения запроса ConnectorX: {}", e))?;
-
-        let batches = destination.finish().map_err(|e| format!("Ошибка получения результата Arrow: {}", e))?;
+        let batches = destination.arrow_collect()
+            .map_err(|e| format!("Ошибка получения результата Arrow: {}", e))?;
 
         convert_arrow_batches_to_query_result(&batches)
     }).await.map_err(|e| format!("Ошибка потока выполнения: {}", e))?
@@ -608,18 +602,11 @@ async fn connectorx_copy_to(
             vec![connectorx::prelude::CXQuery::from(query.as_str())]
         };
 
-        let mut destination = connectorx::destinations::arrow::ArrowDestination::new();
+        let mut destination = connectorx::get_arrow(source_conn, None, &queries)
+            .map_err(|e| format!("Ошибка выполнения запроса ConnectorX: {}", e))?;
 
-        let dispatcher = connectorx::dispatcher::Dispatcher::<_, _, connectorx::destinations::arrow::ArrowDestination>::new(
-            source_conn,
-            &mut destination,
-            queries,
-            None,
-        );
-
-        dispatcher.run().map_err(|e| format!("Ошибка выполнения запроса ConnectorX: {}", e))?;
-
-        let batches = destination.finish().map_err(|e| format!("Ошибка формирования пакетов Arrow: {}", e))?;
+        let batches = destination.arrow_collect()
+            .map_err(|e| format!("Ошибка формирования пакетов Arrow: {}", e))?;
 
         if batches.is_empty() {
             return Err("Запрос ConnectorX не вернул данных для экспорта в Parquet".to_string());
