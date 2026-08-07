@@ -54,6 +54,9 @@ jobs:
       - name: Generate Desktop Icons
         run: node generate-icons.js
 
+      - name: Update Cargo dependencies
+        run: cargo update --manifest-path src-tauri/Cargo.toml
+
       - name: Build Tauri Application
         uses: tauri-apps/tauri-action@v0
         env:
