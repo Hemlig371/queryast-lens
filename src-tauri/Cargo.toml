@@ -14,7 +14,7 @@ tauri-build = { version = "1.5" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tauri = { version = "1.6", features = ["api-all"] }
-duckdb = { version = "1.2", features = ["bundled", "chrono", "modern_full_access"] }
+duckdb = { version = "1.2", features = ["bundled", "chrono", "modern-full"] }
 chrono = ">=0.4, <0.4.39"
 reqwest = { version = "0.11", features = ["stream"] }
 futures-util = "0.3"
