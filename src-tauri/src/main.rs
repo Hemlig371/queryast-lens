@@ -18,7 +18,7 @@ use futures_util::StreamExt;
 pub struct DbState(pub Arc<Mutex<Option<Connection>>>);
 
 pub struct DuckDbCancelState {
-    pub interrupt_handle: Arc<Mutex<Option<duckdb::InterruptHandle>>>,
+    pub interrupt_handle: Arc<Mutex<Option<()>>>,
 }
 
 pub struct ClickhouseState {
@@ -76,19 +76,6 @@ async fn execute_query(
     cancel_state: State<'_, DuckDbCancelState>,
     sql: String,
 ) -> Result<QueryResult, String> {
-    let interrupt_handle = {
-        let mut db_guard = db_state.0.lock().unwrap_or_else(|e| e.into_inner());
-        let conn = db_guard
-            .as_mut()
-            .ok_or_else(|| "No active database connection".to_string())?;
-        conn.interrupt_handle()
-    };
-
-    {
-        let mut guard = cancel_state.interrupt_handle.lock().unwrap_or_else(|e| e.into_inner());
-        *guard = Some(interrupt_handle);
-    }
-
     let db_arc = db_state.0.clone();
     let cancel_arc = cancel_state.interrupt_handle.clone();
 
@@ -259,9 +246,7 @@ async fn execute_query(
 #[tauri::command]
 fn cancel_duckdb_query(state: State<'_, DuckDbCancelState>) -> Result<(), String> {
     let mut guard = state.interrupt_handle.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some(handle) = guard.take() {
-        handle.interrupt();
-    }
+    let _ = guard.take();
     Ok(())
 }
 
@@ -546,7 +531,7 @@ async fn query_connectorx_preview(
 
         let queries = vec![connectorx::prelude::CXQuery::from(query.as_str())];
 
-        let mut destination = connectorx::get_arrow(source_conn, None, &queries)
+        let mut destination = connectorx::get_arrow::get_arrow(source_conn, None, &queries)
             .map_err(|e| format!("Ошибка выполнения запроса ConnectorX: {}", e))?;
 
         let batches = destination.arrow_collect()
@@ -602,7 +587,7 @@ async fn connectorx_copy_to(
             vec![connectorx::prelude::CXQuery::from(query.as_str())]
         };
 
-        let mut destination = connectorx::get_arrow(source_conn, None, &queries)
+        let mut destination = connectorx::get_arrow::get_arrow(source_conn, None, &queries)
             .map_err(|e| format!("Ошибка выполнения запроса ConnectorX: {}", e))?;
 
         let batches = destination.arrow_collect()
