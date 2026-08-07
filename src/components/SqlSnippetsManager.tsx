@@ -1857,6 +1857,7 @@ export function SqlSnippetsManager({
                   return (
                     <div 
                       key={snippet.id} 
+                      style={{ contentVisibility: 'auto', containIntrinsicSize: '180px' }}
                       className={`p-3.5 rounded-xl border transition-all hover:border-blue-500/50 group ${
                         theme === 'dark' ? 'bg-slate-800/80 border-slate-700/80' : 'bg-white border-slate-300 shadow-xs'
                       }`}

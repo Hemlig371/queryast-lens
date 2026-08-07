@@ -90,6 +90,144 @@ export const getBaseHighlight = (sqlText: string, theme: 'dark' | 'light') => {
   return html;
 };
 
+export const processEscapeSequences = (str: string): string => {
+  return str
+    .replace(/\\\\/g, '\0ESC_BS\0')
+    .replace(/\\n/g, '\n')
+    .replace(/\\t/g, '\t')
+    .replace(/\\r/g, '\r')
+    .replace(/\0ESC_BS\0/g, '\\');
+};
+
+export const matchHotkeyCombo = (e: KeyboardEvent | React.KeyboardEvent, targetShortcut: string): boolean => {
+  if (!targetShortcut) return false;
+
+  const parts: string[] = [];
+  if (e.ctrlKey || e.metaKey) parts.push('CTRL');
+  if (e.altKey) parts.push('ALT');
+  if (e.shiftKey) parts.push('SHIFT');
+
+  let keyName = e.key ? e.key.toUpperCase() : '';
+  if (e.code && e.code.startsWith('Key')) {
+    keyName = e.code.slice(3).toUpperCase();
+  } else if (e.code && e.code.startsWith('Digit')) {
+    keyName = e.code.slice(5);
+  } else if (e.code === 'ArrowUp' || e.key === 'ArrowUp' || e.key === 'Up') {
+    keyName = 'UP';
+  } else if (e.code === 'ArrowDown' || e.key === 'ArrowDown' || e.key === 'Down') {
+    keyName = 'DOWN';
+  } else if (e.code === 'Space' || e.key === ' ') {
+    keyName = 'SPACE';
+  } else if (e.code === 'Enter' || e.key === 'Enter') {
+    keyName = 'ENTER';
+  } else if (e.code === 'Escape' || e.key === 'Esc' || e.key === 'Escape') {
+    keyName = 'ESC';
+  } else if (e.code === 'Slash') {
+    keyName = '/';
+  } else if (e.code === 'Backslash') {
+    keyName = '\\';
+  } else if (e.code === 'Period') {
+    keyName = '.';
+  } else if (e.code === 'Comma') {
+    keyName = ',';
+  } else if (e.code === 'Semicolon') {
+    keyName = ';';
+  } else if (e.code === 'Quote') {
+    keyName = "'";
+  } else if (e.code === 'BracketLeft') {
+    keyName = '[';
+  } else if (e.code === 'BracketRight') {
+    keyName = ']';
+  } else if (e.code === 'Minus') {
+    keyName = '-';
+  } else if (e.code === 'Equal') {
+    keyName = '=';
+  } else if (e.code === 'Backquote') {
+    keyName = '`';
+  }
+
+  const pressedCombo = [...parts, keyName].join('+');
+
+  const normalizeToken = (t: string) => {
+    const upper = t.trim().toUpperCase();
+    if (upper === 'CMD' || upper === 'META' || upper === 'CTRL') return 'CTRL';
+    if (upper === 'ARROWUP' || upper === 'UP') return 'UP';
+    if (upper === 'ARROWDOWN' || upper === 'DOWN') return 'DOWN';
+    return upper;
+  };
+
+  const targetTokens = targetShortcut.split('+').map(normalizeToken).filter(Boolean);
+  const pressedTokens = pressedCombo.split('+').map(normalizeToken).filter(Boolean);
+
+  return pressedTokens.sort().join('+') === targetTokens.sort().join('+');
+};
+
+export const applySearchAndSelectionToHtml = (
+  html: string,
+  theme: 'dark' | 'light',
+  searchQuery: string,
+  matchCase: boolean,
+  currentMatchIndex: number,
+  selectedText: string,
+  showSearch: boolean,
+  useRegex: boolean = false
+) => {
+  let resultHtml = html;
+  const isDark = theme === 'dark';
+
+  const normalHighlightClass = isDark
+    ? 'bg-amber-400/25 ring-1 ring-amber-400/40 rounded-[2px]'
+    : 'bg-yellow-200/90 ring-1 ring-yellow-400/60 rounded-[2px]';
+
+  const currentHighlightClass = isDark
+    ? 'bg-amber-500/60 text-slate-100 ring-2 ring-amber-400 rounded-[2px] font-semibold shadow-xs'
+    : 'bg-amber-300 text-slate-950 ring-2 ring-amber-500 rounded-[2px] font-semibold shadow-xs';
+
+  if (showSearch && searchQuery && searchQuery.length > 0) {
+    try {
+      let regexPattern = '';
+      if (useRegex) {
+        regexPattern = processEscapeSequences(searchQuery);
+      } else {
+        const qHtml = searchQuery
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        regexPattern = qHtml;
+      }
+
+      const flags = matchCase ? 'g' : 'gi';
+      const regex = new RegExp(`(${regexPattern})`, flags);
+
+      let globalMatchCount = 0;
+      const parts = resultHtml.split(/(<[^>]+>)/g);
+
+      resultHtml = parts.map(part => {
+        if (part.startsWith('<') && part.endsWith('>')) {
+          return part;
+        }
+
+        return part.replace(regex, (match) => {
+          const isCurrent = globalMatchCount === currentMatchIndex;
+          globalMatchCount++;
+
+          const cls = isCurrent ? currentHighlightClass : normalHighlightClass;
+          return `<span class="${cls}">${match}</span>`;
+        });
+      }).join('');
+    } catch (e) {
+      // Ignore invalid regex during typing
+    }
+  }
+
+  if (selectedText && selectedText.trim().length > 0 && (!showSearch || !searchQuery)) {
+    resultHtml = applySelectionToHtml(resultHtml, theme, selectedText);
+  }
+
+  return resultHtml;
+};
+
 export const applySelectionToHtml = (html: string, theme: 'dark' | 'light', selectedText: string) => {
   if (!selectedText || selectedText.trim().length === 0) return html;
   
@@ -120,6 +258,94 @@ export const applySelectionToHtml = (html: string, theme: 'dark' | 'light', sele
   } catch (e) {
     return html;
   }
+};
+
+const OPEN_BRACKETS: Record<string, string> = { '(': ')', '[': ']', '{': '}' };
+const CLOSE_BRACKETS: Record<string, string> = { ')': '(', ']': '[', '}': '{' };
+
+export const findMatchingBrackets = (sql: string, cursorPos: number): [number, number] | null => {
+  if (!sql || cursorPos < 0 || cursorPos > sql.length) return null;
+
+  let targetIdx = -1;
+  if (cursorPos > 0 && (OPEN_BRACKETS[sql[cursorPos - 1]] || CLOSE_BRACKETS[sql[cursorPos - 1]])) {
+    targetIdx = cursorPos - 1;
+  } else if (cursorPos < sql.length && (OPEN_BRACKETS[sql[cursorPos]] || CLOSE_BRACKETS[sql[cursorPos]])) {
+    targetIdx = cursorPos;
+  } else {
+    return null;
+  }
+
+  const char = sql[targetIdx];
+  if (OPEN_BRACKETS[char]) {
+    const closeChar = OPEN_BRACKETS[char];
+    let depth = 1;
+    for (let i = targetIdx + 1; i < sql.length; i++) {
+      const c = sql[i];
+      if (c === char) depth++;
+      else if (c === closeChar) {
+        depth--;
+        if (depth === 0) return [targetIdx, i];
+      }
+    }
+  } else if (CLOSE_BRACKETS[char]) {
+    const openChar = CLOSE_BRACKETS[char];
+    let depth = 1;
+    for (let i = targetIdx - 1; i >= 0; i--) {
+      const c = sql[i];
+      if (c === char) depth++;
+      else if (c === openChar) {
+        depth--;
+        if (depth === 0) return [i, targetIdx];
+      }
+    }
+  }
+
+  return null;
+};
+
+export const applyBracketHighlightToHtml = (html: string, theme: 'dark' | 'light', indices: [number, number] | null) => {
+  if (!indices) return html;
+  const [idx1, idx2] = indices;
+  const isDark = theme === 'dark';
+
+  const highlightClass = isDark
+    ? 'bg-blue-500/35 text-blue-200 ring-1 ring-blue-400/80 rounded-[2px] font-bold'
+    : 'bg-blue-200 text-blue-900 ring-1 ring-blue-500/80 rounded-[2px] font-bold';
+
+  const parts = html.split(/(<[^>]+>)/g);
+  let currentPlainIdx = 0;
+
+  return parts.map(part => {
+    if (part.startsWith('<') && part.endsWith('>')) {
+      return part;
+    }
+
+    let result = '';
+    let i = 0;
+    while (i < part.length) {
+      let charStr = part[i];
+      let entityLen = 1;
+
+      if (part[i] === '&') {
+        const entityMatch = part.slice(i).match(/^(&(?:lt|gt|amp|quot|#39);)/);
+        if (entityMatch) {
+          charStr = entityMatch[1];
+          entityLen = entityMatch[1].length;
+        }
+      }
+
+      if (currentPlainIdx === idx1 || currentPlainIdx === idx2) {
+        result += `<span class="${highlightClass}">${charStr}</span>`;
+      } else {
+        result += charStr;
+      }
+
+      currentPlainIdx++;
+      i += entityLen;
+    }
+
+    return result;
+  }).join('');
 };
 
 export const highlightSqlHtml = (sqlText: string, theme: 'dark' | 'light', selectedText?: string) => {
@@ -182,6 +408,8 @@ export function SqlEditor({
   editorRef?: React.MutableRefObject<SqlEditorRef | null>;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const lastCopiedTextRef = useRef<string>('');
+  const pendingPasteModeRef = useRef<'start' | 'end' | null>(null);
 
   const lineNumbersRef = useRef<HTMLDivElement>(null);
   const highlightRef = useRef<HTMLDivElement>(null);
@@ -252,14 +480,19 @@ export function SqlEditor({
     lineHeightsRef.current = lineHeights;
   }, [lineHeights]);
 
-  // Selection highlight state
+  // Selection & bracket highlight state
   const [selectedText, setSelectedText] = useState<string>('');
+  const [cursorPos, setCursorPos] = useState<number>(-1);
 
   const handleSelectionChange = () => {
     if (!textareaRef.current) return;
     const start = textareaRef.current.selectionStart;
     const end = textareaRef.current.selectionEnd;
+    if (start !== null) {
+      setCursorPos(start);
+    }
     if (start !== end && start !== null && end !== null) {
+      setShowAutocomplete(false);
       const sel = value.slice(start, end).trim();
       if (sel.length >= 1 && sel.length <= 100 && !sel.includes('\n')) {
         setSelectedText(sel);
@@ -269,15 +502,49 @@ export function SqlEditor({
     setSelectedText('');
   };
 
+  const matchedBracketIndices = useMemo(() => {
+    if (cursorPos < 0 || selectedText) return null;
+    return findMatchingBrackets(value, cursorPos);
+  }, [value, cursorPos, selectedText]);
+
   // Search and Replace states
   const [showSearch, setShowSearch] = useState<boolean>(false);
   const [showReplace, setShowReplace] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [replaceQuery, setReplaceQuery] = useState<string>('');
   const [matchCase, setMatchCase] = useState<boolean>(false);
-  const [matches, setMatches] = useState<number[]>([]);
+  const [useRegex, setUseRegex] = useState<boolean>(false);
+  const [matches, setMatches] = useState<{ start: number; length: number }[]>([]);
   const [currentMatchIndex, setCurrentMatchIndex] = useState<number>(-1);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const openSearchBox = useCallback((withReplace: boolean = false) => {
+    let selText = '';
+    if (textareaRef.current) {
+      const start = textareaRef.current.selectionStart;
+      const end = textareaRef.current.selectionEnd;
+      if (start !== null && end !== null && start < end) {
+        selText = textareaRef.current.value.slice(start, end).trim();
+      }
+    }
+    if (!selText && selectedText) {
+      selText = selectedText.trim();
+    }
+
+    setShowSearch(true);
+    setShowReplace(withReplace);
+
+    if (selText && selText.length <= 200 && !selText.includes('\n')) {
+      setSearchQuery(selText);
+    }
+
+    setTimeout(() => {
+      if (searchInputRef.current) {
+        searchInputRef.current.focus();
+        searchInputRef.current.select();
+      }
+    }, 50);
+  }, [selectedText]);
 
   useEffect(() => {
     const refreshTemplates = () => {
@@ -383,7 +650,205 @@ export function SqlEditor({
     }
   };
 
-  // Global capture keyboard listener to prevent browser hijack of Ctrl+H / Cmd+H / Ctrl+F / Ctrl+Q / Ctrl+Shift+U
+  const performPaste = useCallback((clipText: string, atEnd: boolean) => {
+    if (!clipText || !textareaRef.current) return;
+    const textarea = textareaRef.current;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    if (start === null || end === null) return;
+
+    const currentValue = textarea.value;
+    const lineStart = currentValue.lastIndexOf('\n', start - 1) + 1;
+    const effectiveEnd = (end > start && currentValue[end - 1] === '\n') ? end - 1 : end;
+    let lineEnd = currentValue.indexOf('\n', effectiveEnd);
+    if (lineEnd === -1) lineEnd = currentValue.length;
+
+    const selectedBlock = currentValue.slice(lineStart, lineEnd);
+    const lines = selectedBlock.split('\n');
+
+    const newLines = lines.map(line => atEnd ? line + clipText : clipText + line);
+    const newBlock = newLines.join('\n');
+
+    textarea.focus();
+    textarea.setSelectionRange(lineStart, lineEnd);
+    document.execCommand('insertText', false, newBlock);
+
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        textareaRef.current.setSelectionRange(lineStart, lineStart + newBlock.length);
+      }
+    }, 0);
+  }, []);
+
+  const handleMultiLinePaste = useCallback((atEnd: boolean) => {
+    if (!textareaRef.current) return;
+    pendingPasteModeRef.current = atEnd ? 'end' : 'start';
+
+    if (navigator.clipboard && typeof navigator.clipboard.readText === 'function') {
+      navigator.clipboard.readText().then(clipText => {
+        if (clipText) {
+          lastCopiedTextRef.current = clipText;
+          performPaste(clipText, atEnd);
+          pendingPasteModeRef.current = null;
+        } else if (lastCopiedTextRef.current) {
+          performPaste(lastCopiedTextRef.current, atEnd);
+          pendingPasteModeRef.current = null;
+        }
+      }).catch(() => {
+        if (lastCopiedTextRef.current) {
+          performPaste(lastCopiedTextRef.current, atEnd);
+        }
+        pendingPasteModeRef.current = null;
+      });
+    } else {
+      if (lastCopiedTextRef.current) {
+        performPaste(lastCopiedTextRef.current, atEnd);
+      }
+      pendingPasteModeRef.current = null;
+    }
+  }, [performPaste]);
+
+  const handleMoveLines = useCallback((dir: 'up' | 'down') => {
+    if (!textareaRef.current) return;
+    const textarea = textareaRef.current;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    if (start === null || end === null) return;
+
+    const currentValue = textarea.value;
+    const allLines = currentValue.split('\n');
+
+    const lineStart = currentValue.lastIndexOf('\n', start - 1) + 1;
+    const effectiveEnd = (end > start && currentValue[end - 1] === '\n') ? end - 1 : end;
+    let lineEnd = currentValue.indexOf('\n', effectiveEnd);
+    if (lineEnd === -1) lineEnd = currentValue.length;
+
+    const startLineIdx = currentValue.slice(0, lineStart).split('\n').length - 1;
+    const endLineIdx = currentValue.slice(0, effectiveEnd).split('\n').length - 1;
+
+    if (dir === 'up') {
+      if (startLineIdx === 0) return;
+      const prevLineIdx = startLineIdx - 1;
+      const prevLineLen = allLines[prevLineIdx].length + 1;
+
+      const blockToReplaceStart = currentValue.lastIndexOf('\n', lineStart - 2) + 1;
+      const blockToReplaceEnd = lineEnd;
+
+      const movedBlock = allLines.slice(startLineIdx, endLineIdx + 1);
+      const swappedLine = [allLines[prevLineIdx]];
+      const newBlock = [...movedBlock, ...swappedLine].join('\n');
+
+      textarea.focus();
+      textarea.setSelectionRange(blockToReplaceStart, blockToReplaceEnd);
+      document.execCommand('insertText', false, newBlock);
+
+      const newStart = start - prevLineLen;
+      const newEnd = end - prevLineLen;
+
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          textareaRef.current.setSelectionRange(newStart, newEnd);
+        }
+      }, 0);
+    } else {
+      if (endLineIdx === allLines.length - 1) return;
+      const nextLineIdx = endLineIdx + 1;
+      const nextLineLen = allLines[nextLineIdx].length + 1;
+
+      const blockToReplaceStart = lineStart;
+      let blockToReplaceEnd = currentValue.indexOf('\n', lineEnd + 1);
+      if (blockToReplaceEnd === -1) blockToReplaceEnd = currentValue.length;
+
+      const swappedLine = [allLines[nextLineIdx]];
+      const movedBlock = allLines.slice(startLineIdx, endLineIdx + 1);
+      const newBlock = [...swappedLine, ...movedBlock].join('\n');
+
+      textarea.focus();
+      textarea.setSelectionRange(blockToReplaceStart, blockToReplaceEnd);
+      document.execCommand('insertText', false, newBlock);
+
+      const newStart = start + nextLineLen;
+      const newEnd = end + nextLineLen;
+
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          textareaRef.current.setSelectionRange(newStart, newEnd);
+        }
+      }, 0);
+    }
+  }, []);
+
+  const handleChangeCase = useCallback((targetCase: 'upper' | 'lower') => {
+    if (!textareaRef.current) return;
+    const textarea = textareaRef.current;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    if (start === null || end === null) return;
+
+    const currentValue = textarea.value;
+
+    if (start !== end) {
+      const selected = currentValue.slice(start, end);
+      const converted = targetCase === 'upper' ? selected.toUpperCase() : selected.toLowerCase();
+
+      textarea.focus();
+      textarea.setSelectionRange(start, end);
+      document.execCommand('insertText', false, converted);
+
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          textareaRef.current.setSelectionRange(start, start + converted.length);
+        }
+      }, 0);
+    } else {
+      let wordStart = start;
+      let wordEnd = start;
+
+      while (wordStart > 0 && /[\w$]/.test(currentValue[wordStart - 1])) {
+        wordStart--;
+      }
+      while (wordEnd < currentValue.length && /[\w$]/.test(currentValue[wordEnd])) {
+        wordEnd++;
+      }
+
+      if (wordStart < wordEnd) {
+        const word = currentValue.slice(wordStart, wordEnd);
+        const converted = targetCase === 'upper' ? word.toUpperCase() : word.toLowerCase();
+
+        textarea.focus();
+        textarea.setSelectionRange(wordStart, wordEnd);
+        document.execCommand('insertText', false, converted);
+
+        setTimeout(() => {
+          if (textareaRef.current) {
+            textareaRef.current.focus();
+            textareaRef.current.setSelectionRange(start, start);
+          }
+        }, 0);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleDocumentCopyCut = () => {
+      const sel = window.getSelection()?.toString();
+      if (sel) {
+        lastCopiedTextRef.current = sel;
+      }
+    };
+    document.addEventListener('copy', handleDocumentCopyCut);
+    document.addEventListener('cut', handleDocumentCopyCut);
+    return () => {
+      document.removeEventListener('copy', handleDocumentCopyCut);
+      document.removeEventListener('cut', handleDocumentCopyCut);
+    };
+  }, []);
+
+  // Global capture keyboard listener
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       const activeEl = document.activeElement;
@@ -434,9 +899,47 @@ export function SqlEditor({
 
       const combo = parts.length > 0 ? `${parts.join('+')}+${keyName}` : keyName;
       const savedHotkeys = getSavedHotkeys();
+
+      if (matchHotkeyCombo(e, savedHotkeys.pasteAtEnd || 'Ctrl+Shift+V')) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleMultiLinePaste(true);
+        return;
+      }
+      if (matchHotkeyCombo(e, savedHotkeys.pasteAtStart || 'Ctrl+Alt+V')) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleMultiLinePaste(false);
+        return;
+      }
+      if (matchHotkeyCombo(e, savedHotkeys.moveLinesUp || 'Alt+Up')) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleMoveLines('up');
+        return;
+      }
+      if (matchHotkeyCombo(e, savedHotkeys.moveLinesDown || 'Alt+Down')) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleMoveLines('down');
+        return;
+      }
+      if (matchHotkeyCombo(e, savedHotkeys.toUpperCase || 'Ctrl+Shift+U')) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleChangeCase('upper');
+        return;
+      }
+      if (matchHotkeyCombo(e, savedHotkeys.toLowerCase || 'Ctrl+Shift+L')) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleChangeCase('lower');
+        return;
+      }
+
       const targetSearchCombo = savedHotkeys.searchSql || 'Ctrl+F';
       const targetReplaceCombo = savedHotkeys.replaceSql || 'Ctrl+H';
-      const targetCompactCombo = savedHotkeys.compactSql || 'Ctrl+Shift+U';
+      const targetCompactCombo = savedHotkeys.compactSql || 'Ctrl+Alt+M';
       const targetQuickActionsCombo = savedHotkeys.quickActionsMenu || 'Ctrl+Q';
 
       const isSearch = combo === targetSearchCombo || (!e.shiftKey && (e.ctrlKey || e.metaKey) && (e.code === 'KeyF' || e.key?.toLowerCase() === 'f' || e.key?.toLowerCase() === 'а'));
@@ -447,15 +950,11 @@ export function SqlEditor({
       if (isSearch) {
         e.preventDefault();
         e.stopPropagation();
-        setShowSearch(true);
-        setShowReplace(false);
-        setTimeout(() => searchInputRef.current?.focus(), 50);
+        openSearchBox(false);
       } else if (isReplace) {
         e.preventDefault();
         e.stopPropagation();
-        setShowSearch(true);
-        setShowReplace(true);
-        setTimeout(() => searchInputRef.current?.focus(), 50);
+        openSearchBox(true);
       } else if (isCompact) {
         e.preventDefault();
         e.stopPropagation();
@@ -530,34 +1029,67 @@ export function SqlEditor({
 
   const sqlLines = value.split('\n');
 
+  const closeSearch = useCallback(() => {
+    setShowSearch(false);
+    setSearchQuery('');
+    setMatches([]);
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  }, []);
+
   // Compute search matches when query or text changes
   useEffect(() => {
+    if (!showSearch) return;
     if (!searchQuery) {
       setMatches([]);
       setCurrentMatchIndex(-1);
       return;
     }
-    const matchIndices: number[] = [];
+    const matchIndices: { start: number; length: number }[] = [];
     const text = value;
-    const q = matchCase ? searchQuery : searchQuery.toLowerCase();
-    const src = matchCase ? text : text.toLowerCase();
-    let pos = 0;
-    while ((pos = src.indexOf(q, pos)) !== -1) {
-      matchIndices.push(pos);
-      pos += Math.max(1, q.length);
+
+    if (useRegex) {
+      try {
+        const processed = processEscapeSequences(searchQuery);
+        const reg = new RegExp(processed, matchCase ? 'g' : 'gi');
+        let match: RegExpExecArray | null;
+        let lastIndex = -1;
+        while ((match = reg.exec(text)) !== null) {
+          matchIndices.push({ start: match.index, length: match[0].length });
+          if (reg.lastIndex === lastIndex) {
+            reg.lastIndex++;
+          }
+          lastIndex = reg.lastIndex;
+          if (!reg.global) break;
+        }
+      } catch (e) {
+        // Invalid regex during typing
+      }
+    } else {
+      const q = matchCase ? searchQuery : searchQuery.toLowerCase();
+      const src = matchCase ? text : text.toLowerCase();
+      let pos = 0;
+      while ((pos = src.indexOf(q, pos)) !== -1) {
+        matchIndices.push({ start: pos, length: searchQuery.length });
+        pos += Math.max(1, q.length);
+      }
     }
+
     setMatches(matchIndices);
     if (matchIndices.length > 0) {
       setCurrentMatchIndex(0);
-      selectMatch(matchIndices[0], searchQuery.length);
+      selectMatch(matchIndices[0].start, matchIndices[0].length, false);
     } else {
       setCurrentMatchIndex(-1);
     }
-  }, [searchQuery, value, matchCase]);
+  }, [showSearch, searchQuery, value, matchCase, useRegex]);
 
-  const selectMatch = (startPos: number, matchLen: number) => {
+  const selectMatch = (startPos: number, matchLen: number, shouldFocusTextarea: boolean = false) => {
     if (textareaRef.current) {
-      textareaRef.current.focus();
+      if (shouldFocusTextarea) {
+        textareaRef.current.focus();
+      }
       textareaRef.current.setSelectionRange(startPos, startPos + matchLen);
       const linesBefore = value.slice(0, startPos).split('\n');
       const lineIdx = linesBefore.length - 1;
@@ -570,36 +1102,60 @@ export function SqlEditor({
     if (matches.length === 0) return;
     const nextIdx = (currentMatchIndex + 1) % matches.length;
     setCurrentMatchIndex(nextIdx);
-    selectMatch(matches[nextIdx], searchQuery.length);
+    selectMatch(matches[nextIdx].start, matches[nextIdx].length, false);
   };
 
   const handlePrevMatch = () => {
     if (matches.length === 0) return;
     const prevIdx = (currentMatchIndex - 1 + matches.length) % matches.length;
     setCurrentMatchIndex(prevIdx);
-    selectMatch(matches[prevIdx], searchQuery.length);
+    selectMatch(matches[prevIdx].start, matches[prevIdx].length, false);
   };
 
   const handleReplaceCurrent = () => {
     if (currentMatchIndex < 0 || matches.length === 0 || !onChange) return;
-    const matchPos = matches[currentMatchIndex];
+    const match = matches[currentMatchIndex];
+    const effectiveReplace = useRegex ? processEscapeSequences(replaceQuery) : replaceQuery;
+    let replacementText = effectiveReplace;
+
+    if (useRegex) {
+      try {
+        const matchedSubstring = value.slice(match.start, match.start + match.length);
+        const processedSearch = processEscapeSequences(searchQuery);
+        const reg = new RegExp(processedSearch, matchCase ? '' : 'i');
+        replacementText = matchedSubstring.replace(reg, effectiveReplace);
+      } catch (e) {
+        // Fallback to direct replacement string on regex parse issue
+      }
+    }
+
     if (textareaRef.current) {
       textareaRef.current.focus();
-      textareaRef.current.setSelectionRange(matchPos, matchPos + searchQuery.length);
-      document.execCommand('insertText', false, replaceQuery);
+      textareaRef.current.setSelectionRange(match.start, match.start + match.length);
+      document.execCommand('insertText', false, replacementText);
     }
   };
 
   const handleReplaceAll = () => {
     if (matches.length === 0 || !onChange || !searchQuery) return;
-    const flags = matchCase ? 'g' : 'gi';
-    const escaped = searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const reg = new RegExp(escaped, flags);
-    const newValue = value.replace(reg, replaceQuery);
-    if (textareaRef.current) {
-      textareaRef.current.focus();
-      textareaRef.current.select();
-      document.execCommand('insertText', false, newValue);
+    try {
+      const effectiveReplace = useRegex ? processEscapeSequences(replaceQuery) : replaceQuery;
+      let reg: RegExp;
+      if (useRegex) {
+        const processed = processEscapeSequences(searchQuery);
+        reg = new RegExp(processed, matchCase ? 'g' : 'gi');
+      } else {
+        const escaped = searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        reg = new RegExp(escaped, matchCase ? 'g' : 'gi');
+      }
+      const newValue = value.replace(reg, effectiveReplace);
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        textareaRef.current.select();
+        document.execCommand('insertText', false, newValue);
+      }
+    } catch (e) {
+      // Invalid regex
     }
   };
 
@@ -703,6 +1259,14 @@ export function SqlEditor({
   const updateAutocomplete = () => {
     if (!textareaRef.current || !onChange) return;
     const cursor = textareaRef.current.selectionStart;
+    const cursorEnd = textareaRef.current.selectionEnd;
+
+    // Do not show autocomplete dropdown if text range or multi-line selection is active
+    if (cursor !== cursorEnd) {
+      setShowAutocomplete(false);
+      return;
+    }
+
     const textBefore = value.slice(0, cursor);
     const match = textBefore.match(/([a-zA-Z_][a-zA-Z_0-9]*)$/);
 
@@ -802,6 +1366,60 @@ export function SqlEditor({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const savedHotkeys = getSavedHotkeys();
+
+    if (matchHotkeyCombo(e, savedHotkeys.pasteAtEnd || 'Ctrl+Shift+V')) {
+      e.preventDefault();
+      e.stopPropagation();
+      handleMultiLinePaste(true);
+      return;
+    }
+    if (matchHotkeyCombo(e, savedHotkeys.pasteAtStart || 'Ctrl+Alt+V')) {
+      e.preventDefault();
+      e.stopPropagation();
+      handleMultiLinePaste(false);
+      return;
+    }
+    if (matchHotkeyCombo(e, savedHotkeys.moveLinesUp || 'Alt+Up')) {
+      e.preventDefault();
+      e.stopPropagation();
+      handleMoveLines('up');
+      return;
+    }
+    if (matchHotkeyCombo(e, savedHotkeys.moveLinesDown || 'Alt+Down')) {
+      e.preventDefault();
+      e.stopPropagation();
+      handleMoveLines('down');
+      return;
+    }
+    if (matchHotkeyCombo(e, savedHotkeys.toUpperCase || 'Ctrl+Shift+U')) {
+      e.preventDefault();
+      e.stopPropagation();
+      handleChangeCase('upper');
+      return;
+    }
+    if (matchHotkeyCombo(e, savedHotkeys.toLowerCase || 'Ctrl+Shift+L')) {
+      e.preventDefault();
+      e.stopPropagation();
+      handleChangeCase('lower');
+      return;
+    }
+
+    if (e.key === 'Escape') {
+      if (showSearch) {
+        e.preventDefault();
+        e.stopPropagation();
+        closeSearch();
+        return;
+      }
+      if (showQuickActionsPopup) {
+        e.preventDefault();
+        e.stopPropagation();
+        setShowQuickActionsPopup(false);
+        return;
+      }
+    }
+
     if (showQuickActionsPopup) {
       if (e.key >= '1' && e.key <= '9') {
         const idx = parseInt(e.key, 10) - 1;
@@ -814,12 +1432,6 @@ export function SqlEditor({
           return;
         }
       }
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        e.stopPropagation();
-        setShowQuickActionsPopup(false);
-        return;
-      }
     }
 
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
@@ -829,16 +1441,12 @@ export function SqlEditor({
     // Hotkeys Ctrl+F / Cmd+F and Ctrl+H / Cmd+H for Search & Replace
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key?.toLowerCase() === 'f') {
       e.preventDefault();
-      setShowSearch(true);
-      setShowReplace(false);
-      setTimeout(() => searchInputRef.current?.focus(), 50);
+      openSearchBox(false);
       return;
     }
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key?.toLowerCase() === 'h') {
       e.preventDefault();
-      setShowSearch(true);
-      setShowReplace(true);
-      setTimeout(() => searchInputRef.current?.focus(), 50);
+      openSearchBox(true);
       return;
     }
 
@@ -867,10 +1475,18 @@ export function SqlEditor({
     }
 
     if (e.key === 'Tab') {
-      if (showAutocomplete && suggestions.length > 0) {
+      const startPos = textareaRef.current?.selectionStart;
+      const endPos = textareaRef.current?.selectionEnd;
+      const hasSelection = startPos !== undefined && endPos !== undefined && startPos !== null && endPos !== null && startPos !== endPos;
+
+      if (!hasSelection && showAutocomplete && suggestions.length > 0) {
         e.preventDefault();
         applySuggestion(suggestions[selectedIndex]);
         return;
+      }
+
+      if (hasSelection) {
+        setShowAutocomplete(false);
       }
 
       if (!textareaRef.current || !onChange) return;
@@ -904,7 +1520,10 @@ export function SqlEditor({
         }
       } else {
         const lineStart = value.lastIndexOf('\n', start - 1) + 1;
-        let lineEnd = value.indexOf('\n', end);
+        // If selection ends right after a newline (i.e. at column 0 of next line),
+        // do not include that next line in the indented block
+        const effectiveEnd = (end > start && value[end - 1] === '\n') ? end - 1 : end;
+        let lineEnd = value.indexOf('\n', effectiveEnd);
         if (lineEnd === -1) lineEnd = value.length;
 
         const selectedBlock = value.slice(lineStart, lineEnd);
@@ -1016,8 +1635,21 @@ export function SqlEditor({
   }, [value, theme]);
 
   const finalHtml = useMemo(() => {
-    return applySelectionToHtml(baseHighlightedHtml, theme, selectedText);
-  }, [baseHighlightedHtml, theme, selectedText]);
+    let html = applySearchAndSelectionToHtml(
+      baseHighlightedHtml,
+      theme,
+      searchQuery,
+      matchCase,
+      currentMatchIndex,
+      selectedText,
+      showSearch,
+      useRegex
+    );
+    if (matchedBracketIndices) {
+      html = applyBracketHighlightToHtml(html, theme, matchedBracketIndices);
+    }
+    return html;
+  }, [baseHighlightedHtml, theme, searchQuery, matchCase, currentMatchIndex, selectedText, showSearch, useRegex, matchedBracketIndices]);
 
   return (
     <div 
@@ -1049,7 +1681,7 @@ export function SqlEditor({
                   if (e.key === 'Escape') {
                     e.preventDefault();
                     e.stopPropagation();
-                    setShowSearch(false);
+                    closeSearch();
                   }
                 }}
                 className={`flex-1 min-w-[100px] px-2 py-1 rounded text-xs border outline-none font-mono ${
@@ -1093,6 +1725,18 @@ export function SqlEditor({
               </button>
               <button
                 type="button"
+                onClick={() => setUseRegex(!useRegex)}
+                title={useRegex ? "Регулярные выражения и спецсимволы \\n, \\t (включено)" : "Регулярные выражения и спецсимволы \\n, \\t (выключено)"}
+                className={`px-1.5 py-1 rounded transition-colors text-[10px] font-bold flex items-center gap-0.5 ${
+                  useRegex
+                    ? 'bg-blue-600 text-white'
+                    : 'text-slate-400 hover:text-slate-100 hover:bg-slate-700/40'
+                }`}
+              >
+                <span className="font-mono text-[11px] font-extrabold">.*</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => setShowReplace(!showReplace)}
                 title="Переключить замену (Ctrl+H)"
                 className={`px-1.5 py-1 rounded transition-colors text-[10px] font-semibold flex items-center gap-1 ${
@@ -1106,7 +1750,7 @@ export function SqlEditor({
               </button>
               <button
                 type="button"
-                onClick={() => setShowSearch(false)}
+                onClick={closeSearch}
                 title="Закрыть панель (Esc)"
                 className="p-1 rounded text-slate-400 hover:text-slate-100 hover:bg-slate-700/40 transition-colors ml-1"
               >
@@ -1129,7 +1773,7 @@ export function SqlEditor({
                   if (e.key === 'Escape') {
                     e.preventDefault();
                     e.stopPropagation();
-                    setShowSearch(false);
+                    closeSearch();
                   }
                 }}
                 className={`flex-1 min-w-[120px] px-2 py-1 rounded text-xs border outline-none font-mono ${
@@ -1213,6 +1857,29 @@ export function SqlEditor({
               // Synchronous changes are already pushed, no action needed on blur
             }}
             onKeyDown={handleKeyDown}
+            onCopy={() => {
+              const sel = window.getSelection()?.toString();
+              if (sel) lastCopiedTextRef.current = sel;
+            }}
+            onCut={() => {
+              const sel = window.getSelection()?.toString();
+              if (sel) lastCopiedTextRef.current = sel;
+            }}
+            onPaste={(e) => {
+              const pasted = e.clipboardData?.getData('text/plain');
+              if (pasted) {
+                lastCopiedTextRef.current = pasted;
+              }
+              if (pendingPasteModeRef.current) {
+                e.preventDefault();
+                const mode = pendingPasteModeRef.current;
+                pendingPasteModeRef.current = null;
+                const clipText = pasted || lastCopiedTextRef.current;
+                if (clipText) {
+                  performPaste(clipText, mode === 'end');
+                }
+              }
+            }}
             onSelect={handleSelectionChange}
             onKeyUp={handleSelectionChange}
             onMouseUp={handleSelectionChange}

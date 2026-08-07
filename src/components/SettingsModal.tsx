@@ -66,6 +66,8 @@ export interface UiVisibilitySettings {
   duckDbMaxRows?: number;
   showClickhouseConfig?: boolean;
   clickhouseMaxRows?: number;
+  showConnectorxConfig?: boolean;
+  connectorxMaxRows?: number;
   showSearchSql?: boolean;
   showOpenFile: boolean;
   showWin1251Button?: boolean;
@@ -122,6 +124,8 @@ export const DEFAULT_UI_VISIBILITY: UiVisibilitySettings = {
   duckDbMaxRows: 100,
   showClickhouseConfig: true,
   clickhouseMaxRows: 100,
+  showConnectorxConfig: true,
+  connectorxMaxRows: 100,
   showSearchSql: true,
   showOpenFile: true,
   showWin1251Button: true,
@@ -253,7 +257,49 @@ export const DEFAULT_HOTKEYS: HotkeyBinding[] = [
     label: 'Формат в одну строку',
     description: 'Заменить переносы строк на пробелы и удалить двойные пробелы',
     category: 'Редактор',
+    defaultKey: 'Ctrl+Alt+M'
+  },
+  {
+    id: 'pasteAtEnd',
+    label: 'Вставить буфер в конец выделенных строк',
+    description: 'Вставить содержимое буфера обмена в конец каждой выделенной строки',
+    category: 'Редактор',
+    defaultKey: 'Ctrl+Shift+V'
+  },
+  {
+    id: 'pasteAtStart',
+    label: 'Вставить буфер в начало выделенных строк',
+    description: 'Вставить содержимое буфера обмена в начало каждой выделенной строки',
+    category: 'Редактор',
+    defaultKey: 'Ctrl+Alt+V'
+  },
+  {
+    id: 'moveLinesUp',
+    label: 'Переместить строки вверх',
+    description: 'Переместить выделенные строки (или текущую строку) на одну позицию вверх',
+    category: 'Редактор',
+    defaultKey: 'Alt+Up'
+  },
+  {
+    id: 'moveLinesDown',
+    label: 'Переместить строки вниз',
+    description: 'Переместить выделенные строки (или текущую строку) на одну позицию вниз',
+    category: 'Редактор',
+    defaultKey: 'Alt+Down'
+  },
+  {
+    id: 'toUpperCase',
+    label: 'Преобразовать в ВЕРХНИЙ регистр',
+    description: 'Перевести выделенный текст или слово в верхний регистр',
+    category: 'Редактор',
     defaultKey: 'Ctrl+Shift+U'
+  },
+  {
+    id: 'toLowerCase',
+    label: 'Преобразовать в нижний регистр',
+    description: 'Перевести выделенный текст или слово в нижний регистр',
+    category: 'Редактор',
+    defaultKey: 'Ctrl+Shift+L'
   },
   {
     id: 'quickActionsMenu',
@@ -604,7 +650,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           const value = localStorage.getItem(key);
           if (value !== null) {
             try {
-              backupData[key] = JSON.parse(value);
+              let parsed = JSON.parse(value);
+              // Sanitize passwords in exported session configuration
+              if (key === 'sql_visualizer_session_v2' && parsed && typeof parsed === 'object') {
+                if (parsed.clickhouseConfig) {
+                  parsed.clickhouseConfig = { ...parsed.clickhouseConfig, key: '' };
+                }
+                if (parsed.connectorxConfig) {
+                  parsed.connectorxConfig = { ...parsed.connectorxConfig, uri: '' };
+                }
+              }
+              backupData[key] = parsed;
             } catch (_) {
               backupData[key] = value;
             }
@@ -760,6 +816,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     localStorage.setItem(UI_VISIBILITY_STORAGE_KEY, JSON.stringify(updated));
   };
 
+  const updateConnectorxMaxRows = (val: number) => {
+    const updated = { ...uiVisibility, connectorxMaxRows: val };
+    onUpdateUiVisibility(updated);
+    localStorage.setItem(UI_VISIBILITY_STORAGE_KEY, JSON.stringify(updated));
+  };
+
   const updateUiScale = (val: number) => {
     const updated = { ...uiVisibility, uiScale: val };
     onUpdateUiVisibility(updated);
@@ -870,6 +932,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   {[
                     { key: 'showDuckDbConfig', label: 'Интеграция DuckDB', desc: 'Кнопки подключения и выполнения кода' },
                     { key: 'showClickhouseConfig', label: 'Интеграция Clickhouse (http/https)', desc: 'Кнопки подключения и выполнения Clickhouse HTTP(S) запросов' },
+                    { key: 'showConnectorxConfig', label: 'Интеграция ConnectorX (Oracle, Postgres, CH)', desc: 'Кнопка подключения и выполнение запросов через ConnectorX' },
                     { key: 'showEditorToggleBtn', label: 'Кнопка «Скрыть редактор»', desc: 'Кнопка скрытия левой панели' },
                     { key: 'showSearchSql', label: 'Кнопка «Поиск»', desc: 'Поиск и замена текста в редакторе (Ctrl+F)' },
                     { key: 'showOpenFile', label: 'Открыть файл (.sql)', desc: 'Загрузка файла с диска' },
@@ -933,6 +996,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 onChange={e => {
                                   const val = parseInt(e.target.value);
                                   if (!isNaN(val) && val > 0) updateClickhouseMaxRows(val);
+                                }}
+                                className={`w-16 px-1.5 py-0.5 text-xs rounded border outline-none ${theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'}`}
+                              />
+                            </div>
+                          )}
+                          {item.key === 'showConnectorxConfig' && isChecked && (
+                            <div className="mt-2 flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                              <span className="text-[10px]">Max rows:</span>
+                              <input 
+                                type="number" 
+                                min="1" 
+                                step="10"
+                                value={uiVisibility.connectorxMaxRows ?? 100} 
+                                onChange={e => {
+                                  const val = parseInt(e.target.value);
+                                  if (!isNaN(val) && val > 0) updateConnectorxMaxRows(val);
                                 }}
                                 className={`w-16 px-1.5 py-0.5 text-xs rounded border outline-none ${theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'}`}
                               />
