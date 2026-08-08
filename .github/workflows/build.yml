@@ -58,11 +58,15 @@ jobs:
       - name: Update Cargo dependencies
         run: cargo update --manifest-path src-tauri/Cargo.toml
 
+      - name: Set Cargo Target Dir for Windows
+        if: matrix.platform == 'windows-latest'
+        shell: bash
+        run: echo "CARGO_TARGET_DIR=C:\t" >> $GITHUB_ENV
+
       - name: Build Tauri Application
         uses: tauri-apps/tauri-action@v0
         env:
           CARGO_BUILD_JOBS: 2
-          CARGO_TARGET_DIR: ${{ matrix.platform == 'windows-latest' && 'C:\t' || './src-tauri/target' }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: v__VERSION__ # This will be automatically replaced with the version in tauri.conf.json
