@@ -7,7 +7,7 @@
   },
   "package": {
     "productName": "QueryAST Lens",
-    "version": "1.0.0"
+    "version": "6.3.0"
   },
   "tauri": {
     "allowlist": {
