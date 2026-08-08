@@ -27,9 +27,11 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Setup MSVC developer command prompt
+      - name: Enable long paths on Windows
         if: matrix.platform == 'windows-latest'
-        uses: ilammy/msvc-dev-cmd@v1
+        run: |
+          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name 'LongPathsEnabled' -Value 1
+          git config --global core.longpaths true
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -39,7 +41,6 @@ jobs:
       - name: Install system dependencies (Windows)
         if: matrix.platform == 'windows-latest'
         run: |
-          # WiX Toolset is already installed on github runner images, but we make sure setup is complete.
           echo "Preparing Windows build environment..."
 
       - name: Install web app dependencies
@@ -60,7 +61,8 @@ jobs:
       - name: Build Tauri Application
         uses: tauri-apps/tauri-action@v0
         env:
-          CARGO_BUILD_JOBS: 1
+          CARGO_BUILD_JOBS: 2
+          CARGO_TARGET_DIR: ${{ matrix.platform == 'windows-latest' && 'C:\t' || './src-tauri/target' }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: v__VERSION__ # This will be automatically replaced with the version in tauri.conf.json
