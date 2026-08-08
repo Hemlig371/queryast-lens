@@ -1978,7 +1978,7 @@ export default function App() {
       return;
     }
 
-    if (!duckDbConnectedPath && !clickhouseConfig) {
+    if (!duckDbConnectedPath && !clickhouseConfig && !connectorxConfig) {
       return;
     }
 
@@ -3683,7 +3683,7 @@ export default function App() {
         if (!currentIsMaximizedSql) {
           currentHandleVisualize();
         }
-        if (currentUiVisibility.showDuckDbConfig || currentUiVisibility.showClickhouseConfig) {
+        if (currentUiVisibility.showDuckDbConfig || currentUiVisibility.showClickhouseConfig || currentUiVisibility.showConnectorxConfig) {
           currentHandleExecuteDuckDb();
         }
       } else if (combo === (currentHotkeys.saveFile || 'Ctrl+S')) {
@@ -5380,7 +5380,7 @@ export default function App() {
                   className="hidden" 
                 />
 
-                {(uiVisibility.showDuckDbConfig || uiVisibility.showClickhouseConfig) && (
+                {(uiVisibility.showDuckDbConfig || uiVisibility.showClickhouseConfig || uiVisibility.showConnectorxConfig) && (
                 <div className="flex items-center gap-1.5">
                   <div className="relative">
                     <button
@@ -5776,7 +5776,7 @@ export default function App() {
                         onCompactSql={handleCompactSql}
                         onExecuteQuickAction={handleExecuteQuickAction}
                         extractedTableName={extractedTableName}
-                        isQuickActionsEnabled={uiVisibility.showDuckDbConfig || uiVisibility.showClickhouseConfig}
+                        isQuickActionsEnabled={uiVisibility.showDuckDbConfig || uiVisibility.showClickhouseConfig || uiVisibility.showConnectorxConfig}
                       />
                     </ErrorBoundary>
                   )}
@@ -6162,7 +6162,7 @@ export default function App() {
             </div>
 
             {/* DUCKDB / CLICKHOUSE RESULTS PANEL */}
-            {isMaximizedSql && (uiVisibility.showDuckDbConfig || uiVisibility.showClickhouseConfig) && isDuckDbResultVisible && (
+            {isMaximizedSql && (uiVisibility.showDuckDbConfig || uiVisibility.showClickhouseConfig || uiVisibility.showConnectorxConfig) && isDuckDbResultVisible && (
               <div 
                 className={`flex flex-col min-h-0 overflow-hidden ${
                   theme === 'dark' ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300'
