@@ -4,7 +4,6 @@
 )]
 
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use duckdb::{Config, Connection, Result, types::{Value, ValueRef}};
 use serde::{Deserialize, Serialize};
@@ -18,7 +17,7 @@ use futures_util::StreamExt;
 pub struct DbState(pub Arc<Mutex<Option<Connection>>>);
 
 pub struct DuckDbCancelState {
-    pub interrupt_handle: Arc<Mutex<Option<duckdb::InterruptHandle>>>,
+    pub interrupt_handle: Arc<Mutex<Option<Arc<duckdb::InterruptHandle>>>>,
 }
 
 pub struct ClickhouseState {
@@ -80,9 +79,10 @@ fn connect_db(state: State<'_, DbState>, path: String, options: Option<DuckDbCon
     let path_buf = path.trim().to_string();
 
     let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<Connection, String> {
-        let config = Config::default()
-            .allow_unsigned_extensions(options.as_ref().and_then(|o| o.allow_unsigned_extensions).unwrap_or(false))
-            .map_err(|e| e.to_string())?;
+        let mut config = Config::default();
+        if options.as_ref().and_then(|o| o.allow_unsigned_extensions).unwrap_or(false) {
+            config = config.allow_unsigned_extensions().map_err(|e| e.to_string())?;
+        }
         let conn = if path_buf.is_empty() {
             Connection::open_in_memory_with_flags(config).map_err(|e| e.to_string())?
         } else {
