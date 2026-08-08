@@ -4,7 +4,6 @@
 )]
 
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use duckdb::{Connection, Result, types::{Value, ValueRef}};
 use serde::{Deserialize, Serialize};
@@ -531,10 +530,10 @@ async fn query_connectorx_preview(
 
         let queries = vec![connectorx::prelude::CXQuery::from(query.as_str())];
 
-        let mut destination = connectorx::get_arrow::get_arrow(source_conn, None, &queries)
+        let destination = connectorx::get_arrow::get_arrow(&source_conn, None, &queries, None)
             .map_err(|e| format!("Ошибка выполнения запроса ConnectorX: {}", e))?;
 
-        let batches = destination.arrow_collect()
+        let batches = destination.arrow()
             .map_err(|e| format!("Ошибка получения результата Arrow: {}", e))?;
 
         convert_arrow_batches_to_query_result(&batches)
@@ -587,10 +586,10 @@ async fn connectorx_copy_to(
             vec![connectorx::prelude::CXQuery::from(query.as_str())]
         };
 
-        let mut destination = connectorx::get_arrow::get_arrow(source_conn, None, &queries)
+        let destination = connectorx::get_arrow::get_arrow(&source_conn, None, &queries, None)
             .map_err(|e| format!("Ошибка выполнения запроса ConnectorX: {}", e))?;
 
-        let batches = destination.arrow_collect()
+        let batches = destination.arrow()
             .map_err(|e| format!("Ошибка формирования пакетов Arrow: {}", e))?;
 
         if batches.is_empty() {
@@ -623,7 +622,7 @@ async fn connectorx_copy_to(
 
 fn main() {
   tauri::Builder::default()
-    .plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
+    .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
         if let Some(window) = app.get_window("main") {
             let _ = window.show();
             let _ = window.set_focus();
