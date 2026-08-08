@@ -64,6 +64,11 @@ export interface UiVisibilitySettings {
   showHistory: boolean;
   showDuckDbConfig?: boolean;
   duckDbMaxRows?: number;
+  duckDbAllowUnsignedExtensions?: boolean;
+  duckDbMemoryLimit?: string;
+  duckDbTempDirectory?: string;
+  duckDbExtensionDirectory?: string;
+  duckDbThreads?: number;
   showClickhouseConfig?: boolean;
   clickhouseMaxRows?: number;
   showSearchSql?: boolean;
@@ -120,6 +125,11 @@ export const DEFAULT_UI_VISIBILITY: UiVisibilitySettings = {
   showHistory: true,
   showDuckDbConfig: true,
   duckDbMaxRows: 100,
+  duckDbAllowUnsignedExtensions: false,
+  duckDbMemoryLimit: '8GB',
+  duckDbTempDirectory: './tmp',
+  duckDbExtensionDirectory: './extensions',
+  duckDbThreads: 0,
   showClickhouseConfig: true,
   clickhouseMaxRows: 100,
   showSearchSql: true,
@@ -253,7 +263,49 @@ export const DEFAULT_HOTKEYS: HotkeyBinding[] = [
     label: 'Формат в одну строку',
     description: 'Заменить переносы строк на пробелы и удалить двойные пробелы',
     category: 'Редактор',
+    defaultKey: 'Ctrl+Alt+M'
+  },
+  {
+    id: 'pasteAtEnd',
+    label: 'Вставить буфер в конец выделенных строк',
+    description: 'Вставить содержимое буфера обмена в конец каждой выделенной строки',
+    category: 'Редактор',
+    defaultKey: 'Ctrl+Shift+V'
+  },
+  {
+    id: 'pasteAtStart',
+    label: 'Вставить буфер в начало выделенных строк',
+    description: 'Вставить содержимое буфера обмена в начало каждой выделенной строки',
+    category: 'Редактор',
+    defaultKey: 'Ctrl+Alt+V'
+  },
+  {
+    id: 'moveLinesUp',
+    label: 'Переместить строки вверх',
+    description: 'Переместить выделенные строки (или текущую строку) на одну позицию вверх',
+    category: 'Редактор',
+    defaultKey: 'Alt+Up'
+  },
+  {
+    id: 'moveLinesDown',
+    label: 'Переместить строки вниз',
+    description: 'Переместить выделенные строки (или текущую строку) на одну позицию вниз',
+    category: 'Редактор',
+    defaultKey: 'Alt+Down'
+  },
+  {
+    id: 'toUpperCase',
+    label: 'Преобразовать в ВЕРХНИЙ регистр',
+    description: 'Перевести выделенный текст или слово в верхний регистр',
+    category: 'Редактор',
     defaultKey: 'Ctrl+Shift+U'
+  },
+  {
+    id: 'toLowerCase',
+    label: 'Преобразовать в нижний регистр',
+    description: 'Перевести выделенный текст или слово в нижний регистр',
+    category: 'Редактор',
+    defaultKey: 'Ctrl+Shift+L'
   },
   {
     id: 'quickActionsMenu',
@@ -754,6 +806,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     localStorage.setItem(UI_VISIBILITY_STORAGE_KEY, JSON.stringify(updated));
   };
 
+  const updateDuckDbSettings = (partial: Partial<UiVisibilitySettings>) => {
+    const updated = { ...uiVisibility, ...partial };
+    onUpdateUiVisibility(updated);
+    localStorage.setItem(UI_VISIBILITY_STORAGE_KEY, JSON.stringify(updated));
+  };
+
   const updateClickhouseMaxRows = (val: number) => {
     const updated = { ...uiVisibility, clickhouseMaxRows: val };
     onUpdateUiVisibility(updated);
@@ -885,9 +943,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   ].map((item) => {
                     const isChecked = Boolean(uiVisibility[item.key as keyof UiVisibilitySettings]);
                     return (
-                      <label
+                      <div
                         key={item.key}
-                        className={`flex items-start gap-3 p-2.5 rounded-lg border cursor-pointer transition-all ${
+                        className={`p-2.5 rounded-lg border transition-all ${
                           isChecked
                             ? theme === 'dark'
                               ? 'bg-slate-800/80 border-blue-500/50 text-slate-100'
@@ -897,49 +955,113 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               : 'bg-slate-50 border-slate-200 text-slate-500 opacity-60'
                         }`}
                       >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => toggleUiElement(item.key as keyof UiVisibilitySettings)}
-                          className="mt-0.5 rounded border-slate-600 text-blue-600 focus:ring-blue-500 w-4 h-4 shrink-0"
-                        />
-                        <div className="flex-1">
-                          <div className="text-xs font-semibold">{item.label}</div>
-                          <div className="text-[10px] opacity-75 mb-1">{item.desc}</div>
-                          {item.key === 'showDuckDbConfig' && isChecked && (
-                            <div className="mt-2 flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                              <span className="text-[10px]">Max rows:</span>
-                              <input 
-                                type="number" 
-                                min="1" 
-                                step="10"
-                                value={uiVisibility.duckDbMaxRows ?? 100} 
-                                onChange={e => {
-                                  const val = parseInt(e.target.value);
-                                  if (!isNaN(val) && val > 0) updateDuckDbMaxRows(val);
-                                }}
-                                className={`w-16 px-1.5 py-0.5 text-xs rounded border outline-none ${theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'}`}
-                              />
-                            </div>
-                          )}
-                          {item.key === 'showClickhouseConfig' && isChecked && (
-                            <div className="mt-2 flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                              <span className="text-[10px]">Max rows:</span>
-                              <input 
-                                type="number" 
-                                min="1" 
-                                step="10"
-                                value={uiVisibility.clickhouseMaxRows ?? 100} 
-                                onChange={e => {
-                                  const val = parseInt(e.target.value);
-                                  if (!isNaN(val) && val > 0) updateClickhouseMaxRows(val);
-                                }}
-                                className={`w-16 px-1.5 py-0.5 text-xs rounded border outline-none ${theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'}`}
-                              />
-                            </div>
-                          )}
+                        <div className="flex items-start gap-3">
+                          <input
+                            type="checkbox"
+                            id={`toggle-${item.key}`}
+                            checked={isChecked}
+                            onChange={() => toggleUiElement(item.key as keyof UiVisibilitySettings)}
+                            className="mt-0.5 rounded border-slate-600 text-blue-600 focus:ring-blue-500 w-4 h-4 shrink-0 cursor-pointer"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <label htmlFor={`toggle-${item.key}`} className="cursor-pointer select-none block">
+                              <div className="text-xs font-semibold">{item.label}</div>
+                              <div className="text-[10px] opacity-75 mb-1">{item.desc}</div>
+                            </label>
+                            {item.key === 'showDuckDbConfig' && isChecked && (
+                              <div className="mt-2.5 pt-2 border-t border-slate-700/40 space-y-2 text-[11px]" onClick={e => e.stopPropagation()}>
+                                <div className="flex items-center gap-2">
+                                  <span className="opacity-80 shrink-0">Max rows:</span>
+                                  <input 
+                                    type="number" 
+                                    min="1" 
+                                    step="10"
+                                    value={uiVisibility.duckDbMaxRows ?? 100} 
+                                    onChange={e => {
+                                      const val = parseInt(e.target.value);
+                                      if (!isNaN(val) && val > 0) updateDuckDbMaxRows(val);
+                                    }}
+                                    className={`w-20 px-1.5 py-0.5 text-xs rounded border outline-none ${theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'}`}
+                                  />
+                                </div>
+
+                                <label className="flex items-center gap-2 cursor-pointer select-none">
+                                  <input
+                                    type="checkbox"
+                                    checked={uiVisibility.duckDbAllowUnsignedExtensions ?? false}
+                                    onChange={e => updateDuckDbSettings({ duckDbAllowUnsignedExtensions: e.target.checked })}
+                                    className="rounded border-slate-600 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
+                                  />
+                                  <span>allow_unsigned_extensions</span>
+                                </label>
+
+                                <div className="grid grid-cols-1 gap-1.5 pt-1">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="opacity-80 shrink-0">Memory Limit:</span>
+                                    <input 
+                                      type="text" 
+                                      placeholder="8GB"
+                                      value={uiVisibility.duckDbMemoryLimit ?? '8GB'} 
+                                      onChange={e => updateDuckDbSettings({ duckDbMemoryLimit: e.target.value })}
+                                      className={`w-28 px-1.5 py-0.5 text-xs rounded border outline-none ${theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'}`}
+                                    />
+                                  </div>
+
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="opacity-80 shrink-0">Temp Directory:</span>
+                                    <input 
+                                      type="text" 
+                                      placeholder="./tmp"
+                                      value={uiVisibility.duckDbTempDirectory ?? './tmp'} 
+                                      onChange={e => updateDuckDbSettings({ duckDbTempDirectory: e.target.value })}
+                                      className={`w-28 px-1.5 py-0.5 text-xs rounded border outline-none ${theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'}`}
+                                    />
+                                  </div>
+
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="opacity-80 shrink-0">Extension Directory:</span>
+                                    <input 
+                                      type="text" 
+                                      placeholder="./extensions"
+                                      value={uiVisibility.duckDbExtensionDirectory ?? './extensions'} 
+                                      onChange={e => updateDuckDbSettings({ duckDbExtensionDirectory: e.target.value })}
+                                      className={`w-28 px-1.5 py-0.5 text-xs rounded border outline-none ${theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'}`}
+                                    />
+                                  </div>
+
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="opacity-80 shrink-0">Threads (0 = auto):</span>
+                                    <input 
+                                      type="number" 
+                                      min="0"
+                                      max="128"
+                                      value={uiVisibility.duckDbThreads ?? 0} 
+                                      onChange={e => updateDuckDbSettings({ duckDbThreads: parseInt(e.target.value) || 0 })}
+                                      className={`w-28 px-1.5 py-0.5 text-xs rounded border outline-none ${theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'}`}
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                            {item.key === 'showClickhouseConfig' && isChecked && (
+                              <div className="mt-2 flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                                <span className="text-[10px]">Max rows:</span>
+                                <input 
+                                  type="number" 
+                                  min="1" 
+                                  step="10"
+                                  value={uiVisibility.clickhouseMaxRows ?? 100} 
+                                  onChange={e => {
+                                    const val = parseInt(e.target.value);
+                                    if (!isNaN(val) && val > 0) updateClickhouseMaxRows(val);
+                                  }}
+                                  className={`w-16 px-1.5 py-0.5 text-xs rounded border outline-none ${theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'}`}
+                                />
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </label>
+                      </div>
                     );
                   })}
                 </div>

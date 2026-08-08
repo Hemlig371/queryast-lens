@@ -40,9 +40,34 @@ app.get("/api/health", (req, res) => {
 let db: any = null;
 let currentDbPath: string | null = null;
 
+function applyDuckDbPragmas(dbObj: any, config: any) {
+  if (!dbObj || !config) return;
+  const { allowUnsignedExtensions, memoryLimit, tempDirectory, extensionDirectory, threads } = config;
+  
+  if (allowUnsignedExtensions !== undefined) {
+    const val = allowUnsignedExtensions ? 'true' : 'false';
+    dbObj.run(`SET allow_unsigned_extensions=${val};`, () => {});
+  }
+  if (memoryLimit && String(memoryLimit).trim()) {
+    const cleanMem = String(memoryLimit).trim().replace(/['";]/g, '');
+    dbObj.run(`PRAGMA memory_limit='${cleanMem}';`, () => {});
+  }
+  if (threads !== undefined && parseInt(threads) >= 0) {
+    dbObj.run(`PRAGMA threads=${parseInt(threads)};`, () => {});
+  }
+  if (tempDirectory && String(tempDirectory).trim()) {
+    const cleanDir = String(tempDirectory).trim().replace(/['";]/g, '');
+    dbObj.run(`PRAGMA temp_directory='${cleanDir}';`, () => {});
+  }
+  if (extensionDirectory && String(extensionDirectory).trim()) {
+    const cleanDir = String(extensionDirectory).trim().replace(/['";]/g, '');
+    dbObj.run(`PRAGMA extension_directory='${cleanDir}';`, () => {});
+  }
+}
+
 app.post("/api/duckdb/connect", async (req, res) => {
   try {
-    let { dbPath } = req.body;
+    let { dbPath, config } = req.body;
     if (!dbPath) {
       return res.status(400).json({ error: "dbPath is required" });
     }
@@ -52,18 +77,45 @@ app.post("/api/duckdb/connect", async (req, res) => {
       return res.status(500).json({ error: "Native DuckDB is not available on this server environment. Use WASM mode." });
     }
 
-    // Remove directory fallback for DuckDB file
     if (db) {
       if (typeof db.close === 'function') {
         db.close();
       }
     }
 
-    db = new duckdbModule.Database(dbPath);
+    const allowUnsigned = config?.allowUnsignedExtensions ?? false;
+    const dbOpts: any = {
+      allow_unsigned_extensions: allowUnsigned ? "true" : "false"
+    };
+    if (config?.memoryLimit) {
+      dbOpts.max_memory = String(config.memoryLimit);
+    }
+    if (config?.threads) {
+      dbOpts.threads = String(config.threads);
+    }
+
+    db = new duckdbModule.Database(dbPath, dbOpts);
     currentDbPath = dbPath;
+
+    if (config) {
+      applyDuckDbPragmas(db, config);
+    }
+
     res.json({ success: true, path: dbPath });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/duckdb/configure", (req, res) => {
+  if (!db) {
+    return res.status(400).json({ error: "No database connected" });
+  }
+  try {
+    applyDuckDbPragmas(db, req.body);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 

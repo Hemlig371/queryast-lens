@@ -114,7 +114,13 @@ export async function executeClickhouseQueryTauri(config: ClickhouseConfig, quer
       body: query
     });
 
-    const responseText = response.text || '';
+    let responseText = '';
+    if (response.bytes && Array.isArray(response.bytes)) {
+      const uint8Array = new Uint8Array(response.bytes);
+      responseText = new TextDecoder('utf-8').decode(uint8Array);
+    } else {
+      responseText = response.text || '';
+    }
     
     try {
       const parsed = JSON.parse(responseText);

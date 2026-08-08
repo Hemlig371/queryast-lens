@@ -121,11 +121,56 @@ export async function getDuckDbWasm() {
   const logger = new duckdb.ConsoleLogger();
   const db = new duckdb.AsyncDuckDB(logger, worker);
   await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+  try {
+    await db.open({ allowUnsignedExtensions: true });
+  } catch (_) {
+    // Ignore if already opened during instantiate
+  }
   dbInstance = db;
   return db;
 }
 
-export async function connectDuckDbWasmMemory() {
+export interface DuckDbConfigOptions {
+  allowUnsignedExtensions?: boolean;
+  memoryLimit?: string;
+  tempDirectory?: string;
+  extensionDirectory?: string;
+  threads?: number;
+}
+
+export async function applyDuckDbConfigWasm(options?: DuckDbConfigOptions) {
+  if (!options) return;
+  const db = await getDuckDbWasm();
+  if (!connInstance) {
+    connInstance = await db.connect();
+  }
+
+  try {
+    if (options.allowUnsignedExtensions !== undefined) {
+      const val = options.allowUnsignedExtensions ? 'true' : 'false';
+      await connInstance.query(`SET allow_unsigned_extensions = ${val};`);
+    }
+    if (options.memoryLimit && options.memoryLimit.trim()) {
+      const cleanMem = options.memoryLimit.trim().replace(/['";]/g, '');
+      await connInstance.query(`PRAGMA memory_limit = '${cleanMem}';`);
+    }
+    if (options.threads !== undefined && options.threads >= 0) {
+      await connInstance.query(`PRAGMA threads = ${options.threads};`);
+    }
+    if (options.tempDirectory && options.tempDirectory.trim()) {
+      const cleanDir = options.tempDirectory.trim().replace(/['";]/g, '');
+      await connInstance.query(`PRAGMA temp_directory = '${cleanDir}';`);
+    }
+    if (options.extensionDirectory && options.extensionDirectory.trim()) {
+      const cleanDir = options.extensionDirectory.trim().replace(/['";]/g, '');
+      await connInstance.query(`PRAGMA extension_directory = '${cleanDir}';`);
+    }
+  } catch (e) {
+    console.warn("Failed to apply DuckDB WASM config PRAGMAs:", e);
+  }
+}
+
+export async function connectDuckDbWasmMemory(options?: DuckDbConfigOptions) {
   const db = await getDuckDbWasm();
   if (connInstance) {
     try {
@@ -134,10 +179,13 @@ export async function connectDuckDbWasmMemory() {
     connInstance = null;
   }
   connInstance = await db.connect();
+  if (options) {
+    await applyDuckDbConfigWasm(options);
+  }
   return ":memory:";
 }
 
-export async function connectDuckDbWasmFile(file: File) {
+export async function connectDuckDbWasmFile(file: File, options?: DuckDbConfigOptions) {
   const db = await getDuckDbWasm();
   if (connInstance) {
     try {
@@ -151,6 +199,10 @@ export async function connectDuckDbWasmFile(file: File) {
 
   await db.registerFileBuffer(fileName, new Uint8Array(arrayBuffer));
   connInstance = await db.connect();
+
+  if (options) {
+    await applyDuckDbConfigWasm(options);
+  }
 
   try {
     await connInstance.query(`ATTACH '${fileName}' AS attached_db`);
