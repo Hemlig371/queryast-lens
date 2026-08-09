@@ -54,7 +54,6 @@ export interface FormatterSettings {
   useTabs: boolean;
   expressionWidth: number;
   denseOperators: boolean;
-  autoEscapeWindowsPaths?: boolean;
 }
 
 export interface UiVisibilitySettings {
@@ -115,7 +114,6 @@ export const DEFAULT_FORMATTER_SETTINGS: FormatterSettings = {
   useTabs: false,
   expressionWidth: 120,
   denseOperators: false,
-  autoEscapeWindowsPaths: true,
 };
 
 export const DEFAULT_UI_VISIBILITY: UiVisibilitySettings = {
@@ -1459,22 +1457,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     />
                     <span className={`text-xs ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>
                       Без пробелов вокруг операторов (`a+b`)
-                    </span>
-                  </label>
-                </div>
-                <div>
-                  <label className={`font-bold text-xs block mb-1 ${theme === 'dark' ? 'text-slate-200' : 'text-slate-900'}`}>
-                    Пути Windows
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer mt-2">
-                    <input
-                      type="checkbox"
-                      checked={formatterSettings.autoEscapeWindowsPaths ?? true}
-                      onChange={(e) => updateFormatter({ autoEscapeWindowsPaths: e.target.checked })}
-                      className="rounded border-slate-700 text-blue-600 focus:ring-blue-500 w-4 h-4"
-                    />
-                    <span className={`text-xs ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>
-                      Авто-экранирование путей Windows (C:\...) в выражениях FROM/TO
                     </span>
                   </label>
                 </div>
