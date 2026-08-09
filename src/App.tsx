@@ -2357,7 +2357,7 @@ export default function App() {
 
       // SELECT / WITH query pagination limit wrapper
       const maxRows = pageSizeToUse ?? effectiveMaxRows;
-      let queryWithLimit = queryToExec.trim();
+      let queryWithLimit = finalQuery;
 
       if (maxRows > 0 && /^\s*\(?\s*(SELECT|WITH|FROM|VALUES|DESCRIBE|SHOW)\b/i.test(cleanSqlHead)) {
         const stripped = queryWithLimit.replace(/;+$/, '');
