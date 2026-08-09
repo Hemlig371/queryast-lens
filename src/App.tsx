@@ -2657,12 +2657,8 @@ export default function App() {
     setTabs(prev => prev.map(t => {
       if (t.id === activeTabId) {
         if (t.sql === newSql) return t;
-        if (t.isModified) {
-          return { ...t, sql: newSql };
-        }
-        const saved = t.savedContent ?? '';
-        const isModified = newSql !== saved;
-        return { ...t, sql: newSql, isModified };
+        if (t.isModified) return { ...t, sql: newSql };
+        return { ...t, sql: newSql, isModified: true };
       }
       return t;
     }));
@@ -2773,7 +2769,7 @@ export default function App() {
     }
 
     // Tauri Desktop save logic
-    if (isTauriEnvironment()) {
+    if (isTauriEnvironment() || isTauriEnv) {
       try {
         let targetFilePath = activeTab?.filePath;
 
@@ -2786,35 +2782,37 @@ export default function App() {
             });
           } else {
             try {
-              savePath = await tauriInvoke<string>('save_file_dialog', { defaultName: suggestedName });
-            } catch {
-              if ((window as any).__TAURI__?.invoke) {
-                savePath = await (window as any).__TAURI__.invoke('tauri', {
-                  __tauriModule: 'Dialog',
-                  message: { cmd: 'saveDialog', options: { defaultPath: suggestedName, filters: [{ name: 'SQL Files', extensions: ['sql'] }] } }
-                });
-              }
+              const { save } = await import('@tauri-apps/api/dialog');
+              savePath = await save({
+                defaultPath: suggestedName,
+                filters: [{ name: 'SQL Files', extensions: ['sql'] }],
+              });
+            } catch (e) {
+              console.warn("Tauri dialog import save failed:", e);
             }
           }
 
-          if (!savePath) return; // Cancelled
+          if (!savePath) return; // User cancelled save dialog
           targetFilePath = savePath;
         }
 
         // Write text file in Tauri
+        let fileWritten = false;
         if ((window as any).__TAURI__?.fs?.writeTextFile) {
           await (window as any).__TAURI__.fs.writeTextFile(targetFilePath, currentSql);
+          fileWritten = true;
         } else {
           try {
-            await tauriInvoke('write_text_file', { path: targetFilePath, contents: currentSql });
-          } catch {
-            if ((window as any).__TAURI__?.invoke) {
-              await (window as any).__TAURI__.invoke('tauri', {
-                __tauriModule: 'Fs',
-                message: { cmd: 'writeFile', path: targetFilePath, contents: currentSql }
-              });
-            }
+            const { writeTextFile } = await import('@tauri-apps/api/fs');
+            await writeTextFile(targetFilePath, currentSql);
+            fileWritten = true;
+          } catch (e) {
+            console.warn("Tauri writeTextFile import failed, trying tauriInvoke:", e);
           }
+        }
+
+        if (!fileWritten) {
+          await tauriInvoke('write_text_file', { path: targetFilePath, contents: currentSql });
         }
 
         const fileName = targetFilePath.split(/[/\\]/).pop() || suggestedName;
@@ -4490,10 +4488,13 @@ export default function App() {
           <div className={`flex items-center justify-between px-4 h-[38px] border-b shrink-0 select-none transition-colors ${
             theme === 'dark' ? 'bg-slate-750 border-slate-600' : 'bg-slate-200/80 border-slate-400/60'
           }`}>
-            <div className="flex items-center gap-2.5">
-              <h3 className={`font-bold text-sm ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>
-                SQL Query
+            <div className="flex items-center gap-2 max-w-[240px] truncate">
+              <h3 className={`font-bold text-sm truncate ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>
+                {tabs.find(t => t.id === activeTabId)?.title || 'SQL Query'}
               </h3>
+              {tabs.find(t => t.id === activeTabId)?.isModified && (
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0" title="Файл изменен (не сохранен)" />
+              )}
             </div>
               <div className="flex items-center gap-1.5 relative">
                 {/* HIDDEN FILE INPUT FOR OPEN SQL FILE */}
@@ -5726,7 +5727,7 @@ export default function App() {
                               : 'bg-slate-200/40 border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/80'
                         }`}
                       >
-                        {tab.filePath && tab.isModified ? (
+                        {tab.isModified ? (
                           <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0" title="Файл изменен (не сохранен)" />
                         ) : (
                           <FileText className="w-3.5 h-3.5 shrink-0 opacity-70" />
