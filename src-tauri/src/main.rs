@@ -133,6 +133,16 @@ fn disconnect_db(state: State<'_, DbState>) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn write_text_file(path: String, contents: String) -> Result<(), String> {
+    std::fs::write(&path, contents).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn read_text_file(path: String) -> Result<String, String> {
+    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn execute_query(
     db_state: State<'_, DbState>,
     cancel_state: State<'_, DuckDbCancelState>,
@@ -178,7 +188,9 @@ async fn execute_query(
             };
 
             let col_count = stmt.column_count();
+            let column_names: Vec<String> = stmt.column_names().into_iter().map(|s| s.to_string()).collect();
             let mut rows_iter = stmt.query([]).map_err(|e| e.to_string())?;
+
             let mut rows = Vec::new();
 
             while let Ok(Some(row)) = rows_iter.next() {
@@ -262,8 +274,6 @@ async fn execute_query(
             }
 
             drop(rows_iter);
-
-            let column_names: Vec<String> = stmt.column_names().into_iter().map(|s| s.to_string()).collect();
 
             Ok(QueryResult {
                 columns: column_names,
@@ -531,6 +541,8 @@ fn main() {
       configure_db,
       disconnect_db,
       execute_query,
+      write_text_file,
+      read_text_file,
       cancel_duckdb_query,
       cancel_query,
       clickhouse_copy_to,
