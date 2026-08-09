@@ -177,9 +177,9 @@ async fn execute_query(
                 }
             };
 
+            let col_count = stmt.column_count();
             let mut rows_iter = stmt.query([]).map_err(|e| e.to_string())?;
             let mut rows = Vec::new();
-            let col_count = stmt.column_count();
 
             while let Ok(Some(row)) = rows_iter.next() {
                 let mut row_vals = Vec::with_capacity(col_count);
