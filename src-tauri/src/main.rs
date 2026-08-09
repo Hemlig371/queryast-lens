@@ -187,9 +187,16 @@ async fn execute_query(
                 }
             };
 
-            let col_count = stmt.column_count();
-            let column_names: Vec<String> = stmt.column_names().into_iter().map(|s| s.to_string()).collect();
             let mut rows_iter = stmt.query([]).map_err(|e| e.to_string())?;
+            
+            let (col_count, column_names) = if let Some(stmt_ref) = rows_iter.as_ref() {
+                (
+                    stmt_ref.column_count(),
+                    stmt_ref.column_names().into_iter().map(|s| s.to_string()).collect::<Vec<String>>()
+                )
+            } else {
+                (0, Vec::new())
+            };
 
             let mut rows = Vec::new();
 
