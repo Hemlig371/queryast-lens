@@ -10,6 +10,7 @@
     "version": "6.3.0"
   },
   "tauri": {
+    "withGlobalTauri": true,
     "allowlist": {
       "all": true,
       "http": {
