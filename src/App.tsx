@@ -2686,6 +2686,34 @@ export default function App() {
     return () => clearInterval(intervalId);
   }, [activeEngine]);
 
+  const openWithTauriAndDelegate = async (delegateFn: (e: any) => void) => {
+    try {
+      let openFn: any, readBinaryFileFn: any;
+      if (typeof window !== 'undefined' && (window as any).__TAURI__?.dialog?.open) {
+        openFn = (window as any).__TAURI__.dialog.open;
+        readBinaryFileFn = (window as any).__TAURI__.fs.readBinaryFile;
+      } else {
+        const dialog = await import('@tauri-apps/api/dialog');
+        const fs = await import('@tauri-apps/api/fs');
+        openFn = dialog.open;
+        readBinaryFileFn = fs.readBinaryFile;
+      }
+      const selected = await openFn({
+        multiple: false,
+        filters: [{ name: 'SQL Files', extensions: ['sql', 'txt'] }]
+      });
+      if (typeof selected === 'string') {
+        const bytes = await readBinaryFileFn(selected);
+        const fileName = selected.split(/[/\\]/).pop() || 'query.sql';
+        const file = new File([bytes], fileName, { type: 'text/plain' });
+        Object.defineProperty(file, 'path', { value: selected });
+        delegateFn({ target: { files: [file], value: '' } });
+      }
+    } catch (e) {
+      console.warn("Tauri open error:", e);
+    }
+  };
+
   const handleOpenFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -3598,6 +3626,7 @@ export default function App() {
       handleExecuteDuckDb,
       handleVisualize,
       handleSaveSqlFile,
+      openWithTauriAndDelegate,
       handleCopySql,
       handleFormatSql,
       handleSelectTab,
@@ -3640,6 +3669,7 @@ export default function App() {
         handleExecuteDuckDb: currentHandleExecuteDuckDb,
         handleVisualize: currentHandleVisualize,
         handleSaveSqlFile: currentHandleSaveSqlFile,
+        openWithTauriAndDelegate: currentOpenWithTauriAndDelegate,
         handleCopySql: currentHandleCopySql,
         handleFormatSql: currentHandleFormatSql,
         handleSelectTab: currentHandleSelectTab,
@@ -3755,7 +3785,11 @@ export default function App() {
       } else if (combo === (currentHotkeys.openFile || 'Ctrl+O')) {
         e.preventDefault();
         e.stopPropagation();
-        fileInputRef.current?.click();
+        if (isTauriEnvironment() || isTauriEnv) {
+          currentOpenWithTauriAndDelegate('utf-8');
+        } else {
+          fileInputRef.current?.click();
+        }
       } else if (combo === (currentHotkeys.copySql || 'Ctrl+Shift+C')) {
         e.preventDefault();
         e.stopPropagation();
@@ -4516,7 +4550,7 @@ export default function App() {
                 {/* OPEN FILE BUTTON */}
                 {uiVisibility.showOpenFile && (
                 <button
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={() => isTauriEnvironment() || isTauriEnv ? openWithTauriAndDelegate(handleOpenFile) : fileInputRef.current?.click()}
                   className={`flex items-center justify-center gap-1 text-xs px-1.5 py-1 font-normal transition-colors ${
                     theme === 'dark' 
                       ? 'text-slate-300 hover:text-slate-100' 
@@ -5401,7 +5435,7 @@ export default function App() {
               <div className="flex items-center gap-2 sm:gap-3 ml-auto">
                 {uiVisibility.showOpenFile && (
                 <button
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={() => isTauriEnvironment() || isTauriEnv ? openWithTauriAndDelegate(handleOpenFile) : fileInputRef.current?.click()}
                   className={`flex items-center gap-1 text-xs px-1.5 py-1 font-normal transition-colors ${
                     theme === 'dark' 
                       ? 'text-slate-300 hover:text-slate-100' 
@@ -7350,7 +7384,7 @@ export default function App() {
 
                 {(uiVisibility.showWin1251Button ?? true) && (
                 <button
-                  onClick={() => win1251FileInputRef.current?.click()}
+                  onClick={() => isTauriEnvironment() || isTauriEnv ? openWithTauriAndDelegate(handleOpenFileWin1251) : win1251FileInputRef.current?.click()}
                   className={`flex items-center gap-1 text-xs px-2 py-1 rounded transition-all ${
                     theme === 'dark' 
                       ? 'text-slate-300 hover:text-slate-100' 
