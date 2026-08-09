@@ -2447,15 +2447,6 @@ export default function App() {
     setDuckDbSelectedCell(null);
 
     let finalQuery = queryToExec;
-    if (formatterSettings.autoEscapeWindowsPaths ?? true) {
-      finalQuery = finalQuery.replace(/\b(read_csv_auto|read_csv|read_parquet|read_json|read_json_auto|FROM|TO)\s*\(?\s*(['"])(.*?)(['"])/gi, (match, keyword, quote1, innerPath, quote2) => {
-        if (innerPath.includes('\\')) {
-          const escapedPath = innerPath.replace(/\\/g, '/');
-          return `${keyword} ${quote1}${escapedPath}${quote2}`;
-        }
-        return match;
-      });
-    }
 
     if (activeEngine === 'clickhouse' || (!duckDbConnectedPath && clickhouseConfig)) {
       executeClickhouseQueryWithPagination(finalQuery, page, pageSizeToUse, isQuickAction, executionMode);
@@ -4524,11 +4515,8 @@ export default function App() {
           }`}>
             <div className="flex items-center gap-2 max-w-[240px] truncate">
               <h3 className={`font-bold text-sm truncate ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>
-                {tabs.find(t => t.id === activeTabId)?.title || 'SQL Query'}
+                SQL Query
               </h3>
-              {tabs.find(t => t.id === activeTabId)?.isModified && (
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0" title="Файл изменен (не сохранен)" />
-              )}
             </div>
               <div className="flex items-center gap-1.5 relative">
                 {/* HIDDEN FILE INPUT FOR OPEN SQL FILE */}
@@ -5761,7 +5749,7 @@ export default function App() {
                               : 'bg-slate-200/40 border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/80'
                         }`}
                       >
-                        {tab.isModified ? (
+                        {tab.isModified && tab.filePath ? (
                           <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0" title="Файл изменен (не сохранен)" />
                         ) : (
                           <FileText className="w-3.5 h-3.5 shrink-0 opacity-70" />
@@ -5784,7 +5772,7 @@ export default function App() {
                               setEditingTabId(tab.id);
                             }}
                             className="truncate flex-1"
-                            title="Двойной клик для переименования"
+                            title={tab.filePath ? tab.filePath : "Двойной клик для переименования"}
                           >
                             {tab.title}
                           </span>
