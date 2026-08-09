@@ -1033,7 +1033,9 @@ export function SqlEditor({
 
   const closeSearch = useCallback(() => {
     setShowSearch(false);
+    setShowReplace(false);
     setSearchQuery('');
+    setReplaceQuery('');
     setMatches([]);
     if (textareaRef.current) {
       textareaRef.current.focus();
@@ -1141,6 +1143,9 @@ export function SqlEditor({
   const handleReplaceAll = () => {
     if (matches.length === 0 || !onChange || !searchQuery) return;
     try {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+
       const effectiveReplace = useRegex ? processEscapeSequences(replaceQuery) : replaceQuery;
       let reg: RegExp;
       if (useRegex) {
@@ -1150,10 +1155,25 @@ export function SqlEditor({
         const escaped = searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         reg = new RegExp(escaped, matchCase ? 'g' : 'gi');
       }
-      const newValue = value.replace(reg, effectiveReplace);
-      if (textareaRef.current) {
-        textareaRef.current.focus();
-        textareaRef.current.select();
+
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+
+      const currentMatch = matches[currentMatchIndex];
+      const isAutoSelectedMatch = currentMatch && start === currentMatch.start && end === (currentMatch.start + currentMatch.length);
+      const hasManualSelection = start !== end && !isAutoSelectedMatch;
+
+      textarea.focus();
+
+      if (hasManualSelection) {
+        const selectedText = value.slice(start, end);
+        const newSelectedText = selectedText.replace(reg, effectiveReplace);
+        textarea.setSelectionRange(start, end);
+        document.execCommand('insertText', false, newSelectedText);
+        textarea.setSelectionRange(start, start + newSelectedText.length);
+      } else {
+        const newValue = value.replace(reg, effectiveReplace);
+        textarea.select();
         document.execCommand('insertText', false, newValue);
       }
     } catch (e) {
