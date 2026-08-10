@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { downloadFileWithFallback } from '../utils/exportUtils';
 import { 
   Code, 
   Plus, 
@@ -1432,14 +1433,7 @@ export function SqlSnippetsManager({
   const handleExportJson = () => {
     const listToExport = customSnippets.length > 0 ? customSnippets : POPULAR_SNIPPETS;
     const blob = new Blob([JSON.stringify(listToExport, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const downloadAnchor = document.createElement('a');
-    downloadAnchor.href = url;
-    downloadAnchor.download = `sql_snippets_${new Date().toISOString().slice(0,10)}.json`;
-    document.body.appendChild(downloadAnchor);
-    downloadAnchor.click();
-    downloadAnchor.remove();
-    URL.revokeObjectURL(url);
+    downloadFileWithFallback(blob, `sql_snippets_${new Date().toISOString().slice(0,10)}.json`);
   };
   
   // Export to CSV
@@ -1459,15 +1453,9 @@ export function SqlSnippetsManager({
       ];
       csvRows.push(row.join(','));
     });
-
-    const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + encodeURIComponent(csvRows.join('\n'));
-    const downloadAnchor = document.createElement('a');
-    downloadAnchor.setAttribute("href", csvContent);
-    downloadAnchor.setAttribute("download", `sql_snippets_${new Date().toISOString().slice(0,10)}.csv`);
-    document.body.appendChild(downloadAnchor);
-    downloadAnchor.click();
-    downloadAnchor.remove();
-  };  
+    const blob = new Blob(["\uFEFF" + csvRows.join("\n")], { type: "text/csv;charset=utf-8" });
+    downloadFileWithFallback(blob, `sql_snippets_${new Date().toISOString().slice(0,10)}.csv`);
+  };
 
   // Import from JSON
   const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
