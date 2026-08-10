@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { downloadFileWithFallback } from '../utils/exportUtils';
 import { 
   X, 
   History, 
@@ -165,12 +166,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
 
   const handleExportJson = () => {
     const blob = new Blob([JSON.stringify(versions, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `sql-history-export-${Date.now()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadFileWithFallback(blob, `sql-history-export-${Date.now()}.json`);
   };
 
   const filteredVersions = versions.filter(v => 
