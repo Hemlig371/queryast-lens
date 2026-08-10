@@ -12,6 +12,8 @@ import {
   getViewportForBounds
 } from '@xyflow/react';
 import { toPng, toSvg, toJpeg, toBlob } from 'html-to-image';
+import { downloadFileWithFallback } from "./utils/exportUtils";
+
 import { 
   Play, 
   Code, 
@@ -3361,13 +3363,15 @@ export default function App() {
       } finally {
         cleanupTasks.forEach(cb => cb());
       }
-
       if (dataUrl) {
-        const link = document.createElement('a');
-        const suffix = transparent ? '-transparent' : '';
-        link.download = `sql-graph-export${suffix}.${format}`;
-        link.href = dataUrl;
-        link.click();
+        try {
+          const res = await fetch(dataUrl);
+          const blob = await res.blob();
+          const suffix = transparent ? "-transparent" : "";
+          await downloadFileWithFallback(blob, `sql-graph-export${suffix}.${format}`);
+        } catch (e) {
+          console.error("Data URL to blob conversion failed", e);
+        }
       }
     } catch (err: any) {
       console.error('Export graph failed:', err);
@@ -3585,12 +3589,7 @@ export default function App() {
         setTimeout(() => setCopied(false), 2000);
       } else {
         const blob = new Blob([content], { type: mimeType });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = filename;
-        link.click();
-        URL.revokeObjectURL(url);
+        downloadFileWithFallback(blob, filename);
       }
     }
   };
@@ -6226,14 +6225,14 @@ export default function App() {
 
             {/* DUCKDB / CLICKHOUSE RESULTS PANEL */}
             {isMaximizedSql && (uiVisibility.showDuckDbConfig || uiVisibility.showClickhouseConfig) && isDuckDbResultVisible && (
-              <div 
-                className={`flex flex-col min-h-0 overflow-hidden ${
+              <div
+                className={`flex flex-col min-h-0 overflow-hidden z-10 ${
                   theme === 'dark' ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300'
                 } ${
                   isDuckDbResultExpanded 
                     ? 'border-t flex flex-col shrink-0 h-[70vh]' 
                     : 'border-t flex flex-col shrink-0 h-[35vh]'
-                }`} 
+                }`}
               >
                 <div className={`flex items-center justify-between px-3 py-1.5 border-b shrink-0 ${
                   theme === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'
