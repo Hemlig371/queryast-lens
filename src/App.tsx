@@ -2916,14 +2916,18 @@ export default function App() {
 
   const handleInsertSnippet = (snippetSql: string, replaceMode?: boolean) => {
     const currentSql = sqlRef.current || '';
-    if (replaceMode || !currentSql.trim()) {
-      sqlRef.current = snippetSql;
-      setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: snippetSql } : t));
-    } else {
-      const newSql = currentSql + '\n\n' + snippetSql;
-      sqlRef.current = newSql;
-      setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: snippetSql } : t));
-    }
+    const newSql = (replaceMode || !currentSql.trim()) ? snippetSql : (currentSql + '\n\n' + snippetSql);
+    sqlRef.current = newSql;
+    setTabs(prev => prev.map(t => {
+      if (t.id === activeTabId) {
+        return {
+          ...t,
+          sql: newSql,
+          isModified: t.savedContent !== undefined ? t.savedContent !== newSql : true,
+        };
+      }
+      return t;
+    }));
   };
 
   useEffect(() => {
