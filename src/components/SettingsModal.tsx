@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Keyboard, RotateCcw, Settings, AlignLeft, Eye, Download, Upload, Plus, Trash2, Edit3, Check, Code, Zap } from 'lucide-react';
+import { downloadFileWithFallback } from '../utils/exportUtils';
 import { AutocompleteTemplate, DEFAULT_AUTOCOMPLETE_TEMPLATES, getCustomAutocompleteTemplates } from './SqlEditor';
 import { getVersions, importVersions, SqlVersionItem } from '../utils/versionHistory';
 import { getAllSchemaCacheEntries, importSchemaCacheEntries, SchemaCacheEntry } from '../utils/schemaDbCache';
@@ -704,15 +705,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       };
 
       const blob = new Blob([JSON.stringify(workspaceBundle, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
       const dateStr = new Date().toISOString().slice(0, 10);
-      link.download = `sql_visualizer_workspace_${dateStr}.json`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      downloadFileWithFallback(blob, `sql_visualizer_workspace_${dateStr}.json`);
     } catch (e) {
       console.error('Failed to export workspace', e);
       alert('Ошибка при экспорте данных');
