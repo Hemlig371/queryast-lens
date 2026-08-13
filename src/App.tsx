@@ -88,7 +88,7 @@ import { SettingsModal, getSavedHotkeys, getSavedFormatterSettings, FormatterSet
 import { VersionHistoryModal } from './components/VersionHistoryModal';
 import { saveVersion, getVersions, getLatestVersion } from './utils/versionHistory';
 import { format as formatSql } from 'sql-formatter';
-import { splitBySemicolonIgnoringQuotes } from './lib/sqlUtils';
+import { splitBySemicolonIgnoringQuotes, formatColumnType } from './lib/sqlUtils';
 import { getSessionTabs, saveSessionTabs } from './utils/sessionStorage';
 import { connectDuckDbWasmFile, connectDuckDbWasmMemory, queryDuckDbWasm, disconnectDuckDbWasm, exportDuckDbFile, applyDuckDbConfigWasm } from './lib/duckdbWasm';
 import { ClickhouseModal } from './components/ClickhouseModal';
@@ -176,6 +176,7 @@ export default function App() {
   const [isWasmMode, setIsWasmMode] = useState<boolean>(false);
   const [showDuckDbConnMenu, setShowDuckDbConnMenu] = useState<boolean>(false);
   const [duckDbResults, setDuckDbResults] = useState<any[] | null>(null);
+  const [resultColumnTypes, setResultColumnTypes] = useState<Record<string, string>>({});
   const [duckDbError, setDuckDbError] = useState<string | null>(null);
   const [isDuckDbRunning, setIsDuckDbRunning] = useState<boolean>(false);
   const [isDuckDbResultVisible, setIsDuckDbResultVisible] = useState<boolean>(false);
@@ -391,79 +392,6 @@ export default function App() {
   const extractedTableName = useMemo(() => {
     if (!lastExecutedSql.trim()) return 'table';
     const cleanSql = lastExecutedSql.replace(/^(\s*(--[^\n]*\n|\/\*[\s\S]*?\*\/))*/g, '').trim();
-
-    const fromMatch = cleanSql.match(/\bFROM\s+/i);
-    if (!fromMatch || fromMatch.index === undefined) {
-      return `(${cleanSql.replace(/;+$/, '')}) AS _sub`;
-    }
-
-    const afterFrom = cleanSql.slice(fromMatch.index + fromMatch[0].length).trim();
-    if (!afterFrom) return 'table';
-
-    // 1. Single-quoted string file path / table: 'path/to/file.parquet' or 's3://...'
-    const singleQuoteMatch = afterFrom.match(/^('(?:''|[^'\\]|\\.)*')/);
-    if (singleQuoteMatch) {
-      return singleQuoteMatch[1];
-    }
-
-    // 2. Function call or Parenthesized expression / subquery: read_parquet(...) or (SELECT ...)
-    if (/^(?:[a-zA-Z0-9_$]+\s*)?\(/.test(afterFrom)) {
-      let parenCount = 0;
-      let inString: string | null = null;
-      let endIndex = -1;
-
-      for (let i = 0; i < afterFrom.length; i++) {
-        const char = afterFrom[i];
-        if (inString) {
-          if (char === inString && afterFrom[i - 1] !== '\\') {
-            inString = null;
-          }
-        } else if (char === "'" || char === '"') {
-          inString = char;
-        } else if (char === '(') {
-          parenCount++;
-        } else if (char === ')') {
-          parenCount--;
-          if (parenCount === 0) {
-            endIndex = i;
-            break;
-          }
-        }
-      }
-
-      if (endIndex !== -1) {
-        const extracted = afterFrom.slice(0, endIndex + 1).trim();
-        if (extracted.startsWith('(')) {
-          return `${extracted} AS _sub`;
-        }
-        return extracted;
-      }
-    }
-
-    // 3. Table name (can be qualified with dots, e.g. "default"."actors", db.schema.table, `db`.`tbl`)
-    const identPartRegex = /^(?:"(?:""|[^"\\]|\\.)*"|`(?:``|[^`\\]|\\.)*`|\[[^\]]+\]|[^\s;(),."']+)/;
-    let curr = afterFrom;
-    let matchLength = 0;
-
-    while (curr.length > 0) {
-      const partMatch = curr.match(identPartRegex);
-      if (!partMatch) break;
-      matchLength += partMatch[0].length;
-      curr = curr.slice(partMatch[0].length);
-
-      const dotMatch = curr.match(/^\s*\.\s*/);
-      if (dotMatch) {
-        matchLength += dotMatch[0].length;
-        curr = curr.slice(dotMatch[0].length);
-      } else {
-        break;
-      }
-    }
-
-    if (matchLength > 0) {
-      return afterFrom.slice(0, matchLength).trim();
-    }
-
     return `(${cleanSql.replace(/;+$/, '')}) AS _sub`;
   }, [lastExecutedSql]);
 
@@ -2123,7 +2051,7 @@ export default function App() {
         .replace(/^(\s*(--[^\n]*\n|\/\*[\s\S]*?\*\/))*/g, '')
         .trim();
 
-      if (maxRows > 0 && /^\s*\(?\s*(SELECT|WITH|FROM|VALUES|DESCRIBE|SHOW)\b/i.test(cleanSqlHead)) {
+      if (maxRows > 0 && /^\s*\(?\s*(SELECT|WITH|FROM)\b/i.test(cleanSqlHead)) {
         const stripped = finalQuery.replace(/;+$/, '');
         if (page > 1) {
           const offset = (page - 1) * maxRows;
@@ -2137,7 +2065,7 @@ export default function App() {
 
       if (isTauriEnv && !isWasmMode) {
         try {
-          const res = await tauriInvoke<{ columns: string[]; rows: any[][] }>('execute_query', {
+          const res = await tauriInvoke<{ columns: string[]; column_types?: string[]; rows: any[][] }>('execute_query', {
             sql: queryWithLimit
           });
           if (controller.signal.aborted) throw new Error("Запрос отменен пользователем");
@@ -2149,6 +2077,17 @@ export default function App() {
             return obj;
           });
           setDuckDbResults(parsed);
+          
+          if (res?.columns && res?.column_types) {
+            const typesDict: Record<string, string> = {};
+            res.columns.forEach((col, idx) => {
+              typesDict[col] = res.column_types![idx] || 'UNKNOWN';
+            });
+            setResultColumnTypes(typesDict);
+          } else {
+            setResultColumnTypes({});
+          }
+          
           maybeAutoSelectFirstCell(parsed, queryToExec);
         } catch (tauriErr: any) {
           if (controller.signal.aborted) throw new Error("Запрос отменен пользователем");
@@ -2162,6 +2101,11 @@ export default function App() {
         const rows = await queryDuckDbWasm(queryWithLimit);
         if (controller.signal.aborted) throw new Error("Запрос отменен пользователем");
         setDuckDbResults(rows);
+        if ((rows as any).__columnTypes) {
+          setResultColumnTypes((rows as any).__columnTypes);
+        } else {
+          setResultColumnTypes({});
+        }
         maybeAutoSelectFirstCell(rows, queryToExec);
       } else {
         const data = await fetchApiJson("/api/duckdb/query", {
@@ -2176,7 +2120,23 @@ export default function App() {
         } else {
           const res = data.data || [];
           setDuckDbResults(res);
+          
+          if (data.meta && Array.isArray(data.meta)) {
+            const typesDict: Record<string, string> = {};
+            data.meta.forEach((col: any) => {
+              if (col.name && col.type) {
+                typesDict[col.name] = col.type;
+              }
+            });
+            setResultColumnTypes(typesDict);
+          } else {
+            setResultColumnTypes({});
+          }
+          
           maybeAutoSelectFirstCell(res, queryToExec);
+          if ((uiVisibility.autoUpdateSchema ?? true) && /^\s*(CREATE|DROP|ATTACH|DETACH|RENAME)\b/i.test(cleanSqlHead)) {
+            fetchDuckDbSchema(true);
+          }
         }
       }
     } catch (err: any) {
@@ -2361,20 +2321,36 @@ export default function App() {
       const maxRows = pageSizeToUse ?? effectiveMaxRows;
       let queryWithLimit = finalQuery;
 
-      if (maxRows > 0 && /^\s*\(?\s*(SELECT|WITH|FROM|VALUES|DESCRIBE|SHOW)\b/i.test(cleanSqlHead)) {
+      if (maxRows > 0 && /^\s*\(?\s*(SELECT|WITH|FROM)\b/i.test(cleanSqlHead)) {
         const stripped = queryWithLimit.replace(/;+$/, '');
-        if (page > 1) {
+        const hasUnion = /\b(UNION|EXCEPT|INTERSECT)\b/i.test(stripped);
+        const hasLimit = /\bLIMIT\s+\d+/i.test(cleanSqlHead);
+        
+        if (!hasLimit) {
+          if (page > 1) {
+            const offset = (page - 1) * maxRows;
+            if (hasUnion) {
+              queryWithLimit = `SELECT * FROM (${stripped}) AS _limited_subquery LIMIT ${maxRows} OFFSET ${offset}`;
+            } else {
+              queryWithLimit = `${stripped}\nLIMIT ${maxRows} OFFSET ${offset}`;
+            }
+          } else {
+            if (hasUnion) {
+              queryWithLimit = `SELECT * FROM (${stripped}) AS _limited_subquery LIMIT ${maxRows}`;
+            } else {
+              queryWithLimit = `${stripped}\nLIMIT ${maxRows}`;
+            }
+          }
+        } else if (page > 1) {
+          // If query already has a LIMIT, but user asks for page > 1, we must wrap it to safely paginate 
+          // (otherwise appending LIMIT causes a syntax error, e.g. "LIMIT 10 LIMIT 100")
           const offset = (page - 1) * maxRows;
           queryWithLimit = `SELECT * FROM (${stripped}) AS _limited_subquery LIMIT ${maxRows} OFFSET ${offset}`;
-        } else {
-          if (!/\bLIMIT\s+\d+/i.test(cleanSqlHead)) {
-            queryWithLimit = `SELECT * FROM (${stripped}) AS _limited_subquery LIMIT ${maxRows}`;
-          }
         }
       }
 
       if (!/\bFORMAT\b/i.test(queryWithLimit) && !/^\s*(CREATE|INSERT|DELETE|ALTER|DROP|TRUNCATE|SET|USE|OPTIMIZE|SYSTEM)\b/i.test(queryWithLimit)) {
-        queryWithLimit += ' FORMAT JSON';
+        queryWithLimit += '\nFORMAT JSON';
       }
 
       let data: any = null;
@@ -2410,7 +2386,7 @@ export default function App() {
           }
           try {
             const parsed = JSON.parse(text);
-            data = { success: true, data: parsed.data || parsed };
+            data = { success: true, data: parsed.data || parsed, meta: parsed.meta };
           } catch {
             data = { success: true, text };
           }
@@ -2429,7 +2405,23 @@ export default function App() {
           resArr = [data.data || { Status: 'OK' }];
         }
         setDuckDbResults(resArr);
+        
+        if (data.meta && Array.isArray(data.meta)) {
+          const typesDict: Record<string, string> = {};
+          data.meta.forEach((col: any) => {
+            if (col.name && col.type) {
+              typesDict[col.name] = col.type;
+            }
+          });
+          setResultColumnTypes(typesDict);
+        } else {
+          setResultColumnTypes({});
+        }
+        
         maybeAutoSelectFirstCell(resArr, queryToExec);
+        if ((uiVisibility.autoUpdateSchema ?? true) && /^\s*(CREATE|DROP|ATTACH|DETACH|RENAME)\b/i.test(cleanSqlHead)) {
+          fetchDuckDbSchema(true);
+        }
       }
     } catch (err: any) {
       if (err.name === 'AbortError' || controller.signal?.aborted) {
@@ -2780,6 +2772,14 @@ export default function App() {
   };
 
   const handleSaveSqlFile = async () => {
+    await handleSaveFileLogic(false);
+  };
+
+  const handleSaveAsSqlFile = async () => {
+    await handleSaveFileLogic(true);
+  };
+
+  const handleSaveFileLogic = async (forceSaveAs: boolean) => {
     const currentSql = sqlRef.current;
     if (!currentSql.trim()) return;
 
@@ -2792,7 +2792,7 @@ export default function App() {
     // Tauri Desktop save logic
     if (isTauriEnvironment() || isTauriEnv) {
       try {
-        let targetFilePath = activeTab?.filePath;
+        let targetFilePath = forceSaveAs ? undefined : activeTab?.filePath;
 
         if (!targetFilePath) {
           let savePath: string | null = null;
@@ -2938,7 +2938,11 @@ export default function App() {
       }
       if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S' || e.code === 'KeyS' || e.key === 'ы' || e.key === 'Ы')) {
         e.preventDefault();
-        handleSaveSqlFile();
+        if (e.shiftKey) {
+          handleSaveAsSqlFile();
+        } else {
+          handleSaveSqlFile();
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -3620,6 +3624,7 @@ export default function App() {
       handleExecuteDuckDb,
       handleVisualize,
       handleSaveSqlFile,
+      handleSaveAsSqlFile,
       openWithTauriAndDelegate,
       handleCopySql,
       handleFormatSql,
@@ -3663,6 +3668,7 @@ export default function App() {
         handleExecuteDuckDb: currentHandleExecuteDuckDb,
         handleVisualize: currentHandleVisualize,
         handleSaveSqlFile: currentHandleSaveSqlFile,
+        handleSaveAsSqlFile: currentHandleSaveAsSqlFile,
         openWithTauriAndDelegate: currentOpenWithTauriAndDelegate,
         handleCopySql: currentHandleCopySql,
         handleFormatSql: currentHandleFormatSql,
@@ -3865,10 +3871,14 @@ export default function App() {
         e.preventDefault();
         e.stopPropagation();
         currentSetShowSettingsModal(true);
-      } else if (combo === (currentHotkeys.exportResultsCopy || 'Ctrl+Shift+S')) {
+      } else if (combo === (currentHotkeys.exportResultsCopy || 'Ctrl+Shift+E')) {
         e.preventDefault();
         e.stopPropagation();
         currentHandleCopyResultsToClipboard();
+      } else if (combo === (currentHotkeys.saveAsFile || 'Ctrl+Shift+S')) {
+        e.preventDefault();
+        e.stopPropagation();
+        currentHandleSaveAsSqlFile();
       } else if (combo === (currentHotkeys.refreshSchema || 'Ctrl+R')) {
         e.preventDefault();
         e.stopPropagation();
@@ -5902,8 +5912,6 @@ export default function App() {
                       <span>Schema Browser</span>
                       {isSchemaLoading && (
                         <span className="flex items-center gap-1 text-[10px] font-normal text-blue-400 animate-pulse ml-1">
-                          <Loader2 className="w-3 h-3 animate-spin text-blue-400" />
-                          <span>Загрузка...</span>
                         </span>
                       )}
                     </span>
@@ -6726,6 +6734,7 @@ export default function App() {
                         <DataStatsViewer
                           data={duckDbResults}
                           theme={theme}
+                          columnTypes={resultColumnTypes}
                           initialChartType={statsInitialMode.chartType}
                           initialListSubMode={statsInitialMode.listSubMode}
                           onSubModeChange={(ct, sm) => {
@@ -6775,7 +6784,7 @@ export default function App() {
                                         ? theme === 'dark' ? 'bg-blue-950 text-blue-200 border-r-blue-500 border-b-slate-700/80 font-bold' : 'bg-blue-100 text-blue-900 border-r-blue-500 border-b-slate-200 font-bold'
                                         : theme === 'dark' ? 'bg-slate-800 text-slate-300 hover:bg-slate-700 border-r-slate-600 border-b-slate-700/80' : 'bg-slate-100 text-slate-800 hover:bg-slate-200 border-r-slate-300 border-b-slate-200'
                                     }`}
-                                    title={colKey}
+                                    title={`${colKey}${resultColumnTypes[colKey] ? ` (${formatColumnType(resultColumnTypes[colKey])})` : ''}`}
                                     onClick={() => {
                                       setSelectedResultCell({ rowIndex: -1, colKey });
                                       setDuckDbSelectedCell({ title: `Столбец: ${colKey}`, content: computeColumnStats(colKey, displayedResults) });
@@ -6864,7 +6873,7 @@ export default function App() {
                                           ? 'border-b-slate-600 border-r-slate-700/80 text-slate-200 bg-slate-800 hover:bg-slate-700' 
                                           : 'border-b-slate-300 border-r-slate-200 text-slate-800 bg-slate-100 hover:bg-slate-200'
                                     }`}
-                                    title={col.length > 200 ? col.substring(0, 200) + '...' : col}
+                                    title={`${col.length > 200 ? col.substring(0, 200) + '...' : col}${resultColumnTypes[col] ? ` (${formatColumnType(resultColumnTypes[col])})` : ''}`}
                                     onClick={() => {
                                       setSelectedResultCell({ rowIndex: -1, colKey: col });
                                       setDuckDbSelectedCell({ title: `Столбец: ${col}`, content: computeColumnStats(col, displayedResults) });
