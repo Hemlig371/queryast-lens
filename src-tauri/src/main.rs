@@ -27,6 +27,7 @@ pub struct ClickhouseState {
 #[derive(Serialize, Deserialize)]
 pub struct QueryResult {
     pub columns: Vec<String>,
+    pub column_types: Vec<String>,
     pub rows: Vec<Vec<JsonValue>>,
 }
 
@@ -179,6 +180,7 @@ async fn execute_query(
                         Ok(_) => {
                             return Ok(QueryResult {
                                 columns: Vec::new(),
+                                column_types: Vec::new(),
                                 rows: Vec::new(),
                             });
                         }
@@ -189,13 +191,14 @@ async fn execute_query(
 
             let mut rows_iter = stmt.query([]).map_err(|e| e.to_string())?;
             
-            let (col_count, column_names) = if let Some(stmt_ref) = rows_iter.as_ref() {
+            let (col_count, column_names, column_types) = if let Some(stmt_ref) = rows_iter.as_ref() {
                 (
                     stmt_ref.column_count(),
-                    stmt_ref.column_names().into_iter().map(|s| s.to_string()).collect::<Vec<String>>()
+                    stmt_ref.column_names().into_iter().map(|s| s.to_string()).collect::<Vec<String>>(),
+                    stmt_ref.columns().iter().map(|c| c.decl_type().unwrap_or("UNKNOWN").to_string()).collect::<Vec<String>>()
                 )
             } else {
-                (0, Vec::new())
+                (0, Vec::new(), Vec::new())
             };
 
             let mut rows = Vec::new();
@@ -284,6 +287,7 @@ async fn execute_query(
 
             Ok(QueryResult {
                 columns: column_names,
+                column_types,
                 rows,
             })
         }));
