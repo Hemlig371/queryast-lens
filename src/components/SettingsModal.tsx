@@ -71,6 +71,7 @@ export interface UiVisibilitySettings {
   duckDbThreads?: number;
   showClickhouseConfig?: boolean;
   clickhouseMaxRows?: number;
+  autoUpdateSchema?: boolean;
   showSearchSql?: boolean;
   showOpenFile: boolean;
   showWin1251Button?: boolean;
@@ -131,6 +132,7 @@ export const DEFAULT_UI_VISIBILITY: UiVisibilitySettings = {
   duckDbThreads: 0,
   showClickhouseConfig: true,
   clickhouseMaxRows: 100,
+  autoUpdateSchema: true,
   showSearchSql: true,
   showOpenFile: true,
   showWin1251Button: true,
@@ -211,9 +213,16 @@ export const DEFAULT_HOTKEYS: HotkeyBinding[] = [
   {
     id: 'saveFile',
     label: 'Сохранить SQL в файл',
-    description: 'Скачать текущий запрос в файл .sql',
+    description: 'Сохранить текущий запрос в файл .sql',
     category: 'Редактор',
     defaultKey: 'Ctrl+S'
+  },
+  {
+    id: 'saveAsFile',
+    label: 'Сохранить как...',
+    description: 'Сохранить текущий запрос в новый файл .sql',
+    category: 'Редактор',
+    defaultKey: 'Ctrl+Shift+S'
   },
   {
     id: 'copySql',
@@ -353,7 +362,7 @@ export const DEFAULT_HOTKEYS: HotkeyBinding[] = [
     label: 'Копировать результаты в TSV',
     description: 'Копирование содержимого таблицы результатов в буфер обмена',
     category: 'Общие',
-    defaultKey: 'Ctrl+Shift+S'
+    defaultKey: 'Ctrl+Shift+E'
   },
   {
     id: 'refreshSchema',
@@ -920,6 +929,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   {[
                     { key: 'showDuckDbConfig', label: 'Интеграция DuckDB', desc: 'Кнопки подключения и выполнения кода' },
                     { key: 'showClickhouseConfig', label: 'Интеграция Clickhouse (http/https)', desc: 'Кнопки подключения и выполнения Clickhouse HTTP(S) запросов' },
+                    { key: 'autoUpdateSchema', label: 'Автообновление схемы базы', desc: 'Автоматически обновлять дерево схемы при изменении структуры БД (DDL)' },
                     { key: 'showEditorToggleBtn', label: 'Кнопка «Скрыть редактор»', desc: 'Кнопка скрытия левой панели' },
                     { key: 'showSearchSql', label: 'Кнопка «Поиск»', desc: 'Поиск и замена текста в редакторе (Ctrl+F)' },
                     { key: 'showOpenFile', label: 'Открыть файл (.sql)', desc: 'Загрузка файла с диска' },
