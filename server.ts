@@ -148,18 +148,34 @@ app.post("/api/duckdb/query", (req, res) => {
   }
 
   try {
-    db.all(query, (err, resData) => {
+    const stmt = db.prepare(query);
+    stmt.all((err, resData) => {
       try {
         if (err) {
           return res.status(500).json({ error: err.message });
         }
         
+        let meta = [];
+        const cols = stmt.columns();
+        if (cols && Array.isArray(cols)) {
+          meta = cols.map((c: any) => ({ 
+            name: c.name, 
+            type: c.type?.sql_type || c.type?.id || 'UNKNOWN'
+          }));
+        }
+        
+        const responsePayload = {
+          success: true,
+          data: resData,
+          meta: meta
+        };
+        
         // Handle BigInt serialization
-        const jsonStr = JSON.stringify(resData, (key, value) => 
+        const jsonStr = JSON.stringify(responsePayload, (key, value) => 
           typeof value === 'bigint' ? value.toString() : value
         );
         
-        res.type('json').send(`{"success":true,"data":${jsonStr}}`);
+        res.type('json').send(jsonStr);
       } catch (callbackErr: any) {
         if (!res.headersSent) {
           res.status(500).json({ error: callbackErr.message });
@@ -209,7 +225,7 @@ app.post("/api/clickhouse/test", async (req, res) => {
 });
 
 app.post("/api/clickhouse/query", async (req, res) => {
-  const { protocol, host, user, key, database, query } = req.body;
+  const { protocol, host, user, key, database, query } = req.body; console.log("CH QUERY:", query);
   if (!host || !query) {
     return res.status(400).json({ error: "Host and query are required" });
   }
@@ -238,7 +254,7 @@ app.post("/api/clickhouse/query", async (req, res) => {
 
     try {
       const json = JSON.parse(responseText);
-      res.json({ success: true, data: json.data || json });
+      res.json({ success: true, data: json.data || json, meta: json.meta });
     } catch {
       res.json({ success: true, text: responseText });
     }
