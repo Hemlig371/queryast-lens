@@ -16,10 +16,12 @@ import {
   CartesianGrid,
 } from 'recharts';
 import { BarChart3, PieChart as PieIcon, TrendingUp, Info, List, Copy, Check, TableProperties, RefreshCw, Loader2, Image as ImageIcon } from 'lucide-react';
+import { formatColumnType } from '../lib/sqlUtils';
 
 interface DataStatsViewerProps {
   data: Record<string, any>[];
   theme: 'dark' | 'light';
+  columnTypes?: Record<string, string>;
   initialChartType?: 'bar' | 'line' | 'pie' | 'list';
   initialListSubMode?: 'categories' | 'columns';
   onSubModeChange?: (chartType: 'bar' | 'line' | 'pie' | 'list', listSubMode: 'categories' | 'columns') => void;
@@ -41,6 +43,7 @@ const getNullPctColor = (pct: number, isDark: boolean) => {
 export const DataStatsViewer: React.FC<DataStatsViewerProps> = ({
   data,
   theme,
+  columnTypes,
   initialChartType,
   initialListSubMode,
   onSubModeChange,
@@ -209,7 +212,7 @@ export const DataStatsViewer: React.FC<DataStatsViewerProps> = ({
         const info = colAnalysis[col];
         return {
           colName: col,
-          rawType: info?.type === 'number' ? 'BIGINT' : info?.type === 'date' ? 'DATE' : 'VARCHAR',
+          rawType: columnTypes?.[col] || (info?.type === 'number' ? 'BIGINT' : info?.type === 'date' ? 'DATE' : 'VARCHAR'),
           count: data.length,
           nullPct: info?.nullPct ?? 0,
           uniqueCount: info?.uniqueCount ?? '-',
@@ -310,10 +313,13 @@ export const DataStatsViewer: React.FC<DataStatsViewerProps> = ({
           target = `(${stripped})`;
         }
       } else {
-        if (/^\s*SELECT\b/i.test(target) || target.includes(' ')) {
+        if (/^\s*SELECT\b/i.test(target)) {
+          target = `(${target})`;
+        } else if (target.includes(' ') && !/^\s*\(/.test(target)) {
           target = `(${target})`;
         }
       }
+
 
       if (!target) {
         throw new Error('Не указано имя таблицы или SQL-запрос для выполнения агрегации');
@@ -1136,8 +1142,11 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                           {info.colName}
                         </span>
                       </div>
-                      <span className="text-[10px] opacity-75 font-mono px-1.5 py-0.5 rounded bg-slate-500/10 border border-slate-500/20 shrink-0 font-medium">
-                        {info.rawType}
+                      <span 
+                        className="text-[10px] opacity-75 font-mono px-1.5 py-0.5 rounded bg-slate-500/10 border border-slate-500/20 shrink-0 font-medium" 
+                        title={info.rawType}
+                      >
+                        {formatColumnType(info.rawType)}
                       </span>
                     </div>
 
@@ -1235,8 +1244,11 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                           </span>
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
-                          <span className="text-[10px] opacity-60 font-mono px-1 rounded border border-current">
-                            {info.type}
+                          <span 
+                            className="text-[10px] opacity-60 font-mono px-1 rounded border border-current"
+                            title={columnTypes?.[col] || info.type}
+                          >
+                            {formatColumnType(columnTypes?.[col] || info.type)}
                           </span>
                         </div>
                       </div>
