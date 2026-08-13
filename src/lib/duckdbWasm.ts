@@ -273,7 +273,19 @@ export async function queryDuckDbWasm(sqlQuery: string) {
     return obj;
   });
 
-  return rows;
+  const typesDict: Record<string, string> = {};
+  if (result?.schema?.fields) {
+    result.schema.fields.forEach((f: any) => {
+      if (f.name && f.type) {
+        typesDict[f.name] = f.type.toString();
+      }
+    });
+  }
+  
+  const resultRows: any = rows;
+  resultRows.__columnTypes = typesDict;
+
+  return resultRows;
 }
 
 export async function disconnectDuckDbWasm() {
