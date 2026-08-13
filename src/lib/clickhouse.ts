@@ -124,7 +124,7 @@ export async function executeClickhouseQueryTauri(config: ClickhouseConfig, quer
     
     try {
       const parsed = JSON.parse(responseText);
-      return { success: true, data: parsed.data || parsed };
+      return { success: true, data: parsed.data || parsed, meta: parsed.meta };
     } catch {
       return { success: true, text: responseText.trim() };
     }
