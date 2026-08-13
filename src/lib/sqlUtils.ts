@@ -1,4 +1,14 @@
+export const formatColumnType = (type: string | undefined | null): string => {
+  if (!type) return '';
+  const t = type.trim();
+  if (/Enum(8|16)?\s*\(/i.test(t)) {
+    return t.replace(/(Enum(?:8|16)?)\s*\([\s\S]*?\)/gi, "$1(...)");
+  }
+  return t;
+};
+
 export const splitBySemicolonIgnoringQuotes = (str: string): string[] => {
+
   const statements: string[] = [];
   let current = '';
   let inString: string | null = null;
