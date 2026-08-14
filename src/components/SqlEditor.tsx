@@ -36,13 +36,12 @@ export const getCustomAutocompleteTemplates = (): AutocompleteTemplate[] => {
 const SQL_KEYWORDS = [
   'SELECT', 'FROM', 'WHERE', 'GROUP BY', 'ORDER BY', 'HAVING', 'LIMIT', 'OFFSET',
   'JOIN', 'LEFT JOIN', 'RIGHT JOIN', 'INNER JOIN', 'FULL OUTER JOIN', 'CROSS JOIN',
-  'ON', 'AND', 'OR', 'NOT', 'IN', 'IS NULL', 'IS NOT NULL', 'LIKE', 'ILIKE',
-  'BETWEEN', 'EXISTS', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'WITH', 'RECURSIVE',
-  'UNION ALL', 'UNION', 'INSERT INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE FROM',
+  'IS NULL', 'IS NOT NULL', 'LIKE', 'ILIKE', 'QUALIFY', 'RETURNING', 'ASC', 'DESC',
+  'BETWEEN', 'EXISTS', 'CASE', 'WHEN', 'THEN', 'ELSE', 'RECURSIVE',
+  'UNION ALL', 'INSERT INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE FROM',
   'CREATE TABLE', 'ALTER TABLE', 'DROP TABLE', 'TRUNCATE TABLE', 'PARTITION BY',
   'OVER', 'ROW_NUMBER()', 'DENSE_RANK()', 'RANK()', 'COUNT(*)', 'SUM()', 'AVG()',
-  'MIN()', 'MAX()', 'COALESCE()', 'NULLIF()', 'DATE_TRUNC()', 'DISTINCT',
-  'QUALIFY', 'RETURNING', 'ASC', 'DESC', 'AS', 'PRIMARY KEY', 'FOREIGN KEY'
+  'MIN()', 'MAX()', 'COALESCE()', 'DATE_TRUNC()', 'DISTINCT'
 ];
 
 // Helper function to provide syntax highlighting for SQL queries (PostgreSQL, Oracle, Clickhouse, DuckDB)
