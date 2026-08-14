@@ -195,7 +195,7 @@ async fn execute_query(
                 (
                     stmt_ref.column_count(),
                     stmt_ref.column_names().into_iter().map(|s| s.to_string()).collect::<Vec<String>>(),
-                    stmt_ref.columns().iter().map(|c| c.decl_type().unwrap_or("UNKNOWN").to_string()).collect::<Vec<String>>()
+                    (0..stmt_ref.column_count()).map(|i| format!("{:?}", stmt_ref.column_logical_type(i))).collect::<Vec<String>>()
                 )
             } else {
                 (0, Vec::new(), Vec::new())
