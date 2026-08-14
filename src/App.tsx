@@ -2089,6 +2089,9 @@ export default function App() {
           }
           
           maybeAutoSelectFirstCell(parsed, queryToExec);
+          if ((uiVisibility.autoUpdateSchema ?? true) && /^\s*(CREATE|DROP|ATTACH|DETACH|RENAME)\b/i.test(cleanSqlHead)) {
+            fetchDuckDbSchema(true);
+          }
         } catch (tauriErr: any) {
           if (controller.signal.aborted) throw new Error("Запрос отменен пользователем");
           let errMsg = typeof tauriErr === 'string' ? tauriErr : (tauriErr?.message || String(tauriErr));
@@ -2107,6 +2110,9 @@ export default function App() {
           setResultColumnTypes({});
         }
         maybeAutoSelectFirstCell(rows, queryToExec);
+        if ((uiVisibility.autoUpdateSchema ?? true) && /^\s*(CREATE|DROP|ATTACH|DETACH|RENAME)\b/i.test(cleanSqlHead)) {
+          fetchDuckDbSchema(true);
+        }
       } else {
         const data = await fetchApiJson("/api/duckdb/query", {
           method: "POST",
@@ -3625,6 +3631,7 @@ export default function App() {
       handleVisualize,
       handleSaveSqlFile,
       handleSaveAsSqlFile,
+      handleOpenFile,
       openWithTauriAndDelegate,
       handleCopySql,
       handleFormatSql,
@@ -3669,6 +3676,7 @@ export default function App() {
         handleVisualize: currentHandleVisualize,
         handleSaveSqlFile: currentHandleSaveSqlFile,
         handleSaveAsSqlFile: currentHandleSaveAsSqlFile,
+        handleOpenFile: currentHandleOpenFile,
         openWithTauriAndDelegate: currentOpenWithTauriAndDelegate,
         handleCopySql: currentHandleCopySql,
         handleFormatSql: currentHandleFormatSql,
@@ -3786,7 +3794,7 @@ export default function App() {
         e.preventDefault();
         e.stopPropagation();
         if (isTauriEnvironment() || isTauriEnv) {
-          currentOpenWithTauriAndDelegate('utf-8');
+          currentOpenWithTauriAndDelegate(currentHandleOpenFile);
         } else {
           fileInputRef.current?.click();
         }
