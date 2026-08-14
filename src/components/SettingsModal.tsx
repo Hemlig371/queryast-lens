@@ -1021,7 +1021,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                   </div>
 
                                   <div className="flex items-center justify-between gap-2">
-                                    <span className="opacity-80 shrink-0">Extension Directory:</span>
+                                    <span className="opacity-80 shrink-0">Extensions Dir:</span>
                                     <input 
                                       type="text" 
                                       placeholder="./extensions"
