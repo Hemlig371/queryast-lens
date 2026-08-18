@@ -15,7 +15,7 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from 'recharts';
-import { BarChart3, PieChart as PieIcon, TrendingUp, Info, List, Copy, Check, TableProperties, RefreshCw, Loader2, Image as ImageIcon } from 'lucide-react';
+import { BarChart3, PieChart as PieIcon, TrendingUp, Info, List, Copy, Check, TableProperties, RefreshCw, Loader2, Image as ImageIcon, Code } from 'lucide-react';
 import { formatColumnType } from '../lib/sqlUtils';
 
 interface DataStatsViewerProps {
@@ -30,6 +30,7 @@ interface DataStatsViewerProps {
   lastExecutedSql?: string;
   activeEngine?: 'duckdb' | 'clickhouse' | null;
   onExecuteQuery?: (sql: string) => Promise<any[]>;
+  onInsertSql?: (cols: string[]) => void;
 }
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658'];
@@ -52,6 +53,7 @@ export const DataStatsViewer: React.FC<DataStatsViewerProps> = ({
   lastExecutedSql,
   activeEngine,
   onExecuteQuery,
+  onInsertSql,
 }) => {
   if (!data || data.length === 0) {
     return (
@@ -562,7 +564,8 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
   };
 
   const handleCopyColumns = () => {
-    const colsToCopy = selectedColumns.length > 0 ? selectedColumns : columns;
+    const allCols = columns && columns.length > 0 ? columns : rawColumns;
+    const colsToCopy = selectedColumns.length > 0 ? selectedColumns : allCols;
     if (colsToCopy.length > 0) {
       navigator.clipboard.writeText(colsToCopy.join(', '));
       setCopiedCols(true);
@@ -570,9 +573,19 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
     }
   };
 
+  const handleInsertSqlAction = () => {
+    const allCols = columns && columns.length > 0 ? columns : rawColumns;
+    const colsToUse = selectedColumns.length > 0 ? selectedColumns : allCols;
+    if (onInsertSql) {
+      onInsertSql(colsToUse);
+    } else {
+      handleCopyColumns();
+    }
+  };
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (chartType !== 'list' || listSubMode !== 'columns') return;
+      if (!isSummarizeMode && (chartType !== 'list' || listSubMode !== 'columns')) return;
       if ((e.ctrlKey || e.metaKey) && e.code === 'KeyC') {
         const activeTag = document.activeElement?.tagName.toLowerCase();
         if (activeTag === 'input' || activeTag === 'textarea') return;
@@ -586,7 +599,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
 
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [chartType, listSubMode, selectedColumns, columns]);
+  }, [chartType, listSubMode, isSummarizeMode, selectedColumns, columns, summarizeList]);
 
   const totalCategoryCount = useMemo(() => {
     if (!xAxisCol) return 0;
@@ -750,7 +763,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                 )}
                 <button
                   type="button"
-                  onClick={handleCopyColumns}
+                  onClick={handleInsertSqlAction}
                   className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium transition-colors shrink-0 ${
                     selectedColumns.length > 0
                       ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/40 hover:bg-amber-500/30'
@@ -760,21 +773,12 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                   }`}
                   title={
                     selectedColumns.length > 0
-                      ? `Скопировать выбранные столбцы (${selectedColumns.length}) [Ctrl+C / Cmd+C]`
-                      : 'Скопировать все столбцы через запятую'
+                      ? `Вставить SELECT с выбранными столбцами (${selectedColumns.length}) в редактор`
+                      : 'Вставить SELECT со всеми столбцами в редактор'
                   }
                 >
-                  {copiedCols ? (
-                    <>
-                      <Check className="w-3 h-3 text-green-500 shrink-0" />
-                      <span>Скопировано!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3 h-3 shrink-0" />
-                      <span>Скопировать</span>
-                    </>
-                  )}
+                  <Code className="w-3 h-3 shrink-0" />
+                  <span>Вставить SQL</span>
                 </button>
                 <span>•</span>
                 <span>Столбцов: <b className="font-semibold text-teal-600 dark:text-teal-400">{summarizeList.length}</b></span>
@@ -848,7 +852,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                     )}
                     <button
                       type="button"
-                      onClick={handleCopyColumns}
+                      onClick={handleInsertSqlAction}
                       className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium transition-colors shrink-0 ${
                         selectedColumns.length > 0
                           ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/40 hover:bg-amber-500/30'
@@ -858,21 +862,12 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                       }`}
                       title={
                         selectedColumns.length > 0
-                          ? `Скопировать выбранные столбцы (${selectedColumns.length}) [Ctrl+C / Cmd+C]`
-                          : 'Скопировать все столбцы через запятую'
+                          ? `Вставить SELECT с выбранными столбцами (${selectedColumns.length}) в редактор`
+                          : 'Вставить SELECT со всеми столбцами в редактор'
                       }
                     >
-                      {copiedCols ? (
-                        <>
-                          <Check className="w-3 h-3 text-green-500 shrink-0" />
-                          <span>Скопировано!</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3 h-3 shrink-0" />
-                          <span>Скопировать</span>
-                        </>
-                      )}
+                      <Code className="w-3 h-3 shrink-0" />
+                      <span>Вставить SQL</span>
                     </button>
                     <span>•</span>
                     <span>Столбцов: <b className="font-semibold text-teal-600 dark:text-teal-400">{columns.length}</b></span>

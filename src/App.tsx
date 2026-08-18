@@ -59,6 +59,7 @@ import {
   ChevronUp,
   Folder,
   ChevronsUpDown,
+  Unplug,
   ChevronsDownUp,
   Square,
   Table,
@@ -82,7 +83,7 @@ import { parseSqlToAst, astToGraph, getLayoutedElements } from './utils/astToGra
 import { nodeTypes } from './components/CustomNodes';
 import { sqlPresets, SQLPreset } from './components/SQLPresets';
 import { SqlSnippetsManager } from './components/SqlSnippetsManager';
-import { SqlEditor, SqlEditorRef, highlightSqlHtml } from './components/SqlEditor';
+import { SqlEditor, SqlEditorRef, highlightSqlHtml, getBaseHighlight } from './components/SqlEditor';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { SettingsModal, getSavedHotkeys, getSavedFormatterSettings, FormatterSettings, getSavedUiVisibilitySettings, UiVisibilitySettings, QuickActionTemplate, getQuickActionTemplates } from './components/SettingsModal';
 import { VersionHistoryModal } from './components/VersionHistoryModal';
@@ -90,10 +91,11 @@ import { saveVersion, getVersions, getLatestVersion } from './utils/versionHisto
 import { format as formatSql } from 'sql-formatter';
 import { splitBySemicolonIgnoringQuotes, formatColumnType } from './lib/sqlUtils';
 import { getSessionTabs, saveSessionTabs } from './utils/sessionStorage';
-import { connectDuckDbWasmFile, connectDuckDbWasmMemory, queryDuckDbWasm, disconnectDuckDbWasm, exportDuckDbFile, applyDuckDbConfigWasm } from './lib/duckdbWasm';
+import { connectDuckDbWasmFile, connectDuckDbWasmMemory, queryDuckDbWasm, disconnectDuckDbWasm, exportDuckDbFile, applyDuckDbConfigWasm, attachDuckDbWasmFile } from './lib/duckdbWasm';
 import { ClickhouseModal } from './components/ClickhouseModal';
 import { ClickhouseConfig, parseClickhouseCopy, getClickhouseUrl, getClickhouseHeaders, isTauriEnvironment, executeClickhouseQueryTauri, executeClickhouseCopyToTauri, executeClickhouseCopyFromTauri, cancelClickhouseQueryTauri } from './lib/clickhouse';
 import { getSchemaCache, saveSchemaCache } from './utils/schemaDbCache';
+import { replaceSecretsInSql } from './utils/vaultStorage';
 
 export interface EditorTab {
   id: string;
@@ -183,6 +185,7 @@ export default function App() {
   const [isDuckDbResultExpanded, setIsDuckDbResultExpanded] = useState<boolean>(false);
   const [duckDbSelectedCell, setDuckDbSelectedCell] = useState<{ title: string; content: string } | null>(null);
   const [isCellZoomed, setIsCellZoomed] = useState<boolean>(false);
+  const [isCellSqlHighlighted, setIsCellSqlHighlighted] = useState<boolean>(false);
   const [isTransposed, setIsTransposed] = useState<boolean>(false);
   const [copiedTableImage, setCopiedTableImage] = useState<boolean>(false);
   const [copiedCellValue, setCopiedCellValue] = useState<boolean>(false);
@@ -216,6 +219,105 @@ export default function App() {
   const [clickhouseConfig, setClickhouseConfig] = useState<ClickhouseConfig | null>(() => savedSession?.clickhouseConfig || null);
   const [showClickhouseModal, setShowClickhouseModal] = useState<boolean>(false);
   const [activeEngine, setActiveEngine] = useState<'duckdb' | 'clickhouse'>(() => savedSession?.activeEngine || 'duckdb');
+  const [activeDuckDbSchema, setActiveDuckDbSchema] = useState<string>('main');
+
+  const isCH = activeEngine === 'clickhouse' || (!duckDbConnectedPath && !isWasmMode && Boolean(clickhouseConfig));
+
+  const handleSetActiveDatabase = (newDb: string) => {
+    if (activeEngine === 'clickhouse' || (!duckDbConnectedPath && clickhouseConfig)) {
+      if (clickhouseConfig && clickhouseConfig.database !== newDb) {
+        const updated = { ...clickhouseConfig, database: newDb };
+        setClickhouseConfig(updated);
+        localStorage.setItem('clickhouse_config', JSON.stringify(updated));
+      }
+    }
+  };
+
+  const handleSetActiveDuckDbSchema = async (newSchema: string) => {
+    setActiveDuckDbSchema(newSchema);
+    try {
+      await handleExecuteRawQueryForStats(`USE "${newSchema.replace(/"/g, '""')}"`);
+    } catch (err) {
+      console.warn("Failed to USE schema:", err);
+    }
+  };
+
+  const handleDuckDbAttachFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setIsDuckDbRunning(true);
+      try {
+        if (isWasmMode || (!duckDbConnectedPath && !clickhouseConfig)) {
+          // If in WASM mode or not yet connected to a persistent backend
+          if (!duckDbConnectedPath) {
+            await connectDuckDbWasmMemory(duckDbConfig);
+            setIsWasmMode(true);
+            setDuckDbConnectedPath(':memory:');
+          }
+          await attachDuckDbWasmFile(file);
+          setShowDuckDbSchemaPanel(true);
+          setDuckDbError(null);
+          await fetchDuckDbSchema(true);
+        } else {
+          // @ts-ignore
+          const dbPath = file.path || file.name;
+          const escapedPath = dbPath.replace(/'/g, "''");
+          await handleExecuteRawQueryForStats(`ATTACH '${escapedPath}'`);
+          await fetchDuckDbSchema(true);
+        }
+      } catch (err: any) {
+        console.warn("Attach file failed:", err);
+        setDuckDbError("Ошибка ATTACH базы данных: " + (err.message || String(err)));
+        setIsDuckDbResultVisible(true);
+      } finally {
+        setIsDuckDbRunning(false);
+        // Reset file input so selecting the same file again triggers change
+        if (e.target) {
+          e.target.value = '';
+        }
+      }
+    }
+  };
+
+  const handleAttachDuckDb = async () => {
+    if (isTauriEnv) {
+      try {
+        let openFn: any;
+        if (typeof window !== 'undefined' && (window as any).__TAURI__?.dialog?.open) {
+          openFn = (window as any).__TAURI__.dialog.open;
+        } else {
+          const dialog = await import('@tauri-apps/api/dialog');
+          openFn = dialog.open;
+        }
+        const selected = await openFn({
+          multiple: false,
+          filters: [{ name: 'DuckDB / SQLite', extensions: ['duckdb', 'db', 'sqlite'] }]
+        });
+
+        if (selected && typeof selected === 'string') {
+          const dbPath = selected;
+          const escapedPath = dbPath.replace(/'/g, "''");
+          await handleExecuteRawQueryForStats(`ATTACH '${escapedPath}'`);
+          await fetchDuckDbSchema(true);
+        }
+      } catch (err: any) {
+        console.warn("Attach DuckDB failed:", err);
+        setDuckDbError("Ошибка ATTACH базы данных: " + (err.message || String(err)));
+      }
+    } else {
+      duckDbAttachFileInputRef.current?.click();
+    }
+  };
+
+  const handleDetachDuckDb = async (dbName: string) => {
+    try {
+      await handleExecuteRawQueryForStats(`DETACH "${dbName.replace(/"/g, '""')}"`);
+      await fetchDuckDbSchema(true);
+    } catch (err: any) {
+      console.warn("Detach DuckDB failed:", err);
+      setDuckDbError("Ошибка DETACH базы данных: " + (err.message || String(err)));
+    }
+  };
 
   // Interactive Results Table States
   const [selectedResultCell, setSelectedResultCell] = useState<{ rowIndex: number; colKey: string } | null>(null);
@@ -278,6 +380,67 @@ export default function App() {
   const [duckDbPageSize, setDuckDbPageSize] = useState<number>(50);
   const [showQuickActionsMenu, setShowQuickActionsMenu] = useState<boolean>(false);
   const [quickActions, setQuickActions] = useState<QuickActionTemplate[]>(getQuickActionTemplates);
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
+  const resizingColRef = useRef<{ colKey: string; startX: number; startWidth: number } | null>(null);
+  const rafResizeIdRef = useRef<number | null>(null);
+
+  // Reset column widths on new query results
+  useEffect(() => {
+    setColumnWidths({});
+  }, [duckDbResults]);
+
+  const handleResizeMouseDown = (e: React.MouseEvent, colKey: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const thEl = (e.currentTarget.parentElement as HTMLElement);
+    const startWidth = thEl ? thEl.getBoundingClientRect().width : 120;
+    resizingColRef.current = { colKey, startX: e.clientX, startWidth };
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      if (!resizingColRef.current) return;
+      const { colKey: key, startX, startWidth } = resizingColRef.current;
+      const deltaX = moveEvent.clientX - startX;
+      const newWidth = Math.max(50, Math.round(startWidth + deltaX));
+
+      if (rafResizeIdRef.current) {
+        cancelAnimationFrame(rafResizeIdRef.current);
+      }
+      rafResizeIdRef.current = requestAnimationFrame(() => {
+        setColumnWidths((prev) => {
+          if (prev[key] === newWidth) return prev;
+          return { ...prev, [key]: newWidth };
+        });
+      });
+    };
+
+    const handleMouseUp = () => {
+      if (rafResizeIdRef.current) {
+        cancelAnimationFrame(rafResizeIdRef.current);
+        rafResizeIdRef.current = null;
+      }
+      resizingColRef.current = null;
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.removeProperty('user-select');
+      document.body.style.removeProperty('cursor');
+    };
+
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const handleResetColWidth = (e: React.MouseEvent, colKey: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setColumnWidths((prev) => {
+      const next = { ...prev };
+      delete next[colKey];
+      return next;
+    });
+  };
+
   const [schemaContextMenu, setSchemaContextMenu] = useState<{
     x: number;
     y: number;
@@ -349,6 +512,7 @@ export default function App() {
     } else if (action === 'describe') {
       sql = `DESCRIBE ${fullTable}`;
     } else if (action === 'ddl') {
+      setIsCellSqlHighlighted(true);
       if (activeEngine === 'duckdb') {
         sql = `SELECT sql FROM duckdb_tables() WHERE table_name = '${tableName}' AND schema_name = '${schemaName}'`;
       } else {
@@ -842,6 +1006,7 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const win1251FileInputRef = useRef<HTMLInputElement>(null);
   const duckDbFileInputRef = useRef<HTMLInputElement>(null);
+  const duckDbAttachFileInputRef = useRef<HTMLInputElement>(null);
 
   // Tabs state for fullscreen editor
   const [tabs, setTabs] = useState<EditorTab[]>(() => {
@@ -1958,11 +2123,28 @@ export default function App() {
         if (keys.length > 0) {
           const ddlKey = keys.find(k => /create|ddl|sql/i.test(k)) || keys[0];
           const val = firstRow[ddlKey];
+          let contentStr = val === null || val === undefined ? 'null' : String(val);
+          if (contentStr !== 'null' && !contentStr.includes('\n')) {
+            try {
+              const fmtSettings = getSavedFormatterSettings();
+              contentStr = formatSql(contentStr, {
+                language: 'sql',
+                keywordCase: fmtSettings.keywordCase,
+                tabWidth: fmtSettings.tabWidth,
+                useTabs: fmtSettings.useTabs,
+                expressionWidth: 1,
+                denseOperators: fmtSettings.denseOperators,
+              });
+            } catch (e) {
+              console.warn('SQL formatting in DDL failed:', e);
+            }
+          }
           setDuckDbSelectedCell({
             title: 'Значение',
-            content: val === null || val === undefined ? 'null' : String(val),
+            content: contentStr,
           });
           setIsCellZoomed(true);
+          setIsCellSqlHighlighted(true);
         }
       }
     }
@@ -1990,6 +2172,14 @@ export default function App() {
       setDuckDbSelectedCell(null);
 
       let finalQuery = queryToExec.trim();
+      try {
+        finalQuery = replaceSecretsInSql(finalQuery);
+      } catch (vaultErr: any) {
+        setIsDuckDbRunning(false);
+        setDuckDbError(vaultErr.message || String(vaultErr));
+        setIsDuckDbResultVisible(true);
+        return;
+      }
       
       if (executionMode) {
         const statements = splitBySemicolonIgnoringQuotes(finalQuery).map(s => s.trim()).filter(Boolean);
@@ -2182,6 +2372,14 @@ export default function App() {
       setDuckDbSelectedCell(null);
       
       let finalQuery = queryToExec.trim();
+      try {
+        finalQuery = replaceSecretsInSql(finalQuery);
+      } catch (vaultErr: any) {
+        setIsDuckDbRunning(false);
+        setDuckDbError(vaultErr.message || String(vaultErr));
+        setIsDuckDbResultVisible(true);
+        return;
+      }
       
       if (executionMode) {
         const statements = splitBySemicolonIgnoringQuotes(finalQuery).map(s => s.trim()).filter(Boolean);
@@ -2445,6 +2643,11 @@ export default function App() {
     setResultsViewMode('table');
     setSelectedResultCell(null);
     setDuckDbSelectedCell(null);
+    setIsCellSqlHighlighted(false);
+    if (page === 1) {
+      setColumnSearchTerm('');
+      setValueSearchTerm('');
+    }
 
     let finalQuery = queryToExec;
 
@@ -2470,6 +2673,8 @@ export default function App() {
     setActiveSqlSorts([]);
     setSelectedResultCell(null);
     setDuckDbSelectedCell(null);
+    setColumnSearchTerm('');
+    setValueSearchTerm('');
     setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, originalSql: undefined } : t));
     handleExecuteCurrentEngineQuery(queryToExecute, 1);
   };
@@ -2480,6 +2685,8 @@ export default function App() {
     setActiveSqlSorts([]);
     setSelectedResultCell(null);
     setDuckDbSelectedCell(null);
+    setColumnSearchTerm('');
+    setValueSearchTerm('');
     setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, originalSql: undefined } : t));
     handleExecuteCurrentEngineQuery(queryToExec, 1, undefined, isQuickAction);
   };
@@ -3651,14 +3858,19 @@ export default function App() {
       setShowDuckDbSchemaPanel,
       resultsViewMode,
       setResultsViewMode,
+      isDuckDbResultVisible,
+      setIsDuckDbResultVisible,
       isDuckDbResultExpanded,
       setIsDuckDbResultExpanded,
+      setIsCellZoomed,
       setStatsInitialMode,
       activeStatsModeRef,
       selectedResultCell,
       setSelectedResultCell,
       duckDbSelectedCell,
       setDuckDbSelectedCell,
+      isCellSqlHighlighted,
+      setIsCellSqlHighlighted,
       isResultTableHoveredRef,
     };
   });
@@ -3696,8 +3908,12 @@ export default function App() {
         setShowDuckDbSchemaPanel: currentSetShowDuckDbSchemaPanel,
         resultsViewMode: currentResultsViewMode,
         setResultsViewMode: currentSetResultsViewMode,
+        isDuckDbResultVisible: currentIsDuckDbResultVisible,
+        setIsDuckDbResultVisible: currentSetIsDuckDbResultVisible,
         isDuckDbResultExpanded: currentIsDuckDbResultExpanded,
         setIsDuckDbResultExpanded: currentSetIsDuckDbResultExpanded,
+        setIsCellZoomed: currentSetIsCellZoomed,
+        setIsCellSqlHighlighted: currentSetIsCellSqlHighlighted,
         setStatsInitialMode: currentSetStatsInitialMode,
         activeStatsModeRef: currentActiveStatsModeRef,
         selectedResultCell: currentSelectedResultCell,
@@ -3894,9 +4110,21 @@ export default function App() {
         currentSetShowDuckDbSchemaPanel?.(true);
       } else if (combo === (currentHotkeys.escapeAction || 'Esc')) {
         let acted = false;
-        if ((currentSelectedResultCell || currentDuckDbSelectedCell) && currentIsResultTableHoveredRef?.current) {
+        if (currentSelectedResultCell || currentDuckDbSelectedCell) {
           currentSetSelectedResultCell?.(null);
           currentSetDuckDbSelectedCell?.(null);
+          currentSetIsCellZoomed?.(false);
+          currentSetIsCellSqlHighlighted?.(false);
+          acted = true;
+        } else if (currentIsResultTableHoveredRef?.current && currentIsDuckDbResultVisible) {
+          if (currentIsDuckDbResultExpanded) {
+            currentSetIsDuckDbResultExpanded(false);
+            currentSetIsCellZoomed?.(false);
+            currentSetIsCellSqlHighlighted?.(false);
+          } else {
+            currentSetIsDuckDbResultVisible(false);
+            currentSetIsCellSqlHighlighted?.(false);
+          }
           acted = true;
         } else if (currentIsMaximizedSql && currentIsDuckDbRunning) {
           currentHandleCancelDuckDbQuery();
@@ -4219,258 +4447,258 @@ export default function App() {
     return resultLines.join('\n');
   };
 
-  const handleFormatSql = () => {
+  const doFormat = (text: string): string => {
     const cfg = formatterSettingsRef.current || formatterSettings;
-    const sel = sqlEditorRef.current?.getSelection();
+    const primaryLang =
+      dialect === 'PostgreSQL' || dialect === 'Oracle' || dialect === 'Clickhouse' ? 'postgresql' :
+      dialect === 'MySQL' ? 'mysql' :
+      dialect === 'SQLite' ? 'sqlite' : 'postgresql';
 
-    const doFormat = (text: string) => {
-      const primaryLang =
-        dialect === 'PostgreSQL' || dialect === 'Oracle' || dialect === 'Clickhouse' ? 'postgresql' :
-        dialect === 'MySQL' ? 'mysql' :
-        dialect === 'SQLite' ? 'sqlite' : 'postgresql';
+    const fallbackLangs = [primaryLang, 'postgresql', 'mysql', 'sqlite', 'sql'].filter(
+      (lang, index, self) => self.indexOf(lang) === index
+    );
 
-      const fallbackLangs = [primaryLang, 'postgresql', 'mysql', 'sqlite', 'sql'].filter(
-        (lang, index, self) => self.indexOf(lang) === index
-      );
+    const smartSplitByComma = (str: string): string[] => {
+      const result: string[] = [];
+      let current = '';
+      let parenDepth = 0;
+      let inString: string | null = null;
+      let inBlockComment = false;
 
-      const smartSplitByComma = (str: string): string[] => {
-        const result: string[] = [];
-        let current = '';
-        let parenDepth = 0;
-        let inString: string | null = null;
-        let inBlockComment = false;
+      for (let i = 0; i < str.length; i++) {
+        const char = str[i];
+        const nextChar = str[i + 1];
 
-        for (let i = 0; i < str.length; i++) {
-          const char = str[i];
-          const nextChar = str[i + 1];
-
-          if (inString) {
-            current += char;
-            if (char === inString && str[i - 1] !== '\\') {
-              inString = null;
-            }
-          } else if (inBlockComment) {
-            current += char;
-            if (char === '*' && nextChar === '/') {
-              current += '/';
-              inBlockComment = false;
-              i++;
-            }
-          } else if (char === '/' && nextChar === '*') {
-            inBlockComment = true;
-            current += '/*';
+        if (inString) {
+          current += char;
+          if (char === inString && str[i - 1] !== '\\') {
+            inString = null;
+          }
+        } else if (inBlockComment) {
+          current += char;
+          if (char === '*' && nextChar === '/') {
+            current += '/';
+            inBlockComment = false;
             i++;
-          } else if (char === "'" || char === '"' || char === '`') {
-            inString = char;
-            current += char;
-          } else if (char === '(' || char === '[' || char === '{') {
-            parenDepth++;
-            current += char;
-          } else if (char === ')' || char === ']' || char === '}') {
-            if (parenDepth > 0) parenDepth--;
-            current += char;
-          } else if (char === ',' && parenDepth === 0) {
-            result.push(current.trim());
-            current = '';
-          } else {
-            current += char;
           }
-        }
-        if (current.trim().length > 0 || result.length > 0) {
+        } else if (char === '/' && nextChar === '*') {
+          inBlockComment = true;
+          current += '/*';
+          i++;
+        } else if (char === "'" || char === '"' || char === '`') {
+          inString = char;
+          current += char;
+        } else if (char === '(' || char === '[' || char === '{') {
+          parenDepth++;
+          current += char;
+        } else if (char === ')' || char === ']' || char === '}') {
+          if (parenDepth > 0) parenDepth--;
+          current += char;
+        } else if (char === ',' && parenDepth === 0) {
           result.push(current.trim());
-        }
-        return result.filter(Boolean);
-      };
-
-      const cleanFormattedSql = (sql: string): string => {
-        const statements = splitBySemicolonIgnoringQuotes(sql);
-        const cleanedStatements = statements.map(stmt => {
-          const trimmed = stmt.trim();
-          if (!trimmed) return '';
-          return trimmed.replace(/\n\s*\n/g, '\n');
-        }).filter(Boolean);
-
-        const hasSemicolon = sql.trim().endsWith(';');
-        if (cleanedStatements.length === 0) return sql;
-        return cleanedStatements.join(';\n\n') + (hasSemicolon ? ';' : '');
-      };
-
-      const preprocessedText = convertInlineDashComments(text);
-
-      for (const lang of fallbackLangs) {
-        try {
-          let formatted = formatSql(preprocessedText, {
-            language: lang as any,
-            keywordCase: cfg.keywordCase,
-            tabWidth: cfg.tabWidth,
-            useTabs: cfg.useTabs,
-            expressionWidth: cfg.expressionWidth,
-            denseOperators: cfg.denseOperators,
-          });
-
-          // Apply custom clause line wrapping if expressionWidth >= 0
-          if (cfg.expressionWidth >= 0) {
-            const maxWidth = cfg.expressionWidth;
-            const indent = cfg.useTabs ? '\t' : ' '.repeat(cfg.tabWidth || 2);
-
-            // 1. Clean up WITH clause line breaks and align CTE definitions
-            formatted = formatted.replace(
-              /(^|\n)(\s*)WITH\s+([\s\S]+?)(?=\n\s*(?:SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|;|$))/gi,
-              (match, prefix, baseIndent, body) => {
-                const singleLineWith = `${baseIndent}WITH ${body.replace(/\s+/g, ' ')}`;
-                if (singleLineWith.length <= maxWidth) {
-                  return prefix + singleLineWith;
-                }
-                const cleanedBody = body.replace(
-                  /^(\s*)([a-zA-Z0-9_"]+)\s+AS\s*\(/gim,
-                  (_, __, cteName) => `${baseIndent}${indent}${cteName} AS (`
-                );
-                return `${prefix}${baseIndent}WITH ${cleanedBody.trim()}`;
-              }
-            );
-
-            // 1.5 Target parenthesized column and value lists in INSERT INTO and VALUES clauses
-            formatted = formatted.replace(
-              /((?:INSERT\s+INTO\s+[^(]+|\bVALUES\b[\s\S]*?|,\s*))\(([\s\S]+?)\)/gi,
-              (match, prefix, inner) => {
-                if (!/\b(INSERT|VALUES)\b/i.test(prefix) && !/^\s*,\s*$/.test(prefix)) {
-                  return match;
-                }
-                if (/\bSELECT\b/i.test(inner) || inner.includes('--')) {
-                  return match;
-                }
-
-                const prefixLines = prefix.split('\n');
-                const lastPrefixLine = prefixLines[prefixLines.length - 1];
-                const matchIndent = lastPrefixLine.match(/^(\s*)/)?.[1] || '';
-
-                const items = smartSplitByComma(inner).map((s) => s.trim()).filter(Boolean);
-                if (items.length === 0) return match;
-
-                const singleLine = `(${items.join(', ')})`;
-                if ((lastPrefixLine + singleLine).length <= maxWidth) {
-                  return `${prefix}${singleLine}`;
-                }
-
-                const packedLines: string[] = [];
-                let current = '';
-                const itemIndent = matchIndent + indent;
-
-                for (let i = 0; i < items.length; i++) {
-                  const item = items[i];
-                  const isLast = i === items.length - 1;
-                  const itemWithComma = item + (isLast ? '' : ',');
-
-                  if (!current) {
-                    current = itemWithComma;
-                  } else if ((itemIndent + current + ' ' + itemWithComma).length <= maxWidth) {
-                    current += ' ' + itemWithComma;
-                  } else {
-                    packedLines.push(current);
-                    current = itemWithComma;
-                  }
-                }
-                if (current) packedLines.push(current);
-
-                return `${prefix}(\n${packedLines.map((l) => itemIndent + l).join('\n')}\n${matchIndent})`;
-              }
-            );
-
-            // 2. Custom clause line wrapping with baseIndent preservation, smartSplitByComma, and window function handling
-            const clauseRegex =
-              /(^|\n)(\s*)(SELECT|FROM|WHERE|GROUP BY|ORDER BY|HAVING|LIMIT|OFFSET|JOIN|LEFT JOIN|RIGHT JOIN|INNER JOIN|OUTER JOIN|CROSS JOIN|FULL JOIN|LEFT OUTER JOIN|RIGHT OUTER JOIN|FULL OUTER JOIN|ON|SET|VALUES|INSERT INTO|UPDATE|DELETE FROM|ARRAY JOIN|LEFT ARRAY JOIN|SETTINGS|FORMAT)\b([\s\S]+?)(?=\n\s*(?:SELECT|FROM|WHERE|GROUP BY|ORDER BY|HAVING|LIMIT|OFFSET|JOIN|LEFT JOIN|RIGHT JOIN|INNER JOIN|OUTER JOIN|CROSS JOIN|FULL JOIN|LEFT OUTER JOIN|RIGHT OUTER JOIN|FULL OUTER JOIN|ON|SET|VALUES|INSERT INTO|UPDATE|DELETE FROM|ARRAY JOIN|LEFT ARRAY JOIN|SETTINGS|FORMAT|WITH)|;|$)/gi;
-
-            formatted = formatted.replace(
-              clauseRegex,
-              (match, prefix, baseIndent, keyword, items) => {
-                if (/\bSELECT\b/i.test(items)) {
-                  return match;
-                }
-
-                const lines = items.split('\n').filter((l) => l.trim() !== '');
-                const chunks: Array<{ type: 'code' | 'comment'; text: string }> = [];
-                let currentCodeLines: string[] = [];
-
-                for (const line of lines) {
-                  const trimmed = line.trim();
-                  if (trimmed.startsWith('--')) {
-                    if (currentCodeLines.length > 0) {
-                      chunks.push({ type: 'code', text: currentCodeLines.join('\n') });
-                      currentCodeLines = [];
-                    }
-                    chunks.push({ type: 'comment', text: trimmed });
-                  } else {
-                    currentCodeLines.push(line);
-                  }
-                }
-                if (currentCodeLines.length > 0) {
-                  chunks.push({ type: 'code', text: currentCodeLines.join('\n') });
-                }
-
-                const hasCommentChunks = chunks.some((c) => c.type === 'comment');
-                const formattedLines: string[] = [];
-
-                for (const chunk of chunks) {
-                  if (chunk.type === 'comment') {
-                    formattedLines.push(`${baseIndent}${indent}${chunk.text}`);
-                  } else {
-                    const rawItems = smartSplitByComma(chunk.text);
-                    if (rawItems.length === 0) continue;
-
-                    const processedItems = rawItems.map((item) => {
-                      const collapsed = item.replace(/\s+/g, ' ').trim();
-                      if (collapsed.length <= maxWidth && /\bOVER\s*\(/i.test(item)) {
-                        return collapsed;
-                      }
-                      return item.trim();
-                    });
-
-                    let currentLine = `${baseIndent}${indent}`;
-                    let firstInChunk = true;
-
-                    for (let i = 0; i < processedItems.length; i++) {
-                      const item = processedItems[i];
-                      const isLast = i === processedItems.length - 1;
-                      const itemWithComma = item + (isLast ? '' : ',');
-
-                      if (firstInChunk) {
-                        currentLine += itemWithComma;
-                        firstInChunk = false;
-                      } else if ((currentLine + ' ' + itemWithComma).length <= maxWidth) {
-                        currentLine += ' ' + itemWithComma;
-                      } else {
-                        formattedLines.push(currentLine);
-                        currentLine = `${baseIndent}${indent}${itemWithComma}`;
-                      }
-                    }
-                    if (currentLine.trim()) {
-                      formattedLines.push(currentLine);
-                    }
-                  }
-                }
-
-                if (formattedLines.length === 0) return match;
-
-                if (!hasCommentChunks) {
-                  const singleLine = `${baseIndent}${keyword} ${formattedLines
-                    .map((l) => l.trim())
-                    .join(' ')}`;
-                  if (singleLine.length <= maxWidth) {
-                    return prefix + singleLine;
-                  }
-                }
-
-                return prefix + `${baseIndent}${keyword}\n${formattedLines.join('\n')}`;
-              }
-            );
-          }
-          return cleanFormattedSql(formatted);
-        } catch (e) {
-          // Ignore syntax errors, try next dialect
+          current = '';
+        } else {
+          current += char;
         }
       }
-      throw new Error('Не удалось отформатировать (ошибка синтаксиса)');
+      if (current.trim().length > 0 || result.length > 0) {
+        result.push(current.trim());
+      }
+      return result.filter(Boolean);
     };
+
+    const cleanFormattedSql = (sql: string): string => {
+      const statements = splitBySemicolonIgnoringQuotes(sql);
+      const cleanedStatements = statements.map(stmt => {
+        const trimmed = stmt.trim();
+        if (!trimmed) return '';
+        return trimmed.replace(/\n\s*\n/g, '\n');
+      }).filter(Boolean);
+
+      const hasSemicolon = sql.trim().endsWith(';');
+      if (cleanedStatements.length === 0) return sql;
+      return cleanedStatements.join(';\n\n') + (hasSemicolon ? ';' : '');
+    };
+
+    const preprocessedText = convertInlineDashComments(text);
+
+    for (const lang of fallbackLangs) {
+      try {
+        let formatted = formatSql(preprocessedText, {
+          language: lang as any,
+          keywordCase: cfg.keywordCase,
+          tabWidth: cfg.tabWidth,
+          useTabs: cfg.useTabs,
+          expressionWidth: cfg.expressionWidth,
+          denseOperators: cfg.denseOperators,
+        });
+
+        // Apply custom clause line wrapping if expressionWidth >= 0
+        if (cfg.expressionWidth >= 0) {
+          const maxWidth = cfg.expressionWidth;
+          const indent = cfg.useTabs ? '\t' : ' '.repeat(cfg.tabWidth || 2);
+
+          // 1. Clean up WITH clause line breaks and align CTE definitions
+          formatted = formatted.replace(
+            /(^|\n)(\s*)WITH\s+([\s\S]+?)(?=\n\s*(?:SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|;|$))/gi,
+            (match, prefix, baseIndent, body) => {
+              const singleLineWith = `${baseIndent}WITH ${body.replace(/\s+/g, ' ')}`;
+              if (singleLineWith.length <= maxWidth) {
+                return prefix + singleLineWith;
+              }
+              const cleanedBody = body.replace(
+                /^(\s*)([a-zA-Z0-9_"]+)\s+AS\s*\(/gim,
+                (_, __, cteName) => `${baseIndent}${indent}${cteName} AS (`
+              );
+              return `${prefix}${baseIndent}WITH ${cleanedBody.trim()}`;
+            }
+          );
+
+          // 1.5 Target parenthesized column and value lists in INSERT INTO and VALUES clauses
+          formatted = formatted.replace(
+            /((?:INSERT\s+INTO\s+[^(]+|\bVALUES\b[\s\S]*?|,\s*))\(([\s\S]+?)\)/gi,
+            (match, prefix, inner) => {
+              if (!/\b(INSERT|VALUES)\b/i.test(prefix) && !/^\s*,\s*$/.test(prefix)) {
+                return match;
+              }
+              if (/\bSELECT\b/i.test(inner) || inner.includes('--')) {
+                return match;
+              }
+
+              const prefixLines = prefix.split('\n');
+              const lastPrefixLine = prefixLines[prefixLines.length - 1];
+              const matchIndent = lastPrefixLine.match(/^(\s*)/)?.[1] || '';
+
+              const items = smartSplitByComma(inner).map((s) => s.trim()).filter(Boolean);
+              if (items.length === 0) return match;
+
+              const singleLine = `(${items.join(', ')})`;
+              if ((lastPrefixLine + singleLine).length <= maxWidth) {
+                return `${prefix}${singleLine}`;
+              }
+
+              const packedLines: string[] = [];
+              let current = '';
+              const itemIndent = matchIndent + indent;
+
+              for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                const isLast = i === items.length - 1;
+                const itemWithComma = item + (isLast ? '' : ',');
+
+                if (!current) {
+                  current = itemWithComma;
+                } else if ((itemIndent + current + ' ' + itemWithComma).length <= maxWidth) {
+                  current += ' ' + itemWithComma;
+                } else {
+                  packedLines.push(current);
+                  current = itemWithComma;
+                }
+              }
+              if (current) packedLines.push(current);
+
+              return `${prefix}(\n${packedLines.map((l) => itemIndent + l).join('\n')}\n${matchIndent})`;
+            }
+          );
+
+          // 2. Custom clause line wrapping with baseIndent preservation, smartSplitByComma, and window function handling
+          const clauseRegex =
+            /(^|\n)(\s*)(SELECT|FROM|WHERE|GROUP BY|ORDER BY|HAVING|LIMIT|OFFSET|JOIN|LEFT JOIN|RIGHT JOIN|INNER JOIN|OUTER JOIN|CROSS JOIN|FULL JOIN|LEFT OUTER JOIN|RIGHT OUTER JOIN|FULL OUTER JOIN|ON|SET|VALUES|INSERT INTO|UPDATE|DELETE FROM|ARRAY JOIN|LEFT ARRAY JOIN|SETTINGS|FORMAT)\b([\s\S]+?)(?=\n\s*(?:SELECT|FROM|WHERE|GROUP BY|ORDER BY|HAVING|LIMIT|OFFSET|JOIN|LEFT JOIN|RIGHT JOIN|INNER JOIN|OUTER JOIN|CROSS JOIN|FULL JOIN|LEFT OUTER JOIN|RIGHT OUTER JOIN|FULL OUTER JOIN|ON|SET|VALUES|INSERT INTO|UPDATE|DELETE FROM|ARRAY JOIN|LEFT ARRAY JOIN|SETTINGS|FORMAT|WITH)|;|$)/gi;
+
+          formatted = formatted.replace(
+            clauseRegex,
+            (match, prefix, baseIndent, keyword, items) => {
+              if (/\bSELECT\b/i.test(items)) {
+                return match;
+              }
+
+              const lines = items.split('\n').filter((l) => l.trim() !== '');
+              const chunks: Array<{ type: 'code' | 'comment'; text: string }> = [];
+              let currentCodeLines: string[] = [];
+
+              for (const line of lines) {
+                const trimmed = line.trim();
+                if (trimmed.startsWith('--')) {
+                  if (currentCodeLines.length > 0) {
+                    chunks.push({ type: 'code', text: currentCodeLines.join('\n') });
+                    currentCodeLines = [];
+                  }
+                  chunks.push({ type: 'comment', text: trimmed });
+                } else {
+                  currentCodeLines.push(line);
+                }
+              }
+              if (currentCodeLines.length > 0) {
+                chunks.push({ type: 'code', text: currentCodeLines.join('\n') });
+              }
+
+              const hasCommentChunks = chunks.some((c) => c.type === 'comment');
+              const formattedLines: string[] = [];
+
+              for (const chunk of chunks) {
+                if (chunk.type === 'comment') {
+                  formattedLines.push(`${baseIndent}${indent}${chunk.text}`);
+                } else {
+                  const rawItems = smartSplitByComma(chunk.text);
+                  if (rawItems.length === 0) continue;
+
+                  const processedItems = rawItems.map((item) => {
+                    const collapsed = item.replace(/\s+/g, ' ').trim();
+                    if (collapsed.length <= maxWidth && /\bOVER\s*\(/i.test(item)) {
+                      return collapsed;
+                    }
+                    return item.trim();
+                  });
+
+                  let currentLine = `${baseIndent}${indent}`;
+                  let firstInChunk = true;
+
+                  for (let i = 0; i < processedItems.length; i++) {
+                    const item = processedItems[i];
+                    const isLast = i === processedItems.length - 1;
+                    const itemWithComma = item + (isLast ? '' : ',');
+
+                    if (firstInChunk) {
+                      currentLine += itemWithComma;
+                      firstInChunk = false;
+                    } else if ((currentLine + ' ' + itemWithComma).length <= maxWidth) {
+                      currentLine += ' ' + itemWithComma;
+                    } else {
+                      formattedLines.push(currentLine);
+                      currentLine = `${baseIndent}${indent}${itemWithComma}`;
+                    }
+                  }
+                  if (currentLine.trim()) {
+                    formattedLines.push(currentLine);
+                  }
+                }
+              }
+
+              if (formattedLines.length === 0) return match;
+
+              if (!hasCommentChunks) {
+                const singleLine = `${baseIndent}${keyword} ${formattedLines
+                  .map((l) => l.trim())
+                  .join(' ')}`;
+                if (singleLine.length <= maxWidth) {
+                  return prefix + singleLine;
+                }
+              }
+
+              return prefix + `${baseIndent}${keyword}\n${formattedLines.join('\n')}`;
+            }
+          );
+        }
+        return cleanFormattedSql(formatted);
+      } catch (e) {
+        // Ignore syntax errors, try next dialect
+      }
+    }
+    throw new Error('Не удалось отформатировать (ошибка синтаксиса)');
+  };
+
+  const handleFormatSql = () => {
+    const sel = sqlEditorRef.current?.getSelection();
 
     if (sel && sel.text.trim()) {
       try {
@@ -4487,9 +4715,29 @@ export default function App() {
 
     try {
       const formatted = doFormat(currentSqlText);
-      sqlRef.current = formatted; setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: formatted } : t));
+      sqlRef.current = formatted;
+      setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: formatted } : t));
     } catch (e) {
       console.warn('Format error', e);
+    }
+  };
+
+  const handleInsertGeneratedSqlFromStats = (cols: string[]) => {
+    const colList = cols && cols.length > 0
+      ? cols.map(c => `"${c.replace(/"/g, '""')}"`).join(', ')
+      : '*';
+    const targetTable = extractedTableName || 'table';
+    const rawSql = `SELECT ${colList} FROM ${targetTable};`;
+    let sqlToInsert = rawSql;
+    try {
+      sqlToInsert = doFormat(rawSql);
+    } catch (e) {
+      console.warn('Format generated SQL error', e);
+    }
+    handleInsertSnippet(sqlToInsert);
+    setResultsViewMode('table');
+    if (preChartExpandedRef.current !== undefined) {
+      setIsDuckDbResultExpanded(preChartExpandedRef.current);
     }
   };
 
@@ -5507,6 +5755,13 @@ export default function App() {
                   className="hidden" 
                 />
 
+                <input 
+                  type="file" 
+                  ref={duckDbAttachFileInputRef} 
+                  onChange={handleDuckDbAttachFileChange} 
+                  className="hidden" 
+                />
+
                 {(uiVisibility.showDuckDbConfig || uiVisibility.showClickhouseConfig) && (
                 <div className="flex items-center gap-1.5">
                   <div className="relative">
@@ -5975,6 +6230,15 @@ export default function App() {
                             </button>
                           )}
                         </div>
+                        {!isCH && (
+                          <button 
+                            onClick={handleAttachDuckDb}
+                            className={`p-1.5 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-200 text-slate-500 hover:text-slate-800'}`}
+                            title="Прикрепить базу данных (ATTACH)"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                         <button 
                           onClick={handleExpandAllSchemaNodes}
                           className={`p-1.5 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-200 text-slate-500 hover:text-slate-800'}`}
@@ -5998,47 +6262,146 @@ export default function App() {
                               if (dbB.toLowerCase() === 'system') return -1;
                               return dbA.localeCompare(dbB);
                             })
-                            .map(([dbName, schemas]) => (
-                          <div key={dbName} className="mb-1">
-                            <div 
-                              className={`text-xs font-bold px-2 py-1 flex items-center gap-1.5 rounded cursor-pointer select-none transition-colors ${theme === 'dark' ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-200 text-slate-800'}`}
-                              onClick={() => toggleSchemaNode(`db-${dbName}`)}
-                            >
-                              <Database className={`w-3.5 h-3.5 ${dbName.toLowerCase() === 'system' ? 'opacity-35' : 'opacity-70'}`} />
-                              <span className="truncate">{dbName}</span>
-                            </div>
-                            {expandedSchemaNodes[`db-${dbName}`] && (
-                              <div className="pl-2 border-l ml-2 border-slate-400/20 mt-1">
-                                {Object.entries(schemas).map(([schemaName, types]) => (
-                                  <div key={schemaName} className="mb-1">
-                                    <div 
-                                      className={`text-[11px] font-semibold px-2 py-1 flex items-center gap-1.5 rounded cursor-pointer select-none transition-colors ${theme === 'dark' ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-200 text-slate-700'}`}
-                                      onClick={() => toggleSchemaNode(`sch-${dbName}-${schemaName}`)}
-                                    >
-                                      <FileText className="w-3 h-3 opacity-70" />
-                                      <span className="truncate">{schemaName}</span>
+                            .map(([dbName, schemas]) => {
+                              const isCurrentChDb = isCH && (clickhouseConfig?.database || 'default') === dbName;
+                              const defaultDuckDbName = (!duckDbConnectedPath || duckDbConnectedPath === ':memory:')
+                                ? 'memory'
+                                : (duckDbConnectedPath.split(/[/\\]/).pop()?.replace(/\.[^.]+$/, '').toLowerCase() || 'memory');
+                              const isDefaultDuckDb = dbName.toLowerCase() === defaultDuckDbName || (!duckDbConnectedPath && ['memory', 'temp'].includes(dbName.toLowerCase()));
+
+                              return (
+                                <div key={dbName} className="mb-1">
+                                  <div 
+                                    className={`group/db text-xs font-bold px-2 py-1 flex items-center justify-between gap-1.5 rounded cursor-pointer select-none transition-colors ${
+                                      theme === 'dark' ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-200 text-slate-800'
+                                    }`}
+                                    onClick={() => toggleSchemaNode(`db-${dbName}`)}
+                                  >
+                                    <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                      <Database className={`w-3.5 h-3.5 shrink-0 ${dbName.toLowerCase() === 'system' ? 'opacity-35' : 'opacity-70'}`} />
+                                      <span className="truncate">{dbName}</span>
                                     </div>
-                                    {expandedSchemaNodes[`sch-${dbName}-${schemaName}`] && (
-                                      <div className="pl-2 border-l ml-2 border-slate-400/20 mt-1">
-                                        {Object.entries(types)
-                                          .sort(([a], [b]) => {
-                                            const order = ['Tables', 'Views', 'Macros', 'Material Views', 'Dictionaries'];
-                                            const idxA = order.indexOf(a);
-                                            const idxB = order.indexOf(b);
-                                            return (idxA !== -1 ? idxA : 99) - (idxB !== -1 ? idxB : 99);
-                                          })
-                                          .map(([typeName, tables]) => (
-                                          <div key={typeName} className="mb-1">
-                                            <div 
-                                              className={`text-[11px] font-semibold px-2 py-1 flex items-center gap-1.5 rounded cursor-pointer select-none transition-colors ${theme === 'dark' ? 'hover:bg-slate-800 text-slate-500' : 'hover:bg-slate-200 text-slate-600'}`}
-                                              onClick={() => toggleSchemaNode(`type-${dbName}-${schemaName}-${typeName}`)}
+
+                                    {isCH ? (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleSetActiveDatabase(dbName);
+                                        }}
+                                        title={isCurrentChDb ? 'Текущая база данных (активна для запросов)' : `Сделать "${dbName}" активной базой`}
+                                        className={`p-0.5 rounded transition-all cursor-pointer ${
+                                          isCurrentChDb
+                                            ? 'opacity-100'
+                                            : 'opacity-0 group-hover/db:opacity-60 hover:!opacity-100 hover:bg-slate-500/10'
+                                        }`}
+                                      >
+                                        <Check className={`w-3.5 h-3.5 ${
+                                          isCurrentChDb
+                                            ? theme === 'dark' ? 'text-slate-400' : 'text-slate-500'
+                                            : theme === 'dark' ? 'text-slate-500 hover:text-slate-300' : 'text-slate-400 hover:text-slate-700'
+                                        }`} />
+                                      </button>
+                                    ) : (
+                                      (() => {
+                                        if (isDefaultDuckDb) {
+                                          return (
+                                            <div
+                                              title="База данных по умолчанию"
+                                              className="p-0.5 rounded opacity-100"
                                             >
-                                              <Folder className="w-3 h-3 opacity-70" />
-                                              <span className="truncate">{typeName}</span>
+                                              <Check className={`w-3.5 h-3.5 ${
+                                                theme === 'dark' ? 'text-slate-400' : 'text-slate-500'
+                                              }`} />
                                             </div>
-                                            {expandedSchemaNodes[`type-${dbName}-${schemaName}-${typeName}`] && (
-                                              <div className="pl-2 border-l ml-2 border-slate-400/20 mt-1">
-                                                {Object.entries(tables).map(([tableName, tableData]: any) => {
+                                          );
+                                        }
+
+                                        if (!['system', 'temp', 'memory'].includes(dbName.toLowerCase())) {
+                                          return (
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleDetachDuckDb(dbName);
+                                              }}
+                                              title={`Отключить базу "${dbName}" (DETACH)`}
+                                              className="p-0.5 rounded transition-all cursor-pointer opacity-0 group-hover/db:opacity-60 hover:!opacity-100 hover:bg-slate-500/10"
+                                            >
+                                              <Unplug className={`w-3.5 h-3.5 ${
+                                                theme === 'dark' ? 'text-slate-400 hover:text-rose-400' : 'text-slate-500 hover:text-rose-600'
+                                              }`} />
+                                            </button>
+                                          );
+                                        }
+
+                                        return null;
+                                      })()
+                                    )}
+                                  </div>
+                                  {expandedSchemaNodes[`db-${dbName}`] && (
+                                    <div className="pl-2 border-l ml-2 border-slate-400/20 mt-1">
+                                      {Object.entries(schemas).map(([schemaName, types]) => {
+                                        const isCurrentDuckSchema = !isCH && isDefaultDuckDb && (activeDuckDbSchema || 'main') === schemaName;
+
+                                        return (
+                                          <div key={schemaName} className="mb-1">
+                                            {!isCH && (
+                                              <div 
+                                                className={`group/sch text-[11px] font-semibold px-2 py-1 flex items-center justify-between gap-1.5 rounded cursor-pointer select-none transition-colors ${
+                                                  theme === 'dark' ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-200 text-slate-700'
+                                                }`}
+                                                onClick={() => toggleSchemaNode(`sch-${dbName}-${schemaName}`)}
+                                              >
+                                                <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                                  <FileText className="w-3 h-3 shrink-0 opacity-70" />
+                                                  <span className="truncate">{schemaName}</span>
+                                                </div>
+
+                                                {isDefaultDuckDb && (
+                                                  <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      handleSetActiveDuckDbSchema(schemaName);
+                                                    }}
+                                                    title={isCurrentDuckSchema ? 'Текущая схема (активна для запросов)' : `Сделать "${schemaName}" активной схемой`}
+                                                    className={`p-0.5 rounded transition-all cursor-pointer ${
+                                                      isCurrentDuckSchema
+                                                        ? 'opacity-100'
+                                                        : 'opacity-0 group-hover/sch:opacity-60 hover:!opacity-100 hover:bg-slate-500/10'
+                                                    }`}
+                                                  >
+                                                    <Check className={`w-3.5 h-3.5 ${
+                                                      isCurrentDuckSchema
+                                                        ? theme === 'dark' ? 'text-slate-400' : 'text-slate-500'
+                                                        : theme === 'dark' ? 'text-slate-500 hover:text-slate-300' : 'text-slate-400 hover:text-slate-700'
+                                                    }`} />
+                                                  </button>
+                                                )}
+                                              </div>
+                                            )}
+                                            {(isCH || expandedSchemaNodes[`sch-${dbName}-${schemaName}`]) && (
+                                              <div className={isCH ? "" : "pl-2 border-l ml-2 border-slate-400/20 mt-1"}>
+                                                {Object.entries(types)
+                                                  .sort(([a], [b]) => {
+                                                    const order = ['Tables', 'Views', 'Macros', 'Material Views', 'Dictionaries'];
+                                                    const idxA = order.indexOf(a);
+                                                    const idxB = order.indexOf(b);
+                                                    return (idxA !== -1 ? idxA : 99) - (idxB !== -1 ? idxB : 99);
+                                                  })
+                                                  .map(([typeName, tables]) => (
+                                                  <div key={typeName} className="mb-1">
+                                                    <div 
+                                                      className={`text-[11px] font-semibold px-2 py-1 flex items-center gap-1.5 rounded cursor-pointer select-none transition-colors ${theme === 'dark' ? 'hover:bg-slate-800 text-slate-500' : 'hover:bg-slate-200 text-slate-600'}`}
+                                                      onClick={() => toggleSchemaNode(`type-${dbName}-${schemaName}-${typeName}`)}
+                                                    >
+                                                      <Folder className="w-3 h-3 opacity-70" />
+                                                      <span className="truncate">{typeName}</span>
+                                                    </div>
+                                                    {expandedSchemaNodes[`type-${dbName}-${schemaName}-${typeName}`] && (
+                                                      <div className="pl-2 border-l ml-2 border-slate-400/20 mt-1">
+                                                        {Object.entries(tables).map(([tableName, tableData]: any) => {
                                                   const itemInfo = tableData.info || {};
                                                   const cols = tableData.columns;
                                                   const tableKey = `${dbName}.${schemaName}.${tableName}`;
@@ -6049,6 +6412,20 @@ export default function App() {
                                                   return (
                                                     <div key={tableName} className="mb-1">
                                                       <div 
+                                                        draggable={true}
+                                                        onDragStart={(e) => {
+                                                          let sel = '';
+                                                          if (itemInfo.table_type === 'Macros') {
+                                                            sel = dbName === schemaName ? `SELECT "${dbName}"."${tableName}"()` : `SELECT "${dbName}"."${schemaName}"."${tableName}"()`;
+                                                          } else {
+                                                            const colList = cols && cols.length > 0 ? cols.map((c: any) => `"${c.column_name}"`).join(', ') : '*';
+                                                            sel = dbName === schemaName
+                                                              ? `SELECT ${colList} FROM "${dbName}"."${tableName}"`
+                                                              : `SELECT ${colList} FROM "${dbName}"."${schemaName}"."${tableName}"`;
+                                                          }
+                                                          e.dataTransfer.setData('text/plain', sel);
+                                                          e.dataTransfer.effectAllowed = 'copy';
+                                                        }}
                                                         className={`group text-[11px] font-medium px-2 py-1 flex items-center justify-between gap-1 rounded cursor-pointer select-none transition-colors ${theme === 'dark' ? 'hover:bg-slate-800' : 'hover:bg-slate-200'}`}
                                                         onClick={() => handleToggleTableNode(dbName, schemaName, tableName, itemInfo.table_type)}
                                                         onContextMenu={(e) => {
@@ -6107,9 +6484,15 @@ export default function App() {
                                                             cols.map((col: any, idx: number) => (
                                                               <div 
                                                                 key={idx} 
+                                                                draggable={true}
+                                                                onDragStart={(e) => {
+                                                                  e.stopPropagation();
+                                                                  e.dataTransfer.setData('text/plain', `"${col.column_name}"`);
+                                                                  e.dataTransfer.effectAllowed = 'copy';
+                                                                }}
                                                                 className={`cursor-pointer text-[10px] flex items-center justify-between gap-2 px-1.5 py-0.5 rounded transition-colors ${theme === 'dark' ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-200'}`}
                                                                 onClick={() => navigator.clipboard.writeText(col.column_name)}
-                                                                title={`${col.column_name} (${col.data_type})\nНажмите, чтобы скопировать`}
+                                                                title={`${col.column_name} (${col.data_type})\nНажмите или перетащите для вставки`}
                                                               >
                                                                 <span className="font-mono truncate min-w-0 flex-1" title={col.column_name}>{col.column_name}</span>
                                                                 <span className="text-[9px] opacity-60 shrink-0 font-mono max-w-[120px] truncate text-right" title={col.data_type}>
@@ -6138,11 +6521,13 @@ export default function App() {
                                       </div>
                                     )}
                                   </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        ))
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
                         ) : (
                           <div className="py-8 text-center opacity-70 flex flex-col items-center justify-center gap-1.5">
                             <Database className="w-5 h-5 opacity-40" />
@@ -6246,12 +6631,14 @@ export default function App() {
             {/* DUCKDB / CLICKHOUSE RESULTS PANEL */}
             {isMaximizedSql && (uiVisibility.showDuckDbConfig || uiVisibility.showClickhouseConfig) && isDuckDbResultVisible && (
               <div
+                onMouseEnter={() => { isResultTableHoveredRef.current = true; }}
+                onMouseLeave={() => { isResultTableHoveredRef.current = false; }}
                 className={`flex flex-col min-h-0 overflow-hidden z-10 ${
                   theme === 'dark' ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300'
                 } ${
                   isDuckDbResultExpanded 
-                    ? 'border-t flex flex-col shrink-0 h-[70vh]' 
-                    : 'border-t flex flex-col shrink-0 h-[35vh]'
+                    ? 'border-t flex flex-col shrink-0 h-[calc(100%-118px)]' 
+                    : 'border-t flex flex-col shrink-0 h-[35%]'
                 }`}
               >
                 <div className={`flex items-center justify-between px-3 py-1.5 border-b shrink-0 ${
@@ -6737,6 +7124,7 @@ export default function App() {
                           lastExecutedSql={lastExecutedSql || getActiveTabSql()}
                           activeEngine={activeEngine}
                           onExecuteQuery={handleExecuteRawQueryForStats}
+                          onInsertSql={handleInsertGeneratedSqlFromStats}
                         />
                       ) : resultsViewMode === 'chart' ? (
                         <DataStatsViewer
@@ -6752,12 +7140,13 @@ export default function App() {
                           lastExecutedSql={lastExecutedSql || getActiveTabSql()}
                           activeEngine={activeEngine}
                           onExecuteQuery={handleExecuteRawQueryForStats}
+                          onInsertSql={handleInsertGeneratedSqlFromStats}
                         />
                       ) : isTransposed ? (
                         <table className="w-full text-left border-separate border-spacing-0 text-xs">
                           <thead className="sticky top-0 z-20 [transform:translateZ(0)]">
-                            <tr>
-                              <th className={`sticky top-0 left-0 z-30 px-3 py-2 font-semibold border-b-[1.5px] border-r-[1.5px] whitespace-nowrap min-w-[140px] max-w-[200px] [transform:translateZ(0)] ${
+                            <tr className="h-[35px]">
+                              <th className={`sticky top-0 left-0 z-30 px-3 h-[35px] font-semibold border-b-[1.5px] border-r-[1.5px] whitespace-nowrap min-w-[140px] max-w-[200px] [transform:translateZ(0)] ${
                                 theme === 'dark' ? 'border-b-slate-600 border-r-slate-600 text-slate-200 bg-slate-800' : 'border-b-slate-300 border-r-slate-300 text-slate-800 bg-slate-100'
                               }`}>
                                 Поле \ №
@@ -6768,7 +7157,7 @@ export default function App() {
                                 return (
                                   <th
                                     key={i}
-                                    className={`sticky top-0 z-20 px-3 py-2 font-semibold border-b-[1.5px] border-r whitespace-nowrap text-center min-w-[80px] max-w-[200px] [transform:translateZ(0)] ${
+                                    className={`sticky top-0 z-20 px-3 h-[35px] font-semibold border-b-[1.5px] border-r whitespace-nowrap text-center min-w-[80px] max-w-[200px] [transform:translateZ(0)] ${
                                       isRowSelected
                                         ? theme === 'dark' ? 'bg-blue-950 text-blue-300 border-b-blue-500' : 'bg-blue-100 text-blue-800 border-b-blue-500'
                                         : theme === 'dark' ? 'border-b-slate-600 border-r-slate-700/80 text-slate-200 bg-slate-800' : 'border-b-slate-300 border-r-slate-200 text-slate-800 bg-slate-100'
@@ -6858,8 +7247,8 @@ export default function App() {
                       ) : (
                         <table className="w-full text-left border-separate border-spacing-0 text-xs">
                           <thead className="sticky top-0 z-20 [transform:translateZ(0)]">
-                            <tr>
-                              <th className={`sticky top-0 left-0 z-30 px-2 py-2 font-semibold border-b-[1.5px] border-r-[1.5px] text-center w-12 shrink-0 select-none [transform:translateZ(0)] ${
+                            <tr className="h-[35px]">
+                              <th className={`sticky top-0 left-0 z-30 px-2 h-[35px] font-semibold border-b-[1.5px] border-r-[1.5px] text-center w-12 shrink-0 select-none [transform:translateZ(0)] ${
                                 theme === 'dark' ? 'border-b-slate-600 border-r-slate-600 text-slate-200 bg-slate-800' : 'border-b-slate-300 border-r-slate-300 text-slate-800 bg-slate-100'
                               }`}>
                                 #
@@ -6868,11 +7257,13 @@ export default function App() {
                                 const isColSelected = selectedResultCell?.colKey === col;
                                 const sortInfo = activeSqlSorts.find(s => s.colKey === col);
                                 const isFiltered = activeSqlFilters.some(f => f.colKey === col);
+                                const customWidth = columnWidths[col];
                                 return (
                                   <th 
                                     key={col} 
                                     id={`th-col-${col}`}
-                                    className={`sticky top-0 z-20 px-3 py-2 font-semibold border-b-[1.5px] border-r max-w-[180px] overflow-hidden text-ellipsis whitespace-nowrap cursor-pointer [transform:translateZ(0)] ${
+                                    style={customWidth ? { width: `${customWidth}px`, minWidth: `${customWidth}px`, maxWidth: `${customWidth}px` } : undefined}
+                                    className={`relative group sticky top-0 z-20 px-3 h-[35px] font-semibold border-b-[1.5px] border-r ${customWidth ? '' : 'max-w-[180px]'} overflow-hidden text-ellipsis whitespace-nowrap cursor-pointer [transform:translateZ(0)] ${
                                       isColSelected
                                         ? theme === 'dark'
                                           ? 'border-b-blue-500 border-r-slate-700/80 text-blue-300 bg-blue-950 font-bold'
@@ -6906,6 +7297,15 @@ export default function App() {
                                         )}
                                       </div>
                                     </div>
+                                    <div
+                                      className="absolute top-0 right-0 bottom-0 w-2 cursor-col-resize select-none group/resizer z-30 flex items-center justify-end"
+                                      onMouseDown={(e) => handleResizeMouseDown(e, col)}
+                                      onDoubleClick={(e) => handleResetColWidth(e, col)}
+                                      onClick={(e) => e.stopPropagation()}
+                                      title="Потяните для изменения ширины. Двойной клик — сброс (Auto-fit)"
+                                    >
+                                      <div className={`w-[2px] h-full opacity-0 group-hover/resizer:opacity-100 transition-opacity ${theme === 'dark' ? 'bg-blue-400' : 'bg-blue-600'}`} />
+                                    </div>
                                   </th>
                                 );
                               })}
@@ -6931,8 +7331,9 @@ export default function App() {
                                   {Object.entries(row).map(([colKey, val]: [string, any], j) => {
                                     const isCellSelected = selectedResultCell?.rowIndex === i && selectedResultCell?.colKey === colKey;
                                     const isColSelected = selectedResultCell?.colKey === colKey;
+                                    const customWidth = columnWidths[colKey];
 
-                                    let cellClasses = 'px-3 py-1.5 whitespace-nowrap overflow-hidden text-ellipsis max-w-[288px] cursor-pointer border-r border-b ';
+                                    let cellClasses = `px-3 py-1.5 whitespace-nowrap overflow-hidden text-ellipsis ${customWidth ? '' : 'max-w-[288px]'} cursor-pointer border-r border-b `;
 
                                     if (isCellSelected) {
                                       cellClasses += theme === 'dark'
@@ -6958,6 +7359,7 @@ export default function App() {
                                     return (
                                       <td 
                                         key={j} 
+                                        style={customWidth ? { width: `${customWidth}px`, minWidth: `${customWidth}px`, maxWidth: `${customWidth}px` } : undefined}
                                         className={cellClasses}
                                         title={valStr === null ? 'null' : (valStr.length > 200 ? valStr.substring(0, 200) + '...' : valStr)}
                                         onClick={() => {
@@ -6997,11 +7399,41 @@ export default function App() {
                     <div 
                       className={`${isCellZoomed ? 'w-[50vw]' : 'w-[30vw] min-w-[220px]'} border-l flex flex-col shrink-0 ${theme === 'dark' ? 'border-slate-700 bg-slate-900' : 'border-slate-300 bg-slate-50'}`}
                     >
-                      <div className={`flex items-center justify-between px-3 py-1.5 border-b shrink-0 ${theme === 'dark' ? 'border-slate-700' : 'border-slate-200'}`}>
+                      <div className={`flex items-center justify-between px-3 h-[35px] border-b-[1.5px] shrink-0 box-border ${theme === 'dark' ? 'border-b-slate-600' : 'border-b-slate-300'}`}>
                         <span className={`text-xs font-semibold truncate max-w-[180px] ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>
                           {duckDbSelectedCell.title}
                         </span>
                         <div className="flex items-center gap-1">
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              if (!isCellSqlHighlighted && duckDbSelectedCell?.content && !duckDbSelectedCell.content.includes('\n')) {
+                                try {
+                                  const fmtSettings = getSavedFormatterSettings();
+                                  const formatted = formatSql(duckDbSelectedCell.content, {
+                                    language: 'sql',
+                                    keywordCase: fmtSettings.keywordCase,
+                                    tabWidth: fmtSettings.tabWidth,
+                                    useTabs: fmtSettings.useTabs,
+                                    expressionWidth: 1,
+                                    denseOperators: fmtSettings.denseOperators,
+                                  });
+                                  setDuckDbSelectedCell(prev => prev ? { ...prev, content: formatted } : prev);
+                                } catch (e) {
+                                  console.warn('SQL formatting in cell failed:', e);
+                                }
+                              }
+                              setIsCellSqlHighlighted(!isCellSqlHighlighted);
+                            }}
+                            className={`p-1 rounded transition-colors ${
+                              isCellSqlHighlighted
+                                ? 'bg-teal-600 text-white hover:bg-teal-500 font-medium'
+                                : theme === 'dark' ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'
+                            }`}
+                            title={isCellSqlHighlighted ? "Отключить подсветку SQL" : "Включить подсветку SQL"}
+                          >
+                            <Code className="w-3.5 h-3.5" />
+                          </button>
                           <button 
                             onClick={() => {
                               if ((selectedResultCell?.rowIndex === -1 && selectedResultCell?.colKey) || duckDbSelectedCell.title.startsWith('Столбец:')) {
@@ -7033,6 +7465,7 @@ export default function App() {
                             onClick={() => {
                               setDuckDbSelectedCell(null);
                               setSelectedResultCell(null);
+                              setIsCellSqlHighlighted(false);
                             }}
                             className={`p-1 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'}`}
                             title="Закрыть"
@@ -7042,7 +7475,15 @@ export default function App() {
                         </div>
                       </div>
                       <div className={`flex-1 overflow-auto p-3 text-xs whitespace-pre-wrap select-text [word-break:break-word] ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>
-                        {duckDbSelectedCell.content}
+                        {isCellSqlHighlighted ? (
+                          <div 
+                            dangerouslySetInnerHTML={{ 
+                              __html: getBaseHighlight(duckDbSelectedCell.content, theme) 
+                            }} 
+                          />
+                        ) : (
+                          duckDbSelectedCell.content
+                        )}
                       </div>
                     </div>
                   )}

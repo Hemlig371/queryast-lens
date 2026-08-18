@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { X, Database, Check, AlertCircle, Loader2, Unplug } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Database, Check, AlertCircle, Loader2, Unplug, Key, ChevronDown } from 'lucide-react';
 import { ClickhouseConfig, getClickhouseUrl, getClickhouseHeaders, isTauriEnvironment, executeClickhouseQueryTauri } from '../lib/clickhouse';
+import { getClickhouseVaultSecrets, parseClickhouseUri, VaultSecret } from '../utils/vaultStorage';
 
 interface ClickhouseModalProps {
   isOpen: boolean;
@@ -26,6 +27,57 @@ export const ClickhouseModal: React.FC<ClickhouseModalProps> = ({
   const [user, setUser] = useState(config?.user || 'default');
   const [key, setKey] = useState(config?.key || '');
   const [database, setDatabase] = useState(config?.database || 'default');
+  const [vaultSecrets, setVaultSecrets] = useState<VaultSecret[]>([]);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const loadVaultSecrets = () => {
+      setVaultSecrets(getClickhouseVaultSecrets());
+    };
+    loadVaultSecrets();
+    window.addEventListener('sql_vault_status_changed', loadVaultSecrets);
+    window.addEventListener('sql_vault_secrets_updated', loadVaultSecrets);
+    return () => {
+      window.removeEventListener('sql_vault_status_changed', loadVaultSecrets);
+      window.removeEventListener('sql_vault_secrets_updated', loadVaultSecrets);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      setProtocol(config?.protocol || 'http');
+      setHost(config?.host || '127.0.0.1:8123');
+      setUser(config?.user || 'default');
+      setKey(config?.key || '');
+      setDatabase(config?.database || 'default');
+      setVaultSecrets(getClickhouseVaultSecrets());
+      setIsDropdownOpen(false);
+      setTestResult(null);
+    }
+  }, [isOpen, config]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleSelectSecret = (sec: VaultSecret) => {
+    const parsed = parseClickhouseUri(sec.value);
+    if (parsed) {
+      setProtocol(parsed.protocol);
+      setHost(parsed.host);
+      setUser(parsed.user);
+      setKey(parsed.key);
+      setDatabase(parsed.database);
+    }
+    setIsDropdownOpen(false);
+  };
 
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string; rows?: any[] } | null>(null);
@@ -177,15 +229,72 @@ export const ClickhouseModal: React.FC<ClickhouseModalProps> = ({
                 <option value="http">http://</option>
                 <option value="https">https://</option>
               </select>
-              <input
-                type="text"
-                placeholder="127.0.0.1:8123 или ch.server.com:8443"
-                value={host}
-                onChange={(e) => setHost(e.target.value)}
-                className={`flex-1 px-3 py-1.5 rounded-lg border font-mono outline-none text-xs ${
-                  theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200 focus:border-amber-500' : 'bg-slate-50 border-slate-300 text-slate-800 focus:border-amber-500'
-                }`}
-              />
+
+              <div className="relative flex-1" ref={dropdownRef}>
+                <input
+                  type="text"
+                  placeholder="127.0.0.1:8123 или ch.server.com:8443"
+                  value={host}
+                  onChange={(e) => setHost(e.target.value)}
+                  onFocus={() => {
+                    if (vaultSecrets.length > 0) setIsDropdownOpen(true);
+                  }}
+                  className={`w-full px-3 py-1.5 ${
+                    vaultSecrets.length > 0 ? 'pr-8' : ''
+                  } rounded-lg border font-mono outline-none text-xs ${
+                    theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200 focus:border-amber-500' : 'bg-slate-50 border-slate-300 text-slate-800 focus:border-amber-500'
+                  }`}
+                />
+                {vaultSecrets.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                    title="Выбрать из сохраненных ключей"
+                    className={`absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded transition-colors cursor-pointer ${
+                      theme === 'dark' ? 'text-slate-400 hover:text-amber-400' : 'text-slate-500 hover:text-amber-600'
+                    }`}
+                  >
+                    <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-150 ${isDropdownOpen ? 'rotate-180 text-amber-500' : ''}`} />
+                  </button>
+                )}
+
+                {/* DROPDOWN MENU */}
+                {isDropdownOpen && vaultSecrets.length > 0 && (
+                  <div
+                    className={`absolute left-0 right-0 top-full mt-1 z-50 rounded-lg border shadow-xl max-h-48 overflow-y-auto py-1 ${
+                      theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-200 text-slate-800'
+                    }`}
+                  >
+                    {vaultSecrets.map((sec) => {
+                      const parsed = parseClickhouseUri(sec.value);
+                      return (
+                        <button
+                          key={sec.name}
+                          type="button"
+                          onClick={() => handleSelectSecret(sec)}
+                          className={`w-full text-left px-2.5 py-1.5 text-xs flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+                            theme === 'dark'
+                              ? 'hover:bg-amber-950/40 hover:text-amber-300'
+                              : 'hover:bg-amber-50 hover:text-amber-900'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 font-mono font-medium">
+                            <Key className="w-3 h-3 text-amber-500 shrink-0" />
+                            <span>{sec.name}</span>
+                          </div>
+                          {parsed?.host && (
+                            <span className={`text-[10px] font-mono truncate max-w-[160px] ${
+                              theme === 'dark' ? 'text-slate-400' : 'text-slate-500'
+                            }`}>
+                              {parsed.host}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 

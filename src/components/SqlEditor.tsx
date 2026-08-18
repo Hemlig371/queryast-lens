@@ -1,6 +1,6 @@
 import React, { useRef, useState, useLayoutEffect, useEffect, useCallback, useMemo } from 'react';
 import { Search, Replace, ChevronUp, ChevronDown, X, CaseSensitive, Zap, Table } from 'lucide-react';
-import { getSavedHotkeys, getQuickActionTemplates, QuickActionTemplate } from './SettingsModal';
+import { getSavedHotkeys, getSavedUiVisibilitySettings, getQuickActionTemplates, QuickActionTemplate } from './SettingsModal';
 
 export interface AutocompleteTemplate {
   id: string;
@@ -41,7 +41,8 @@ const SQL_KEYWORDS = [
   'UNION ALL', 'INSERT INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE FROM',
   'CREATE TABLE', 'ALTER TABLE', 'DROP TABLE', 'TRUNCATE TABLE', 'PARTITION BY',
   'OVER', 'ROW_NUMBER()', 'DENSE_RANK()', 'RANK()', 'COUNT(*)', 'SUM()', 'AVG()',
-  'MIN()', 'MAX()', 'COALESCE()', 'DATE_TRUNC()', 'DISTINCT'
+  'MIN()', 'MAX()', 'COALESCE()', 'DATE_TRUNC()', 'DISTINCT',
+  'ENGINE', 'SETTINGS', 'BEGIN TRANSACTION', 'COMMIT', 'ROLLBACK', 'ABORT'
 ];
 
 // Helper function to provide syntax highlighting for SQL queries (PostgreSQL, Oracle, Clickhouse, DuckDB)
@@ -58,20 +59,28 @@ export const getBaseHighlight = (sqlText: string, theme: 'dark' | 'light') => {
   const kwColor = isDark ? 'text-blue-400' : 'text-blue-700';
   const fnColor = isDark ? 'text-purple-400' : 'text-purple-700';
   const strColor = isDark ? 'text-emerald-400' : 'text-emerald-700';
-  const numColor = isDark ? 'text-amber-400' : 'text-amber-600';
+  const identColor = isDark ? 'text-sky-300' : 'text-sky-600';
+  const numColor = isDark ? 'text-orange-300' : 'text-orange-500';
+  const engineColor = isDark ? 'text-amber-300' : 'text-amber-500'; 
   const commentColor = isDark ? 'text-slate-500' : 'text-slate-500';
 
-  const tokenRegex = /(--.*$|\/\*[\s\S]*?\*\/)|('(?:''|[^'\\]|\\.)*'|"(?:""|[^"\\]|\\.)*")|(\b\d+(?:\.\d+)?\b)|(\b(?:COUNT|SUM|AVG|MIN|MAX|ROUND|COALESCE|NOW|CONCAT|DATE_TRUNC|LOWER|UPPER|CAST|ROW_NUMBER|DENSE_RANK|RANK|LEAD|LAG|FIRST_VALUE|LAST_VALUE|LISTAGG|TO_CHAR|TO_DATE|NVL|DECODE|UNIQEXACT|UNIQCOMBINED|ARGMAX|ARGMIN|TOSTARTOFHOUR|TOSTARTOFDAY|QUANTILESEXACT|DICTGET|READ_CSV_AUTO|READ_PARQUET|READ_CSV|LIST_TRANSFORM|FILTER|JSON_EXTRACT|ARRAY_JOIN|ARRAYMAP|ARRAYFILTER)\b)|(\b(?:SELECT|FROM|WHERE|JOIN|LEFT|RIGHT|INNER|OUTER|FULL|CROSS|ON|GROUP|BY|ORDER|HAVING|LIMIT|OFFSET|UNION|ALL|INSERT|INTO|UPDATE|SET|DELETE|CREATE|TABLE|AS|WITH|RECURSIVE|AND|OR|NOT|IN|IS|NULL|LIKE|ILIKE|BETWEEN|EXISTS|CASE|WHEN|THEN|ELSE|END|ASC|DESC|OVER|PARTITION|WINDOW|INTERVAL|DISTINCT|VALUES|QUALIFY|PIVOT|UNPIVOT|COLUMNS|EXCLUDE|REPLACE|ATTACH|COPY|MERGE|MATCHED|USING|RETURNING|LATERAL|CONNECT|PRIOR|START|FINAL|UPSERT|CONFLICT|DO|RETURNING)\b)/gim;
+  const tokenRegex = /(--.*$|\/\*[\s\S]*?\*\/)|('(?:''|[^'\\]|\\.)*')|("(?:""|[^"\\]|\\.)*"|`(?:``|[^`\\]|\\.)*`)|(\b\d+(?:\.\d+)?\b)|(\b(?:ENGINE|SETTINGS|DEFAULT)\b)|(\b(?:COUNT|SUM|AVG|MIN|MAX|ROUND|COALESCE|NOW|CONCAT|DATE_TRUNC|DATE|INT|INTEGER|DOUBLE|VARCHAR|TEXT|DECIMAL|TIME|TIMESTAMP|BOOLEAN|BLOB|INTERVAL|UUID|Float(?:64|32|16|8)|Int(?:64|32|16|8)|UInt(?:64|32|16|8)|STRING|LOWER|UPPER|CAST|ROW_NUMBER|DENSE_RANK|RANK|LEAD|LAG|FIRST_VALUE|LAST_VALUE|LISTAGG|TO_CHAR|TO_DATE|NVL|DECODE|UNIQEXACT|UNIQCOMBINED|ARGMAX|ARGMIN|TOSTARTOFHOUR|TOSTARTOFDAY|QUANTILESEXACT|DICTGET|READ_CSV_AUTO|READ_PARQUET|READ_CSV|LIST_TRANSFORM|FILTER|JSON_EXTRACT|ARRAY_JOIN|ARRAYMAP|ARRAYFILTER)\b)|(\b(?:SELECT|FROM|WHERE|JOIN|LEFT|RIGHT|INNER|OUTER|FULL|CROSS|ON|GROUP|BY|ORDER|HAVING|LIMIT|OFFSET|UNION|ALL|INSERT|INTO|UPDATE|SET|DELETE|CREATE|TABLE|AS|WITH|RECURSIVE|AND|OR|NOT|IN|IS|NULL|LIKE|ILIKE|BETWEEN|EXISTS|CASE|WHEN|THEN|ELSE|END|ASC|DESC|OVER|PARTITION|WINDOW|DISTINCT|VALUES|QUALIFY|PIVOT|UNPIVOT|COLUMNS|EXCLUDE|REPLACE|ATTACH|COPY|MERGE|MATCHED|USING|RETURNING|LATERAL|CONNECT|PRIOR|START|FINAL|UPSERT|CONFLICT|DO|RETURNING|BEGIN|TRANSACTION|COMMIT|ROLLBACK|ABORT)\b)/gim;
 
-  html = html.replace(tokenRegex, (match, comment, str, num, fn, kw) => {
+  html = html.replace(tokenRegex, (match, comment, str, ident, num, engineKw, fn, kw) => {
     if (comment) {
       return `<span class="${commentColor}">${comment}</span>`;
     }
     if (str) {
       return `<span class="${strColor}">${str}</span>`;
     }
+    if (ident) {
+      return `<span class="${identColor}">${ident}</span>`;
+    }
     if (num) {
       return `<span class="${numColor}">${num}</span>`;
+    }
+    if (engineKw) {
+      return `<span class="${engineColor}">${engineKw}</span>`;
     }
     if (fn) {
       return `<span class="${fnColor}">${fn}</span>`;
@@ -355,6 +364,40 @@ export const highlightSqlHtml = (sqlText: string, theme: 'dark' | 'light', selec
   return html;
 };
 
+export const splitHtmlIntoLines = (html: string): string[] => {
+  if (!html) return [''];
+  const rawLines = html.split('\n');
+  if (rawLines.length <= 1) return rawLines;
+
+  const result: string[] = [];
+  const openTags: string[] = [];
+
+  for (let i = 0; i < rawLines.length; i++) {
+    const line = rawLines[i];
+    const prefix = openTags.join('');
+    const tagRegex = /<(\/)?([a-zA-Z0-9]+)(?:\s+[^>]*?)?>/g;
+    let match: RegExpExecArray | null;
+    const currentLineOpenTags: string[] = [...openTags];
+
+    while ((match = tagRegex.exec(line)) !== null) {
+      const isClosing = match[1] === '/';
+      const fullTag = match[0];
+      if (isClosing) {
+        currentLineOpenTags.pop();
+      } else if (!fullTag.endsWith('/>')) {
+        currentLineOpenTags.push(fullTag);
+      }
+    }
+
+    const suffix = currentLineOpenTags.map(() => '</span>').join('');
+    result.push((prefix ? prefix : '') + line + suffix);
+    openTags.length = 0;
+    openTags.push(...currentLineOpenTags);
+  }
+
+  return result;
+};
+
 // Unified SqlEditor component with synced scrolling, line numbers, syntax highlighting & autocomplete
 
 export interface SqlEditorRef {
@@ -411,10 +454,31 @@ export function SqlEditor({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lastCopiedTextRef = useRef<string>('');
   const pendingPasteModeRef = useRef<'start' | 'end' | null>(null);
+  const dragSelectionRef = useRef<{ start: number; end: number; text: string } | null>(null);
+  const charWidthRef = useRef<number>(7.221875);
+
+  useLayoutEffect(() => {
+    if (typeof document !== 'undefined') {
+      const span = document.createElement('span');
+      span.style.fontFamily = editorStyles.fontFamily as string;
+      span.style.fontSize = editorStyles.fontSize as string;
+      span.style.lineHeight = editorStyles.lineHeight as string;
+      span.style.visibility = 'hidden';
+      span.style.position = 'absolute';
+      span.style.whiteSpace = 'pre';
+      span.textContent = 'M'.repeat(100);
+      document.body.appendChild(span);
+      const measured = span.getBoundingClientRect().width / 100;
+      document.body.removeChild(span);
+      if (measured > 0) {
+        charWidthRef.current = measured;
+      }
+    }
+  }, []);
 
   const lineNumbersRef = useRef<HTMLDivElement>(null);
   const highlightRef = useRef<HTMLDivElement>(null);
-  const mirrorRef = useRef<HTMLDivElement>(null);
+  const lineElementsRef = useRef<(HTMLDivElement | null)[]>([]);
   const [value, setValue] = useState(propValue);
 
   useEffect(() => {
@@ -474,6 +538,10 @@ export function SqlEditor({
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
   const [showAutocomplete, setShowAutocomplete] = useState<boolean>(false);
+  const showAutocompleteRef = useRef<boolean>(showAutocomplete);
+  useLayoutEffect(() => {
+    showAutocompleteRef.current = showAutocomplete;
+  }, [showAutocomplete]);
   const [caretPos, setCaretPos] = useState<{ top: number; left: number; isAbove?: boolean }>({ top: 30, left: 30, isAbove: false });
 
   const lineHeightsRef = useRef<number[]>([]);
@@ -511,6 +579,7 @@ export function SqlEditor({
   // Search and Replace states
   const [showSearch, setShowSearch] = useState<boolean>(false);
   const [showReplace, setShowReplace] = useState<boolean>(false);
+  const [dragCaretPos, setDragCaretPos] = useState<{ top: number; left: number; height: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [replaceQuery, setReplaceQuery] = useState<string>('');
   const [matchCase, setMatchCase] = useState<boolean>(false);
@@ -982,7 +1051,7 @@ export function SqlEditor({
 
           const lineTop = 12 + prevHeightsSum - scrollTop;
           const lineBottom = lineTop + lHeight;
-          let left = 12 + colIdx * 7.5 - scrollLeft;
+          let left = 12 + colIdx * charWidthRef.current - scrollLeft;
 
           const editorHeight = textarea.clientHeight;
           const editorWidth = textarea.clientWidth;
@@ -1193,9 +1262,9 @@ export function SqlEditor({
   };
 
   const recalculateHeights = useCallback(() => {
-    // Fast path: if word wrap is disabled, we don't need to measure DOM
+    const count = value.split('\n').length || 1;
+    // Fast path: if word wrap is disabled, each line is standard 20px
     if (!isWrapSql) {
-      const count = value.split('\n').length || 1;
       setLineHeights(prev => {
         if (prev.length === count && prev.every(h => h === 20)) return prev;
         return new Array(count).fill(20);
@@ -1203,56 +1272,34 @@ export function SqlEditor({
       return;
     }
 
-    if (mirrorRef.current && textareaRef.current) {
-      const divs = mirrorRef.current.querySelectorAll('div');
-      const count = divs.length;
-      if (count === 0) {
-        setLineHeights(prev => (prev.length === 1 && prev[0] === 20) ? prev : [20]);
-        return;
-      }
-
-      // Word wrap is enabled: measure container width
-      const containerWidth = textareaRef.current.clientWidth;
-      if (containerWidth > 0) {
-        mirrorRef.current.style.width = `${containerWidth}px`;
-      }
-
-      const usableWidth = Math.max(1, containerWidth - 24);
-      // font-mono text-xs character width is ~7.5px
-      const maxCharsPerLine = Math.floor(usableWidth / 7.5);
-
-      const heights: number[] = new Array(count);
-      let needsMeasurement = false;
-
-      for (let i = 0; i < count; i++) {
-        const text = divs[i].textContent || '';
-        if (text.length <= maxCharsPerLine) {
-          heights[i] = 20;
-        } else {
-          needsMeasurement = true;
-          heights[i] = -1;
-        }
-      }
-
-      if (needsMeasurement) {
-        for (let i = 0; i < count; i++) {
-          if (heights[i] === -1) {
-            heights[i] = divs[i].getBoundingClientRect().height;
-          }
-        }
-      }
-
-      setLineHeights(prev => {
-        if (prev.length === heights.length && prev.every((h, i) => h === heights[i])) {
-          return prev;
-        }
-        return heights;
-      });
+    const els = lineElementsRef.current;
+    if (!els || els.length === 0) {
+      setLineHeights(prev => (prev.length === count && prev.every(h => h === 20)) ? prev : new Array(count).fill(20));
+      return;
     }
+
+    const heights: number[] = new Array(count);
+    for (let i = 0; i < count; i++) {
+      const el = els[i];
+      const h = el ? el.getBoundingClientRect().height : 20;
+      heights[i] = h && h > 0 ? Math.round(h) : 20;
+    }
+
+    setLineHeights(prev => {
+      if (prev.length === heights.length && prev.every((h, idx) => h === heights[idx])) {
+        return prev;
+      }
+      return heights;
+    });
   }, [isWrapSql, value]);
 
   useLayoutEffect(() => {
     recalculateHeights();
+    if (typeof document !== 'undefined' && document.fonts) {
+      document.fonts.ready.then(() => {
+        recalculateHeights();
+      });
+    }
   }, [value, isWrapSql, recalculateHeights]);
 
   const recalculateHeightsRef = useRef(recalculateHeights);
@@ -1270,6 +1317,9 @@ export function SqlEditor({
       });
     });
     observer.observe(textareaRef.current);
+    if (highlightRef.current) {
+      observer.observe(highlightRef.current);
+    }
     return () => {
       if (animFrameId) cancelAnimationFrame(animFrameId);
       observer.disconnect();
@@ -1277,7 +1327,7 @@ export function SqlEditor({
   }, []);
 
   // Check cursor and compute suggestions
-  const updateAutocomplete = () => {
+  const updateAutocomplete = (forceShow = false) => {
     if (!textareaRef.current || !onChange) return;
     const cursor = textareaRef.current.selectionStart;
     const cursorEnd = textareaRef.current.selectionEnd;
@@ -1288,17 +1338,24 @@ export function SqlEditor({
       return;
     }
 
+    const uiVis = getSavedUiVisibilitySettings();
+    const autocompleteOnType = uiVis.autocompleteOnType ?? false;
+
+    if (!showAutocompleteRef.current && !forceShow && !autocompleteOnType) {
+      return;
+    }
+
     const textBefore = value.slice(0, cursor);
     const match = textBefore.match(/([a-zA-Z_][a-zA-Z_0-9]*)$/);
 
-    if (match) {
-      const typed = match[1].toUpperCase();
+    if (match || forceShow) {
+      const typed = match ? match[1].toUpperCase() : '';
       const customKeywords = customTemplates
         .filter(t => t && typeof t.keyword === 'string')
         .map(t => t.keyword);
       const allKeywords = Array.from(new Set([...customKeywords, ...SQL_KEYWORDS]));
       const filtered = allKeywords.filter(kw => 
-        kw && typeof kw === 'string' && kw.toUpperCase().startsWith(typed) && kw.toUpperCase() !== typed
+        kw && typeof kw === 'string' && (typed ? (kw.toUpperCase().startsWith(typed) && kw.toUpperCase() !== typed) : true)
       ).slice(0, 8);
 
       if (filtered.length > 0) {
@@ -1318,7 +1375,7 @@ export function SqlEditor({
 
         const lineTop = 12 + prevHeightsSum - scrollTop;
         const lineBottom = lineTop + lHeight;
-        let left = 12 + colIdx * 7.5 - scrollLeft;
+        let left = 12 + colIdx * charWidthRef.current - scrollLeft;
 
         const editorHeight = textareaRef.current.clientHeight;
         const editorWidth = textareaRef.current.clientWidth;
@@ -1468,6 +1525,13 @@ export function SqlEditor({
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key?.toLowerCase() === 'h') {
       e.preventDefault();
       openSearchBox(true);
+      return;
+    }
+
+    if (matchHotkeyCombo(e, savedHotkeys.triggerAutocomplete || 'Ctrl+Space')) {
+      e.preventDefault();
+      e.stopPropagation();
+      updateAutocomplete(true);
       return;
     }
 
@@ -1640,10 +1704,24 @@ export function SqlEditor({
     };
     
     const ta = textareaRef.current;
+    const ln = lineNumbersRef.current;
+    const handleLineNumbersWheel = (e: WheelEvent) => {
+      if (ta) {
+        ta.scrollTop += e.deltaY;
+      }
+    };
+
     if (ta) {
       ta.addEventListener('scroll', handleNativeScroll, { passive: true });
-      return () => ta.removeEventListener('scroll', handleNativeScroll);
     }
+    if (ln) {
+      ln.addEventListener('wheel', handleLineNumbersWheel, { passive: true });
+    }
+
+    return () => {
+      if (ta) ta.removeEventListener('scroll', handleNativeScroll);
+      if (ln) ln.removeEventListener('wheel', handleLineNumbersWheel);
+    };
   }, []);
 
   useEffect(() => {
@@ -1671,6 +1749,154 @@ export function SqlEditor({
     }
     return html;
   }, [baseHighlightedHtml, theme, searchQuery, matchCase, currentMatchIndex, selectedText, showSearch, useRegex, matchedBracketIndices]);
+
+  const lineHtmlArray = useMemo(() => {
+    return splitHtmlIntoLines(finalHtml);
+  }, [finalHtml]);
+
+  const handleDragStart = (e: React.DragEvent<HTMLTextAreaElement>) => {
+    if (textareaRef.current) {
+      const start = textareaRef.current.selectionStart;
+      const end = textareaRef.current.selectionEnd;
+      if (start !== null && end !== null && start < end) {
+        dragSelectionRef.current = {
+          start,
+          end,
+          text: value.slice(start, end),
+        };
+        e.dataTransfer.setData('text/plain', value.slice(start, end));
+      }
+    }
+  };
+
+  const handleDragEnd = () => {
+    dragSelectionRef.current = null;
+    setDragCaretPos(null);
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLTextAreaElement>) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = e.ctrlKey ? 'copy' : (dragSelectionRef.current ? 'move' : 'copy');
+    if (!textareaRef.current) return;
+
+    const rect = textareaRef.current.getBoundingClientRect();
+    const relX = e.clientX - rect.left;
+    const relY = e.clientY - rect.top;
+    const scrollTop = textareaRef.current.scrollTop;
+    const scrollLeft = textareaRef.current.scrollLeft;
+
+    const yWithScroll = relY + scrollTop - 12;
+    const xWithScroll = relX + scrollLeft - 12;
+
+    let currentY = 0;
+    let targetLineIdx = 0;
+    const lines = value.split('\n');
+    for (let i = 0; i < lineHeights.length; i++) {
+      const h = lineHeights[i] || 20;
+      if (yWithScroll >= currentY && yWithScroll < currentY + h) {
+        targetLineIdx = i;
+        break;
+      }
+      currentY += h;
+      if (i === lineHeights.length - 1) {
+        targetLineIdx = i;
+      }
+    }
+
+    const charWidth = charWidthRef.current;
+    const lineText = lines[targetLineIdx] || '';
+    const colIdx = Math.max(0, Math.min(lineText.length, Math.round(xWithScroll / charWidth)));
+
+    const prevHeights = lineHeights.slice(0, targetLineIdx).reduce((acc, h) => acc + (h || 20), 0);
+    const visualTop = 12 + prevHeights - scrollTop;
+    const visualLeft = 12 + colIdx * charWidth - scrollLeft;
+    const visualHeight = lineHeights[targetLineIdx] || 20;
+
+    setDragCaretPos({
+      top: visualTop,
+      left: visualLeft,
+      height: visualHeight,
+    });
+  };
+
+  const handleDragLeave = () => {
+    setDragCaretPos(null);
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLTextAreaElement>) => {
+    setDragCaretPos(null);
+    const droppedText = e.dataTransfer.getData('text/plain');
+    if (!droppedText || !onChange || !textareaRef.current) return;
+    e.preventDefault();
+
+    const rect = textareaRef.current.getBoundingClientRect();
+    const relX = e.clientX - rect.left;
+    const relY = e.clientY - rect.top;
+    const scrollTop = textareaRef.current.scrollTop;
+    const scrollLeft = textareaRef.current.scrollLeft;
+
+    const yWithScroll = relY + scrollTop - 12;
+    const xWithScroll = relX + scrollLeft - 12;
+
+    let currentY = 0;
+    let targetLineIdx = 0;
+    const lines = value.split('\n');
+    for (let i = 0; i < lineHeights.length; i++) {
+      const h = lineHeights[i] || 20;
+      if (yWithScroll >= currentY && yWithScroll < currentY + h) {
+        targetLineIdx = i;
+        break;
+      }
+      currentY += h;
+      if (i === lineHeights.length - 1) {
+        targetLineIdx = i;
+      }
+    }
+
+    const charWidth = charWidthRef.current;
+    const lineText = lines[targetLineIdx] || '';
+    const colIdx = Math.max(0, Math.min(lineText.length, Math.round(xWithScroll / charWidth)));
+
+    let charIndex = 0;
+    for (let i = 0; i < targetLineIdx; i++) {
+      charIndex += lines[i].length + 1;
+    }
+    charIndex += colIdx;
+
+    const internalDrag = dragSelectionRef.current;
+    dragSelectionRef.current = null;
+
+    if (internalDrag && !e.ctrlKey) {
+      const { start, end } = internalDrag;
+      if (charIndex >= start && charIndex <= end) {
+        textareaRef.current.focus();
+        textareaRef.current.setSelectionRange(start, end);
+        return;
+      }
+
+      let newValue = '';
+      let newSelStart = 0;
+      if (charIndex < start) {
+        newValue = value.slice(0, charIndex) + droppedText + value.slice(charIndex, start) + value.slice(end);
+        newSelStart = charIndex;
+      } else {
+        const offset = end - start;
+        newValue = value.slice(0, start) + value.slice(end, charIndex) + droppedText + value.slice(charIndex);
+        newSelStart = charIndex - offset;
+      }
+      pushChange(newValue);
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          textareaRef.current.setSelectionRange(newSelStart, newSelStart + droppedText.length);
+        }
+      }, 0);
+    } else {
+      textareaRef.current.focus();
+      textareaRef.current.setSelectionRange(charIndex, charIndex);
+      document.execCommand('insertText', false, droppedText);
+    }
+  };
 
   return (
     <div 
@@ -1828,32 +2054,35 @@ export function SqlEditor({
 
       {/* CODE EDITOR BODY AREA */}
       <div className="flex-1 flex flex-row min-h-0 relative overflow-hidden">
-        {/* HIDDEN MIRROR DIV FOR EXACT LINE HEIGHT MEASUREMENT */}
-        {isWrapSql && (
-          <div
-            ref={mirrorRef}
-            aria-hidden="true"
-            className={`absolute opacity-0 pointer-events-none -z-50 font-mono text-xs leading-5 p-3 whitespace-pre-wrap [word-break:break-word]`}
-            style={{ top: 0, left: 0, visibility: 'hidden' }}
-          >
-            {sqlLines.map((line, i) => (
-              <div key={i}>{line || '\u00A0'}</div>
-            ))}
-          </div>
-        )}
-
         {/* LINE NUMBERS */}
         <div 
           ref={lineNumbersRef}
-          className={`w-10 border-r flex flex-col items-end pr-2 pt-3 pb-3 font-mono select-none overflow-hidden shrink-0 transition-colors ${
+          style={{
+            fontFamily: editorStyles.fontFamily,
+            fontSize: editorStyles.fontSize,
+            lineHeight: editorStyles.lineHeight,
+            paddingTop: '12px',
+            paddingBottom: '12px',
+            paddingLeft: '4px',
+            paddingRight: '8px',
+            boxSizing: 'border-box',
+            letterSpacing: editorStyles.letterSpacing,
+            WebkitTextSizeAdjust: 'none',
+          }}
+          className={`w-10 border-r select-none overflow-hidden shrink-0 text-right transition-colors ${
             theme === 'dark' ? 'bg-slate-800/80 border-slate-700 text-slate-500' : 'bg-slate-200 border-slate-300 text-slate-500'
           }`}
         >
           {sqlLines.map((_, i) => (
             <div 
               key={i} 
-              style={{ height: lineHeights[i] ? `${lineHeights[i]}px` : undefined }}
-              className="text-xs font-mono leading-5 flex items-start justify-end w-full"
+              style={{
+                height: lineHeights[i] ? `${lineHeights[i]}px` : '20px',
+                minHeight: lineHeights[i] ? `${lineHeights[i]}px` : '20px',
+                maxHeight: lineHeights[i] ? `${lineHeights[i]}px` : '20px',
+                lineHeight: '20px',
+              }}
+              className="w-full text-right overflow-hidden select-none block shrink-0"
             >
               {i + 1}
             </div>
@@ -1865,12 +2094,21 @@ export function SqlEditor({
           <div
             ref={highlightRef}
             aria-hidden="true"
-            className={`absolute inset-0 pointer-events-none overflow-auto select-none z-0 ${
+            className={`absolute inset-0 pointer-events-none overflow-hidden select-none z-0 ${
               isWrapSql ? 'whitespace-pre-wrap break-words' : 'whitespace-pre'
             }`}
             style={{ ...editorStyles, color: theme === 'dark' ? '#cbd5e1' : '#1e293b' }}
-            dangerouslySetInnerHTML={{ __html: finalHtml }}
-          />
+          >
+            {lineHtmlArray.map((lineHtml, i) => (
+              <div
+                key={i}
+                ref={(el) => { lineElementsRef.current[i] = el; }}
+                className="w-full"
+                style={{ minHeight: '20px' }}
+                dangerouslySetInnerHTML={{ __html: lineHtml || '&nbsp;' }}
+              />
+            ))}
+          </div>
 
           <textarea
             ref={textareaRef}
@@ -1910,6 +2148,12 @@ export function SqlEditor({
               setShowAutocomplete(false);
               handleSelectionChange();
             }}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            onScroll={handleScroll}
             readOnly={!onChange}
             spellCheck="false"
             className={`absolute inset-0 w-full h-full bg-transparent text-transparent caret-blue-600 dark:caret-blue-400 resize-none outline-none overflow-auto selection:bg-blue-500/30 z-10 transition-colors ${
@@ -1918,6 +2162,21 @@ export function SqlEditor({
             style={editorStyles}
             placeholder={placeholder}
           />
+
+          {/* VISIBLE DROP CARET INDICATOR */}
+          {dragCaretPos && (
+            <div
+              className="absolute pointer-events-none z-20"
+              style={{
+                top: `${dragCaretPos.top}px`,
+                left: `${dragCaretPos.left}px`,
+                height: `${dragCaretPos.height}px`,
+                width: '2px',
+                backgroundColor: theme === 'dark' ? '#38bdf8' : '#0284c7',
+                borderRadius: '1px',
+              }}
+            />
+          )}
 
           {/* AUTOCOMPLETE POPUP DROPDOWN UNDER CURSOR */}
           {showAutocomplete && suggestions.length > 0 && (

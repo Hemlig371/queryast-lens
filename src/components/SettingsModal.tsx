@@ -8,6 +8,7 @@ import { loadSnippetsFromDB, saveSnippetsToDB } from '../utils/snippetsStorage';
 import { Snippet } from './SqlSnippetsManager';
 import { getSessionTabs, saveSessionTabs } from '../utils/sessionStorage';
 import { EditorTab } from '../App';
+import { VaultSettingsSection } from './VaultSettingsSection';
 
 export interface QuickActionTemplate {
   id: string;
@@ -107,6 +108,7 @@ export interface UiVisibilitySettings {
   showExportXml: boolean;
   showExportMermaid: boolean;
   showExportDrawio: boolean;
+  autocompleteOnType?: boolean;
   uiScale?: number;
 }
 
@@ -165,6 +167,7 @@ export const DEFAULT_UI_VISIBILITY: UiVisibilitySettings = {
   showExportXml: true,
   showExportMermaid: true,
   showExportDrawio: true,
+  autocompleteOnType: false,
   uiScale: 100,
 };
 
@@ -196,6 +199,13 @@ export function getSavedUiVisibilitySettings(): UiVisibilitySettings {
 }
 
 export const DEFAULT_HOTKEYS: HotkeyBinding[] = [
+  {
+    id: 'triggerAutocomplete',
+    label: 'Вызвать автодополнение',
+    description: 'Открыть список подсказок автодополнения под курсором',
+    category: 'Редактор',
+    defaultKey: 'Ctrl+Space'
+  },
   {
     id: 'visualize',
     label: 'Визуализировать SQL (Visualize)',
@@ -660,7 +670,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       const backupData: Record<string, unknown> = {};
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key) {
+        if (key && !key.toLowerCase().includes('vault') && !key.toLowerCase().includes('secret')) {
           const value = localStorage.getItem(key);
           if (value !== null) {
             try {
@@ -737,9 +747,52 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         const dataObj: Record<string, unknown> = parsed.data && typeof parsed.data === 'object' ? parsed.data : parsed;
 
+        // Extract existing explicitly configured (non-default) DuckDB engine settings before clearing localStorage
+        let existingDuckDbSettings: Partial<UiVisibilitySettings> = {};
+        try {
+          const rawUiVisibility = localStorage.getItem(UI_VISIBILITY_STORAGE_KEY) || localStorage.getItem('sql_visualizer_ui_visibility');
+          if (rawUiVisibility) {
+            const currentVis = JSON.parse(rawUiVisibility) as Partial<UiVisibilitySettings>;
+            // Only preserve if explicitly set to a non-default value by the user
+            if (currentVis.duckDbMemoryLimit && currentVis.duckDbMemoryLimit !== '8GB') {
+              existingDuckDbSettings.duckDbMemoryLimit = currentVis.duckDbMemoryLimit;
+            }
+            if (currentVis.duckDbTempDirectory && currentVis.duckDbTempDirectory !== './tmp') {
+              existingDuckDbSettings.duckDbTempDirectory = currentVis.duckDbTempDirectory;
+            }
+            if (currentVis.duckDbExtensionDirectory && currentVis.duckDbExtensionDirectory !== './extensions') {
+              existingDuckDbSettings.duckDbExtensionDirectory = currentVis.duckDbExtensionDirectory;
+            }
+            if (currentVis.duckDbThreads !== undefined && Number(currentVis.duckDbThreads) !== 0) {
+              existingDuckDbSettings.duckDbThreads = Number(currentVis.duckDbThreads);
+            }
+          }
+        } catch {
+          // Ignore parse errors on pre-existing localStorage
+        }
+
         // Ensure session key compatibility (if old key exists without _v2)
         if (dataObj['sql_visualizer_session'] && !dataObj['sql_visualizer_session_v2']) {
           dataObj['sql_visualizer_session_v2'] = dataObj['sql_visualizer_session'];
+        }
+
+        // Merge existing explicit DuckDB settings into imported ui_visibility if present
+        if (Object.keys(existingDuckDbSettings).length > 0) {
+          const importedVisKey = dataObj[UI_VISIBILITY_STORAGE_KEY] ? UI_VISIBILITY_STORAGE_KEY : (dataObj['sql_visualizer_ui_visibility'] ? 'sql_visualizer_ui_visibility' : UI_VISIBILITY_STORAGE_KEY);
+          let importedVisObj: Partial<UiVisibilitySettings> = {};
+          if (dataObj[importedVisKey]) {
+            try {
+              importedVisObj = typeof dataObj[importedVisKey] === 'string'
+                ? JSON.parse(dataObj[importedVisKey] as string)
+                : (dataObj[importedVisKey] as Partial<UiVisibilitySettings>);
+            } catch {
+              importedVisObj = {};
+            }
+          }
+          dataObj[UI_VISIBILITY_STORAGE_KEY] = {
+            ...importedVisObj,
+            ...existingDuckDbSettings,
+          };
         }
 
         // Clear existing local storage so obsolete keys from before the import are removed
@@ -930,6 +983,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     { key: 'showDuckDbConfig', label: 'Интеграция DuckDB', desc: 'Кнопки подключения и выполнения кода' },
                     { key: 'showClickhouseConfig', label: 'Интеграция Clickhouse (http/https)', desc: 'Кнопки подключения и выполнения Clickhouse HTTP(S) запросов' },
                     { key: 'autoUpdateSchema', label: 'Автообновление схемы базы', desc: 'Обновлять дерево схемы при изменении структуры БД (не применяется последовательно и параллельно)' },
+                    { key: 'autocompleteOnType', label: 'Автокомплит при наборе текста', desc: 'Автоматически показывать подсказки при вводе каждого символа' },
                     { key: 'showEditorToggleBtn', label: 'Кнопка «Скрыть редактор»', desc: 'Кнопка скрытия левой панели' },
                     { key: 'showSearchSql', label: 'Кнопка «Поиск»', desc: 'Поиск и замена текста в редакторе (Ctrl+F)' },
                     { key: 'showOpenFile', label: 'Открыть файл (.sql)', desc: 'Загрузка файла с диска' },
@@ -1315,6 +1369,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 </div>
               </div>
+
+              {/* SECRETS VAULT SECTION */}
+              <VaultSettingsSection theme={theme} />
             </div>
           ) : activeTab === 'formatter' ? (
             <div className="space-y-5">

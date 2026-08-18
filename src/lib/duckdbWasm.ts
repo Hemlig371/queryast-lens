@@ -213,6 +213,32 @@ export async function connectDuckDbWasmFile(file: File, options?: DuckDbConfigOp
   return fileName;
 }
 
+export async function attachDuckDbWasmFile(file: File): Promise<string> {
+  const db = await getDuckDbWasm();
+  if (!connInstance) {
+    connInstance = await db.connect();
+  }
+
+  const arrayBuffer = await file.arrayBuffer();
+  const fileName = file.name || "attached.duckdb";
+
+  // Register the file buffer in WASM virtual filesystem
+  try {
+    await db.dropFile(fileName);
+  } catch (_) {}
+  await db.registerFileBuffer(fileName, new Uint8Array(arrayBuffer));
+
+  // Determine database alias without extension (e.g. "my_data" from "my_data.duckdb")
+  const rawAlias = fileName.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_]/g, '_') || 'attached_db';
+
+  // Execute ATTACH in DuckDB WASM
+  const escapedFileName = fileName.replace(/'/g, "''");
+  const escapedAlias = rawAlias.replace(/"/g, '""');
+  await connInstance.query(`ATTACH '${escapedFileName}' AS "${escapedAlias}"`);
+
+  return rawAlias;
+}
+
 export async function queryDuckDbWasm(sqlQuery: string) {
   const db = await getDuckDbWasm();
   if (!connInstance) {
