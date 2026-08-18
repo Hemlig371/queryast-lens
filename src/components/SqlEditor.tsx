@@ -59,7 +59,7 @@ export const getBaseHighlight = (sqlText: string, theme: 'dark' | 'light') => {
   const kwColor = isDark ? 'text-blue-400' : 'text-blue-700';
   const fnColor = isDark ? 'text-purple-400' : 'text-purple-700';
   const strColor = isDark ? 'text-emerald-400' : 'text-emerald-700';
-  const identColor = isDark ? 'text-cyan-500' : 'text-sky-600';
+  const identColor = isDark ? 'text-teal-500' : 'text-teal-800';
   const numColor = isDark ? 'text-orange-300' : 'text-orange-500';
   const engineColor = isDark ? 'text-amber-300' : 'text-amber-500'; 
   const commentColor = isDark ? 'text-slate-500' : 'text-slate-500';
@@ -1759,12 +1759,14 @@ export function SqlEditor({
       const start = textareaRef.current.selectionStart;
       const end = textareaRef.current.selectionEnd;
       if (start !== null && end !== null && start < end) {
+        const textToDrag = value.slice(start, end);
         dragSelectionRef.current = {
           start,
           end,
-          text: value.slice(start, end),
+          text: textToDrag,
         };
-        e.dataTransfer.setData('text/plain', value.slice(start, end));
+        e.dataTransfer.setData('text/plain', textToDrag);
+        (window as any).__currentDragText = textToDrag;
       }
     }
   };
@@ -1825,7 +1827,7 @@ export function SqlEditor({
 
   const handleDrop = (e: React.DragEvent<HTMLTextAreaElement>) => {
     setDragCaretPos(null);
-    const droppedText = e.dataTransfer.getData('text/plain');
+    const droppedText = e.dataTransfer.getData('text/plain') || e.dataTransfer.getData('text') || (window as any).__currentDragText;
     if (!droppedText || !onChange || !textareaRef.current) return;
     e.preventDefault();
 
@@ -1892,9 +1894,15 @@ export function SqlEditor({
         }
       }, 0);
     } else {
-      textareaRef.current.focus();
-      textareaRef.current.setSelectionRange(charIndex, charIndex);
-      document.execCommand('insertText', false, droppedText);
+      const newValue = value.slice(0, charIndex) + droppedText + value.slice(charIndex);
+      pushChange(newValue);
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          const newPos = charIndex + droppedText.length;
+          textareaRef.current.setSelectionRange(newPos, newPos);
+        }
+      }, 0);
     }
   };
 
