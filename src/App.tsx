@@ -6638,7 +6638,7 @@ export default function App() {
                 } ${
                   isDuckDbResultExpanded 
                     ? 'border-t flex flex-col shrink-0 h-[calc(100%-118px)]' 
-                    : 'border-t flex flex-col shrink-0 h-[35%]'
+                    : 'border-t flex flex-col shrink-0 h-[40%]'
                 }`}
               >
                 <div className={`flex items-center justify-between px-3 py-1.5 border-b shrink-0 ${
