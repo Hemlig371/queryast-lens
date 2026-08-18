@@ -59,7 +59,7 @@ export const getBaseHighlight = (sqlText: string, theme: 'dark' | 'light') => {
   const kwColor = isDark ? 'text-blue-400' : 'text-blue-700';
   const fnColor = isDark ? 'text-purple-400' : 'text-purple-700';
   const strColor = isDark ? 'text-emerald-400' : 'text-emerald-700';
-  const identColor = isDark ? 'text-sky-300' : 'text-sky-600';
+  const identColor = isDark ? 'text-cyan-500' : 'text-sky-600';
   const numColor = isDark ? 'text-orange-300' : 'text-orange-500';
   const engineColor = isDark ? 'text-amber-300' : 'text-amber-500'; 
   const commentColor = isDark ? 'text-slate-500' : 'text-slate-500';
