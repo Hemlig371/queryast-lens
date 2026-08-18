@@ -61,7 +61,8 @@
         "title": "QueryAST Lens",
         "width": 1600,
         "height": 1000,
-        "resizable": true
+        "resizable": true,
+        "fileDropEnabled": false
       }
     ]
   }
