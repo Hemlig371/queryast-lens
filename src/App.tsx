@@ -6413,6 +6413,7 @@ export default function App() {
                                                     <div key={tableName} className="mb-1">
                                                       <div 
                                                         draggable={true}
+                                                        style={{ WebkitUserDrag: 'element' } as React.CSSProperties}
                                                         onDragStart={(e) => {
                                                           let sel = '';
                                                           if (itemInfo.table_type === 'Macros') {
@@ -6425,6 +6426,7 @@ export default function App() {
                                                           }
                                                           e.dataTransfer.setData('text/plain', sel);
                                                           e.dataTransfer.effectAllowed = 'copy';
+                                                          (window as any).__currentDragText = sel;
                                                         }}
                                                         className={`group text-[11px] font-medium px-2 py-1 flex items-center justify-between gap-1 rounded cursor-pointer select-none transition-colors ${theme === 'dark' ? 'hover:bg-slate-800' : 'hover:bg-slate-200'}`}
                                                         onClick={() => handleToggleTableNode(dbName, schemaName, tableName, itemInfo.table_type)}
@@ -6489,7 +6491,9 @@ export default function App() {
                                                                   e.stopPropagation();
                                                                   e.dataTransfer.setData('text/plain', `"${col.column_name}"`);
                                                                   e.dataTransfer.effectAllowed = 'copy';
+                                                                  (window as any).__currentDragText = `"${col.column_name}"`;
                                                                 }}
+                                                                style={{ WebkitUserDrag: 'element' } as React.CSSProperties}
                                                                 className={`cursor-pointer text-[10px] flex items-center justify-between gap-2 px-1.5 py-0.5 rounded transition-colors ${theme === 'dark' ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-200'}`}
                                                                 onClick={() => navigator.clipboard.writeText(col.column_name)}
                                                                 title={`${col.column_name} (${col.data_type})\nНажмите или перетащите для вставки`}
