@@ -2132,7 +2132,7 @@ export default function App() {
                 keywordCase: fmtSettings.keywordCase,
                 tabWidth: fmtSettings.tabWidth,
                 useTabs: fmtSettings.useTabs,
-                expressionWidth: 1,
+                expressionWidth: 10,
                 denseOperators: fmtSettings.denseOperators,
               });
             } catch (e) {
@@ -7419,7 +7419,7 @@ export default function App() {
                                     keywordCase: fmtSettings.keywordCase,
                                     tabWidth: fmtSettings.tabWidth,
                                     useTabs: fmtSettings.useTabs,
-                                    expressionWidth: 1,
+                                    expressionWidth: 10,
                                     denseOperators: fmtSettings.denseOperators,
                                   });
                                   setDuckDbSelectedCell(prev => prev ? { ...prev, content: formatted } : prev);
