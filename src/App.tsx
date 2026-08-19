@@ -54,6 +54,7 @@ import {
   FileDown,
   FileJson,
   FileCode,
+  FileSpreadsheet,
   Workflow,
   History,
   ChevronUp,
@@ -92,10 +93,14 @@ import { format as formatSql } from 'sql-formatter';
 import { splitBySemicolonIgnoringQuotes, formatColumnType } from './lib/sqlUtils';
 import { getSessionTabs, saveSessionTabs } from './utils/sessionStorage';
 import { connectDuckDbWasmFile, connectDuckDbWasmMemory, queryDuckDbWasm, disconnectDuckDbWasm, exportDuckDbFile, applyDuckDbConfigWasm, attachDuckDbWasmFile } from './lib/duckdbWasm';
+import { WasmFileManagerModal } from './components/WasmFileManagerModal';
 import { ClickhouseModal } from './components/ClickhouseModal';
 import { ClickhouseConfig, parseClickhouseCopy, getClickhouseUrl, getClickhouseHeaders, isTauriEnvironment, executeClickhouseQueryTauri, executeClickhouseCopyToTauri, executeClickhouseCopyFromTauri, cancelClickhouseQueryTauri } from './lib/clickhouse';
 import { getSchemaCache, saveSchemaCache } from './utils/schemaDbCache';
 import { replaceSecretsInSql } from './utils/vaultStorage';
+import { exportToExcel } from './utils/excelExporter';
+import { getSavedExcelSettings, getSavedExcelPresets } from './utils/excelSettingsStorage';
+import { ExcelPreset } from './types/excelSettings';
 
 export interface EditorTab {
   id: string;
@@ -176,8 +181,10 @@ export default function App() {
   const [recentDuckDbPath, setRecentDuckDbPath] = useState<string | null>(null);
   const [recentClickhouseConfigs, setRecentClickhouseConfigs] = useState<ClickhouseConfig[]>([]);
   const [isWasmMode, setIsWasmMode] = useState<boolean>(false);
+  const [showWasmFileModal, setShowWasmFileModal] = useState<boolean>(false);
   const [showDuckDbConnMenu, setShowDuckDbConnMenu] = useState<boolean>(false);
   const [duckDbResults, setDuckDbResults] = useState<any[] | null>(null);
+  const [queryExecutionDuration, setQueryExecutionDuration] = useState<string | null>(null);
   const [resultColumnTypes, setResultColumnTypes] = useState<Record<string, string>>({});
   const [duckDbError, setDuckDbError] = useState<string | null>(null);
   const [isDuckDbRunning, setIsDuckDbRunning] = useState<boolean>(false);
@@ -510,13 +517,25 @@ export default function App() {
     if (action === 'select') {
       sql = `SELECT * FROM ${fullTable}`;
     } else if (action === 'describe') {
-      sql = `DESCRIBE ${fullTable}`;
+      if (tableType === 'Macros') {
+        sql = `SELECT function_name, function_type, return_type, parameters, description FROM duckdb_functions() WHERE function_name = '${tableName}' AND schema_name = '${schemaName}' AND database_name = '${dbName}'`;
+      } else if (tableType === 'Dictionaries') {
+        sql = `DESCRIBE DICTIONARY ${fullTable}`;
+      } else {
+        sql = `DESCRIBE ${fullTable}`;
+      }
     } else if (action === 'ddl') {
       setIsCellSqlHighlighted(true);
       if (activeEngine === 'duckdb') {
-        sql = `SELECT sql FROM duckdb_tables() WHERE table_name = '${tableName}' AND schema_name = '${schemaName}'`;
+        if (tableType === 'Macros') {
+          sql = `SELECT function_name AS name, parameters, macro_definition, description FROM duckdb_functions() WHERE function_name = '${tableName}' AND schema_name = '${schemaName}' AND database_name = '${dbName}'`;
+        } else if (tableType === 'Views') {
+          sql = `SELECT sql FROM duckdb_views() WHERE view_name = '${tableName}' AND schema_name = '${schemaName}' AND database_name = '${dbName}'`;
+        } else {
+          sql = `SELECT sql FROM duckdb_tables() WHERE table_name = '${tableName}' AND schema_name = '${schemaName}' AND database_name = '${dbName}'`;
+        }
       } else {
-        sql = `SHOW CREATE TABLE ${fullTable}`;
+        sql = tableType === 'Dictionaries' ? `SHOW CREATE DICTIONARY ${fullTable}` : `SHOW CREATE TABLE ${fullTable}`;
       }
     }
 
@@ -2116,12 +2135,12 @@ export default function App() {
   };
 
   const maybeAutoSelectFirstCell = (results: any[], query: string) => {
-    if (results && results.length > 0 && /^\s*(SHOW\b|SELECT\s+sql\s+FROM\s+duckdb_[a-z_]+\b)/i.test(query.trim())) {
+    if (results && results.length > 0 && /^\s*(SHOW\b|SELECT\s+[\s\S]+?\bFROM\s+duckdb_(tables|views|functions)\b)/i.test(query.trim())) {
       const firstRow = results[0];
       if (firstRow && typeof firstRow === 'object') {
         const keys = Object.keys(firstRow);
         if (keys.length > 0) {
-          const ddlKey = keys.find(k => /create|ddl|sql/i.test(k)) || keys[0];
+          const ddlKey = keys.find(k => /create|ddl|sql|macro_definition/i.test(k)) || keys[0];
           const val = firstRow[ddlKey];
           let contentStr = val === null || val === undefined ? 'null' : String(val);
           if (contentStr !== 'null' && !contentStr.includes('\n')) {
@@ -2132,7 +2151,7 @@ export default function App() {
                 keywordCase: fmtSettings.keywordCase,
                 tabWidth: fmtSettings.tabWidth,
                 useTabs: fmtSettings.useTabs,
-                expressionWidth: 10,
+                expressionWidth: 20,
                 denseOperators: fmtSettings.denseOperators,
               });
             } catch (e) {
@@ -2162,12 +2181,14 @@ export default function App() {
 
     const controller = new AbortController();
     duckDbAbortControllerRef.current = controller;
+    const queryStartTime = performance.now();
 
     try {
       setIsDuckDbRunning(true);
       setIsDuckDbResultVisible(true);
       setDuckDbError(null);
       setDuckDbResults(null);
+      setQueryExecutionDuration(null);
       setSummarizeResults(null);
       setDuckDbSelectedCell(null);
 
@@ -2229,6 +2250,7 @@ export default function App() {
             }
           }));
           setDuckDbResults(results);
+          setQueryExecutionDuration(((performance.now() - queryStartTime) / 1000).toFixed(2));
           setIsDuckDbRunning(false);
           duckDbAbortControllerRef.current = null;
           return;
@@ -2267,6 +2289,7 @@ export default function App() {
             return obj;
           });
           setDuckDbResults(parsed);
+          setQueryExecutionDuration(((performance.now() - queryStartTime) / 1000).toFixed(2));
           
           if (res?.columns && res?.column_types) {
             const typesDict: Record<string, string> = {};
@@ -2294,6 +2317,7 @@ export default function App() {
         const rows = await queryDuckDbWasm(queryWithLimit);
         if (controller.signal.aborted) throw new Error("Запрос отменен пользователем");
         setDuckDbResults(rows);
+        setQueryExecutionDuration(((performance.now() - queryStartTime) / 1000).toFixed(2));
         if ((rows as any).__columnTypes) {
           setResultColumnTypes((rows as any).__columnTypes);
         } else {
@@ -2316,6 +2340,7 @@ export default function App() {
         } else {
           const res = data.data || [];
           setDuckDbResults(res);
+          setQueryExecutionDuration(((performance.now() - queryStartTime) / 1000).toFixed(2));
           
           if (data.meta && Array.isArray(data.meta)) {
             const typesDict: Record<string, string> = {};
@@ -2363,12 +2388,14 @@ export default function App() {
 
     const controller = new AbortController();
     duckDbAbortControllerRef.current = controller;
+    const queryStartTime = performance.now();
 
     try {
       setIsDuckDbRunning(true);
       setIsDuckDbResultVisible(true);
       setDuckDbError(null);
       setDuckDbResults(null);
+      setQueryExecutionDuration(null);
       setDuckDbSelectedCell(null);
       
       let finalQuery = queryToExec.trim();
@@ -2425,6 +2452,7 @@ export default function App() {
             }
           }));
           setDuckDbResults(results);
+          setQueryExecutionDuration(((performance.now() - queryStartTime) / 1000).toFixed(2));
           setIsDuckDbRunning(false);
           duckDbAbortControllerRef.current = null;
           return;
@@ -2450,6 +2478,7 @@ export default function App() {
                   Bytes: `${res.bytes} bytes`,
                 },
               ]);
+              setQueryExecutionDuration(((performance.now() - queryStartTime) / 1000).toFixed(2));
             } catch (err: any) {
               setDuckDbError(err.message || String(err));
             }
@@ -2475,6 +2504,7 @@ export default function App() {
                   Message: data.message || `File saved (${data.bytes || 0} bytes)`,
                 },
               ]);
+              setQueryExecutionDuration(((performance.now() - queryStartTime) / 1000).toFixed(2));
             }
           }
         } else if (copyCmd.type === 'COPY_FROM') {
@@ -2489,6 +2519,7 @@ export default function App() {
                   Response: res.response || 'OK',
                 },
               ]);
+              setQueryExecutionDuration(((performance.now() - queryStartTime) / 1000).toFixed(2));
             } catch (err: any) {
               setDuckDbError(err.message || String(err));
             }
@@ -2515,6 +2546,7 @@ export default function App() {
                   Response: data.response || 'OK',
                 },
               ]);
+              setQueryExecutionDuration(((performance.now() - queryStartTime) / 1000).toFixed(2));
             }
           }
         }
@@ -2609,6 +2641,7 @@ export default function App() {
           resArr = [data.data || { Status: 'OK' }];
         }
         setDuckDbResults(resArr);
+        setQueryExecutionDuration(((performance.now() - queryStartTime) / 1000).toFixed(2));
         
         if (data.meta && Array.isArray(data.meta)) {
           const typesDict: Record<string, string> = {};
@@ -4308,6 +4341,40 @@ export default function App() {
     }
   };
 
+  const [isExportingExcel, setIsExportingExcel] = useState<boolean>(false);
+  const [showExcelPresetsMenu, setShowExcelPresetsMenu] = useState<boolean>(false);
+
+  const handleExportExcelWithPreset = async (preset: ExcelPreset) => {
+    if (!duckDbResults || duckDbResults.length === 0) return;
+    setIsExportingExcel(true);
+    try {
+      const activeSql = lastExecutedSql || getActiveTabSql();
+      const settings = preset.settings;
+
+      await exportToExcel({
+        data: duckDbResults,
+        columnTypes: resultColumnTypes,
+        sqlQuery: activeSql,
+        settings,
+      });
+    } catch (err: any) {
+      console.error('Failed to export to Excel:', err);
+      setDuckDbError('Ошибка экспорта в Excel: ' + (err.message || String(err)));
+    } finally {
+      setIsExportingExcel(false);
+    }
+  };
+
+  const handleExportExcel = async () => {
+    const settings = getSavedExcelSettings();
+    await handleExportExcelWithPreset({
+      id: 'current',
+      name: 'По умолчанию',
+      isBuiltIn: false,
+      settings,
+    });
+  };
+
   const handleCopyTableAsImage = async () => {
     if (!resultsTableRef.current) return;
     const container = resultsTableRef.current;
@@ -4897,6 +4964,19 @@ export default function App() {
 
           {/* VISUALIZE ACTION BAR */}
           <div className="flex items-center gap-1.5 relative">
+            {/* SETTINGS BUTTON */}
+            <button
+              onClick={() => setShowSettingsModal(true)}
+              className={`p-1.5 rounded-md border transition-all shrink-0 ${
+                theme === 'dark' 
+                  ? 'bg-slate-800/60 hover:bg-slate-700/60 border-slate-700/80 text-slate-300 hover:text-slate-100' 
+                  : 'bg-slate-200/50 hover:bg-slate-200 border-slate-300/80 text-slate-700 hover:text-slate-900'
+              }`}
+              title="Настройки и масштаб интерфейса"
+            >
+              <Settings className="w-3.5 h-3.5" />
+            </button>
+
             {/* PRESETS BUTTON & POPOVER */}
             {uiVisibility.showPresets && (
             <div className="relative">
@@ -5178,18 +5258,6 @@ export default function App() {
                 {theme === 'dark' ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5 text-blue-500" />}
               </button>
               )}
-
-              <button
-                onClick={() => setShowSettingsModal(true)}
-                className={`p-1.5 rounded-lg border transition-all ${
-                  theme === 'dark' 
-                    ? 'bg-slate-850 border-slate-600 text-slate-200 hover:text-slate-100' 
-                    : 'bg-slate-100 border-slate-300 text-slate-700 hover:text-slate-900 shadow-sm'
-                }`}
-                title="Настройки и горячие клавиши"
-              >
-                <Settings className="w-3.5 h-3.5" />
-              </button>
 
               {/* EXPORT GRAPH DROPDOWN */}
               {uiVisibility.showExportButton && (
@@ -5717,6 +5785,21 @@ export default function App() {
                 >
                   <FileDown className="w-3.5 h-3.5 text-emerald-500" />
                   <span>Сохранить</span>
+                </button>
+                )}
+
+                {!isTauriEnv && !isTauriEnvironment() && (
+                <button
+                  onClick={() => setShowWasmFileModal(true)}
+                  className={`flex items-center gap-1.5 text-xs px-2.5 h-[26px] rounded-md transition-all ${
+                    theme === 'dark' 
+                      ? 'text-blue-300 shadow-2xs' 
+                      : 'text-blue-700 shadow-2xs'
+                  }`}
+                  title="Виртуальная файловая система (WASM VFS)"
+                >
+                  <FolderOpen className="w-3.5 h-3.5 text-blue-500" />
+                  <span>WASM</span>
                 </button>
                 )}
 
@@ -6662,6 +6745,14 @@ export default function App() {
                           <span>(записей: {duckDbResults.length})</span>
                         </div>
 
+                        {queryExecutionDuration !== null && (
+                          <div className={`flex items-center gap-1 px-2.5 py-1 rounded transition-all ${
+                            theme === 'dark' ? 'text-slate-300' : 'text-slate-700'
+                          }`}>
+                            <span>{queryExecutionDuration} сек</span>
+                          </div>
+                        )}
+
                         <div className="flex items-center gap-1">
                           <button
                             disabled={duckDbPage <= 1 || isDuckDbRunning}
@@ -6697,7 +6788,7 @@ export default function App() {
                               <Search className="w-3.5 h-3.5 absolute left-2 text-slate-400 pointer-events-none" />
                               <input
                                 type="text"
-                                placeholder="Столбец"
+                                placeholder="Переход"
                                 value={columnSearchTerm}
                                 onFocus={() => setShowColumnJumpDropdown(true)}
                                 onChange={(e) => {
@@ -6782,10 +6873,10 @@ export default function App() {
                           <div className="relative flex items-center shrink-0">
                             <input
                               type="text"
-                              placeholder="Значение"
+                              placeholder="Поиск"
                               value={valueSearchTerm}
                               onChange={(e) => setValueSearchTerm(e.target.value)}
-                              className={`w-22 pl-2 pr-5 py-0.5 text-xs rounded border transition-colors focus:outline-none focus:ring-1 focus:ring-blue-500 ${
+                              className={`w-18 pl-2 pr-5 py-0.5 text-xs rounded border transition-colors focus:outline-none focus:ring-1 focus:ring-blue-500 ${
                                 theme === 'dark' 
                                   ? 'bg-slate-900 border-slate-700 text-slate-200 placeholder-slate-500 focus:bg-slate-900' 
                                   : 'bg-white border-slate-300 text-slate-800 placeholder-slate-400'
@@ -7041,6 +7132,73 @@ export default function App() {
                     >
                       <ArrowLeftRight className="w-4 h-4" />
                     </button>
+                    {uiVisibility.showExcelExport !== false && (
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={handleExportExcel}
+                          onContextMenu={(e) => {
+                            e.preventDefault();
+                            if (!duckDbResults || duckDbResults.length === 0 || isExportingExcel) return;
+                            setShowExcelPresetsMenu(prev => !prev);
+                          }}
+                          disabled={!duckDbResults || duckDbResults.length === 0 || isExportingExcel}
+                          className={`h-6 px-1.5 flex items-center gap-1.5 rounded transition-colors text-xs shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${
+                            theme === 'dark'
+                              ? 'hover:bg-slate-700 text-slate-400'
+                              : 'hover:bg-slate-200 text-slate-500'
+                          }`}
+                          title="Сформировать Excel отчет (ПКМ: выбор пресета)"
+                        >
+                          {isExportingExcel ? (
+                            <Loader2 className="w-4 h-4 animate-spin text-emerald-500" />
+                          ) : (
+                            <FileSpreadsheet className={`w-4 h-4 ${theme === 'dark' ? 'text-emerald-400' : 'text-emerald-600'}`} />
+                          )}
+                          <span className="hidden sm:inline">Excel</span>
+                        </button>
+
+                        {showExcelPresetsMenu && (
+                          <>
+                            <div 
+                              className="fixed inset-0 z-30" 
+                              onClick={() => setShowExcelPresetsMenu(false)}
+                              onContextMenu={(e) => {
+                                e.preventDefault();
+                                setShowExcelPresetsMenu(false);
+                              }}
+                            />
+                            <div className={`absolute top-full mt-1 right-0 z-40 rounded-lg border shadow-xl p-1.5 w-56 animate-in fade-in duration-150 ${
+                              theme === 'dark' ? 'bg-slate-800 border-slate-600 text-slate-200' : 'bg-white border-slate-300 text-slate-800'
+                            }`}>
+                              <div className={`px-2 py-1 rounded text-xs flex items-center gap-2 border-b mb-0.5 font-mono min-w-0 ${
+                                theme === 'dark' ? 'border-slate-700/60 text-slate-400' : 'border-slate-200 text-slate-500'
+                              }`} title="Пресеты экспорта Excel">
+                                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                                <span className="truncate">Пресеты Excel</span>
+                              </div>
+                              <div className="max-h-60 overflow-y-auto pr-0.5">
+                                {getSavedExcelPresets().map((preset) => (
+                                  <button
+                                    key={preset.id}
+                                    onClick={() => {
+                                      setShowExcelPresetsMenu(false);
+                                      handleExportExcelWithPreset(preset);
+                                    }}
+                                    title={preset.name}
+                                    className={`w-full text-left px-2 py-1 rounded text-xs flex items-center gap-2 transition-colors min-w-0 ${
+                                      theme === 'dark' ? 'hover:bg-slate-700 text-slate-200' : 'hover:bg-slate-100 text-slate-800'
+                                    }`}
+                                  >
+                                    <span className="truncate">{preset.name}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
                     <button 
                       onClick={handleCopyResultsToClipboard}
                       className={`h-6 w-6 flex items-center justify-center rounded transition-colors ${
@@ -7419,7 +7577,7 @@ export default function App() {
                                     keywordCase: fmtSettings.keywordCase,
                                     tabWidth: fmtSettings.tabWidth,
                                     useTabs: fmtSettings.useTabs,
-                                    expressionWidth: 10,
+                                    expressionWidth: 20,
                                     denseOperators: fmtSettings.denseOperators,
                                   });
                                   setDuckDbSelectedCell(prev => prev ? { ...prev, content: formatted } : prev);
@@ -7694,6 +7852,19 @@ export default function App() {
               theme === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-slate-300/80 border-slate-400/60'
             }`}>
               <div className="flex items-center gap-3">
+                {/* SETTINGS BUTTON */}
+                <button
+                  onClick={() => setShowSettingsModal(true)}
+                  className={`p-1 rounded transition-colors flex items-center gap-1 ${
+                    theme === 'dark' 
+                      ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/40' 
+                      : 'text-slate-700 hover:text-slate-900 hover:bg-slate-400/30'
+                  }`}
+                  title="Настройки и масштаб интерфейса"
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                </button>
+
                 {/* PRESETS BUTTON & POPOVER IN FOOTER */}
                 {uiVisibility.showPresets && (
                 <div className="relative">
@@ -7949,6 +8120,14 @@ export default function App() {
         }}
         theme={theme}
         uiVisibility={uiVisibility}
+      />
+
+      {/* WASM FILE MANAGER MODAL */}
+      <WasmFileManagerModal
+        isOpen={showWasmFileModal}
+        onClose={() => setShowWasmFileModal(false)}
+        theme={theme}
+        onSchemaRefresh={() => fetchDuckDbSchema(true)}
       />
 
       {/* CLICKHOUSE CONFIG MODAL */}

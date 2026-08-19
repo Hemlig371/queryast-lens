@@ -385,6 +385,40 @@ app.post("/api/clickhouse/copy-from", async (req, res) => {
   }
 });
 
+// VFS File Upload endpoint for syncing uploaded files with server DuckDB
+app.post("/api/vfs/upload", express.json({ limit: "500mb" }), (req, res) => {
+  try {
+    const { fileName, contentBase64 } = req.body;
+    if (!fileName || !contentBase64) {
+      return res.status(400).json({ error: "fileName and contentBase64 are required" });
+    }
+    const cleanFileName = path.basename(fileName);
+    const targetPath = path.resolve(process.cwd(), cleanFileName);
+    const buffer = Buffer.from(contentBase64, 'base64');
+    fs.writeFileSync(targetPath, buffer);
+    res.json({ success: true, fileName: cleanFileName, size: buffer.length });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.post("/api/vfs/delete", express.json(), (req, res) => {
+  try {
+    const { fileName } = req.body;
+    if (!fileName) {
+      return res.status(400).json({ error: "fileName is required" });
+    }
+    const cleanFileName = path.basename(fileName);
+    const targetPath = path.resolve(process.cwd(), cleanFileName);
+    if (fs.existsSync(targetPath)) {
+      fs.unlinkSync(targetPath);
+    }
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
 async function startServer() {
   await loadDuckDbModule();
   if (process.env.NODE_ENV !== "production") {

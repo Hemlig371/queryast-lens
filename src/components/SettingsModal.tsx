@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Keyboard, RotateCcw, Settings, AlignLeft, Eye, Download, Upload, Plus, Trash2, Edit3, Check, Code, Zap } from 'lucide-react';
+import { X, Keyboard, RotateCcw, Settings, AlignLeft, Eye, Download, Upload, Plus, Trash2, Edit3, Check, Code, Zap, FileSpreadsheet, Palette, Columns, Calculator, Printer } from 'lucide-react';
 import { downloadFileWithFallback } from '../utils/exportUtils';
 import { AutocompleteTemplate, DEFAULT_AUTOCOMPLETE_TEMPLATES, getCustomAutocompleteTemplates } from './SqlEditor';
 import { getVersions, importVersions, SqlVersionItem } from '../utils/versionHistory';
@@ -9,6 +9,9 @@ import { Snippet } from './SqlSnippetsManager';
 import { getSessionTabs, saveSessionTabs } from '../utils/sessionStorage';
 import { EditorTab } from '../App';
 import { VaultSettingsSection } from './VaultSettingsSection';
+import { ExcelSettings } from '../types/excelSettings';
+import { getSavedExcelSettings, saveExcelSettings, resetExcelSettings } from '../utils/excelSettingsStorage';
+import { ExcelSettingsTab } from './ExcelSettingsTab';
 
 export interface QuickActionTemplate {
   id: string;
@@ -72,6 +75,7 @@ export interface UiVisibilitySettings {
   duckDbThreads?: number;
   showClickhouseConfig?: boolean;
   clickhouseMaxRows?: number;
+  showExcelExport?: boolean;
   autoUpdateSchema?: boolean;
   showSearchSql?: boolean;
   showOpenFile: boolean;
@@ -134,6 +138,7 @@ export const DEFAULT_UI_VISIBILITY: UiVisibilitySettings = {
   duckDbThreads: 0,
   showClickhouseConfig: true,
   clickhouseMaxRows: 100,
+  showExcelExport: true,
   autoUpdateSchema: true,
   showSearchSql: true,
   showOpenFile: true,
@@ -452,8 +457,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   uiVisibility,
   onUpdateUiVisibility
 }) => {
-  const [activeTab, setActiveTab] = useState<'formatter' | 'ui' | 'hotkeys'>('ui');
+  const [activeTab, setActiveTab] = useState<'formatter' | 'ui' | 'hotkeys' | 'excel'>('ui');
   const [listeningActionId, setListeningActionId] = useState<string | null>(null);
+
+  // Excel Settings State
+  const [excelSettings, setExcelSettings] = useState<ExcelSettings>(getSavedExcelSettings);
+
+  const updateExcel = (partial: Partial<ExcelSettings>) => {
+    const updated = { ...excelSettings, ...partial };
+    setExcelSettings(updated);
+    saveExcelSettings(updated);
+  };
+
+  const handleResetExcel = () => {
+    const defaultSet = resetExcelSettings();
+    setExcelSettings(defaultSet);
+  };
 
   // Custom Autocomplete Templates State
   const [templates, setTemplates] = useState<AutocompleteTemplate[]>(getCustomAutocompleteTemplates);
@@ -903,13 +922,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         >
           <div className="flex items-center gap-3">
             <Settings className="w-5 h-5 text-blue-500" />
-            <div className="flex gap-1 bg-slate-900/30 p-1 rounded-lg border border-slate-700/50">
+            <div className={`flex gap-1 p-1 rounded-lg border transition-colors ${
+              theme === 'dark'
+                ? 'bg-slate-900/40 border-slate-700/50'
+                : 'bg-slate-200/80 border-slate-300'
+            }`}>
               <button
                 onClick={() => setActiveTab('ui')}
                 className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-bold transition-all ${
                   activeTab === 'ui'
                     ? 'bg-blue-600 text-white shadow-xs'
-                    : theme === 'dark' ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900'
+                    : theme === 'dark'
+                      ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+                      : 'text-slate-700 hover:text-slate-900 hover:bg-slate-300/60'
                 }`}
               >
                 <Eye className="w-3.5 h-3.5" />
@@ -920,7 +945,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-bold transition-all ${
                   activeTab === 'formatter'
                     ? 'bg-blue-600 text-white shadow-xs'
-                    : theme === 'dark' ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900'
+                    : theme === 'dark'
+                      ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+                      : 'text-slate-700 hover:text-slate-900 hover:bg-slate-300/60'
                 }`}
               >
                 <AlignLeft className="w-3.5 h-3.5" />
@@ -931,12 +958,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-bold transition-all ${
                   activeTab === 'hotkeys'
                     ? 'bg-blue-600 text-white shadow-xs'
-                    : theme === 'dark' ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900'
+                    : theme === 'dark'
+                      ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+                      : 'text-slate-700 hover:text-slate-900 hover:bg-slate-300/60'
                 }`}
               >
                 <Keyboard className="w-3.5 h-3.5" />
                 <span>Горячие клавиши</span>
               </button>
+              {uiVisibility.showExcelExport !== false && (
+                <button
+                  onClick={() => setActiveTab('excel')}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-bold transition-all ${
+                    activeTab === 'excel'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : theme === 'dark'
+                        ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+                        : 'text-slate-700 hover:text-slate-900 hover:bg-slate-300/60'
+                  }`}
+                >
+                  <FileSpreadsheet className={`w-3.5 h-3.5 ${activeTab === 'excel' ? 'text-white' : 'text-emerald-500'}`} />
+                  <span>Экспорт Excel</span>
+                </button>
+              )}
             </div>
           </div>
           <button
@@ -982,6 +1026,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   {[
                     { key: 'showDuckDbConfig', label: 'Интеграция DuckDB', desc: 'Кнопки подключения и выполнения кода' },
                     { key: 'showClickhouseConfig', label: 'Интеграция Clickhouse (http/https)', desc: 'Кнопки подключения и выполнения Clickhouse HTTP(S) запросов' },
+                    { key: 'showExcelExport', label: 'Генерация Excel отчетов', desc: 'Экспорт результатов в Excel (.xlsx) и настройки форматирования' },
                     { key: 'autoUpdateSchema', label: 'Автообновление схемы базы', desc: 'Обновлять дерево схемы при изменении структуры БД (не применяется последовательно и параллельно)' },
                     { key: 'autocompleteOnType', label: 'Автокомплит при наборе текста', desc: 'Автоматически показывать подсказки при вводе каждого символа' },
                     { key: 'showEditorToggleBtn', label: 'Кнопка «Скрыть редактор»', desc: 'Кнопка скрытия левой панели' },
@@ -1413,14 +1458,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       onClick={() => updateFormatter({ expressionWidth: preset.width })}
                       className={`flex-1 min-w-[140px] px-3 py-2 rounded-lg border text-left transition-all ${
                         formatterSettings.expressionWidth === preset.width
-                          ? 'border-blue-500 bg-blue-500/15 text-blue-400 font-bold shadow-xs'
+                          ? theme === 'dark'
+                            ? 'border-blue-500 bg-blue-500/20 text-blue-400 shadow-xs'
+                            : 'border-blue-600 bg-blue-100/90 text-blue-950 shadow-2xs'
                           : theme === 'dark'
                           ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
                           : 'bg-white border-slate-300 text-slate-800 hover:bg-slate-100'
                       }`}
                     >
                       <div className="text-xs font-bold">{preset.label}</div>
-                      <div className="text-[10px] opacity-75">{preset.desc}</div>
+                      <div className={`text-[10px] ${
+                        formatterSettings.expressionWidth === preset.width
+                          ? theme === 'dark' ? 'text-blue-300' : 'text-blue-800'
+                          : 'opacity-75'
+                      }`}>{preset.desc}</div>
                     </button>
                   ))}
                 </div>
@@ -1465,14 +1516,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       onClick={() => updateFormatter({ keywordCase: opt.id as any })}
                       className={`flex-1 px-3 py-2 rounded-lg border text-center transition-all ${
                         formatterSettings.keywordCase === opt.id
-                          ? 'border-blue-500 bg-blue-500/15 text-blue-400 font-bold shadow-xs'
+                          ? theme === 'dark'
+                            ? 'border-blue-500 bg-blue-500/20 text-blue-400 shadow-xs'
+                            : 'border-blue-600 bg-blue-100/90 text-blue-950 shadow-2xs'
                           : theme === 'dark'
                           ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
                           : 'bg-white border-slate-300 text-slate-800 hover:bg-slate-100'
                       }`}
                     >
                       <div className="text-xs font-bold">{opt.label}</div>
-                      <div className="text-[10px] opacity-75 font-mono">{opt.example}</div>
+                      <div className={`text-[10px] font-mono ${
+                        formatterSettings.keywordCase === opt.id
+                          ? theme === 'dark' ? 'text-blue-300' : 'text-blue-800'
+                          : 'opacity-75'
+                      }`}>{opt.example}</div>
                     </button>
                   ))}
                 </div>
@@ -1609,36 +1666,39 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       }`}
                     >
                       {editingId === tpl.id ? (
-                        <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-2 items-center w-full">
+                        <div className="flex-1 flex flex-col sm:flex-row gap-1.5 items-center w-full min-w-0">
                           <input
                             type="text"
+                            placeholder="Триггер"
                             value={editKeyword}
                             onChange={(e) => setEditKeyword(e.target.value)}
-                            className={`px-2 py-1 text-xs font-mono rounded border ${
+                            className={`w-full sm:w-28 shrink-0 px-2 py-1 text-xs font-mono rounded border min-w-0 ${
                               theme === 'dark' ? 'bg-slate-900 border-slate-600 text-slate-100' : 'bg-slate-50 border-slate-300 text-slate-900'
                             }`}
                           />
                           <input
                             type="text"
+                            placeholder="Текст вставки"
                             value={editInsertion}
                             onChange={(e) => setEditInsertion(e.target.value)}
-                            className={`px-2 py-1 text-xs font-mono rounded border ${
+                            className={`w-full sm:flex-1 px-2 py-1 text-xs font-mono rounded border min-w-0 ${
                               theme === 'dark' ? 'bg-slate-900 border-slate-600 text-slate-100' : 'bg-slate-50 border-slate-300 text-slate-900'
                             }`}
                           />
-                          <div className="flex items-center gap-1.5">
-                            <input
-                              type="text"
-                              value={editDesc}
-                              onChange={(e) => setEditDesc(e.target.value)}
-                              className={`flex-1 px-2 py-1 text-xs rounded border ${
-                                theme === 'dark' ? 'bg-slate-900 border-slate-600 text-slate-100' : 'bg-slate-50 border-slate-300 text-slate-900'
-                              }`}
-                            />
+                          <input
+                            type="text"
+                            placeholder="Описание"
+                            value={editDesc}
+                            onChange={(e) => setEditDesc(e.target.value)}
+                            className={`w-full sm:w-28 shrink-0 px-2 py-1 text-xs rounded border min-w-0 ${
+                              theme === 'dark' ? 'bg-slate-900 border-slate-600 text-slate-100' : 'bg-slate-50 border-slate-300 text-slate-900'
+                            }`}
+                          />
+                          <div className="flex items-center gap-1 shrink-0 self-end sm:self-auto">
                             <button
                               type="button"
                               onClick={handleSaveEditTemplate}
-                              className="p-1 bg-emerald-600 text-white rounded hover:bg-emerald-500 transition-colors"
+                              className="p-1.5 bg-emerald-600 text-white rounded hover:bg-emerald-500 transition-colors"
                               title="Сохранить изменения"
                             >
                               <Check className="w-3.5 h-3.5" />
@@ -1646,7 +1706,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             <button
                               type="button"
                               onClick={() => setEditingId(null)}
-                              className="p-1 bg-slate-600 text-white rounded hover:bg-slate-500 transition-colors"
+                              className="p-1.5 bg-slate-600 text-white rounded hover:bg-slate-500 transition-colors"
                               title="Отмена"
                             >
                               <X className="w-3.5 h-3.5" />
@@ -1843,6 +1903,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               </div>
             </div>
+          ) : (activeTab === 'excel' && uiVisibility.showExcelExport !== false) ? (
+            <ExcelSettingsTab
+              theme={theme}
+              excelSettings={excelSettings}
+              updateExcel={updateExcel}
+              handleResetExcel={handleResetExcel}
+            />
           ) : (
             <div className="space-y-6">
               {categories.map((cat, index) => {
