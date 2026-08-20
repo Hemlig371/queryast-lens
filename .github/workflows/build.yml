@@ -85,15 +85,15 @@ jobs:
       - name: Build web application
         run: npm run build
 
-      - name: Generate Android Icons
-        run: |
-          node generate-icons.js
-          npx @capacitor/assets generate --android || true
-
       - name: Add Android Platform & Sync Capacitor
         run: |
           npx --no-install cap add android || npx cap add android || true
           npx --no-install cap sync android || npx cap sync android
+
+      - name: Generate Android Icons
+        run: |
+          node generate-icons.js
+          npx --yes @capacitor/assets generate --android || true
 
       - name: Build Android APK
         run: |
