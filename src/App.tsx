@@ -4856,7 +4856,7 @@ export default function App() {
                 SQL Query
               </h3>
             </div>
-              <div className="flex items-center gap-1.5 relative">
+              <div className="flex flex-wrap items-center gap-1.5 relative">
                 {/* HIDDEN FILE INPUT FOR OPEN SQL FILE */}
                 <input 
                   type="file" 
@@ -4965,7 +4965,7 @@ export default function App() {
           </div>
 
           {/* VISUALIZE ACTION BAR */}
-          <div className="flex items-center gap-1.5 relative">
+          <div className="flex flex-wrap items-center gap-1.5 relative">
             {/* SETTINGS BUTTON */}
             <button
               onClick={() => setShowSettingsModal(true)}
@@ -6726,7 +6726,7 @@ export default function App() {
                   theme === 'dark' ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300'
                 } ${
                   isDuckDbResultExpanded 
-                    ? 'border-t flex flex-col shrink-0 h-[calc(100%-118px)]' 
+                    ? 'border-t flex flex-col shrink-0 h-[calc(100%-155px)]' 
                     : 'border-t flex flex-col shrink-0 h-[40%]'
                 }`}
               >
@@ -7850,7 +7850,7 @@ export default function App() {
             )}
 
             {/* FOOTER */}
-            <div className={`px-4 py-2 border-t flex items-center justify-between shrink-0 relative z-40 ${
+            <div className={`px-4 py-2 border-t flex flex-wrap items-center justify-between shrink-0 relative z-40 ${
               theme === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-slate-300/80 border-slate-400/60'
             }`}>
               <div className="flex items-center gap-3">
