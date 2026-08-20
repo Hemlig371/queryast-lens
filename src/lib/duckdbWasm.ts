@@ -200,13 +200,44 @@ async function writeTauriFileBinary(filePath: string, data: Uint8Array): Promise
 }
 
 // Download exported file buffer in web browser
-export function downloadFileInBrowser(fileName: string, buffer: Uint8Array) {
+export async function downloadFileInBrowser(fileName: string, buffer: Uint8Array) {
   if (typeof window === 'undefined') return;
   const blob = new Blob([buffer], { type: 'application/octet-stream' });
+  const downloadName = fileName.split(/[\\\/]/).pop() || fileName;
+
+  const isCapacitor = typeof window !== 'undefined' && (window as any).Capacitor && (window as any).Capacitor.isNativePlatform();
+  if (isCapacitor) {
+    try {
+      const { Filesystem, Directory } = await import('@capacitor/filesystem');
+      const { Share } = await import('@capacitor/share');
+
+      let binary = '';
+      const len = buffer.byteLength;
+      for (let i = 0; i < len; i++) {
+        binary += String.fromCharCode(buffer[i]);
+      }
+      const base64Data = window.btoa(binary);
+
+      const savedFile = await Filesystem.writeFile({
+        path: downloadName,
+        data: base64Data,
+        directory: Directory.Cache,
+      });
+
+      await Share.share({
+        title: downloadName,
+        url: savedFile.uri,
+      });
+      return;
+    } catch (err) {
+      console.warn("Capacitor export failed, falling back to web:", err);
+    }
+  }
+
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = fileName.split(/[\\\/]/).pop() || fileName;
+  a.download = downloadName;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -256,7 +287,7 @@ export async function queryDuckDbWasm(sqlQuery: string) {
         if (isTauriEnvironment()) {
           await writeTauriFileBinary(copyTargetFile, exportedBuffer);
         } else {
-          downloadFileInBrowser(fileNameOnly, exportedBuffer);
+          await downloadFileInBrowser(fileNameOnly, exportedBuffer);
         }
       }
     } catch (e) {
@@ -315,6 +346,27 @@ export async function getRegisteredWasmFiles(): Promise<Array<{ name: string; si
   const result: Array<{ name: string; size?: number; loadedAt?: Date }> = [];
   const seen = new Set<string>();
 
+  const isSystemFile = (filename: string): boolean => {
+    const f = filename.toLowerCase();
+    return (
+      f.startsWith('.') ||
+      f === 'package.json' ||
+      f === 'package-lock.json' ||
+      f === 'tsconfig.json' ||
+      f === 'tsconfig.node.json' ||
+      f === 'vite.config.ts' ||
+      f === 'server.ts' ||
+      f === 'index.html' ||
+      f === 'components.json' ||
+      f.startsWith('node_modules') ||
+      f.startsWith('dist') ||
+      f.startsWith('src') ||
+      f.startsWith('public') ||
+      f.endsWith('.js') ||
+      f.endsWith('.lock')
+    );
+  };
+
   // 1. First add files from registeredVfsFiles Map
   for (const [name, meta] of registeredVfsFiles.entries()) {
     result.push({ name, size: meta.size, loadedAt: meta.loadedAt });
@@ -325,6 +377,33 @@ export async function getRegisteredWasmFiles(): Promise<Array<{ name: string; si
   try {
     const fetchWasmFiles = async () => {
       const db = await getDuckDbWasm();
+
+      // Try querying glob directly from the connection for files generated via COPY TO
+      if (connInstance) {
+        try {
+          const res = await connInstance.query("SELECT * FROM glob('*')");
+          if (res) {
+            const rows = res.toArray().map((r: any) => r.toJSON());
+            for (const row of rows) {
+              const rawFileName = row.file || row.name || row.file_name;
+              if (rawFileName && typeof rawFileName === 'string') {
+                const cleanName = rawFileName.replace(/^\.\//, '');
+                if (!isSystemFile(cleanName) && !seen.has(cleanName) && !seen.has(rawFileName)) {
+                  result.push({
+                    name: cleanName,
+                    size: row.size ? Number(row.size) : undefined,
+                    loadedAt: undefined,
+                  });
+                  seen.add(cleanName);
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("Direct glob query failed", e);
+        }
+      }
+
       if (db && typeof db.globFileInfos === 'function') {
         const fileInfos = await db.globFileInfos('*');
         if (Array.isArray(fileInfos)) {
@@ -349,27 +428,6 @@ export async function getRegisteredWasmFiles(): Promise<Array<{ name: string; si
     const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 1000));
     await Promise.race([fetchWasmFiles(), timeoutPromise]);
   } catch (_) {}
-
-  const isSystemFile = (filename: string): boolean => {
-    const f = filename.toLowerCase();
-    return (
-      f.startsWith('.') ||
-      f === 'package.json' ||
-      f === 'package-lock.json' ||
-      f === 'tsconfig.json' ||
-      f === 'tsconfig.node.json' ||
-      f === 'vite.config.ts' ||
-      f === 'server.ts' ||
-      f === 'index.html' ||
-      f === 'components.json' ||
-      f.startsWith('node_modules') ||
-      f.startsWith('dist') ||
-      f.startsWith('src') ||
-      f.startsWith('public') ||
-      f.endsWith('.js') ||
-      f.endsWith('.lock')
-    );
-  };
 
   // 3. Try fetching from Server API (if DuckDB server is active)
   try {
