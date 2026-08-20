@@ -58,7 +58,6 @@ jobs:
           prerelease: false
 
   build-android-apk:
-    needs: build-tauri
     permissions:
       contents: write
     runs-on: ubuntu-latest
