@@ -17,6 +17,8 @@
     "@capacitor/android": "6.2.0",
     "@capacitor/cli": "6.2.0",
     "@capacitor/core": "6.2.0",
+    "@capacitor/filesystem": "6",
+    "@capacitor/share": "6",
     "@duckdb/duckdb-wasm": "^1.33.1-dev57.0",
     "@tailwindcss/vite": "^4.1.14",
     "@tauri-apps/api": "1",
