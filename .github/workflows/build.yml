@@ -88,8 +88,8 @@ jobs:
 
       - name: Add Android Platform & Sync Capacitor
         run: |
-          npx cap add android || true
-          npx cap sync android
+          npx --no-install cap add android || npx cap add android || true
+          npx --no-install cap sync android || npx cap sync android
 
       - name: Build Android APK
         run: |
