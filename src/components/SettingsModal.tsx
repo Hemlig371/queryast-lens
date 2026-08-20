@@ -903,7 +903,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     <div className="fixed inset-0 z-50 bg-slate-950/80 p-3 sm:p-4 flex items-center justify-center animate-in fade-in duration-200">
       <div
         style={{
-          width: 'calc(min(663px, 78vw) / var(--zoom-scale, 1))',
+          width: 'calc(min(735px, 78vw) / var(--zoom-scale, 1))',
           height: 'calc(85vh / var(--zoom-scale, 1))',
           maxWidth: 'calc(96vw / var(--zoom-scale, 1))',
           maxHeight: 'calc(95vh / var(--zoom-scale, 1))',
