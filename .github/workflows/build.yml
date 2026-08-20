@@ -85,6 +85,10 @@ jobs:
       - name: Build web application
         run: npm run build
 
+      - name: Generate Android Icons
+        run: |
+          npx @capacitor/assets generate --android --iconSource public/favicon.svg || true
+
       - name: Add Android Platform & Sync Capacitor
         run: |
           npx --no-install cap add android || npx cap add android || true
