@@ -210,7 +210,7 @@ export function downloadFileInBrowser(fileName: string, buffer: Uint8Array) {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
 export async function exportWasmFile(fileName: string): Promise<Uint8Array | null> {
@@ -329,10 +329,10 @@ export async function getRegisteredWasmFiles(): Promise<Array<{ name: string; si
         const fileInfos = await db.globFileInfos('*');
         if (Array.isArray(fileInfos)) {
           for (const info of fileInfos) {
-            const rawFileName = (info as any).fileName || (info as any).file || (info as any).name;
+            const rawFileName = (info as any).fileName || (info as any).path || (info as any).file_name || (info as any).file || (info as any).name;
             if (rawFileName && typeof rawFileName === 'string') {
               const cleanName = rawFileName.replace(/^\.\//, '');
-              if (!seen.has(cleanName) && !seen.has(rawFileName)) {
+              if (!isSystemFile(cleanName) && !seen.has(cleanName) && !seen.has(rawFileName)) {
                 result.push({
                   name: cleanName,
                   size: (info as any).fileSize || (info as any).size,
