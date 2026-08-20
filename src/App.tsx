@@ -3145,8 +3145,10 @@ export default function App() {
     const link = document.createElement('a');
     link.href = url;
     link.download = suggestedName;
+    document.body.appendChild(link);
     link.click();
-    URL.revokeObjectURL(url);
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
 
     setTabs(prev => prev.map(t => {
       if (t.id === activeTabId) {
@@ -5747,7 +5749,7 @@ export default function App() {
             theme === 'dark' ? 'bg-slate-850 text-slate-200' : 'bg-slate-100 text-slate-900'
           }`}>
             {/* HEADER */}
-            <div className={`flex flex-wrap items-center justify-between gap-2 px-4 h-[38px] border-b shrink-0 ${
+            <div className={`flex flex-nowrap items-center justify-between gap-2 px-4 h-[38px] border-b shrink-0 ${
               theme === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-slate-200/90 border-slate-300'
             }`}>
               <div className="flex items-center gap-2.5">
@@ -6728,7 +6730,7 @@ export default function App() {
                     : 'border-t flex flex-col shrink-0 h-[40%]'
                 }`}
               >
-                <div className={`flex items-center justify-between px-3 py-1.5 border-b shrink-0 ${
+                <div className={`flex flex-wrap items-center justify-between px-3 py-1.5 border-b shrink-0 ${
                   theme === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'
                 }`}>
                   <div className="flex items-center gap-2 min-w-0 pr-2">
