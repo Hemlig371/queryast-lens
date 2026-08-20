@@ -1,4 +1,4 @@
-name: Build Desktop Application (Tauri)
+name: Build Applications (Desktop & Android)
 
 on:
   workflow_dispatch:
@@ -20,9 +20,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-size: 'large'
-          node-version: 20
-          cache: 'npm'
+          node-version: 22
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -34,7 +32,6 @@ jobs:
       - name: Install system dependencies (Windows)
         if: matrix.platform == 'windows-latest'
         run: |
-          # WiX Toolset is already installed on github runner images, but we make sure setup is complete.
           echo "Preparing Windows build environment..."
 
       - name: Install web app dependencies
@@ -54,9 +51,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: v__VERSION__ # This will be automatically replaced with the version in tauri.conf.json
+          tagName: v__VERSION__
           releaseName: "QueryAST Lens v__VERSION__"
-          releaseBody: "Draft release of QueryAST Lens desktop application."
+          releaseBody: "Draft release of QueryAST Lens desktop and mobile applications."
           releaseDraft: true
           prerelease: false
 
@@ -72,8 +69,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: 'npm'
+          node-version: 22
 
       - name: Setup Java JDK 17
         uses: actions/setup-java@v4
@@ -81,8 +77,11 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Install dependencies
-        run: npm install
+      - name: Clean and Install dependencies
+        shell: bash
+        run: |
+          rm -rf package-lock.json bun.lock bun.lockb node_modules
+          npm install
 
       - name: Build web application
         run: npm run build
