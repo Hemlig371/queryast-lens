@@ -87,7 +87,8 @@ jobs:
 
       - name: Generate Android Icons
         run: |
-          npx @capacitor/assets generate --android --iconSource public/favicon.svg || true
+          node generate-icons.js
+          npx @capacitor/assets generate --android || true
 
       - name: Add Android Platform & Sync Capacitor
         run: |
