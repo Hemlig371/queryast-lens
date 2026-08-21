@@ -256,7 +256,7 @@ export const DataStatsViewer: React.FC<DataStatsViewerProps> = ({
   const [copiedChartImage, setCopiedChartImage] = useState<boolean>(false);
   const chartContainerRef = useRef<HTMLDivElement>(null);
 
-  const handleCopyChartAsImage = async () => {
+  const handleCopyChartAsImage = () => {
     if (!chartContainerRef.current) return;
     const chartEl =
       chartContainerRef.current.querySelector<HTMLElement>('.recharts-responsive-container') ||
@@ -264,7 +264,7 @@ export const DataStatsViewer: React.FC<DataStatsViewerProps> = ({
       chartContainerRef.current;
 
     try {
-      const blob = await toBlob(chartEl, {
+      const blobPromise = toBlob(chartEl, {
         pixelRatio: 2,
         backgroundColor: undefined, // transparent background
         filter: (node) => {
@@ -275,17 +275,32 @@ export const DataStatsViewer: React.FC<DataStatsViewerProps> = ({
           }
           return true;
         },
+      }).then(blob => {
+        if (!blob) throw new Error('Failed to generate blob');
+        return blob;
       });
 
-      if (blob) {
-        await navigator.clipboard.write([
-          new ClipboardItem({ 'image/png': blob }),
-        ]);
-        setCopiedChartImage(true);
-        setTimeout(() => setCopiedChartImage(false), 2000);
+      try {
+        const item = new ClipboardItem({ 'image/png': blobPromise });
+        navigator.clipboard.write([item])
+          .then(() => {
+            setCopiedChartImage(true);
+            setTimeout(() => setCopiedChartImage(false), 2000);
+          })
+          .catch((err) => console.error('Failed to copy chart image using html-to-image:', err));
+      } catch (e) {
+        // Fallback for browsers that don't support Promise in ClipboardItem
+        blobPromise.then((blob) => {
+          navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+            .then(() => {
+              setCopiedChartImage(true);
+              setTimeout(() => setCopiedChartImage(false), 2000);
+            })
+            .catch((err) => console.error('Fallback clipboard write failed:', err));
+        });
       }
     } catch (err) {
-      console.error('Failed to copy chart image using html-to-image:', err);
+      console.error('Failed to copy chart image:', err);
     }
   };
   const [aggMode, setAggMode] = useState<'sum' | 'avg' | 'min' | 'max' | 'count' | 'uniqueCount' | 'nullPct'>(() => {
