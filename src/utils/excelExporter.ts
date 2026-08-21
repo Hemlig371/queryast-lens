@@ -131,6 +131,11 @@ export async function exportToExcel({
   
   let parsedFilename = settings.defaultFileName || '';
 
+  const rawColumns = Object.keys(data[0] || {});
+  if (rawColumns.length === 0) {
+    throw new Error('Колонки таблицы не найдены');
+  }
+
   // Parse SQL query for title/subtitle overrides and metadata tags
   if (sqlQuery) {
     const commentBlocks = sqlQuery.match(/\/\*[\s\S]*?\*\//g) || [];
@@ -166,12 +171,61 @@ export async function exportToExcel({
         settings.totalsRowFunction = func as any;
         settings.totalsColumnFunction = func as any;
       }
-    }
-  }
 
-  const rawColumns = Object.keys(data[0] || {});
-  if (rawColumns.length === 0) {
-    throw new Error('Колонки таблицы не найдены');
+      // @split: column index (1-based) or column name
+      const splitMatch = combinedComments.match(/@split:\s*([^@\n*]+)/i);
+      if (splitMatch) {
+        const val = splitMatch[1].trim();
+        const num = parseInt(val, 10);
+        if (!isNaN(num)) {
+          settings.splitByColumnIndex = num > 0 ? num : null;
+        } else {
+          const colIdx = rawColumns.findIndex(c => c.toLowerCase() === val.toLowerCase());
+          if (colIdx !== -1) {
+            settings.splitByColumnIndex = colIdx + 1;
+          }
+        }
+      }
+
+      // @group: column index (1-based) or column name
+      const groupMatch = combinedComments.match(/@group:\s*([^@\n*]+)/i);
+      if (groupMatch) {
+        const val = groupMatch[1].trim();
+        const num = parseInt(val, 10);
+        if (!isNaN(num)) {
+          settings.categoryGroupColumn = Math.max(0, num);
+        } else {
+          const colIdx = rawColumns.findIndex(c => c.toLowerCase() === val.toLowerCase());
+          if (colIdx !== -1) {
+            settings.categoryGroupColumn = colIdx + 1;
+          }
+        }
+      }
+
+      // @group_cols: count of category columns (1-based number)
+      const groupColsMatch = combinedComments.match(/@group_cols:\s*(\d+)/i);
+      if (groupColsMatch) {
+        const count = parseInt(groupColsMatch[1], 10);
+        if (!isNaN(count)) {
+          settings.categoryColumnsCount = Math.max(0, count);
+        }
+      }
+
+      // @group_hide: true/false for cleaning duplicate category values
+      const groupHideMatch = combinedComments.match(/@group_hide:\s*(true|false|1|0)/i);
+      if (groupHideMatch) {
+        const hideVal = groupHideMatch[1].toLowerCase();
+        settings.categoryGroupCleanDuplicates = hideVal === 'true' || hideVal === '1';
+      }
+
+      // @protect: password string for sheet protection
+      const protectMatch = combinedComments.match(/@protect:\s*([^@\n*]+)/i);
+      if (protectMatch) {
+        const pwd = protectMatch[1].trim();
+        settings.protectSheet = true;
+        settings.sheetPassword = pwd;
+      }
+    }
   }
 
   const totalCells = data.length * rawColumns.length;
@@ -183,101 +237,52 @@ export async function exportToExcel({
   workbook.creator = 'QueryAST Lens';
   workbook.created = new Date();
 
-  // Determine Primary Sheet Name
-  const primarySheetName = sanitizeSheetName(settings.defaultSheetName || 'Отчет', 'Отчет');
+  // Split Logic
+  const splitIndex = settings.splitByColumnIndex;
+  let sheetsData: Record<string, any[]> = {};
+  let activeColumns = [...rawColumns];
+  let splitColKey = null;
 
-  const hasColIndexRow = settings.enableColumnIndexRow;
-  
-  // Row Indices Mapping
-  const hasTotalsRow = settings.enableTotalsRow;
-  const totalsRowPos = settings.totalsRowPosition; // 'top' or 'bottom'
-  const effectiveCatCols = settings.enableFirstColumnStyle 
-    ? Math.max(0, settings.categoryColumnsCount ?? 1)
-    : 0;
-  const freezeColsCount = settings.freezeFirstColumn
-    ? (effectiveCatCols > 0 ? effectiveCatCols : 1) + (settings.enableRowIndexColumn ? 1 : 0)
-    : 0;
-  
-  let currentNextRow = 1;
-  let reportTitleRowIdx = -1;
-  let reportSubtitleRowIdx = -1;
+  if (splitIndex !== null && splitIndex !== undefined && splitIndex > 0 && splitIndex <= rawColumns.length) {
+    splitColKey = rawColumns[splitIndex - 1];
+    
+    const rawValToSheetName = new Map<string, string>();
+    const assignedLowerNames = new Set<string>();
 
-  if (settings.enableReportTitle && settings.reportTitle) {
-    reportTitleRowIdx = currentNextRow;
-    currentNextRow++;
-    if (settings.reportSubtitle) {
-      reportSubtitleRowIdx = currentNextRow;
-      currentNextRow++;
-    }
-  }
-
-  const headerRowIdx = currentNextRow;
-  currentNextRow++;
-
-  let colIndexRowIdx = -1;
-  let totalsRowIdx = -1;
-
-  if (hasColIndexRow) {
-    colIndexRowIdx = currentNextRow;
-    currentNextRow++;
-  }
-
-  if (hasTotalsRow && totalsRowPos === 'top') {
-    totalsRowIdx = currentNextRow;
-    currentNextRow++;
-  }
-
-  const dataStartRowIdx = currentNextRow;
-  const dataEndRowIdx = dataStartRowIdx + data.length - 1;
-
-  if (hasTotalsRow && totalsRowPos === 'bottom') {
-    totalsRowIdx = dataEndRowIdx + 1;
-  }
-
-  // Primary Sheet
-  const mainSheet = workbook.addWorksheet(primarySheetName, {
-    properties: {
-      defaultRowHeight: Math.max(20, Math.ceil(settings.dataFontSize * 1.6))
-    },
-    views: [
-      {
-        state: (settings.freezeHeaderRow || (settings.freezeFirstColumn && freezeColsCount > 0)) ? 'frozen' : 'normal',
-        xSplit: freezeColsCount,
-        ySplit: settings.freezeHeaderRow ? headerRowIdx + (hasColIndexRow ? 1 : 0) : 0,
-        showGridLines: Boolean(settings.showGridLines),
-        // @ts-expect-error - ExcelJS types may be incomplete for showZeroValues
-        showZeroValues: settings.showZeroValues !== false,
-        zoomScale: settings.zoomScale || 100
+    data.forEach(row => {
+      const rawVal = String(row[splitColKey] ?? 'Пусто');
+      
+      let sheetName = rawValToSheetName.get(rawVal);
+      if (!sheetName) {
+        let baseName = rawVal.replace(/[\[\]\/\*\?\:\\]/g, '_').trim();
+        if (!baseName) baseName = 'Sheet';
+        
+        let attempt = baseName;
+        if (attempt.length > 31) attempt = attempt.substring(0, 31);
+        
+        let counter = 1;
+        while (assignedLowerNames.has(attempt.toLowerCase())) {
+          counter++;
+          const suffix = ` (${counter})`;
+          const maxBaseLen = 31 - suffix.length;
+          attempt = baseName.substring(0, maxBaseLen) + suffix;
+        }
+        
+        sheetName = attempt;
+        rawValToSheetName.set(rawVal, sheetName);
+        assignedLowerNames.add(sheetName.toLowerCase());
       }
-    ],
-    pageSetup: {
-      orientation: settings.pageOrientation,
-      paperSize: settings.paperSize || 9,
-      fitToWidth: settings.fitToPageWidth ? 1 : 0,
-      fitToHeight: 0,
-      horizontalCentered: settings.printHorizontalCentered,
-      margins: settings.narrowMargins ? { left: 0.25, right: 0.25, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } : undefined,
-      printTitlesRow: settings.printTitlesRow ? `${headerRowIdx}:${headerRowIdx + (hasColIndexRow ? 1 : 0)}` : undefined
-    },
-    headerFooter: {
-      oddFooter: settings.addPageNumbers ? (
-        settings.pageNumberPosition === 'right' 
-          ? `&R${settings.pageNumberFormat === 'simple' ? 'Стр. &P' : 'Страница &P из &N'}` 
-          : `&C${settings.pageNumberFormat === 'simple' ? 'Стр. &P' : 'Страница &P из &N'}`
-      ) : undefined,
-      evenFooter: settings.addPageNumbers ? (
-        settings.pageNumberPosition === 'right' 
-          ? `&R${settings.pageNumberFormat === 'simple' ? 'Стр. &P' : 'Страница &P из &N'}` 
-          : `&C${settings.pageNumberFormat === 'simple' ? 'Стр. &P' : 'Страница &P из &N'}`
-      ) : undefined
-    }
-  });
+      
+      if (!sheetsData[sheetName]) sheetsData[sheetName] = [];
+      sheetsData[sheetName].push(row);
+    });
+    activeColumns = rawColumns.filter(c => c !== splitColKey);
+  } else {
+    const primarySheetName = sanitizeSheetName(settings.defaultSheetName || 'Отчет', 'Отчет');
+    sheetsData[primarySheetName] = data;
+  }
 
-  // Determine if Totals column is active
-  const hasTotalsCol = settings.enableTotalsColumn;
-  const totalsColPos = settings.totalsColumnPosition; // 'right' or 'left'
-
-  // Build column metadata array
+  // Pre-calculate base colsMeta once
   interface ColMeta {
     key: string;
     header: string;
@@ -286,10 +291,8 @@ export async function exportToExcel({
     isTotalCol?: boolean;
     isRowIndexCol?: boolean;
   }
-
-  // OPTIMIZATION: Check only first 50 rows for data types to avoid huge loops on millions of rows
   const typeSampleData = data.slice(0, 50);
-  const colsMeta: ColMeta[] = rawColumns.map(colName => {
+  const baseColsMeta = activeColumns.map(colName => {
     const sampleVal = typeSampleData.find(r => r[colName] !== null && r[colName] !== undefined)?.[colName];
     return {
       key: colName,
@@ -298,32 +301,6 @@ export async function exportToExcel({
       isDate: isDateType(columnTypes[colName], sampleVal)
     };
   });
-
-  if (hasTotalsCol) {
-    const totalColMeta: ColMeta = {
-      key: '__TOTAL_COL__',
-      header: 'Итого',
-      isNumeric: true,
-      isDate: false,
-      isTotalCol: true
-    };
-    if (totalsColPos === 'left') {
-      const insertIdx = Math.min(effectiveCatCols, colsMeta.length);
-      colsMeta.splice(insertIdx, 0, totalColMeta);
-    } else {
-      colsMeta.push(totalColMeta);
-    }
-  }
-
-  if (settings.enableRowIndexColumn) {
-    colsMeta.unshift({
-      key: '__ROW_INDEX_COL__',
-      header: '№',
-      isNumeric: false,
-      isDate: false,
-      isRowIndexCol: true
-    });
-  }
 
   // Number Format String
   let numFormatStr: string | undefined = undefined;
@@ -400,13 +377,136 @@ export async function exportToExcel({
     return String(val);
   }
 
+  for (const [primarySheetName, sheetData] of Object.entries(sheetsData)) {
+
+  const hasColIndexRow = settings.enableColumnIndexRow;
+  
+  // Row Indices Mapping
+  const hasTotalsRow = settings.enableTotalsRow;
+  const totalsRowPos = settings.totalsRowPosition; // 'top' or 'bottom'
+  const effectiveCatCols = settings.enableFirstColumnStyle 
+    ? Math.max(0, settings.categoryColumnsCount ?? 1)
+    : 0;
+  const freezeColsCount = settings.freezeFirstColumn
+    ? (effectiveCatCols > 0 ? effectiveCatCols : 1) + (settings.enableRowIndexColumn ? 1 : 0)
+    : 0;
+  
+  let currentNextRow = 1;
+  let reportTitleRowIdx = -1;
+  let reportSubtitleRowIdx = -1;
+
+  if (settings.enableReportTitle && settings.reportTitle) {
+    reportTitleRowIdx = currentNextRow;
+    currentNextRow++;
+    if (settings.reportSubtitle) {
+      reportSubtitleRowIdx = currentNextRow;
+      currentNextRow++;
+    }
+  }
+
+  const headerRowIdx = currentNextRow;
+  currentNextRow++;
+
+  let colIndexRowIdx = -1;
+  let totalsRowIdx = -1;
+
+  if (hasColIndexRow) {
+    colIndexRowIdx = currentNextRow;
+    currentNextRow++;
+  }
+
+  if (hasTotalsRow && totalsRowPos === 'top') {
+    totalsRowIdx = currentNextRow;
+    currentNextRow++;
+  }
+
+  const dataStartRowIdx = currentNextRow;
+  const dataEndRowIdx = dataStartRowIdx + sheetData.length - 1;
+
+  if (hasTotalsRow && totalsRowPos === 'bottom') {
+    totalsRowIdx = dataEndRowIdx + 1;
+  }
+
+  // Primary Sheet
+  const mainSheet = workbook.addWorksheet(primarySheetName, {
+    properties: {
+      defaultRowHeight: Math.max(20, Math.ceil(settings.dataFontSize * 1.6))
+    },
+    views: [
+      {
+        state: (settings.freezeHeaderRow || (settings.freezeFirstColumn && freezeColsCount > 0)) ? 'frozen' : 'normal',
+        xSplit: freezeColsCount,
+        ySplit: settings.freezeHeaderRow ? headerRowIdx + (hasColIndexRow ? 1 : 0) : 0,
+        showGridLines: Boolean(settings.showGridLines),
+        // @ts-expect-error - ExcelJS types may be incomplete for showZeroValues
+        showZeroValues: settings.showZeroValues !== false,
+        zoomScale: settings.zoomScale || 100
+      }
+    ],
+    pageSetup: {
+      orientation: settings.pageOrientation,
+      paperSize: settings.paperSize || 9,
+      fitToWidth: settings.fitToPageWidth ? 1 : 0,
+      fitToHeight: 0,
+      horizontalCentered: settings.printHorizontalCentered,
+      margins: settings.narrowMargins ? { left: 0.25, right: 0.25, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } : undefined,
+      printTitlesRow: settings.printTitlesRow ? `${headerRowIdx}:${headerRowIdx + (hasColIndexRow ? 1 : 0)}` : undefined
+    },
+    headerFooter: {
+      oddFooter: settings.addPageNumbers ? (
+        settings.pageNumberPosition === 'right' 
+          ? `&R${settings.pageNumberFormat === 'simple' ? 'Стр. &P' : 'Страница &P из &N'}` 
+          : `&C${settings.pageNumberFormat === 'simple' ? 'Стр. &P' : 'Страница &P из &N'}`
+      ) : undefined,
+      evenFooter: settings.addPageNumbers ? (
+        settings.pageNumberPosition === 'right' 
+          ? `&R${settings.pageNumberFormat === 'simple' ? 'Стр. &P' : 'Страница &P из &N'}` 
+          : `&C${settings.pageNumberFormat === 'simple' ? 'Стр. &P' : 'Страница &P из &N'}`
+      ) : undefined
+    }
+  });
+
+  // Determine if Totals column is active
+  const hasTotalsCol = settings.enableTotalsColumn;
+  const totalsColPos = settings.totalsColumnPosition; // 'right' or 'left'
+
+  // Build column metadata array
+
+  const colsMeta: ColMeta[] = baseColsMeta.map(c => ({...c}));
+
+  if (hasTotalsCol) {
+    const totalColMeta: ColMeta = {
+      key: '__TOTAL_COL__',
+      header: 'Итого',
+      isNumeric: true,
+      isDate: false,
+      isTotalCol: true
+    };
+    if (totalsColPos === 'left') {
+      const insertIdx = Math.min(effectiveCatCols, colsMeta.length);
+      colsMeta.splice(insertIdx, 0, totalColMeta);
+    } else {
+      colsMeta.push(totalColMeta);
+    }
+  }
+
+  if (settings.enableRowIndexColumn) {
+    colsMeta.unshift({
+      key: '__ROW_INDEX_COL__',
+      header: '#',
+      isNumeric: false,
+      isDate: false,
+      isRowIndexCol: true
+    });
+  }
+
   // 1. Calculate Column Widths First (so usable width is known for row height estimation)
   // OPTIMIZATION: Only sample the first 50 rows to prevent massive CPU overhead on huge datasets
-  const sampleData = data.slice(0, 50);
+  const sampleData = sheetData.slice(0, 50);
 
   colsMeta.forEach((col, colIdx) => {
     if (col.isRowIndexCol) {
-      const maxDigits = String(data.length).length;
+      const maxDigits = String(sheetData.length).length;
       mainSheet.getColumn(colIdx + 1).width = Math.max(maxDigits + 5, 7);
     } else if (settings.autoColumnWidth) {
       let maxLen = 10;
@@ -500,9 +600,10 @@ export async function exportToExcel({
       };
     } else {
       const isNum = col.isNumeric || col.isTotalCol;
+      const isDate = col.isDate;
       sheetCol.alignment = {
-        vertical: isNum ? settings.numericAlignVertical : settings.textAlignVertical,
-        horizontal: isNum ? settings.numericAlignHorizontal : settings.textAlignHorizontal,
+        vertical: isDate ? (settings.dateAlignVertical || 'middle') : (isNum ? settings.numericAlignVertical : settings.textAlignVertical),
+        horizontal: isDate ? (settings.dateAlignHorizontal || 'center') : (isNum ? settings.numericAlignHorizontal : settings.textAlignHorizontal),
         wrapText: settings.wrapText
       };
     }
@@ -510,10 +611,10 @@ export async function exportToExcel({
     // Fonts
     const firstDataColIdx = settings.enableRowIndexColumn ? 1 : 0;
     const isCategoryCol = settings.enableFirstColumnStyle && effectiveCatCols > 0 && (colIdx >= firstDataColIdx && colIdx < firstDataColIdx + effectiveCatCols);
-    const fontColor = isCategoryCol ? cleanHexColor(settings.firstColumnTextColor) : '000000';
+    const fontColor = isCategoryCol ? cleanHexColor(settings.firstColumnTextColor) : cleanHexColor(settings.dataTextColor || '000000');
 
     if (col.isRowIndexCol) {
-      sheetCol.font = { name: settings.fontFamily, size: Math.max(6, settings.dataFontSize - 2), color: { argb: '334155' } };
+      sheetCol.font = { name: settings.fontFamily, size: Math.max(6, settings.dataFontSize - 2), color: { argb: cleanHexColor(settings.dataTextColor || '000000') } };
     } else if (col.isTotalCol) {
       sheetCol.font = { name: settings.fontFamily, size: settings.dataFontSize, bold: settings.totalsColumnBold, color: { argb: cleanHexColor(settings.totalsColumnTextColor) } };
     } else {
@@ -581,7 +682,7 @@ export async function exportToExcel({
         name: settings.fontFamily,
         size: indexFontSize,
         bold: false,
-        color: { argb: '475569' }
+        color: { argb: cleanHexColor(settings.dataTextColor || '000000') }
       };
       cell.alignment = {
         vertical: 'middle',
@@ -623,7 +724,7 @@ export async function exportToExcel({
   const dataBorder = getCellBorder(false);
 
   // 3. Populate Data Rows
-  data.forEach((rowObj, dataIndex) => {
+  sheetData.forEach((rowObj, dataIndex) => {
     const currentExcelRowIdx = dataStartRowIdx + dataIndex;
     const excelRow = mainSheet.getRow(currentExcelRowIdx);
 
@@ -654,6 +755,9 @@ export async function exportToExcel({
           cell.value = '';
         } else if (typeof rawVal === 'boolean') {
           cell.value = rawVal;
+        } else if (typeof rawVal === 'string' && rawVal.startsWith('=')) {
+          // ExcelJS нативно поддерживает формулы
+          cell.value = { formula: rawVal.substring(1), result: undefined };
         } else if (typeof rawVal === 'object' && !(rawVal instanceof Date)) {
           // Serialize objects and arrays to JSON to prevent "[object Object]" in Excel
           cell.value = JSON.stringify(rawVal);
@@ -722,6 +826,63 @@ export async function exportToExcel({
     });
   });
 
+  // 3.5 Apply Category Auto-Grouping and Pseudo-Merging (if enabled)
+  if (
+    settings.categoryGroupColumn &&
+    settings.categoryGroupColumn > 0 &&
+    rawColumns.length >= settings.categoryGroupColumn &&
+    sheetData.length > 0
+  ) {
+    const groupColKey = rawColumns[settings.categoryGroupColumn - 1];
+    const groupColMetaIdx = colsMeta.findIndex(cm => cm.key === groupColKey);
+
+    if (groupColMetaIdx !== -1) {
+      const sheetGroupColIdx = groupColMetaIdx + 1;
+
+      for (let i = 0; i < sheetData.length; i++) {
+        const currentExcelRowIdx = dataStartRowIdx + i;
+        const row = mainSheet.getRow(currentExcelRowIdx);
+        const cell = row.getCell(sheetGroupColIdx);
+        const currentVal = sheetData[i] ? sheetData[i][groupColKey] : undefined;
+        const prevVal = i > 0 && sheetData[i - 1] ? sheetData[i - 1][groupColKey] : undefined;
+        const nextVal = i < sheetData.length - 1 && sheetData[i + 1] ? sheetData[i + 1][groupColKey] : undefined;
+
+        const isNewGroup = i === 0 || currentVal !== prevVal;
+        const isLastInGroup = i === sheetData.length - 1 || currentVal !== nextVal;
+
+        if (!isNewGroup) {
+          // Child row: assign outline level
+          row.outlineLevel = 1;
+          if (settings.categoryGroupCollapse) {
+            row.hidden = true;
+          }
+
+          if (settings.categoryGroupCleanDuplicates) {
+            cell.value = '';
+
+            // Cleanly remove top border and keep bottom only on the last element of the group
+            if (cell.border) {
+              const existingBorder = cell.border;
+              cell.border = {
+                ...existingBorder,
+                top: undefined,
+                bottom: isLastInGroup ? existingBorder.bottom : undefined
+              };
+            }
+          }
+        } else if (settings.categoryGroupCleanDuplicates) {
+          // Main / Parent row of the category: remove bottom border if group continues
+          if (cell.border && !isLastInGroup) {
+            cell.border = {
+              ...cell.border,
+              bottom: undefined
+            };
+          }
+        }
+      }
+    }
+  }
+
   // 4. Populate Totals Row (if enabled)
   if (hasTotalsRow && totalsRowIdx > 0) {
     const totalsRow = mainSheet.getRow(totalsRowIdx);
@@ -734,7 +895,7 @@ export async function exportToExcel({
       const cell = totalsRow.getCell(colIdx + 1);
 
       if (col.isRowIndexCol) {
-        cell.value = (hasTotalsRow && totalsRowPos === 'top') ? 1 : data.length + 1;
+        cell.value = (hasTotalsRow && totalsRowPos === 'top') ? 1 : sheetData.length + 1;
       } else if (col.isTotalCol) {
         const isCountFunc = funcName === 'COUNT' || (funcName as string) === 'COUNTA';
         const finalFunc = funcName === 'COUNT' ? 'COUNTA' : funcName;
@@ -791,9 +952,10 @@ export async function exportToExcel({
         };
 
         const isNum = col.isNumeric || col.isTotalCol;
+        const isDate = col.isDate;
         cell.alignment = {
-          vertical: isNum ? settings.numericAlignVertical : settings.textAlignVertical,
-          horizontal: isNum ? settings.numericAlignHorizontal : settings.textAlignHorizontal,
+          vertical: isDate ? (settings.dateAlignVertical || 'middle') : (isNum ? settings.numericAlignVertical : settings.textAlignVertical),
+          horizontal: isDate ? (settings.dateAlignHorizontal || 'center') : (isNum ? settings.numericAlignHorizontal : settings.textAlignHorizontal),
           wrapText: settings.wrapText
         };
 
@@ -893,6 +1055,8 @@ export async function exportToExcel({
     }
   }
 
+  }
+
   // 6. Secondary Sheet (SQL Query & Metadata)
   if (settings.includeSqlSheet) {
     const rawMetaSheetName = settings.sqlSheetName || 'Метаданные';
@@ -902,12 +1066,12 @@ export async function exportToExcel({
       views: [{ showGridLines: Boolean(settings.showGridLines), zoomScale: 100 }]
     });
 
-    metaSheet.getColumn(1).width = 40;
+    metaSheet.getColumn(1).width = 30;
     metaSheet.getColumn(2).width = 60;
 
     // Header Title
     const titleCell = metaSheet.getCell('A1');
-    titleCell.value = 'Информация о выгрузке отчета';
+    titleCell.value = 'Информация о выгрузке отчета     ';
     titleCell.font = { name: settings.fontFamily, size: 14, bold: true, color: { argb: cleanHexColor(settings.headerTextColor) } };
     titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cleanHexColor(settings.headerBgColor) } };
     titleCell.alignment = { vertical: 'middle', horizontal: 'left' };
@@ -915,6 +1079,12 @@ export async function exportToExcel({
     const titleCellB = metaSheet.getCell('B1');
     titleCellB.font = titleCell.font;
     titleCellB.fill = titleCell.fill;
+    
+    const headerBorder = getCellBorder(false);
+    if (headerBorder) {
+      titleCell.border = headerBorder;
+      titleCellB.border = headerBorder;
+    }
     
     metaSheet.getRow(1).height = 30;
 
@@ -947,7 +1117,7 @@ export async function exportToExcel({
     // SQL Section
     const sqlStartRow = metaInfo.length + 5;
     const sqlHeaderCell = metaSheet.getCell(`A${sqlStartRow}`);
-    sqlHeaderCell.value = 'Исходный SQL-запрос';
+    sqlHeaderCell.value = 'Исходный SQL-запрос                                   ';
     sqlHeaderCell.font = { name: settings.fontFamily, size: 12, bold: true, color: { argb: cleanHexColor(settings.headerTextColor) } };
     sqlHeaderCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cleanHexColor(settings.headerBgColor) } };
     sqlHeaderCell.alignment = { vertical: 'middle', horizontal: 'left' };
@@ -955,6 +1125,11 @@ export async function exportToExcel({
     const sqlHeaderCellB = metaSheet.getCell(`B${sqlStartRow}`);
     sqlHeaderCellB.font = sqlHeaderCell.font;
     sqlHeaderCellB.fill = sqlHeaderCell.fill;
+    
+    if (headerBorder) {
+      sqlHeaderCell.border = headerBorder;
+      sqlHeaderCellB.border = headerBorder;
+    }
     
     metaSheet.getRow(sqlStartRow).height = 26;
 
