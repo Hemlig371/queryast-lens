@@ -15,6 +15,10 @@
 * **Библиотека шаблонов и фрагментов (SQL Snippets)**: Менеджер кастомных SQL-фрагментов и готовая библиотека пресетов аналитических запросов для быстрого использования.
 * **История версий (Version History)**: Полное отслеживание изменений и сохраненные снимки запросов с возможностью быстрого отката (IndexedDB).
 * **Экспорт данных и диаграмм**: Сохранение графов в графических форматах (PNG, SVG, JPEG) и структурных форматах (JSON, XML, Mermaid, Draw.io).
+* **Продвинутый генератор и экспортер Excel (Excel Engine)**: Полнофункциональный экспорт результатов запросов в `.xlsx` (`exceljs`) с глубокой настройкой оформления: автоподбор ширины колонок, кастомные стили заголовков, чередование строк (Zebra striping), локализованные числовые и денежные форматы, закрепление областей (Freeze Panes) и автоматическая вставка формул итогов (SUM, AVERAGE, COUNT).
+* **Безопасное хранилище секретов (Secure Vault)**: Надежное клиентское шифрование параметров подключения и учетных данных баз данных (AES-GCM Web Crypto API) с мастер-паролем, защитой памяти и настраиваемым таймаутом автоблокировки.
+* **Кэширование схемы и мгновенный старт (Schema Cache)**: Локальное хранение структуры метаданных и колонок (IndexedDB) для мгновенной загрузки дерева объектов и работы автодополнения в офлайн-режиме без лишней нагрузки на СУБД.
+* **Файловый менеджер виртуальной ФС (WASM File Manager)**: Графический интерфейс для управления файлами Parquet, CSV и DuckDB внутри изолированной виртуальной файловой системы WebAssembly (VFS) с поддержкой Drag-and-Drop загрузки и скачивания.
 * **Надежность и безопасность (Safe Execution)**: Кнопка принудительной отмены долгих запросов (Query Cancellation). Изоляция ошибок через React Error Boundaries предотвращает падение всего приложения при сбоях в редакторе или графе.
 * **Кастомизация UI и управление рабочим пространством**: Гибкое управление отображением элементов интерфейса (настройка видимости панелей и кнопок), глобальное масштабирование приложения (UI Scale), поддержка светлой и темной тем оформления, локальное сохранение сессий и полный импорт/экспорт состояния приложения (JSON).
 
@@ -45,6 +49,13 @@
   * Полное перенаправление комбинаций клавиш (Hotkeys) под свои нужды.
   * Детализированная настройка правил форматирования кода (`sql-formatter`): регистр ключевых слов, отступы, пустые строки между запросами.
   * Настраиваемое меню быстрой вставки пользовательских команд и префиксов (Quick Action Templates).
+* **Продвинутый движок формирования Excel-отчетов (`excelExporter`)**:
+  * Генерация стилизованных книг `.xlsx` без потери числовой точности и формул.
+  * Тонкая настройка тем оформления, чередования строк, кастомных шрифтов и автоматического подбора оптимальной ширины столбцов.
+  * Добавление итоговых строк агрегации (`SUM`, `AVERAGE`, `COUNT`) и закрепление шапки таблицы.
+* **Защищенное клиентское хранилище секретов (Vault)**:
+  * Надежное шифрование учетных данных ClickHouse и токенов на базе AES-GCM (256-bit) с использованием Web Crypto API.
+  * Защита паролей от попадания в открытый `localStorage` и поддержка настраиваемого времени автоблокировки.
 
 ---
 
@@ -63,6 +74,10 @@ A technical application for visualizing, formatting, and executing SQL queries. 
 * **SQL Snippets & Templates Library**: Manager for saving custom reusable SQL snippets alongside a built-in library of analytical query presets.
 * **Version History**: Full query history tracking with saved version snapshots and fast rollback functionality (IndexedDB).
 * **Export Capabilities**: Exports visual node graphs to image formats (PNG, SVG, JPEG) and structural/diagram formats (JSON, XML, Mermaid, Draw.io).
+* **Advanced Excel Report Generator (Excel Engine)**: Full-featured `.xlsx` export (`exceljs`) with customizable styling: auto-fit column widths, styled header rows, zebra striping, localized number and currency formatting, freeze panes, and automatic formula totals (SUM, AVERAGE, COUNT).
+* **Secure Credentials Vault**: Hardware-backed client-side encryption for database connection parameters and secrets (AES-GCM Web Crypto API) featuring master password protection, in-memory security, and customizable auto-lock timeouts.
+* **Database Schema Cache & Offline Mode**: IndexedDB metadata caching for database schemas and column types, enabling near-instant app startup and offline autocomplete capabilities without unnecessary database queries.
+* **WASM Virtual File Manager**: Interactive graphical management modal for virtual files (Parquet, CSV, DuckDB) within the WebAssembly in-memory virtual filesystem (VFS) with Drag-and-Drop support.
 * **Safe Query Execution & Reliability**: Built-in support for query cancellation (aborting long-running executions). Implementation of React Error Boundaries isolated by component (Editor, Graph, Results Panel) ensures that an unhandled crash in one module does not take down the entire application.
 * **UI Customization & Workspace Management**: Granular control over UI element visibility, Global UI scaling functionality, light/dark theme toggling, local persistence of user sessions and tabs, and full workspace state import/export (JSON).
 
@@ -93,6 +108,12 @@ A technical application for visualizing, formatting, and executing SQL queries. 
   * Fully customizable keyboard shortcut (Hotkey) mappings.
   * Precise SQL formatting controls via `sql-formatter` (keyword case, indentation style, inter-statement line breaks).
   * Configurable Quick Action Templates for instant query snippet injection.
+* **Advanced Excel Export Engine (`excelExporter`)**:
+  * Generates high-fidelity `.xlsx` workbooks with native formula evaluation, preserved numeric data types, and custom enterprise color palettes.
+  * Automatic column width calculations with safety caps, zebra-striping, and freeze-pane header pinning.
+* **Secure Client-Side Secrets Vault**:
+  * 256-bit AES-GCM encrypted persistence for ClickHouse connection secrets and sensitive credentials, preventing plaintext storage in `localStorage`.
+  * Auto-lock timer and secure master password derivation.
 
 ### Installation & Platform Notes
 
