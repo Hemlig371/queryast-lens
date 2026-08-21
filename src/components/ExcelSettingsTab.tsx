@@ -27,7 +27,7 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
   const [savedFeedback, setSavedFeedback] = useState<boolean>(false);
   const [copiedTemplate, setCopiedTemplate] = useState<boolean>(false);
 
-  const sampleSqlComment = '/* #Заголовок ##Подзаголовок @file:ИмяФайла @sheet:ИмяЛиста @totals:SUM */';
+  const sampleSqlComment = '/* #Заголовок ##Подзаголовок @file:ИмяФайла @sheet:ИмяЛиста @totals:SUM @split:№/Имя @group:№/Имя @group_cols:№ @group_hide:true @protect:12345 */';
 
   const handleCopySqlCommentTemplate = () => {
     navigator.clipboard.writeText(sampleSqlComment);
@@ -303,8 +303,8 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
             </div>
           </div>
 
-          <div className={`${dividerClass} mt-3 pt-3 grid grid-cols-1 sm:grid-cols-2 gap-3 items-end`}>
-            <div>
+          <div className={`${dividerClass} mt-3 pt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 items-end`}>
+            <div className="sm:col-span-1">
               <label className={labelClass}>
                 Границы ячеек:
               </label>
@@ -323,7 +323,7 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
             </div>
 
             {excelSettings.borderStyle !== 'none' && (
-              <div>
+              <div className="sm:col-span-1">
                 <label className={labelClass}>
                   Цвет границ:
                 </label>
@@ -343,6 +343,26 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
                 </div>
               </div>
             )}
+
+            <div className="sm:col-span-1">
+              <label className={labelClass}>
+                Цвет текста данных:
+              </label>
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="color"
+                  value={`#${excelSettings.dataTextColor || '000000'}`}
+                  onChange={(e) => updateExcel({ dataTextColor: e.target.value.replace('#', '').toUpperCase() })}
+                  className={colorPickerClass}
+                />
+                <input
+                  type="text"
+                  value={excelSettings.dataTextColor || '000000'}
+                  onChange={(e) => updateExcel({ dataTextColor: e.target.value.replace('#', '').toUpperCase() })}
+                  className={`w-full font-mono uppercase ${inputClass}`}
+                />
+              </div>
+            </div>
           </div>
 
           <div className="pt-2.5">
@@ -504,6 +524,54 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
               </div>
             </div>
           )}
+
+          {/* Автогруппировка строк по категории */}
+          <div className={`${dividerClass} mt-3 pt-3 pl-6 space-y-2.5`}>
+            <div className="flex flex-wrap items-center gap-3">
+              <span className={`text-xs font-semibold shrink-0 ${theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}`}>
+                Автогруппировка строк по столбцу:
+              </span>
+              <input
+                type="number"
+                min={0}
+                max={50}
+                value={excelSettings.categoryGroupColumn ?? 0}
+                onChange={(e) => updateExcel({ categoryGroupColumn: Math.max(0, parseInt(e.target.value) || 0) })}
+                className={`w-20 ${inputClass}`}
+              />
+              <span className={hintClass}>
+                (0 — без группировки, 1 — первый столбец данных, 2 — второй и т.д.)
+              </span>
+            </div>
+
+            {(excelSettings.categoryGroupColumn ?? 0) > 0 && (
+              <div className="space-y-2 pt-1">
+                <label className={`flex items-center gap-2 cursor-pointer ${theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}`}>
+                  <input
+                    type="checkbox"
+                    checked={excelSettings.categoryGroupCleanDuplicates ?? false}
+                    onChange={(e) => updateExcel({ categoryGroupCleanDuplicates: e.target.checked })}
+                    className="rounded border-slate-400 text-blue-600 focus:ring-blue-500 w-4 h-4"
+                  />
+                  <span className="text-xs">
+                    Очищать повторяющиеся значения категорий (псевдо-объединение)
+                  </span>
+                </label>
+
+                <label className={`flex items-center gap-2 cursor-pointer ${theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}`}>
+                  <input
+                    type="checkbox"
+                    checked={excelSettings.categoryGroupCollapse ?? false}
+                    onChange={(e) => updateExcel({ categoryGroupCollapse: e.target.checked })}
+                    className="rounded border-slate-400 text-blue-600 focus:ring-blue-500 w-4 h-4"
+                  />
+                  <span className="text-xs">
+                    Свернуть группы при открытии файла в Excel
+                  </span>
+                </label>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* 1.4 Чередование строк и столбцов */}
@@ -591,7 +659,7 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
           <div className={`${subHeaderClass} mb-3`}>
             2.1 Выравнивание значений
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className={labelClass}>Текст:</label>
               <select
@@ -615,6 +683,19 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
                 <option value="right">По правому краю</option>
                 <option value="center">По центру</option>
                 <option value="left">По левому краю</option>
+              </select>
+            </div>
+
+            <div>
+              <label className={labelClass}>Даты:</label>
+              <select
+                value={excelSettings.dateAlignHorizontal}
+                onChange={(e) => updateExcel({ dateAlignHorizontal: e.target.value as any })}
+                className={`w-full ${inputClass}`}
+              >
+                <option value="center">По центру</option>
+                <option value="left">По левому краю</option>
+                <option value="right">По правому краю</option>
               </select>
             </div>
           </div>
@@ -1223,6 +1304,23 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
                 className={`w-full ${inputClass} ${!excelSettings.includeSqlSheet ? 'opacity-50 cursor-not-allowed' : ''}`}
               />
             </div>
+
+            <div>
+              <label className={labelClass}>
+                Разбить на листы (номер столбца):
+              </label>
+              <input
+                type="number"
+                min="1"
+                value={excelSettings.splitByColumnIndex || ''}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value, 10);
+                  updateExcel({ splitByColumnIndex: isNaN(val) ? null : val });
+                }}
+                className={`w-full ${inputClass}`}
+                placeholder="Например: 1"
+              />
+            </div>
           </div>
 
           <div className={`${dividerClass} flex flex-col gap-2 mt-3`}>
@@ -1496,6 +1594,11 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
             theme === 'dark' ? 'text-slate-400' : 'text-slate-600'
           }`}>
             Для объемных отчетов необходимо явно указывать Limit в запросе
+          </span>
+          <span className={`text-[10px] mt-1.5 block ${
+            theme === 'dark' ? 'text-slate-400' : 'text-slate-600'
+          }`}>
+            Доступна возможность формирования столбцов с формулами, пример: =SUM(1)
           </span>
         </div>
       </div>
