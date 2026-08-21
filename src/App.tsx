@@ -4377,7 +4377,7 @@ export default function App() {
     });
   };
 
-  const handleCopyTableAsImage = async () => {
+  const handleCopyTableAsImage = () => {
     if (!resultsTableRef.current) return;
     const container = resultsTableRef.current;
     const tableEl = (container.querySelector('table') as HTMLElement) || container;
@@ -4392,7 +4392,7 @@ export default function App() {
       const width = tableEl.scrollWidth;
       const height = tableEl.scrollHeight;
 
-      const blob = await toBlob(tableEl, {
+      const blobPromise = toBlob(tableEl, {
         pixelRatio: 2,
         width,
         height,
@@ -4411,18 +4411,42 @@ export default function App() {
           }
           return true;
         },
+      }).then(blob => {
+        if (!blob) throw new Error('Failed to generate blob');
+        return blob;
       });
 
-      if (blob) {
-        await navigator.clipboard.write([
-          new ClipboardItem({ 'image/png': blob }),
-        ]);
-        setCopiedTableImage(true);
-        setTimeout(() => setCopiedTableImage(false), 2000);
+      const restoreScroll = () => {
+        container.scrollTop = savedScrollTop;
+        container.scrollLeft = savedScrollLeft;
+      };
+
+      try {
+        const item = new ClipboardItem({ 'image/png': blobPromise });
+        navigator.clipboard.write([item])
+          .then(() => {
+            setCopiedTableImage(true);
+            setTimeout(() => setCopiedTableImage(false), 2000);
+          })
+          .catch((err) => console.error('Failed to copy table image:', err))
+          .finally(restoreScroll);
+      } catch (e) {
+        // Fallback for older browsers
+        blobPromise.then((blob) => {
+          navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+            .then(() => {
+              setCopiedTableImage(true);
+              setTimeout(() => setCopiedTableImage(false), 2000);
+            })
+            .catch((err) => console.error('Fallback clipboard write failed:', err))
+            .finally(restoreScroll);
+        }).catch(err => {
+            console.error('Failed to generate blob:', err);
+            restoreScroll();
+        });
       }
     } catch (err) {
-      console.error('Failed to copy table image:', err);
-    } finally {
+      console.error('Failed to initiate copy table image:', err);
       container.scrollTop = savedScrollTop;
       container.scrollLeft = savedScrollLeft;
     }
