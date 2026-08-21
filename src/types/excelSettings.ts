@@ -3,12 +3,16 @@ export interface ExcelSettings {
   fontFamily: string;
   headerFontSize: number;
   dataFontSize: number;
+  dataTextColor: string;
   totalFontSize: number;
   headerBgColor: string;
   headerTextColor: string;
   headerBorderStyle?: 'thin' | 'medium' | 'dashed' | 'dotted' | 'horizontal_only' | 'none';
   enableFirstColumnStyle: boolean;
   categoryColumnsCount: number;
+  categoryGroupColumn?: number;
+  categoryGroupCleanDuplicates?: boolean;
+  categoryGroupCollapse?: boolean;
   firstColumnBgColor: string;
   firstColumnTextColor: string;
   firstColumnBold: boolean;
@@ -25,6 +29,8 @@ export interface ExcelSettings {
   textAlignHorizontal: 'left' | 'center' | 'right';
   numericAlignVertical: 'top' | 'middle' | 'bottom';
   numericAlignHorizontal: 'left' | 'center' | 'right';
+  dateAlignVertical: 'top' | 'middle' | 'bottom';
+  dateAlignHorizontal: 'left' | 'center' | 'right';
   autoColumnWidth: boolean;
   maxColumnWidth: number;
   fixedColumnWidth: number;
@@ -77,6 +83,7 @@ export interface ExcelSettings {
   reportTitleBgColor: string;
   reportTitleBold: boolean;
   reportTitleItalic: boolean;
+  splitByColumnIndex?: number | null;
 }
 
 export const DEFAULT_EXCEL_SETTINGS: ExcelSettings = {
@@ -84,12 +91,16 @@ export const DEFAULT_EXCEL_SETTINGS: ExcelSettings = {
   fontFamily: 'Segoe UI',
   headerFontSize: 11,
   dataFontSize: 10,
+  dataTextColor: '000000',
   totalFontSize: 11,
   headerBgColor: '1E293B',
   headerTextColor: 'FFFFFF',
   headerBorderStyle: 'thin',
   enableFirstColumnStyle: false,
   categoryColumnsCount: 1,
+  categoryGroupColumn: 0,
+  categoryGroupCleanDuplicates: false,
+  categoryGroupCollapse: false,
   firstColumnBgColor: 'F1F5F9',
   firstColumnTextColor: '0F172A',
   firstColumnBold: true,
@@ -106,6 +117,8 @@ export const DEFAULT_EXCEL_SETTINGS: ExcelSettings = {
   textAlignHorizontal: 'left',
   numericAlignVertical: 'middle',
   numericAlignHorizontal: 'right',
+  dateAlignVertical: 'middle',
+  dateAlignHorizontal: 'center',
   autoColumnWidth: true,
   maxColumnWidth: 50,
   fixedColumnWidth: 18,
@@ -157,7 +170,8 @@ export const DEFAULT_EXCEL_SETTINGS: ExcelSettings = {
   reportTitleColor: '000000',
   reportTitleBgColor: '',
   reportTitleBold: true,
-  reportTitleItalic: false
+  reportTitleItalic: false,
+  splitByColumnIndex: null
 };
 
 export interface ExcelPreset {
