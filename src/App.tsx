@@ -290,7 +290,6 @@ export default function App() {
       if (clickhouseConfig && clickhouseConfig.database !== newDb) {
         const updated = { ...clickhouseConfig, database: newDb };
         setClickhouseConfig(updated);
-        localStorage.setItem('clickhouse_config', JSON.stringify(updated));
       }
     }
   };
