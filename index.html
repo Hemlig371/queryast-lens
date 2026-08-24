@@ -5,6 +5,40 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>QueryAST Lens</title>
+    <!-- Theme initialization to prevent flash -->
+    <style>
+      /* Prevent white flash before React mounts */
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        background-color: #172033; /* default to dark to prevent flash */
+      }
+    </style>
+    <script>
+      (function() {
+        try {
+          var raw = localStorage.getItem('sql_visualizer_session_v2');
+          var theme = 'dark';
+          if (raw) {
+            var session = JSON.parse(raw);
+            if (session && session.theme) {
+              theme = session.theme;
+            }
+          }
+          if (theme === 'dark') {
+            document.documentElement.classList.add('dark');
+            document.documentElement.style.backgroundColor = '#172033';
+            document.documentElement.style.color = '#e2e8f0';
+          } else {
+            document.documentElement.classList.remove('dark');
+            document.documentElement.style.backgroundColor = '#e2e8f0';
+            document.documentElement.style.color = '#1e293b';
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
