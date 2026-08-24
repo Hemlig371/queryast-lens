@@ -34,6 +34,7 @@ interface DataStatsViewerProps {
 }
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658'];
+const DATE_REGEX = /^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|^\d{1,2}[-/.]\d{1,2}[-/.]\d{4}|^\d{4}-\d{2}-\d{2}/;
 
 const getNullPctColor = (pct: number, isDark: boolean) => {
   if (pct === 0) return isDark ? '#4ade80' : '#16a34a'; // green
@@ -87,8 +88,7 @@ export const DataStatsViewer: React.FC<DataStatsViewerProps> = ({
       if (typeof val === 'string') {
         const s = val.trim();
         if (s.length >= 6 && isNaN(Number(s))) {
-          const dateRegex = /^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|^\d{1,2}[-/.]\d{1,2}[-/.]\d{4}|^\d{4}-\d{2}-\d{2}/;
-          if (dateRegex.test(s) && !isNaN(Date.parse(s))) {
+          if (DATE_REGEX.test(s) && !isNaN(Date.parse(s))) {
             return true;
           }
         }
@@ -986,7 +986,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
           <div className="flex items-center gap-3 flex-wrap">
             {/* X Axis Selector & Category Limit Selector */}
             <div className="flex items-center gap-1.5">
-              <span className="opacity-70">Ось X (Категория):</span>
+              <span className="opacity-70">Ось X :</span>
               <select
                 value={xAxisCol}
                 onChange={(e) => setXAxisCol(e.target.value)}
@@ -1022,7 +1022,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
             {/* Y Axis Selector */}
             {chartType !== 'pie' && (
               <div className="flex items-center gap-1.5">
-                <span className="opacity-70">Ось Y (Значение):</span>
+                <span className="opacity-70">Ось Y :</span>
                 <select
                   value={yAxisCol}
                   onChange={(e) => handleYAxisChange(e.target.value)}
@@ -1049,7 +1049,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                   isDark ? 'border-slate-600 text-slate-200 bg-slate-800' : 'border-slate-300 text-slate-800 bg-white'
                 }`}
               >
-                <option value="count" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>Количество (Count)</option>
+                <option value="count" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>Кол-во (Count)</option>
                 <option value="uniqueCount" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>Уникальных</option>
                 <option value="sum" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>Сумма (Sum)</option>
                 <option value="avg" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>Среднее (Avg)</option>

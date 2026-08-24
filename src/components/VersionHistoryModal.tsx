@@ -195,7 +195,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
           maxWidth: 'calc(96vw / var(--zoom-scale, 1))',
           maxHeight: 'calc(95vh / var(--zoom-scale, 1))',
         }}
-        className={`rounded-xl border shadow-2xl flex flex-col overflow-hidden transition-all ${
+        className={`rounded-xl border shadow-2xl flex flex-col overflow-hidden ${
           theme === 'dark' 
             ? 'bg-slate-900 border-slate-700 text-slate-100' 
             : 'bg-slate-100 border-slate-300 text-slate-800'

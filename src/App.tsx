@@ -81,9 +81,11 @@ import {
 import { DataStatsViewer } from './components/DataStatsViewer';
 
 import { parseSqlToAst, astToGraph, getLayoutedElements } from './utils/astToGraph';
+import { parseMermaidToGraph } from './utils/mermaidToGraph';
 import { nodeTypes } from './components/CustomNodes';
 import { sqlPresets, SQLPreset } from './components/SQLPresets';
-import { SqlSnippetsManager } from './components/SqlSnippetsManager';
+import { SqlSnippetsManager, ACTION_MENU_CATEGORY } from './components/SqlSnippetsManager';
+import { ActionMenuTabContent, ACTION_MENU_TAB_ID } from './components/ActionMenuTabContent';
 import { SqlEditor, SqlEditorRef, highlightSqlHtml, getBaseHighlight } from './components/SqlEditor';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { SettingsModal, getSavedHotkeys, getSavedFormatterSettings, FormatterSettings, getSavedUiVisibilitySettings, UiVisibilitySettings, QuickActionTemplate, getQuickActionTemplates } from './components/SettingsModal';
@@ -101,6 +103,7 @@ import { replaceSecretsInSql } from './utils/vaultStorage';
 import { exportToExcel } from './utils/excelExporter';
 import { getSavedExcelSettings, getSavedExcelPresets } from './utils/excelSettingsStorage';
 import { ExcelPreset } from './types/excelSettings';
+import { saveTabResult, getTabResult, removeTabResult, cleanupOrphanedTabResults, getTabResultSync } from './utils/resultStorage';
 
 export interface EditorTab {
   id: string;
@@ -110,6 +113,7 @@ export interface EditorTab {
   filePath?: string;
   savedContent?: string;
   isModified?: boolean;
+  lastExecutedSql?: string;
 }
 
 function getTableSizeBadge(columns: any[]): string | null {
@@ -164,6 +168,53 @@ const getSavedSession = (): SavedSession | null => {
   return null;
 };
 
+const MermaidActionGroup = ({ theme, onVisualize }: { theme: 'dark'|'light', onVisualize: () => void }) => {
+  const [color, setColor] = useState('#14b8a6');
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(color);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className={`flex items-stretch text-xs font-semibold rounded-md shadow-md shrink-0 transition-colors ${
+        theme === 'dark'
+          ? 'bg-teal-600 text-white shadow-teal-900/20'
+          : 'bg-teal-500 text-white shadow-teal-700/20'
+      }`}>
+      <div 
+        className={`flex items-center justify-center px-1.5 border-r ${theme === 'dark' ? 'border-teal-700 hover:bg-teal-500' : 'border-teal-600 hover:bg-teal-600'} rounded-l-md transition-colors`}
+        title="Выбрать цвет"
+      >
+        <input 
+           type="color" 
+           value={color} 
+           onChange={(e) => setColor(e.target.value)}
+           className="w-4 h-5 p-0 border-0 bg-transparent cursor-pointer"
+        />
+      </div>
+      
+      <button
+         onClick={handleCopy}
+         className={`px-2 border-r flex items-center justify-center transition-colors ${theme === 'dark' ? 'border-teal-700 hover:bg-teal-500' : 'border-teal-600 hover:bg-teal-600'}`}
+         title="Скопировать HEX"
+      >
+         {copied ? <Check className="w-2.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5 opacity-70 hover:opacity-100" />}
+      </button>
+
+      <button
+        onClick={onVisualize}
+        className={`px-3 py-1.5 active:bg-teal-700 transition-colors rounded-r-md ${theme === 'dark' ? 'hover:bg-teal-500' : 'hover:bg-teal-600'}`}
+        title="Визуализировать Mermaid диаграмму"
+      >
+        <span>Mermaid</span>
+      </button>
+    </div>
+  );
+};
+
 export default function App() {
   const savedSession = useMemo(() => getSavedSession(), []);
 
@@ -196,6 +247,10 @@ export default function App() {
   const [isTransposed, setIsTransposed] = useState<boolean>(false);
   const [copiedTableImage, setCopiedTableImage] = useState<boolean>(false);
   const [copiedCellValue, setCopiedCellValue] = useState<boolean>(false);
+  const [copiedResultCell, setCopiedResultCell] = useState<{ rowIndex: number; colKey: string } | null>(null);
+  const [copiedSchemaCol, setCopiedSchemaCol] = useState<string | null>(null);
+  const [isFormatted, setIsFormatted] = useState<boolean>(false);
+  const [isCompacted, setIsCompacted] = useState<boolean>(false);
   const resultsTableRef = useRef<HTMLDivElement | null>(null);
   const [resultsViewMode, setResultsViewMode] = useState<'table' | 'chart' | 'summarize'>('table');
   const [summarizeResults, setSummarizeResults] = useState<any[] | null>(null);
@@ -792,9 +847,6 @@ export default function App() {
     
     const isCurrentlyExpanded = !!expandedSchemaNodes[nodeKey];
     setExpandedSchemaNodes(prev => ({ ...prev, [nodeKey]: !isCurrentlyExpanded }));
-    
-    const tablePath = dbName === schemaName ? `${dbName}.${tableName}` : `${dbName}.${schemaName}.${tableName}`;
-    navigator.clipboard.writeText(tablePath);
 
     if (!isCurrentlyExpanded && !tableColumnsMapRef.current[tableKey]) {
       await fetchTableColumns(dbName, schemaName, tableName, tableType);
@@ -862,6 +914,8 @@ export default function App() {
   }, [duckDbSchema, tableColumnsMap, schemaSearchTerm]);
 
   const [showSnippetsModal, setShowSnippetsModal] = useState<boolean>(false);
+  const [snippetsModalCategory, setSnippetsModalCategory] = useState<string | undefined>(undefined);
+  const [snippetsModalEditId, setSnippetsModalEditId] = useState<string | undefined>();
   const [showPresetsDropdown, setShowPresetsDropdown] = useState<boolean>(false);
   const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
   const [showHistoryModal, setShowHistoryModal] = useState<boolean>(false);
@@ -1007,11 +1061,15 @@ export default function App() {
             e.preventDefault();
             e.stopPropagation();
             navigator.clipboard.writeText(textToCopy);
+            setCopiedResultCell({ rowIndex: selectedResultCell.rowIndex, colKey: selectedResultCell.colKey });
+            setTimeout(() => setCopiedResultCell(null), 1500);
           }
         } else if (duckDbSelectedCell?.content) {
           e.preventDefault();
           e.stopPropagation();
           navigator.clipboard.writeText(duckDbSelectedCell.content);
+          setCopiedCellValue(true);
+          setTimeout(() => setCopiedCellValue(false), 1500);
         }
       }
     };
@@ -1049,6 +1107,90 @@ export default function App() {
   const isResultTableHoveredRef = useRef<boolean>(false);
   const isCreatingFilterTabRef = useRef<boolean>(false);
 
+  useLayoutEffect(() => {
+    if (!isMaximizedSql && activeTabId === ACTION_MENU_TAB_ID) {
+      if (tabs.length > 0) {
+        setActiveTabId(tabs[0].id);
+      }
+    }
+  }, [isMaximizedSql, activeTabId, tabs]);
+
+  // -- IndexedDB Results Sync logic --
+  const isRestoringTabRef = useRef<boolean>(false);
+
+  // Load results from IndexedDB when activeTabId changes
+  useLayoutEffect(() => {
+    isRestoringTabRef.current = true;
+    let isMounted = true;
+    setSelectedResultCell(null);
+    setDuckDbSelectedCell(null);
+    
+    const applyData = (data: any) => {
+      if (!isMounted) return;
+      if (data) {
+        setDuckDbResults(data.duckDbResults);
+        setQueryExecutionDuration(data.queryExecutionDuration);
+        setResultColumnTypes(data.resultColumnTypes || {});
+        setIsDuckDbResultVisible(data.isDuckDbResultVisible);
+        setDuckDbPage(data.duckDbPage || 1);
+        setDuckDbError(data.duckDbError || null);
+        if (data.lastExecutedSql !== undefined) {
+          setLastExecutedSql(data.lastExecutedSql || '');
+        }
+      } else {
+        setDuckDbResults(null);
+        setQueryExecutionDuration(null);
+        setResultColumnTypes({});
+        setIsDuckDbResultVisible(false);
+        setDuckDbPage(1);
+        setDuckDbError(null);
+      }
+      setTimeout(() => {
+        if (isMounted) isRestoringTabRef.current = false;
+      }, 50);
+    };
+
+    const syncData = getTabResultSync(activeTabId);
+    if (syncData) {
+      applyData(syncData);
+    } else {
+      applyData(null); // Синхронно очищаем старые результаты до ответа от IndexedDB
+      getTabResult(activeTabId).then((data) => {
+        if (data && isMounted) {
+            // Если в БД что-то было, применяем
+            applyData(data);
+        }
+      }).catch((err) => {
+        console.error('Failed to get tab result from IDB:', err);
+        if (isMounted) isRestoringTabRef.current = false;
+      });
+    }
+
+    return () => { isMounted = false; };
+  }, [activeTabId]);
+
+  // Save results to IndexedDB when they change in RAM
+  useEffect(() => {
+    if (isRestoringTabRef.current) return;
+    saveTabResult(activeTabId, {
+      duckDbResults,
+      queryExecutionDuration,
+      resultColumnTypes,
+      isDuckDbResultVisible,
+      duckDbPage,
+      duckDbError,
+      lastExecutedSql
+    }).catch(console.error);
+  }, [duckDbResults, queryExecutionDuration, resultColumnTypes, isDuckDbResultVisible, duckDbPage, duckDbError, lastExecutedSql, activeTabId]);
+  
+  // Cleanup orphaned tab results once tabs are fully loaded from session
+  useEffect(() => {
+    if (isTabsLoaded && tabs.length > 0) {
+      cleanupOrphanedTabResults([...tabs.map(t => t.id), ACTION_MENU_TAB_ID]).catch(console.error);
+    }
+  }, [isTabsLoaded]);
+  // -- End IndexedDB Results Sync logic --
+
   useEffect(() => {
     setResultTableContextMenu(null);
     if (isCreatingFilterTabRef.current) {
@@ -1057,9 +1199,13 @@ export default function App() {
       setActiveSqlFilters([]);
       setActiveSqlSorts([]);
     }
-    const currentTab = tabs.find(t => t.id === activeTabId);
-    if (currentTab) {
-      sqlRef.current = currentTab.sql;
+    if (activeTabId === ACTION_MENU_TAB_ID) {
+      sqlRef.current = '';
+    } else {
+      const currentTab = tabs.find(t => t.id === activeTabId);
+      if (currentTab) {
+        sqlRef.current = currentTab.sql;
+      }
     }
   }, [activeTabId]);
 
@@ -1233,11 +1379,21 @@ export default function App() {
           setTabs(storedTabs);
           
           let nextActiveTabId = savedSession?.activeTabId || storedTabs[0].id;
-          if (!storedTabs.some(t => t.id === nextActiveTabId)) {
+          if (nextActiveTabId !== ACTION_MENU_TAB_ID && !storedTabs.some(t => t.id === nextActiveTabId)) {
             nextActiveTabId = storedTabs[0].id;
           }
           setActiveTabId(nextActiveTabId);
-          sqlRef.current = storedTabs.find(t => t.id === nextActiveTabId)?.sql || '';
+          if (nextActiveTabId === ACTION_MENU_TAB_ID) {
+            sqlRef.current = '';
+          } else {
+            const initialTab = storedTabs.find(t => t.id === nextActiveTabId);
+            sqlRef.current = initialTab?.sql || '';
+            if (initialTab?.lastExecutedSql) {
+              setLastExecutedSql(initialTab.lastExecutedSql);
+            } else {
+              setLastExecutedSql('');
+            }
+          }
         }
       } catch (e) {
         console.error("Failed to load tabs from IDB", e);
@@ -1249,7 +1405,10 @@ export default function App() {
     loadTabs();
   }, [savedSession?.activeTabId]);
 
-  const getActiveTabSql = () => tabs.find(t => t.id === activeTabId)?.sql || '';
+  const getActiveTabSql = () => {
+    if (activeTabId === ACTION_MENU_TAB_ID) return '';
+    return tabs.find(t => t.id === activeTabId)?.sql || '';
+  };
   // Keep latest session state in ref to avoid constant disk writes while editing
   const latestSessionRef = useRef({
     tabs,
@@ -1397,9 +1556,11 @@ export default function App() {
       
       localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(sessionData));
 
-      const tabsToSave = latestSessionRef.current.tabs.map(t => 
-        t.id === latestSessionRef.current.activeTabId ? { ...t, sql: sqlRef.current } : t
-      );
+      const tabsToSave = latestSessionRef.current.tabs
+        .filter(t => t.id !== ACTION_MENU_TAB_ID)
+        .map(t => 
+          t.id === latestSessionRef.current.activeTabId ? { ...t, sql: sqlRef.current } : t
+        );
       await saveSessionTabs(tabsToSave);
     } catch (e) {
       console.error('Failed to save session to localStorage', e);
@@ -1436,11 +1597,11 @@ export default function App() {
     window.addEventListener('unload', handleUnload);
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    // Background interval: save session once every 20 minutes (20 * 60 * 1000 ms)
-    const INTERVAL_20_MIN = 20 * 60 * 1000;
+    // Background interval: save session once every 10 minutes (10 * 60 * 1000 ms)
+    const INTERVAL_10_MIN = 10 * 60 * 1000;
     const intervalId = setInterval(() => {
       saveSessionToStorage();
-    }, INTERVAL_20_MIN);
+    }, INTERVAL_10_MIN);
 
     return () => {
       window.removeEventListener('beforeunload', handleUnload);
@@ -2176,6 +2337,7 @@ export default function App() {
 
     if (!isQuickAction) {
       setLastExecutedSql(queryToExec);
+      setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, lastExecutedSql: queryToExec } : t));
     }
     setDuckDbPage(page);
 
@@ -2383,6 +2545,7 @@ export default function App() {
 
     if (!isQuickAction) {
       setLastExecutedSql(queryToExec);
+      setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, lastExecutedSql: queryToExec } : t));
     }
     setDuckDbPage(page);
 
@@ -2802,17 +2965,26 @@ export default function App() {
 
   const handleSelectTab = (targetId: string) => {
     if (targetId === activeTabId) return;
-    const targetTab = tabs.find(t => t.id === targetId);
-    if (!targetTab) return;
 
     const currentSql = sqlRef.current;
 
-    // First, save current edits of the old active tab using the captured currentSql
-    setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: currentSql } : t));
+    // First, save current edits of the old active tab using the captured currentSql if it was an ordinary tab
+    if (activeTabId !== ACTION_MENU_TAB_ID) {
+      setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: currentSql } : t));
+    }
 
     // Now switch to the new active tab
     setActiveTabId(targetId);
-    sqlRef.current = targetTab.sql;
+
+    if (targetId === ACTION_MENU_TAB_ID) {
+      sqlRef.current = '';
+    } else {
+      const targetTab = tabs.find(t => t.id === targetId);
+      if (targetTab) {
+        sqlRef.current = targetTab.sql;
+        setLastExecutedSql(targetTab.lastExecutedSql || '');
+      }
+    }
   };
 
   const handleAddTab = () => {
@@ -2827,11 +2999,15 @@ export default function App() {
 
     const currentSql = sqlRef.current;
 
-    // Save current active tab SQL first using the captured currentSql, then add the new tab
-    setTabs(prev => {
-      const updated = prev.map(t => t.id === activeTabId ? { ...t, sql: currentSql } : t);
-      return [...updated, newTab];
-    });
+    // Save current active tab SQL first if not action menu tab, then add the new tab
+    if (activeTabId !== ACTION_MENU_TAB_ID) {
+      setTabs(prev => {
+        const updated = prev.map(t => t.id === activeTabId ? { ...t, sql: currentSql } : t);
+        return [...updated, newTab];
+      });
+    } else {
+      setTabs(prev => [...prev, newTab]);
+    }
 
     setActiveTabId(newId);
     sqlRef.current = '';
@@ -2852,6 +3028,7 @@ export default function App() {
   }, [tabToClosePendingConfirm]);
 
   const confirmCloseTab = (idToClose: string) => {
+    if (idToClose === ACTION_MENU_TAB_ID) return;
     const nextTabs = tabs.filter(t => t.id !== idToClose);
     if (activeTabId === idToClose) {
       const closedIndex = tabs.findIndex(t => t.id === idToClose);
@@ -2863,10 +3040,12 @@ export default function App() {
     }
     setTabs(nextTabs);
     setTabToClosePendingConfirm(null);
+    removeTabResult(idToClose).catch(console.error);
   };
 
   const handleCloseTab = (e: React.MouseEvent, idToClose: string) => {
     e.stopPropagation();
+    if (idToClose === ACTION_MENU_TAB_ID) return;
     if (tabs.length <= 1) return;
 
     const tabToClose = tabs.find(t => t.id === idToClose);
@@ -2879,11 +3058,13 @@ export default function App() {
   };
 
   const handleRenameTab = (id: string, newTitle: string) => {
+    if (id === ACTION_MENU_TAB_ID) return;
     setTabs(prev => prev.map(t => t.id === id ? { ...t, title: newTitle } : t));
   };
   const sqlEditorRef = useRef<SqlEditorRef>(null);
 
   const handleSqlChange = useCallback((newSql: string) => {
+    if (activeTabId === ACTION_MENU_TAB_ID) return;
     sqlRef.current = newSql;
     setTabs(prev => prev.map(t => {
       if (t.id === activeTabId) {
@@ -2895,10 +3076,11 @@ export default function App() {
     }));
   }, [activeTabId]);
 
-  // Auto-save version into IndexedDB every 10 minutes if current tab SQL differs from the existing latest snapshot
+  // Auto-save version into IndexedDB every 10 minutes if current tab SQL differs from the existing latest snapshot (ignores action menu tab)
   useEffect(() => {
     const INTERVAL_10_MIN = 10 * 60 * 1000;
     const intervalId = setInterval(async () => {
+      if (activeTabId === ACTION_MENU_TAB_ID) return;
       const currentSql = sqlRef.current;
       if (!currentSql.trim()) return;
 
@@ -2915,7 +3097,7 @@ export default function App() {
     }, INTERVAL_10_MIN);
 
     return () => clearInterval(intervalId);
-  }, [activeEngine]);
+  }, [activeEngine, activeTabId]);
 
   const openWithTauriAndDelegate = async (delegateFn: (e: any) => void) => {
     try {
@@ -2969,7 +3151,9 @@ export default function App() {
           };
           const currentSql = sqlRef.current;
           setTabs(prev => {
-            const updated = prev.map(t => t.id === activeTabId ? { ...t, sql: currentSql } : t);
+            const updated = activeTabId === ACTION_MENU_TAB_ID
+              ? prev
+              : prev.map(t => t.id === activeTabId ? { ...t, sql: currentSql } : t);
             return [...updated, newTab];
           });
           setActiveTabId(newId);
@@ -3005,7 +3189,9 @@ export default function App() {
           };
           const currentSql = sqlRef.current;
           setTabs(prev => {
-            const updated = prev.map(t => t.id === activeTabId ? { ...t, sql: currentSql } : t);
+            const updated = activeTabId === ACTION_MENU_TAB_ID
+              ? prev
+              : prev.map(t => t.id === activeTabId ? { ...t, sql: currentSql } : t);
             return [...updated, newTab];
           });
           setActiveTabId(newId);
@@ -3163,11 +3349,32 @@ export default function App() {
   };
 
   const handleInsertSnippet = (snippetSql: string, replaceMode?: boolean) => {
-    const currentSql = sqlRef.current || '';
+    let targetTabId = activeTabId;
+    if (targetTabId === ACTION_MENU_TAB_ID) {
+      if (tabs.length > 0) {
+        targetTabId = tabs[0].id;
+        setActiveTabId(targetTabId);
+      } else {
+        const newId = `tab_${Date.now()}`;
+        const newTab: EditorTab = {
+          id: newId,
+          title: 'Запрос 1',
+          sql: snippetSql,
+          isModified: false,
+        };
+        setTabs([newTab]);
+        setActiveTabId(newId);
+        sqlRef.current = snippetSql;
+        return;
+      }
+    }
+
+    const currentTab = tabs.find(t => t.id === targetTabId);
+    const currentSql = currentTab ? currentTab.sql : '';
     const newSql = (replaceMode || !currentSql.trim()) ? snippetSql : (currentSql + '\n\n' + snippetSql);
     sqlRef.current = newSql;
     setTabs(prev => prev.map(t => {
-      if (t.id === activeTabId) {
+      if (t.id === targetTabId) {
         return {
           ...t,
           sql: newSql,
@@ -3604,6 +3811,27 @@ export default function App() {
         cleanupTasks.push(() => {
           htmlEl.style.backgroundColor = origBg;
           htmlEl.style.color = origColor;
+        });
+      });
+
+      // 6. Inlining computed SVG polygon / path styles for Mermaid nodes to ensure accurate colors on export
+      const nodeSvgElements = viewportElement.querySelectorAll('.react-flow__node svg polygon, .react-flow__node svg path');
+      nodeSvgElements.forEach((el) => {
+        const svgEl = el as HTMLElement;
+        const computed = window.getComputedStyle(svgEl);
+        const origFill = el.getAttribute('fill');
+        const origStroke = el.getAttribute('stroke');
+
+        if (computed.fill && computed.fill !== 'none' && computed.fill !== 'rgba(0, 0, 0, 0)') {
+          el.setAttribute('fill', computed.fill);
+        }
+        if (computed.stroke && computed.stroke !== 'none' && computed.stroke !== 'rgba(0, 0, 0, 0)') {
+          el.setAttribute('stroke', computed.stroke);
+        }
+
+        cleanupTasks.push(() => {
+          if (origFill !== null) el.setAttribute('fill', origFill); else el.removeAttribute('fill');
+          if (origStroke !== null) el.setAttribute('stroke', origStroke); else el.removeAttribute('stroke');
         });
       });
 
@@ -4169,6 +4397,8 @@ export default function App() {
           acted = true;
         } else if (currentShowSnippetsModal) {
           currentSetShowSnippetsModal(false);
+          setSnippetsModalCategory(undefined);
+          setSnippetsModalEditId(undefined);
           acted = true;
         } else if (currentShowHistoryModal) {
           currentSetShowHistoryModal(false);
@@ -4243,6 +4473,54 @@ export default function App() {
     setAstResult(result.ast);
   };
 
+  const handleVisualizeMermaid = (
+    queryText = sqlRef.current,
+    currentDir = direction
+  ) => {
+    if (queryText === sqlRef.current) {
+      const textareas = document.querySelectorAll('textarea');
+      for (const textarea of Array.from(textareas)) {
+        if (textarea.offsetWidth > 0 && textarea.offsetHeight > 0 && textarea.selectionStart !== textarea.selectionEnd) {
+          queryText = textarea.value.substring(textarea.selectionStart, textarea.selectionEnd);
+          break;
+        }
+      }
+    }
+
+    if (!queryText.trim()) {
+      setError(null);
+      setAstResult(null);
+      setNodes([]);
+      setEdges([]);
+      setSelectedNode(null);
+      return;
+    }
+
+    try {
+      const result = parseMermaidToGraph(queryText, currentDir);
+      if (result.error) {
+        setError(result.error);
+        return;
+      }
+
+      if (result.direction && (result.direction === 'LR' || result.direction === 'TB')) {
+        setDirection(result.direction);
+      }
+
+      setError(null);
+      setAstResult(null);
+      setNodes(result.nodes);
+      setEdges(result.edges);
+      if (result.nodes.length > 0) {
+        setSelectedNode(result.nodes[0]);
+      } else {
+        setSelectedNode(null);
+      }
+    } catch (err: any) {
+      setError(`Mermaid parse error: ${err?.message || String(err)}`);
+    }
+  };
+
     useEffect(() => {
     if (astResult) {
       try {
@@ -4302,9 +4580,14 @@ export default function App() {
   const handleDirectionChange = (newDir: 'LR' | 'TB') => {
     setDirection(newDir);
     if (nodes.length > 0) {
-      const layouted = getLayoutedElements(nodes, edges, newDir);
-      setNodes(layouted.nodes);
-      setEdges(layouted.edges);
+      const isMermaid = nodes.some(n => n.type === 'mermaidNode' || n.type === 'mermaidGroupNode');
+      if (isMermaid) {
+        handleVisualizeMermaid(undefined, newDir);
+      } else {
+        const layouted = getLayoutedElements(nodes, edges, newDir);
+        setNodes(layouted.nodes);
+        setEdges(layouted.edges);
+      }
     }
   };
 
@@ -4315,31 +4598,75 @@ export default function App() {
   };
 
   const handleCopyResultsToClipboard = () => {
+    const triggerCopied = () => {
+      setCopied('tsv');
+      setTimeout(() => setCopied(false), 2000);
+    };
+
     if (duckDbError) {
-      navigator.clipboard.writeText(duckDbError);
-    } else {
-      const rowsToCopy = displayedResults && displayedResults.length > 0 ? displayedResults : pagedResults;
-      if (rowsToCopy && rowsToCopy.length > 0) {
-        if (isTransposed) {
-          const headers = ['Поле \\ №', ...rowsToCopy.map((_, i) => `#${(duckDbPage - 1) * (uiVisibility.duckDbMaxRows || 100) + i + 1}`)];
-          const rows = Object.keys(rowsToCopy[0]).map(colKey => [
-            colKey,
-            ...rowsToCopy.map(r => r[colKey] === null ? 'null' : String(r[colKey]))
-          ]);
-          const csv = [headers.join('\t'), ...rows.map(r => r.join('\t'))].join('\n');
-          navigator.clipboard.writeText(csv);
-        } else {
-          const headers = ['#', ...Object.keys(rowsToCopy[0])];
-          const rows = rowsToCopy.map((r, i) => [
-            (duckDbPage - 1) * (uiVisibility.duckDbMaxRows || 100) + i + 1,
-            ...Object.values(r).map(v => v === null ? 'null' : String(v))
-          ]);
-          const csv = [headers.join('\t'), ...rows.map(r => r.join('\t'))].join('\n');
-          navigator.clipboard.writeText(csv);
-        }
-        setCopied('tsv');
-        setTimeout(() => setCopied(false), 2000);
+      navigator.clipboard.writeText(duckDbError)
+        .then(triggerCopied)
+        .catch(() => {
+          try {
+            navigator.clipboard.writeText(duckDbError);
+            triggerCopied();
+          } catch (e) {
+            console.error('Failed to copy error to clipboard:', e);
+          }
+        });
+      return;
+    }
+
+    const rowsToCopy = displayedResults && displayedResults.length > 0 ? displayedResults : pagedResults;
+    if (rowsToCopy && rowsToCopy.length > 0) {
+      let csv = '';
+      if (isTransposed) {
+        const headers = ['Поле \\ №', ...rowsToCopy.map((_, i) => `#${(duckDbPage - 1) * (uiVisibility.duckDbMaxRows || 100) + i + 1}`)];
+        const rows = Object.keys(rowsToCopy[0]).map(colKey => [
+          colKey,
+          ...rowsToCopy.map(r => r[colKey] === null ? 'null' : String(r[colKey]))
+        ]);
+        csv = [headers.join('\t'), ...rows.map(r => r.join('\t'))].join('\n');
+      } else {
+        const headers = ['#', ...Object.keys(rowsToCopy[0])];
+        const rows = rowsToCopy.map((r, i) => [
+          (duckDbPage - 1) * (uiVisibility.duckDbMaxRows || 100) + i + 1,
+          ...Object.values(r).map(v => v === null ? 'null' : String(v))
+        ]);
+        csv = [headers.join('\t'), ...rows.map(r => r.join('\t'))].join('\n');
       }
+      navigator.clipboard.writeText(csv)
+        .then(triggerCopied)
+        .catch(() => {
+          try {
+            navigator.clipboard.writeText(csv);
+            triggerCopied();
+          } catch (e) {
+            console.error('Failed to copy results to clipboard:', e);
+          }
+        });
+    } else if (duckDbResults && duckDbResults.length > 0) {
+      const cols = Object.keys(duckDbResults[0]);
+      const csv = ['#', ...cols].join('\t');
+      navigator.clipboard.writeText(csv)
+        .then(triggerCopied)
+        .catch(() => {
+          try {
+            navigator.clipboard.writeText(csv);
+            triggerCopied();
+          } catch (e) {}
+        });
+    } else if (Object.keys(resultColumnTypes).length > 0) {
+      const cols = Object.keys(resultColumnTypes);
+      const csv = ['#', ...cols].join('\t');
+      navigator.clipboard.writeText(csv)
+        .then(triggerCopied)
+        .catch(() => {
+          try {
+            navigator.clipboard.writeText(csv);
+            triggerCopied();
+          } catch (e) {}
+        });
     }
   };
 
@@ -4670,22 +4997,37 @@ export default function App() {
                 return `${prefix}${singleLine}`;
               }
 
+              const useLeading = Boolean(cfg.leadingCommas);
               const packedLines: string[] = [];
               let current = '';
               const itemIndent = matchIndent + indent;
 
               for (let i = 0; i < items.length; i++) {
                 const item = items[i];
-                const isLast = i === items.length - 1;
-                const itemWithComma = item + (isLast ? '' : ',');
-
-                if (!current) {
-                  current = itemWithComma;
-                } else if ((itemIndent + current + ' ' + itemWithComma).length <= maxWidth) {
-                  current += ' ' + itemWithComma;
+                if (useLeading) {
+                  if (i === 0) {
+                    current = item;
+                  } else {
+                    const candidateSameLine = current + ', ' + item;
+                    if ((itemIndent + candidateSameLine).length <= maxWidth) {
+                      current = candidateSameLine;
+                    } else {
+                      packedLines.push(current);
+                      current = ', ' + item;
+                    }
+                  }
                 } else {
-                  packedLines.push(current);
-                  current = itemWithComma;
+                  const isLast = i === items.length - 1;
+                  const itemWithComma = item + (isLast ? '' : ',');
+
+                  if (!current) {
+                    current = itemWithComma;
+                  } else if ((itemIndent + current + ' ' + itemWithComma).length <= maxWidth) {
+                    current += ' ' + itemWithComma;
+                  } else {
+                    packedLines.push(current);
+                    current = itemWithComma;
+                  }
                 }
               }
               if (current) packedLines.push(current);
@@ -4727,6 +5069,7 @@ export default function App() {
 
               const hasCommentChunks = chunks.some((c) => c.type === 'comment');
               const formattedLines: string[] = [];
+              const allProcessedItems: string[] = [];
 
               for (const chunk of chunks) {
                 if (chunk.type === 'comment') {
@@ -4742,23 +5085,40 @@ export default function App() {
                     }
                     return item.trim();
                   });
+                  allProcessedItems.push(...processedItems);
 
+                  const useLeading = Boolean(cfg.leadingCommas);
                   let currentLine = `${baseIndent}${indent}`;
                   let firstInChunk = true;
 
                   for (let i = 0; i < processedItems.length; i++) {
                     const item = processedItems[i];
-                    const isLast = i === processedItems.length - 1;
-                    const itemWithComma = item + (isLast ? '' : ',');
-
-                    if (firstInChunk) {
-                      currentLine += itemWithComma;
-                      firstInChunk = false;
-                    } else if ((currentLine + ' ' + itemWithComma).length <= maxWidth) {
-                      currentLine += ' ' + itemWithComma;
+                    if (useLeading) {
+                      if (firstInChunk) {
+                        currentLine += item;
+                        firstInChunk = false;
+                      } else {
+                        const candidateSameLine = currentLine + ', ' + item;
+                        if (candidateSameLine.length <= maxWidth) {
+                          currentLine = candidateSameLine;
+                        } else {
+                          formattedLines.push(currentLine);
+                          currentLine = `${baseIndent}${indent}, ${item}`;
+                        }
+                      }
                     } else {
-                      formattedLines.push(currentLine);
-                      currentLine = `${baseIndent}${indent}${itemWithComma}`;
+                      const isLast = i === processedItems.length - 1;
+                      const itemWithComma = item + (isLast ? '' : ',');
+
+                      if (firstInChunk) {
+                        currentLine += itemWithComma;
+                        firstInChunk = false;
+                      } else if ((currentLine + ' ' + itemWithComma).length <= maxWidth) {
+                        currentLine += ' ' + itemWithComma;
+                      } else {
+                        formattedLines.push(currentLine);
+                        currentLine = `${baseIndent}${indent}${itemWithComma}`;
+                      }
                     }
                   }
                   if (currentLine.trim()) {
@@ -4769,10 +5129,8 @@ export default function App() {
 
               if (formattedLines.length === 0) return match;
 
-              if (!hasCommentChunks) {
-                const singleLine = `${baseIndent}${keyword} ${formattedLines
-                  .map((l) => l.trim())
-                  .join(' ')}`;
+              if (!hasCommentChunks && allProcessedItems.length > 0) {
+                const singleLine = `${baseIndent}${keyword} ${allProcessedItems.join(', ')}`;
                 if (singleLine.length <= maxWidth) {
                   return prefix + singleLine;
                 }
@@ -4791,6 +5149,9 @@ export default function App() {
   };
 
   const handleFormatSql = () => {
+    setIsFormatted(true);
+    setTimeout(() => setIsFormatted(false), 1500);
+
     const sel = sqlEditorRef.current?.getSelection();
 
     if (sel && sel.text.trim()) {
@@ -4835,6 +5196,9 @@ export default function App() {
   };
 
   const handleCompactSql = () => {
+    setIsCompacted(true);
+    setTimeout(() => setIsCompacted(false), 1500);
+
     const sel = sqlEditorRef.current?.getSelection();
     if (sel && sel.text) {
       const compacted = compactSql(sel.text);
@@ -4876,11 +5240,14 @@ export default function App() {
             theme === 'dark' ? 'bg-slate-750 border-slate-600' : 'bg-slate-200/80 border-slate-400/60'
           }`}>
             <div className="flex items-center gap-2 max-w-[240px] truncate">
-              <h3 className={`font-bold text-sm truncate ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>
+              <h3 
+                onClick={() => setIsMaximizedSql(true)}
+                className={`font-bold text-sm truncate shrink-0 ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}
+              >
                 SQL Query
               </h3>
             </div>
-              <div className="flex flex-wrap items-center gap-1.5 relative">
+              <div className="flex flex-nowrap items-center gap-1.5 relative">
                 {/* HIDDEN FILE INPUT FOR OPEN SQL FILE */}
                 <input 
                   type="file" 
@@ -4964,13 +5331,30 @@ export default function App() {
           <div className="flex-1 flex flex-col p-3 space-y-3 min-h-0 overflow-y-auto">
             {/* CODE EDITOR WORKSPACE */}
             <div className="flex-1 flex flex-col min-h-0 relative">
-              {/* SYNTAX HIGHLIGHTED SQL EDITOR */}
+              {/* SYNTAX HIGHLIGHTED SQL EDITOR OR ACTION MENU */}
               <ErrorBoundary title="Ошибка редактора SQL" theme={theme}>
                 {!isTabsLoaded ? (
                   <div className="flex-1 flex flex-col items-center justify-center p-8 space-y-3">
                     <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
                     <span className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>Загрузка сессии...</span>
                   </div>
+                ) : activeTabId === ACTION_MENU_TAB_ID ? (
+                  <ActionMenuTabContent
+                    theme={theme}
+                    activeEngine={activeEngine}
+                    isDuckDbRunning={isDuckDbRunning}
+                    onExecuteSql={(sqlToExec, dialect, isSeq) => {
+                      handleExecuteCurrentEngineQuery(sqlToExec, 1, undefined, false, isSeq ? 'sequential' : undefined);
+                    }}
+                    onOpenSnippetsManager={(cat, snippetId) => {
+                      setSnippetsModalCategory(cat || ACTION_MENU_CATEGORY);
+                      if (snippetId) setSnippetsModalEditId(snippetId);
+                      setShowSnippetsModal(true);
+                    }}
+                    onInsertIntoEditor={(sqlToInsert) => {
+                      handleInsertSnippet(sqlToInsert);
+                    }}
+                  />
                 ) : !isMaximizedSql ? (
                   <SqlEditor editorRef={sqlEditorRef}
                     value={getActiveTabSql()}
@@ -5096,7 +5480,11 @@ export default function App() {
               }`}
               title="Форматировать SQL (Ctrl+Shift+F)"
             >
-              <AlignLeft className="w-3 h-3" />
+              {isFormatted ? (
+                <Check className="w-3 h-3 text-emerald-500" />
+              ) : (
+                <AlignLeft className="w-3 h-3" />
+              )}
               <span>Формат</span>
             </button>
             )}
@@ -5110,7 +5498,11 @@ export default function App() {
               }`}
               title="Формат в одну строку"
             >
-              <Shrink className="w-3.5 h-3.5" />
+              {isCompacted ? (
+                <Check className="w-3.5 h-3.5 text-emerald-500" />
+              ) : (
+                <Shrink className="w-3.5 h-3.5" />
+              )}
             </button>
             )}
 
@@ -5135,13 +5527,19 @@ export default function App() {
             </button>
             )}
 
-            <button
-              onClick={() => handleVisualize()}
-              className="flex-1 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-md shadow-md shadow-blue-900/20 active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5"
-            >
-              <Play className="w-3 h-3 fill-current" />
-              <span>Visualize</span>
-            </button>
+            <div className="ml-auto flex items-center gap-1.5 shrink-0">
+              {uiVisibility.showMermaidIntegration !== false && (
+                <MermaidActionGroup theme={theme} onVisualize={() => handleVisualizeMermaid()} />
+              )}
+
+              <button
+                onClick={() => handleVisualize()}
+                className="px-3 py-1.5 shrink-0 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-md shadow-md shadow-blue-900/20 active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5"
+              >
+                <Play className="w-3 h-3 fill-current" />
+                <span>Visualize</span>
+              </button>
+            </div>
           </div>
           </div>
         </aside>
@@ -5193,7 +5591,7 @@ export default function App() {
               <>
                 <div className={`h-4 w-px ${theme === 'dark' ? 'bg-slate-600' : 'bg-slate-300'}`} />
 
-                <div className={`flex p-0.5 rounded-md border ${
+                <div className={`flex p-0.5 rounded-md border text-sm truncate ${
                   theme === 'dark' ? 'bg-slate-850 border-slate-600' : 'bg-slate-100 border-slate-300 shadow-sm'
                 }`}>
                   {uiVisibility.showSortLimitToggle && (
@@ -5555,6 +5953,8 @@ export default function App() {
                       if (n.type === 'tableNode') return theme === 'dark' ? '#3b82f6' : '#2563eb';
                       if (n.type === 'resultNode') return theme === 'dark' ? '#10b981' : '#059669';
                       if (n.type === 'filterNode') return theme === 'dark' ? '#f59e0b' : '#d97706';
+                      if (n.type === 'mermaidNode') return theme === 'dark' ? '#0d9488' : '#14b8a6';
+                      if (n.type === 'mermaidGroupNode') return 'transparent';
                       return theme === 'dark' ? '#475569' : '#94a3b8';
                     }}
                     maskColor={theme === 'dark' ? 'rgba(15, 23, 42, 0.7)' : 'rgba(226, 232, 240, 0.6)'}
@@ -5567,7 +5967,10 @@ export default function App() {
                   <Database className="w-6 h-6" />
                 </div>
                 <div className={`text-xs max-w-xs leading-normal ${theme === 'dark' ? 'text-slate-300' : 'text-slate-600'}`}>
-                  Введите SQL-запрос в редактор слева и нажмите <strong className={theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}>Visualize</strong> для построения интерактивного логического графа.
+                  Введите SQL-запрос в редактор слева и нажмите <strong className={theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}>Visualize</strong> для построения логического графа.
+                </div>
+                <div className={`text-xs max-w-xs leading-normal italic ${theme === 'dark' ? 'text-slate-300' : 'text-slate-600'}`}>
+                  Поддерживается построение произвольных диаграмм (<strong className={theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}>Mermaid</strong> синтаксис).
                 </div>
               </div>
             )}
@@ -5744,7 +6147,36 @@ export default function App() {
                         }`}>
                           <code>{selectedNode.data.details}</code>
                         </div>
-                        
+                      </div>
+                    )}
+
+                    {selectedNode.type === 'mermaidNode' && (
+                      <div className="space-y-1">
+                        <div>
+                          <span className={theme === 'dark' ? 'text-slate-300' : 'text-slate-600'}>Shape:</span>{' '}
+                          <span className="text-teal-500 font-bold">{selectedNode.data.shape || 'rectangle'}</span>
+                        </div>
+                        {selectedNode.data.subgraph && (
+                          <div>
+                            <span className={theme === 'dark' ? 'text-slate-300' : 'text-slate-600'}>Subgraph:</span>{' '}
+                            <span className="text-blue-400 font-semibold">{selectedNode.data.subgraph}</span>
+                          </div>
+                        )}
+                        {selectedNode.data.classes && selectedNode.data.classes.length > 0 && (
+                          <div>
+                            <span className={theme === 'dark' ? 'text-slate-300' : 'text-slate-600'}>Classes:</span>{' '}
+                            <span className="text-purple-400 font-mono">{selectedNode.data.classes.join(', ')}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {selectedNode.type === 'mermaidGroupNode' && (
+                      <div className="space-y-1">
+                        <div>
+                          <span className={theme === 'dark' ? 'text-slate-300' : 'text-slate-600'}>Group:</span>{' '}
+                          <span className="text-indigo-400 font-bold">{selectedNode.data.label || 'Subgraph'}</span>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -5776,9 +6208,12 @@ export default function App() {
             <div className={`flex flex-nowrap items-center justify-between gap-2 px-4 h-[38px] border-b shrink-0 ${
               theme === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-slate-200/90 border-slate-300'
             }`}>
-              <div className="flex items-center gap-2.5">
-                <Code className="w-4 h-4 text-blue-500" />
-                <h3 className={`font-bold text-sm ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>
+              <div 
+                onClick={() => setIsMaximizedSql(false)}
+                className="flex items-center gap-2.5"
+              >
+                <Search className="w-3.5 h-3.5 text-blue-500" />
+                <h3 className={`font-bold text-sm truncate ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>
                   Query Editor
                 </h3>
               </div>
@@ -5795,7 +6230,6 @@ export default function App() {
                   title="Открыть SQL файл с диска (UTF-8)"
                 >
                   <FolderOpen className="w-3.5 h-3.5 text-amber-500" />
-                  <span>Открыть</span>
                 </button>
                 )}
 
@@ -5810,7 +6244,6 @@ export default function App() {
                   title="Сохранить SQL в .sql файл"
                 >
                   <FileDown className="w-3.5 h-3.5 text-emerald-500" />
-                  <span>Сохранить</span>
                 </button>
                 )}
 
@@ -5876,7 +6309,7 @@ export default function App() {
                   <div className="relative">
                     <button
                       onClick={() => setShowDuckDbConnMenu(!showDuckDbConnMenu)}
-                    className={`flex items-center gap-1 text-xs px-2.5 h-[26px] rounded font-semibold transition-colors ${
+                    className={`flex items-center gap-1 text-xs px-2.5 h-[26px] rounded font-semibold transition-colors text-sm truncate ${
                       clickhouseConfig
                         ? theme === 'dark' 
                           ? 'text-amber-300 hover:text-amber-100 bg-amber-950/40 hover:bg-amber-900/60 border border-amber-500/30' 
@@ -6115,9 +6548,29 @@ export default function App() {
               {/* LEFT COLUMN: TAB BAR & EDITOR */}
               <div className="flex-1 flex flex-col min-h-0 min-w-0 relative">
                 {/* TAB BAR (Fullscreen Only) */}
-                <div className={`flex items-end gap-1.5 pl-0 pr-3 h-[37px] border-b overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden shrink-0 select-none ${
+                <div className={`flex items-end gap-1 pl-0 pr-3 h-[37px] border-b overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden shrink-0 select-none ${
                   theme === 'dark' ? 'bg-slate-800/90 border-slate-700' : 'bg-slate-200/60 border-slate-300'
                 }`}>
+                  {/* STATIC ACTION MENU TAB BUTTON */}
+                  <div
+                    onClick={() => handleSelectTab(ACTION_MENU_TAB_ID)}
+                    className={`group flex items-center justify-end w-[35.5px] py-1.5 pr-2 rounded-tr-lg border-t border-r cursor-pointer transition-all shrink-0 select-none ${
+                      activeTabId === ACTION_MENU_TAB_ID
+                        ? theme === 'dark'
+                          ? 'bg-slate-850 border-slate-700 text-amber-400 font-semibold shadow-2xs'
+                          : 'bg-white border-slate-300 text-amber-600 font-semibold shadow-2xs'
+                        : theme === 'dark'
+                          ? 'bg-slate-800/40 border-transparent text-slate-400 font-semibold hover:text-slate-200 hover:bg-slate-750'
+                          : 'bg-slate-200/40 border-transparent text-slate-600 font-semibold hover:text-slate-900 hover:bg-slate-200/80'
+                    }`}
+                    title="Меню действий и no-code пайплайнов"
+                  >
+                    <Code 
+                      className="w-4 h-4 shrink-0 opacity-80" 
+                      strokeWidth={activeTabId === ACTION_MENU_TAB_ID ? 3 : 2}
+                    />
+                  </div>
+
                   {tabs.map((tab) => {
                     const isActive = tab.id === activeTabId;
                     return (
@@ -6181,14 +6634,14 @@ export default function App() {
                   {tabs.length < 9 && (
                     <button
                       onClick={handleAddTab}
-                      className={`p-1 rounded-md self-end mb-1 text-xs transition-colors shrink-0 ${
+                      className={`flex items-center justify-center w-8 py-1.5 rounded-t-lg border-t border-x transition-colors shrink-0 cursor-pointer ${
                         theme === 'dark'
-                          ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-750'
-                          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-300/80'
+                          ? 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-750'
+                          : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/80'
                       }`}
                       title="Новая вкладка"
                     >
-                      <Plus className="w-4 h-4" />
+                      <Plus className="w-4 h-4 opacity-70" />
                     </button>
                   )}
                 </div>
@@ -6200,6 +6653,23 @@ export default function App() {
                       <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
                       <span className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>Загрузка SQL сессии...</span>
                     </div>
+                  ) : activeTabId === ACTION_MENU_TAB_ID ? (
+                    <ActionMenuTabContent
+                      theme={theme}
+                      activeEngine={activeEngine}
+                      isDuckDbRunning={isDuckDbRunning}
+                      onExecuteSql={(sqlToExec, dialect, isSeq) => {
+                        handleExecuteCurrentEngineQuery(sqlToExec, 1, undefined, false, isSeq ? 'sequential' : undefined);
+                      }}
+                      onOpenSnippetsManager={(cat, snippetId) => {
+                        setSnippetsModalCategory(cat || ACTION_MENU_CATEGORY);
+                        if (snippetId) setSnippetsModalEditId(snippetId);
+                        setShowSnippetsModal(true);
+                      }}
+                      onInsertIntoEditor={(sqlToInsert) => {
+                        handleInsertSnippet(sqlToInsert);
+                      }}
+                    />
                   ) : (
                     <ErrorBoundary title="Ошибка редактора SQL" theme={theme}>
                       <SqlEditor editorRef={sqlEditorRef}
@@ -6604,17 +7074,26 @@ export default function App() {
                                                                 }}
                                                                 style={{ WebkitUserDrag: 'element' } as React.CSSProperties}
                                                                 className={`cursor-pointer text-[10px] flex items-center justify-between gap-2 px-1.5 py-0.5 rounded transition-colors ${theme === 'dark' ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-200'}`}
-                                                                onClick={() => navigator.clipboard.writeText(col.column_name)}
+                                                                onClick={() => {
+                                                                  const colKey = `${dbName}.${schemaName}.${tableName}.${col.column_name}`;
+                                                                  navigator.clipboard.writeText(col.column_name);
+                                                                  setCopiedSchemaCol(colKey);
+                                                                  setTimeout(() => setCopiedSchemaCol(null), 1500);
+                                                                }}
                                                                 title={`${col.column_name} (${col.data_type})\nНажмите или перетащите для вставки`}
                                                               >
                                                                 <span className="font-mono truncate min-w-0 flex-1" title={col.column_name}>{col.column_name}</span>
-                                                                <span className="text-[9px] opacity-60 shrink-0 font-mono max-w-[120px] truncate text-right" title={col.data_type}>
-                                                                  {/^Enum(8|16)?\s*\(/i.test(col.data_type || '') 
-                                                                    ? ((col.data_type || '').match(/^(Enum(?:8|16)?)/i)?.[1] || 'Enum') + '(...)' 
-                                                                    : (col.data_type || '').length > 22 
-                                                                      ? (col.data_type || '').slice(0, 20) + '…' 
-                                                                      : col.data_type}
-                                                                </span>
+                                                                {copiedSchemaCol === `${dbName}.${schemaName}.${tableName}.${col.column_name}` ? (
+                                                                  <Check className="w-3 h-3 text-emerald-500 shrink-0" />
+                                                                ) : (
+                                                                  <span className="text-[9px] opacity-60 shrink-0 font-mono max-w-[120px] truncate text-right" title={col.data_type}>
+                                                                    {/^Enum(8|16)?\s*\(/i.test(col.data_type || '') 
+                                                                      ? ((col.data_type || '').match(/^(Enum(?:8|16)?)/i)?.[1] || 'Enum') + '(...)' 
+                                                                      : (col.data_type || '').length > 22 
+                                                                        ? (col.data_type || '').slice(0, 20) + '…' 
+                                                                        : col.data_type}
+                                                                  </span>
+                                                                )}
                                                               </div>
                                                             ))
                                                           ) : (
@@ -6925,7 +7404,7 @@ export default function App() {
                     )}
                   </div>
 
-                  <div className="flex items-center gap-1 shrink-0">
+                  <div className="flex items-center gap-1 shrink-0 ml-auto">
                     {/* CANCEL QUERY BUTTON */}
                     {isDuckDbRunning && (
                       <button
@@ -7360,6 +7839,7 @@ export default function App() {
                           <tbody>
                             {displayedResults.length > 0 && Object.keys(displayedResults[0]).map((colKey) => {
                               const isColSelected = selectedResultCell?.colKey === colKey;
+                              const isColCopied = copiedResultCell?.rowIndex === -1 && copiedResultCell?.colKey === colKey;
                               return (
                                 <tr key={colKey}>
                                   <td 
@@ -7383,16 +7863,22 @@ export default function App() {
                                   >
                                     <div className="flex items-center justify-between gap-1">
                                       <span className="truncate">{colKey}</span>
-                                      {activeSqlSorts.find(s => s.colKey === colKey) && (
-                                        <span className="text-[10px] text-blue-400 font-bold shrink-0">
-                                          {activeSqlSorts.find(s => s.colKey === colKey)?.dir === 'ASC' ? '▲' : '▼'}
-                                        </span>
-                                      )}
+                                      <div className="flex items-center gap-1 shrink-0">
+                                        {isColCopied && (
+                                          <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                                        )}
+                                        {activeSqlSorts.find(s => s.colKey === colKey) && (
+                                          <span className="text-[10px] text-blue-400 font-bold shrink-0">
+                                            {activeSqlSorts.find(s => s.colKey === colKey)?.dir === 'ASC' ? '▲' : '▼'}
+                                          </span>
+                                        )}
+                                      </div>
                                     </div>
                                   </td>
                                   {displayedResults.map((row, i) => {
                                     const val = row[colKey];
                                     const isCellSelected = selectedResultCell?.rowIndex === i && selectedResultCell?.colKey === colKey;
+                                    const isCellCopied = copiedResultCell?.rowIndex === i && copiedResultCell?.colKey === colKey;
                                     const isRowSelected = selectedResultCell?.rowIndex === i;
 
                                     let cellClasses = 'px-3 py-1.5 whitespace-nowrap overflow-hidden text-ellipsis max-w-[288px] cursor-pointer border-r border-b ';
@@ -7423,7 +7909,12 @@ export default function App() {
                                           setResultTableContextMenu({ x: e.clientX, y: e.clientY, colKey, cellValue: val, rowIndex: i });
                                         }}
                                       >
-                                        {displayVal === null ? <span className="opacity-50 italic">null</span> : displayVal}
+                                        <div className="flex items-center justify-between gap-1 w-full overflow-hidden">
+                                          <span className="truncate">{displayVal === null ? <span className="opacity-50 italic">null</span> : displayVal}</span>
+                                          {isCellCopied && (
+                                            <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0 inline-block" />
+                                          )}
+                                        </div>
                                       </td>
                                     );
                                   })}
@@ -7443,6 +7934,7 @@ export default function App() {
                               </th>
                               {Object.keys(duckDbResults[0]).map((col) => {
                                 const isColSelected = selectedResultCell?.colKey === col;
+                                const isColCopied = copiedResultCell?.rowIndex === -1 && copiedResultCell?.colKey === col;
                                 const sortInfo = activeSqlSorts.find(s => s.colKey === col);
                                 const isFiltered = activeSqlFilters.some(f => f.colKey === col);
                                 const customWidth = columnWidths[col];
@@ -7475,6 +7967,9 @@ export default function App() {
                                     <div className="flex items-center justify-between gap-1">
                                       <span className="truncate">{col}</span>
                                       <div className="flex items-center gap-0.5 shrink-0">
+                                        {isColCopied && (
+                                          <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                                        )}
                                         {sortInfo && (
                                           <span className="text-[10px] text-blue-400 font-bold">
                                             {sortInfo.dir === 'ASC' ? '▲' : '▼'}
@@ -7518,6 +8013,7 @@ export default function App() {
                                   </td>
                                   {Object.entries(row).map(([colKey, val]: [string, any], j) => {
                                     const isCellSelected = selectedResultCell?.rowIndex === i && selectedResultCell?.colKey === colKey;
+                                    const isCellCopied = copiedResultCell?.rowIndex === i && copiedResultCell?.colKey === colKey;
                                     const isColSelected = selectedResultCell?.colKey === colKey;
                                     const customWidth = columnWidths[colKey];
 
@@ -7567,7 +8063,12 @@ export default function App() {
                                           });
                                         }}
                                       >
-                                        {displayVal === null ? <span className="opacity-50 italic">null</span> : displayVal}
+                                        <div className="flex items-center justify-between gap-1 w-full overflow-hidden">
+                                          <span className="truncate">{displayVal === null ? <span className="opacity-50 italic">null</span> : displayVal}</span>
+                                          {isCellCopied && (
+                                            <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0 inline-block" />
+                                          )}
+                                        </div>
                                       </td>
                                     );
                                   })}
@@ -7877,7 +8378,7 @@ export default function App() {
             <div className={`px-4 py-2 border-t flex flex-wrap items-center justify-between shrink-0 relative z-40 ${
               theme === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-slate-300/80 border-slate-400/60'
             }`}>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 {/* SETTINGS BUTTON */}
                 <button
                   onClick={() => setShowSettingsModal(true)}
@@ -7974,7 +8475,7 @@ export default function App() {
                   className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded transition-all ${
                     theme === 'dark' ? 'text-slate-300 hover:text-slate-100' : 'text-slate-700 hover:text-slate-900'
                   }`}
-                  title="Поиск и замена текста (Ctrl+F / Ctrl+H / Ctrl+R)"
+                  title="Поиск и замена текста (Ctrl+F / Ctrl+H)"
                 >
                   <Search className="w-3.5 h-3.5 text-blue-500" />
                   <span>Поиск</span>
@@ -8002,7 +8503,11 @@ export default function App() {
                   }`}
                   title="Форматировать SQL (Ctrl+Shift+F)"
                 >
-                  <AlignLeft className="w-3.5 h-3.5" />
+                  {isFormatted ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-500" />
+                  ) : (
+                    <AlignLeft className="w-3.5 h-3.5" />
+                  )}
                   <span>Форматировать</span>
                 </button>
                 )}
@@ -8013,9 +8518,13 @@ export default function App() {
                   className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded transition-all ${
                     theme === 'dark' ? 'text-slate-300 hover:text-slate-100' : 'text-slate-700 hover:text-slate-900'
                   }`}
-                  title="Формат в одну строку (Ctrl+Shift+U)"
+                  title="Формат в одну строку (Ctrl+Alt+M)"
                 >
-                  <Shrink className="w-3.5 h-3.5" />
+                  {isCompacted ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-500" />
+                  ) : (
+                    <Shrink className="w-3.5 h-3.5" />
+                  )}
                 </button>
                 )}
 
@@ -8047,7 +8556,7 @@ export default function App() {
                 )}
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 ml-auto">
                 {(uiVisibility.showDuckDbConfig || uiVisibility.showClickhouseConfig) && (duckDbResults !== null || duckDbError !== null) && !isDuckDbResultVisible && (
                   <button
                     onClick={() => setIsDuckDbResultVisible(true)}
@@ -8062,7 +8571,7 @@ export default function App() {
                     <span>Результат</span>
                   </button>
                 )}
-                {(uiVisibility.showDuckDbConfig || uiVisibility.showClickhouseConfig) && (
+                {(uiVisibility.showDuckDbConfig || uiVisibility.showClickhouseConfig) && activeTabId !== ACTION_MENU_TAB_ID && (
                 <button
                   onClick={handleExecuteDuckDb}
                   onContextMenu={(e) => {
@@ -8094,6 +8603,7 @@ export default function App() {
                   <span>Execute</span>
                 </button>
                 )}
+                {activeTabId !== ACTION_MENU_TAB_ID && (
                 <button
                   onClick={() => {
                     handleVisualize();
@@ -8104,6 +8614,7 @@ export default function App() {
                   <Play className="w-3.5 h-3.5 fill-current" />
                   <span>Visualize</span>
                 </button>
+                )}
               </div>
             </div>
           </div>
@@ -8113,10 +8624,16 @@ export default function App() {
       {/* SQL SNIPPETS & BUILDER MODAL */}
       <SqlSnippetsManager
         isOpen={showSnippetsModal}
-        onClose={() => setShowSnippetsModal(false)}
+        initialEditSnippetId={snippetsModalEditId}
+        onClose={() => {
+          setShowSnippetsModal(false);
+          setSnippetsModalCategory(undefined);
+          setSnippetsModalEditId(undefined);
+        }}
         onInsertSnippet={handleInsertSnippet}
         theme={theme}
         uiVisibility={uiVisibility}
+        initialCategory={snippetsModalCategory}
       />
 
       {/* SETTINGS & HOTKEYS MODAL */}

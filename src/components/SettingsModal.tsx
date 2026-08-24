@@ -59,6 +59,7 @@ export interface FormatterSettings {
   useTabs: boolean;
   expressionWidth: number;
   denseOperators: boolean;
+  leadingCommas?: boolean;
 }
 
 export interface UiVisibilitySettings {
@@ -76,6 +77,7 @@ export interface UiVisibilitySettings {
   showClickhouseConfig?: boolean;
   clickhouseMaxRows?: number;
   showExcelExport?: boolean;
+  showMermaidIntegration?: boolean;
   autoUpdateSchema?: boolean;
   showSearchSql?: boolean;
   showOpenFile: boolean;
@@ -122,6 +124,7 @@ export const DEFAULT_FORMATTER_SETTINGS: FormatterSettings = {
   useTabs: false,
   expressionWidth: 120,
   denseOperators: false,
+  leadingCommas: false,
 };
 
 export const DEFAULT_UI_VISIBILITY: UiVisibilitySettings = {
@@ -139,6 +142,7 @@ export const DEFAULT_UI_VISIBILITY: UiVisibilitySettings = {
   showClickhouseConfig: true,
   clickhouseMaxRows: 100,
   showExcelExport: true,
+  showMermaidIntegration: true,
   autoUpdateSchema: true,
   showSearchSql: true,
   showOpenFile: true,
@@ -922,7 +926,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         >
           <div className="flex items-center gap-3">
             <Settings className="w-5 h-5 text-blue-500" />
-            <div className={`flex gap-1 p-1 rounded-lg border transition-colors ${
+            <div className={`flex flex-wrap gap-1 p-1 rounded-lg border transition-colors ${
               theme === 'dark'
                 ? 'bg-slate-900/40 border-slate-700/50'
                 : 'bg-slate-200/80 border-slate-300'
@@ -951,7 +955,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 }`}
               >
                 <AlignLeft className="w-3.5 h-3.5" />
-                <span>Форматирование</span>
+                <span>Форматы</span>
               </button>
               <button
                 onClick={() => setActiveTab('hotkeys')}
@@ -964,7 +968,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 }`}
               >
                 <Keyboard className="w-3.5 h-3.5" />
-                <span>Горячие клавиши</span>
+                <span>Hotkeys</span>
               </button>
               {uiVisibility.showExcelExport !== false && (
                 <button
@@ -978,7 +982,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   }`}
                 >
                   <FileSpreadsheet className={`w-3.5 h-3.5 ${activeTab === 'excel' ? 'text-white' : 'text-emerald-500'}`} />
-                  <span>Экспорт Excel</span>
+                  <span>Excel</span>
                 </button>
               )}
             </div>
@@ -1027,6 +1031,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     { key: 'showDuckDbConfig', label: 'Интеграция DuckDB', desc: 'Кнопки подключения и выполнения кода' },
                     { key: 'showClickhouseConfig', label: 'Интеграция Clickhouse (http/https)', desc: 'Кнопки подключения и выполнения Clickhouse HTTP(S) запросов' },
                     { key: 'showExcelExport', label: 'Генерация Excel отчетов', desc: 'Экспорт результатов в Excel (.xlsx) и настройки форматирования' },
+                    { key: 'showMermaidIntegration', label: 'Интеграция Mermaid', desc: 'Визуализация Mermaid диаграмм и палитра цветов в редакторе' },
                     { key: 'autoUpdateSchema', label: 'Автообновление схемы базы', desc: 'Обновлять дерево схемы при изменении структуры БД (не применяется последовательно и параллельно)' },
                     { key: 'autocompleteOnType', label: 'Автокомплит при наборе текста', desc: 'Автоматически показывать подсказки при вводе каждого символа' },
                     { key: 'showEditorToggleBtn', label: 'Кнопка «Скрыть редактор»', desc: 'Кнопка скрытия левой панели' },
@@ -1578,6 +1583,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </span>
                   </label>
                 </div>
+
+                <div>
+                  <label className={`font-bold text-xs block mb-1.5 ${theme === 'dark' ? 'text-slate-200' : 'text-slate-900'}`}>
+                    Запятые в начале строки
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer mt-2">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(formatterSettings.leadingCommas)}
+                      onChange={(e) => updateFormatter({ leadingCommas: e.target.checked })}
+                      className="rounded border-slate-700 text-blue-600 focus:ring-blue-500 w-4 h-4"
+                    />
+                    <span className={`text-xs ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>
+                      Переносить запятую на новую строку (, col)
+                    </span>
+                  </label>
+                </div>
               </div>
 
               {/* AUTOCOMPLETE TEMPLATES MANAGER */}
@@ -2014,7 +2036,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         {/* FOOTER */}
         <div
-          className={`p-3.5 px-5 border-t flex items-center justify-between shrink-0 gap-3 ${
+          className={`p-3.5 px-5 border-t flex items-center justify-between shrink-0 gap-3 text-sm truncate ${
             theme === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'
           }`}
         >
@@ -2029,7 +2051,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               title="Экспортировать все настройки, шаблоны и историю в JSON файл"
             >
               <Download className="w-3.5 h-3.5 text-blue-500" />
-              <span>Экспорт данных</span>
+              <span>Экспорт</span>
             </button>
 
             <label
@@ -2041,7 +2063,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               title="Импортировать резервную копию JSON для переноса на другой ПК"
             >
               <Upload className="w-3.5 h-3.5 text-emerald-500" />
-              <span>Импорт данных</span>
+              <span>Импорт</span>
               <input
                 type="file"
                 accept=".json"

@@ -24,7 +24,10 @@ function openDB(): Promise<IDBDatabase> {
   });
 }
 
+export let cachedSnippets: Snippet[] | null = null;
+
 export async function saveSnippetsToDB(snippets: Snippet[]): Promise<void> {
+  cachedSnippets = snippets;
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -55,7 +58,9 @@ export async function loadSnippetsFromDB(): Promise<Snippet[]> {
       const store = tx.objectStore(STORE_NAME);
       const req = store.getAll();
       req.onsuccess = () => {
-        resolve(req.result || []);
+        const result = req.result || [];
+        cachedSnippets = result;
+        resolve(result);
       };
       req.onerror = () => reject(req.error);
     });

@@ -1249,6 +1249,23 @@ export function SqlEditor({
     }
   };
 
+  const [hScrollbarHeight, setHScrollbarHeight] = useState(0);
+
+  const checkHScrollbar = useCallback(() => {
+    if (isWrapSql || !textareaRef.current) {
+      setHScrollbarHeight(0);
+      return;
+    }
+    const el = textareaRef.current;
+    const hasHScroll = el.scrollWidth > el.clientWidth;
+    if (hasHScroll) {
+      const sbHeight = el.offsetHeight - el.clientHeight;
+      setHScrollbarHeight(sbHeight > 0 ? sbHeight : 15);
+    } else {
+      setHScrollbarHeight(0);
+    }
+  }, [isWrapSql]);
+
   const handleScroll = () => {
     if (textareaRef.current) {
       if (lineNumbersRef.current) {
@@ -1258,6 +1275,7 @@ export function SqlEditor({
         highlightRef.current.scrollTop = textareaRef.current.scrollTop;
         highlightRef.current.scrollLeft = textareaRef.current.scrollLeft;
       }
+      checkHScrollbar();
     }
   };
 
@@ -1282,7 +1300,9 @@ export function SqlEditor({
     for (let i = 0; i < count; i++) {
       const el = els[i];
       const h = el ? el.getBoundingClientRect().height : 20;
-      heights[i] = h && h > 0 ? Math.round(h) : 20;
+      const rawHeight = h && h > 0 ? h : 20;
+      // Round to the nearest multiple of 20 (the fixed line height)
+      heights[i] = Math.max(20, Math.round(rawHeight / 20) * 20);
     }
 
     setLineHeights(prev => {
@@ -1295,12 +1315,14 @@ export function SqlEditor({
 
   useLayoutEffect(() => {
     recalculateHeights();
+    checkHScrollbar();
     if (typeof document !== 'undefined' && document.fonts) {
       document.fonts.ready.then(() => {
         recalculateHeights();
+        checkHScrollbar();
       });
     }
-  }, [value, isWrapSql, recalculateHeights]);
+  }, [value, isWrapSql, recalculateHeights, checkHScrollbar]);
 
   const recalculateHeightsRef = useRef(recalculateHeights);
   useLayoutEffect(() => {
@@ -1314,6 +1336,7 @@ export function SqlEditor({
       if (animFrameId) cancelAnimationFrame(animFrameId);
       animFrameId = requestAnimationFrame(() => {
         recalculateHeightsRef.current();
+        checkHScrollbar();
       });
     });
     observer.observe(textareaRef.current);
@@ -2095,6 +2118,13 @@ export function SqlEditor({
               {i + 1}
             </div>
           ))}
+          {!isWrapSql && hScrollbarHeight > 0 && (
+            <div
+              style={{ height: `${hScrollbarHeight}px` }}
+              className="w-full shrink-0"
+              aria-hidden="true"
+            />
+          )}
         </div>
 
         {/* EDITOR AREA & SYNTAX HIGHLIGHT LAYER */}
@@ -2102,7 +2132,7 @@ export function SqlEditor({
           <div
             ref={highlightRef}
             aria-hidden="true"
-            className={`absolute inset-0 pointer-events-none overflow-hidden select-none z-0 ${
+            className={`absolute inset-0 pointer-events-none overflow-auto select-none z-0 ${
               isWrapSql ? 'whitespace-pre-wrap break-words' : 'whitespace-pre'
             }`}
             style={{ ...editorStyles, color: theme === 'dark' ? '#cbd5e1' : '#1e293b' }}
@@ -2113,7 +2143,7 @@ export function SqlEditor({
                 ref={(el) => { lineElementsRef.current[i] = el; }}
                 className="w-full"
                 style={{ minHeight: '20px' }}
-                dangerouslySetInnerHTML={{ __html: lineHtml || '&nbsp;' }}
+                dangerouslySetInnerHTML={{ __html: lineHtml || '<br>' }}
               />
             ))}
           </div>
@@ -2121,6 +2151,7 @@ export function SqlEditor({
           <textarea
             ref={textareaRef}
             value={value}
+            wrap={isWrapSql ? "soft" : "off"}
             onChange={handleChange}
             onBlur={() => {
               // Synchronous changes are already pushed, no action needed on blur
