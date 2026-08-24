@@ -2,16 +2,17 @@
 
 ## Описание (RU)
 
-Техническое приложение для визуализации, форматирования и выполнения SQL-запросов. Предназначено для анализа структуры запросов (AST - Abstract Syntax Tree) в виде интерактивных графов, а также для прямого взаимодействия с аналитическими базами данных. Поддерживает работу в веб-браузере (на базе WebAssembly) и как нативное десктопное приложение (на базе фреймворка Tauri).
+Техническое приложение для визуализации, форматирования и выполнения SQL-запросов. Предназначено для анализа структуры запросов (AST - Abstract Syntax Tree) в виде интерактивных графов, а также для прямого взаимодействия с аналитическими базами данных. Поддерживает работу в веб-браузере (на базе WebAssembly), как нативное десктопное приложение (на базе фреймворка Tauri) и как мобильное приложение для Android (на базе Capacitor).
 
 ### Основные возможности
-* **Визуализация AST графов**: Синтаксический разбор SQL-запросов (`node-sql-parser`) и построение интерактивных узловых графов (`@xyflow/react`) с возможностью изменения ориентации и масштабирования.
+* **Визуализация AST графов и Mermaid**: Синтаксический разбор SQL-запросов (`node-sql-parser`) и построение интерактивных узловых графов (`@xyflow/react`). Парсинг синтаксиса Mermaid (`mermaidToGraph.ts`) с поддержкой двусторонней визуализации.
 * **Интерактивный анализ графов (Data Lineage)**: Подсветка взаимосвязей (data lineage) при клике на узлы графа для быстрого отслеживания путей зависимостей между таблицами, колонками и алиасами.
 * **Поддержка баз данных**: Подключение и выполнение запросов к DuckDB (работа с локальными файлами в десктоп-версии или in-memory через WASM) и ClickHouse (через HTTP API с поддержкой аутентификации и кастомных настроек).
 * **Просмотр схемы данных (Schema Viewer)**: Интроспекция подключенных баз данных (отображение таблиц, представлений, колонок, типов данных и метаинформации). Контекстные меню (ПКМ) для быстрой вставки имен в редактор.
 * **Анализ результатов и статистика**: Встроенный модуль просмотра данных и статистики (DataStatsViewer) с расчетом метрик по колонкам, уникальным значениям, типам и распределению данных. Пагинация для безопасного рендеринга больших объемов данных.
 * **Интерактивная модификация запросов**: Умные фильтры результатов (добавление `WHERE IS NULL` / `IS NOT NULL` прямо из заголовков таблицы с автоматическим обновлением SQL-кода и графа AST).
 * **Многофункциональный SQL-редактор**: Многовкладочный редактор с поддержкой полноэкранного режима, подсветкой синтаксиса, функциями автодополнения (autocomplete), автоматического форматирования кода (`sql-formatter`) и поддержкой загрузки локальных скриптов в разных кодировках (UTF-8, Windows-1251).
+* **No-code меню (Action Menu)**: Визуальный дашборд действий для выполнения популярных SQL-пайплайнов и сниппетов в один клик без необходимости ручного написания SQL-кода.
 * **Библиотека шаблонов и фрагментов (SQL Snippets)**: Менеджер кастомных SQL-фрагментов и готовая библиотека пресетов аналитических запросов для быстрого использования.
 * **История версий (Version History)**: Полное отслеживание изменений и сохраненные снимки запросов с возможностью быстрого отката (IndexedDB).
 * **Экспорт данных и диаграмм**: Сохранение графов в графических форматах (PNG, SVG, JPEG) и структурных форматах (JSON, XML, Mermaid, Draw.io).
@@ -28,6 +29,7 @@
 * **Нативный десктоп-слой (Tauri / Rust)**:
   * **DuckDB Native**: Нативная интеграция C/Rust API DuckDB в Tauri-сервере. Оптимизирован для прямого чтения локальных файлов (`.duckdb`, `.parquet`, `.csv`, `.json`) без ограничений по памяти браузерного WASM.
   * **ClickHouse HTTP & Streaming**: Высокопроизводительный асинхронный HTTP-клиент на базе `reqwest` и `tokio` с поддержкой выполнения стандартных запросов и операций `COPY TO` / `COPY FROM`. Поддержка Cancellation Token для прерывания запросов на стороне сервера.
+* **Мобильная платформа (Capacitor)**: Интеграция с нативными API Android для файловой системы и экспорта данных.
 * **Веб-версия (Browser WASM)**: `@duckdb/duckdb-wasm` с WebAssembly-воркерами для работы прямо в браузере.
 
 ### Ключевые особенности архитектуры и детальный разбор
@@ -61,16 +63,17 @@
 
 ## Description (EN)
 
-A technical application for visualizing, formatting, and executing SQL queries. It is designed to analyze Abstract Syntax Tree (AST) query structures using interactive graphs and interface directly with analytical databases. The application runs in both web browsers (via WebAssembly) and as a standalone desktop client (powered by Tauri).
+A technical application for visualizing, formatting, and executing SQL queries. It is designed to analyze Abstract Syntax Tree (AST) query structures using interactive graphs and interface directly with analytical databases. The application runs in web browsers (via WebAssembly), as a standalone desktop client (powered by Tauri), and as a mobile application for Android (powered by Capacitor).
 
 ### Core Features
-* **AST Graph Visualization**: Parses SQL queries (`node-sql-parser`) to generate interactive, node-based abstract syntax trees (`@xyflow/react`) with customizable layout direction and scaling.
+* **AST Graph Visualization & Mermaid**: Parses SQL queries (`node-sql-parser`) to generate interactive, node-based abstract syntax trees (`@xyflow/react`). Features a bi-directional Mermaid syntax parser (`mermaidToGraph.ts`) for graph rendering.
 * **Interactive Data Lineage tracing**: Dynamic highlighting of node relationships (data lineage) upon selection, enabling developers to quickly trace paths and dependencies between source tables, derived columns, and aliases across complex queries.
 * **Database Integration**: Connects to and executes queries against DuckDB (local file access in desktop mode or in-memory via WASM) and ClickHouse (via HTTP API with credentials and custom settings).
 * **Schema Management**: Database introspection UI to inspect tables, views, columns, and data types of the connected environment. Includes deep right-click context menu integration for rapid element injection.
 * **Data & Statistics Viewer**: Built-in data inspection panel (DataStatsViewer) with automated calculation of column metrics, unique values, data types, and value distributions. Uses page-based chunking (Pagination) for fast rendering of large query results.
 * **Interactive Query Modification**: Smart result filters (applying `WHERE IS NULL` / `IS NOT NULL` directly from data grid headers with automatic synchronization to the SQL code and AST graph).
 * **Advanced SQL Editor**: Multi-tab SQL editor featuring a full-screen view mode, syntax highlighting, autocomplete, automatic code formatting (`sql-formatter`), and multi-encoding (UTF-8, Windows-1251) support for local script imports.
+* **No-code Action Menu**: A visual action dashboard for executing common SQL pipelines and snippets with a single click, without requiring manual SQL writing.
 * **SQL Snippets & Templates Library**: Manager for saving custom reusable SQL snippets alongside a built-in library of analytical query presets.
 * **Version History**: Full query history tracking with saved version snapshots and fast rollback functionality (IndexedDB).
 * **Export Capabilities**: Exports visual node graphs to image formats (PNG, SVG, JPEG) and structural/diagram formats (JSON, XML, Mermaid, Draw.io).
@@ -87,6 +90,7 @@ A technical application for visualizing, formatting, and executing SQL queries. 
 * **Desktop Native Layer (Tauri / Rust)**:
   * **DuckDB Native Engine**: Direct C/Rust binding integration in the Tauri backend. Optimized for high-throughput zero-copy file querying (`.duckdb`, `.parquet`, `.csv`, `.json`) directly on disk without WASM memory constraints.
   * **ClickHouse HTTP & Streaming**: High-performance asynchronous HTTP client powered by Rust's `reqwest` and `tokio`, supporting query execution, native `COPY TO` / `COPY FROM` streaming pipelines, and server-side cancellation tokens for aborting queries in-flight.
+* **Mobile Platform (Capacitor)**: Integration with native Android APIs for filesystem access and data exports.
 * **Web Runtime**: `@duckdb/duckdb-wasm` utilizing browser WebAssembly workers for standalone in-browser execution.
 
 ### Key Architectural Highlights & Feature Deep-Dive
