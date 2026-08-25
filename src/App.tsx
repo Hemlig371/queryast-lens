@@ -5275,7 +5275,6 @@ export default function App() {
                   title="Открыть SQL файл с диска (UTF-8)"
                 >
                   <FolderOpen className="w-3.5 h-3.5 text-amber-500" />
-                  <span>Открыть</span>
                 </button>
                 )}
 
@@ -5291,7 +5290,6 @@ export default function App() {
                   title="Сохранить SQL в .sql файл"
                 >
                   <FileDown className="w-3.5 h-3.5 text-emerald-500" />
-                  <span>Сохранить</span>
                 </button>
                 )}
 
@@ -6748,7 +6746,7 @@ export default function App() {
                   className={`${isSchemaZoomed ? 'w-[50vw]' : 'w-[30vw] min-w-[220px]'} flex flex-col shrink-0 border-l ${theme === 'dark' ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-300'}`}
                 >
                   <div className={`px-3 h-[37px] border-b flex items-center justify-between shrink-0 transition-colors ${theme === 'dark' ? 'border-slate-700 bg-slate-800' : 'border-slate-300 bg-slate-100'}`}>
-                    <span className={`text-xs font-semibold flex items-center gap-2 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>
+                    <span className={`text-xs font-semibold flex items-center gap-2 text-sm truncate shrink-0 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>
                       <Database className="w-3.5 h-3.5 text-teal-500" />
                       <span>Schema Browser</span>
                       {isSchemaLoading && (
@@ -8507,7 +8505,7 @@ export default function App() {
                   ) : (
                     <AlignLeft className="w-3.5 h-3.5" />
                   )}
-                  <span>Форматировать</span>
+                  <span>Формат</span>
                 </button>
                 )}
 
