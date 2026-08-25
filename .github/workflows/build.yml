@@ -46,6 +46,10 @@ jobs:
       - name: Generate Desktop Icons
         run: node generate-icons.js
 
+      - name: Invalidate Rust Cache for Icons
+        shell: bash
+        run: touch src-tauri/src/main.rs
+
       - name: Build Tauri Application
         uses: tauri-apps/tauri-action@v0
         env:
