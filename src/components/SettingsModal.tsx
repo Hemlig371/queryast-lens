@@ -1041,7 +1041,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     { key: 'showSaveFile', label: 'Сохранить файл (.sql)', desc: 'Скачивание текущего SQL' },
                     { key: 'showSnippets', label: 'Шаблоны и Конструктор', desc: 'Библиотека готовых фрагментов' },
                     { key: 'showHistory', label: 'История версий', desc: 'История снимков и автосохранений' },
-                    { key: 'showMaximizeButton', label: 'Кнопка «Развернуть»', desc: 'Разворот редактора на весь экран' },
+                    { key: 'showMaximizeButton', label: 'Кнопки «Развернуть»', desc: 'Скрывает кнопки Graph и Editor' },
                     { key: 'showPresets', label: 'Кнопка «Пресеты»', desc: 'Быстрый выбор готовых SQL запросов' },
                     { key: 'showFormatSql', label: 'Кнопка «Формат»', desc: 'Авто-форматирование SQL' },
                     { key: 'showCompactSql', label: 'Кнопка «Формат в одну строку»', desc: 'Замена переносов строк на пробелы' },
