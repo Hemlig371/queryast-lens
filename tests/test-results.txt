@@ -1,0 +1,20 @@
+
+ RUN  v4.1.11 /app/applet
+
+ ✓ tests/VersionHistoryModal.test.tsx (3 tests) 369ms
+ ✓ tests/ErrorBoundary.test.tsx (3 tests) 328ms
+ ✓ tests/DataStatsViewer.test.tsx (1 test) 110ms
+ ✓ tests/versionHistory.test.ts (6 tests) 58ms
+ ✓ tests/mermaidToGraph.test.ts (3 tests) 42ms
+ ✓ tests/astToGraph.test.ts (5 tests) 36ms
+ ✓ tests/clickhouse.test.ts (10 tests) 15ms
+ ✓ tests/excelExporter.test.ts (9 tests) 12ms
+ ✓ tests/sessionStorage.test.ts (4 tests) 9ms
+ ✓ tests/sqlUtils.test.ts (5 tests) 10ms
+ ✓ tests/vaultStorage.test.ts (6 tests) 9ms
+
+ Test Files  11 passed (11)
+      Tests  55 passed (55)
+   Start at  19:52:03
+   Duration  12.33s (transform 764ms, setup 0ms, import 3.52s, tests 999ms, environment 4.53s)
+
