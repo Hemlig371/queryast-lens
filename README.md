@@ -32,7 +32,6 @@
   * **Нативный движок DuckDB**: Прямая интеграция C/Rust биндингов в бекенде Tauri. Оптимизировано для высокопроизводительного чтения файлов (`.duckdb`, `.parquet`, `.csv`, `.json`) напрямую с диска без ограничений памяти WASM (zero-copy).
   * **ClickHouse HTTP & Streaming**: Высокопроизводительный асинхронный HTTP-клиент на базе Rust (`reqwest` и `tokio`), поддерживающий выполнение запросов, нативные потоковые пайплайны `COPY TO` / `COPY FROM` и серверные токены отмены (cancellation tokens).
 * **Mobile Platform (Capacitor)**: Интеграция с нативными Android API для доступа к файловой системе и экспорта данных.
-* **Web Runtime**: `@duckdb/duckdb-wasm` с использованием браузерных WebAssembly-воркеров для автономного выполнения в браузере.
 
 ### Ключевые архитектурные решения
 
@@ -56,7 +55,7 @@
   * Генерация высокоточных `.xlsx` книг с нативными формулами, сохранением числовых типов и корпоративными цветовыми палитрами.
 * **Защищенное клиентское хранилище (Vault)**:
   * Надежное шифрование учетных данных ClickHouse и токенов на базе AES-GCM (256-bit) с использованием Web Crypto API.
-  * Защита от попадания данных в открытый `localStorage` и поддержка настраиваемого времени автоблокировки.
+  * Защита от попадания данных в открытый `localStorage`.
 
 ### Плагины и расширения (Extensions)
 
@@ -97,7 +96,6 @@ A technical application for visualizing, formatting, and executing SQL queries. 
   * **DuckDB Native Engine**: Direct C/Rust binding integration in the Tauri backend. Optimized for high-throughput zero-copy file querying (`.duckdb`, `.parquet`, `.csv`, `.json`) directly on disk without WASM memory constraints.
   * **ClickHouse HTTP & Streaming**: High-performance asynchronous HTTP client powered by Rust's `reqwest` and `tokio`, supporting query execution, native `COPY TO` / `COPY FROM` streaming pipelines, and server-side cancellation tokens for aborting queries in-flight.
 * **Mobile Platform (Capacitor)**: Integration with native Android APIs for filesystem access and data exports.
-* **Web Runtime**: `@duckdb/duckdb-wasm` utilizing browser WebAssembly workers for standalone in-browser execution.
 
 ### Key Architectural Highlights & Feature Deep-Dive
 
@@ -124,7 +122,7 @@ A technical application for visualizing, formatting, and executing SQL queries. 
   * Automatic column width calculations with safety caps, zebra-striping, and freeze-pane header pinning.
 * **Secure Client-Side Secrets Vault**:
   * 256-bit AES-GCM encrypted persistence for ClickHouse connection secrets and sensitive credentials, preventing plaintext storage in `localStorage`.
-  * Auto-lock timer and secure master password derivation.
+  * Auto-lock timer and secure master password.
 
 ### Extensions & Plugins
 
