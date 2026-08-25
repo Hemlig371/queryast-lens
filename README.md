@@ -2,89 +2,95 @@
 
 ## Описание (RU)
 
-Техническое приложение для визуализации, форматирования и выполнения SQL-запросов. Предназначено для анализа структуры запросов (AST - Abstract Syntax Tree) в виде интерактивных графов, а также для прямого взаимодействия с аналитическими базами данных. Поддерживает работу в веб-браузере (на базе WebAssembly), как нативное десктопное приложение (на базе фреймворка Tauri) и как мобильное приложение для Android (на базе Capacitor).
+Техническое приложение для визуализации, форматирования и выполнения SQL-запросов. Предназначено для анализа структуры запросов (AST - Abstract Syntax Tree) в виде интерактивных графов, а также для прямого взаимодействия с аналитическими базами данных. Приложение работает как самостоятельный десктоп-клиент (на базе Tauri) и как мобильное приложение для Android (Capacitor).
 
-### Основные возможности
-* **Визуализация AST графов и Mermaid**: Синтаксический разбор SQL-запросов (`node-sql-parser`) и построение интерактивных узловых графов (`@xyflow/react`). Парсинг синтаксиса Mermaid (`mermaidToGraph.ts`) с поддержкой двусторонней визуализации.
-* **Интерактивный анализ графов (Data Lineage)**: Подсветка взаимосвязей (data lineage) при клике на узлы графа для быстрого отслеживания путей зависимостей между таблицами, колонками и алиасами.
-* **Поддержка баз данных**: Подключение и выполнение запросов к DuckDB (работа с локальными файлами в десктоп-версии или in-memory через WASM) и ClickHouse (через HTTP API с поддержкой аутентификации и кастомных настроек).
-* **Просмотр схемы данных (Schema Viewer)**: Интроспекция подключенных баз данных (отображение таблиц, представлений, колонок, типов данных и метаинформации). Контекстные меню (ПКМ) для быстрой вставки имен в редактор.
-* **Анализ результатов и статистика**: Встроенный модуль просмотра данных и статистики (DataStatsViewer) с расчетом метрик по колонкам, уникальным значениям, типам и распределению данных. Пагинация для безопасного рендеринга больших объемов данных.
-* **Интерактивная модификация запросов**: Умные фильтры результатов (добавление `WHERE IS NULL` / `IS NOT NULL` прямо из заголовков таблицы с автоматическим обновлением SQL-кода и графа AST).
-* **Многофункциональный SQL-редактор**: Многовкладочный редактор с поддержкой полноэкранного режима, подсветкой синтаксиса, функциями автодополнения (autocomplete), автоматического форматирования кода (`sql-formatter`) и поддержкой загрузки локальных скриптов в разных кодировках (UTF-8, Windows-1251).
-* **No-code меню (Action Menu)**: Визуальный дашборд действий для выполнения популярных SQL-пайплайнов и сниппетов в один клик без необходимости ручного написания SQL-кода.
-* **Библиотека шаблонов и фрагментов (SQL Snippets)**: Менеджер кастомных SQL-фрагментов и готовая библиотека пресетов аналитических запросов для быстрого использования.
-* **История версий (Version History)**: Полное отслеживание изменений и сохраненные снимки запросов с возможностью быстрого отката (IndexedDB).
-* **Экспорт данных и диаграмм**: Сохранение графов в графических форматах (PNG, SVG, JPEG) и структурных форматах (JSON, XML, Mermaid, Draw.io).
-* **Продвинутый генератор и экспортер Excel (Excel Engine)**: Полнофункциональный экспорт результатов запросов в `.xlsx` (`exceljs`) с глубокой настройкой оформления: автоподбор ширины колонок, кастомные стили заголовков, чередование строк (Zebra striping), локализованные числовые и денежные форматы, закрепление областей (Freeze Panes) и автоматическая вставка формул итогов (SUM, AVERAGE, COUNT).
-* **Безопасное хранилище секретов (Secure Vault)**: Клиентское шифрование параметров подключения и учетных данных баз данных (AES-GCM Web Crypto API) с мастер-паролем, защитой памяти и настраиваемым таймаутом автоблокировки.
-* **Кэширование схемы и мгновенный старт (Schema Cache)**: Локальное хранение структуры метаданных и колонок (IndexedDB) для мгновенной загрузки дерева объектов и работы автодополнения в офлайн-режиме без лишней нагрузки на СУБД.
-* **Файловый менеджер виртуальной ФС (WASM File Manager)**: Графический интерфейс для управления файлами Parquet, CSV и DuckDB внутри изолированной виртуальной файловой системы WebAssembly (VFS) с поддержкой Drag-and-Drop загрузки и скачивания.
-* **Надежность и безопасность (Safe Execution)**: Кнопка принудительной отмены долгих запросов (Query Cancellation). Изоляция ошибок через React Error Boundaries предотвращает падение всего приложения при сбоях в редакторе или графе.
-* **Кастомизация UI и управление рабочим пространством**: Гибкое управление отображением элементов интерфейса (настройка видимости панелей и кнопок), глобальное масштабирование приложения (UI Scale), поддержка светлой и темной тем оформления, локальное сохранение сессий и полный импорт/экспорт состояния приложения (JSON).
+### Ключевые возможности
 
-### Технологический стек и архитектура
+* 🌳 **AST Графы и Mermaid**: Парсинг SQL-запросов (`node-sql-parser`) и генерация интерактивных графов (`@xyflow/react`). Поддержка двунаправленного синтаксиса Mermaid (`mermaidToGraph.ts`) для рендеринга.
+* 🔗 **Отслеживание Data Lineage**: Динамическая подсветка связей (data lineage) при выборе узла. Позволяет быстро отследить зависимости между исходными таблицами, столбцами и алиасами в сложных запросах.
+* 🗄️ **Интеграция с базами данных**: Подключение и выполнение запросов к DuckDB (локальный доступ к файлам в desktop-версии или in-memory через WASM) и ClickHouse (через HTTP API с поддержкой авторизации).
+* 🗂️ **Управление схемой (Schema Management)**: UI для интроспекции баз данных (таблицы, представления, колонки, типы данных). Включает глубокую интеграцию с контекстным меню для быстрой вставки элементов.
+* 📊 **Профилировщик данных (DataStatsViewer)**: Встроенная панель инспекции данных с автоматическим расчетом метрик столбцов, уникальных значений, типов данных и распределения (гистограммы, графики). Поддерживает пагинацию для быстрой отрисовки больших объемов данных.
+* 🛠️ **Интерактивная модификация запросов**: Умные фильтры результатов (применение `WHERE IS NULL` / `IS NOT NULL` прямо из заголовков таблицы с автоматической синхронизацией SQL-кода и AST-графа).
+* 📝 **Продвинутый SQL-редактор**: Многовкладочный редактор с полноэкранным режимом, подсветкой синтаксиса, автодополнением, автоформатированием (`sql-formatter`) и поддержкой нескольких кодировок (UTF-8, Windows-1251) для импорта локальных скриптов.
+* ⚡️ **Меню быстрых действий (No-code)**: Визуальный дашборд для выполнения частых SQL-операций и сниппетов в один клик без ручного написания кода.
+* 📚 **Библиотека сниппетов и шаблонов**: Менеджер для сохранения пользовательских SQL-сниппетов и встроенная библиотека аналитических пресетов.
+* 🕰️ **История версий**: Полное отслеживание истории запросов с сохранением снапшотов версий и функцией быстрого отката (IndexedDB).
+* 📤 **Возможности экспорта**: Экспорт визуальных графов в форматы изображений (PNG, SVG, JPEG) и структурные форматы (JSON, XML, Mermaid, Draw.io).
+* 📑 **Генератор Excel-отчетов (Excel Engine)**: Полнофункциональный экспорт в `.xlsx` (`exceljs`) с кастомизацией: автоподбор ширины колонок, стилизация заголовков, "зебра", локализованное форматирование чисел и валют, закрепление областей и автоматические формулы итогов (SUM, AVERAGE, COUNT).
+* 🔐 **Защищенное хранилище секретов (Vault)**: Аппаратно-ускоренное клиентское шифрование параметров подключения и секретов (AES-GCM Web Crypto API) с защитой мастер-паролем, in-memory безопасностью и настраиваемым таймером автоблокировки.
+* 💾 **Кэш схемы БД и Офлайн-режим**: Кэширование метаданных схем и типов столбцов в IndexedDB, что обеспечивает мгновенный запуск приложения и работу автодополнения в офлайне без лишних запросов к БД.
+* 📁 **Менеджер файлов WASM (VFS)**: Интерактивное графическое модальное окно для управления виртуальными файлами (Parquet, CSV, DuckDB) внутри in-memory файловой системы WebAssembly с поддержкой Drag-and-Drop.
+* 🛡️ **Безопасное выполнение и надежность**: Встроенная поддержка отмены запросов (прерывание долгих операций). Изоляция компонентов (Редактор, Граф, Панель результатов) с помощью React Error Boundaries предотвращает падение всего приложения при ошибке в одном из модулей.
+* 🎨 **Кастомизация UI и Workspace**: Тонкая настройка видимости элементов, глобальное масштабирование интерфейса (UI Scaling), переключение светлой/темной темы, локальное сохранение пользовательских сессий и полный экспорт/импорт состояния рабочего пространства (JSON).
+
+### Архитектура и стек технологий
+
 * **Frontend**: React 19, TypeScript 5.8, Vite 6, Tailwind CSS v4, Lucide React, Motion, Recharts.
-* **Визуализация графов и AST**: `@xyflow/react` (React Flow), `dagre` (авто-лейаут графов), `node-sql-parser` (генерация AST-дерева), `html-to-image`.
-* **Нативный десктоп-слой (Tauri / Rust)**:
-  * **DuckDB Native**: Нативная интеграция C/Rust API DuckDB в Tauri-сервере. Оптимизирован для прямого чтения локальных файлов (`.duckdb`, `.parquet`, `.csv`, `.json`) без ограничений по памяти браузерного WASM.
-  * **ClickHouse HTTP & Streaming**: Высокопроизводительный асинхронный HTTP-клиент на базе `reqwest` и `tokio` с поддержкой выполнения стандартных запросов и операций `COPY TO` / `COPY FROM`. Поддержка Cancellation Token для прерывания запросов на стороне сервера.
-* **Мобильная платформа (Capacitor)**: Интеграция с нативными API Android для файловой системы и экспорта данных.
-* **Веб-версия (Browser WASM)**: `@duckdb/duckdb-wasm` с WebAssembly-воркерами для работы прямо в браузере.
+* **Graph & AST Engine**: `@xyflow/react` (React Flow), `dagre` (авто-лейаут графов), `node-sql-parser` (AST парсер), `html-to-image`.
+* **Desktop Native Layer (Tauri / Rust)**:
+  * **Нативный движок DuckDB**: Прямая интеграция C/Rust биндингов в бекенде Tauri. Оптимизировано для высокопроизводительного чтения файлов (`.duckdb`, `.parquet`, `.csv`, `.json`) напрямую с диска без ограничений памяти WASM (zero-copy).
+  * **ClickHouse HTTP & Streaming**: Высокопроизводительный асинхронный HTTP-клиент на базе Rust (`reqwest` и `tokio`), поддерживающий выполнение запросов, нативные потоковые пайплайны `COPY TO` / `COPY FROM` и серверные токены отмены (cancellation tokens).
+* **Mobile Platform (Capacitor)**: Интеграция с нативными Android API для доступа к файловой системе и экспорта данных.
+* **Web Runtime**: `@duckdb/duckdb-wasm` с использованием браузерных WebAssembly-воркеров для автономного выполнения в браузере.
 
-### Ключевые особенности архитектуры и детальный разбор
-* **Нативный движок DuckDB vs WASM**:
-  * В десктопной версии Tauri запросы выполняются напрямую через нативный Rust-модуль DuckDB с прямым доступом к файловой системе и многопоточной обработкой.
-  * В веб-режиме автоматически активируется WebAssembly-режим с виртуальной файловой системой in-memory.
-* **Интерактивный аналитический дата-профайлер (DataStatsViewer)**:
-  * Визуальное представление результатов в виде интерактивных таблиц с поддержкой транспонирования (столбцы <-> строки) и масштабирования ячеек (Cell Zoom View).
-  * Построение гистограмм распределения, столбчатых, линейных и круговых диаграмм (`Recharts`).
-  * Автоматический расчет аналитических метрик по каждому полю (количество значений, NULL-значения, уникальность, минимумы, максимумы, среднее и стандартное отклонение).
-* **Оптимизированная производительность и Big Data**: 
-  * Делегирование профилировщика на сторону СУБД (нативный `SUMMARIZE` в DuckDB или агрегация в ClickHouse) для работы с миллионами строк без перегрузки UI.
-  * Корректная обработка сверхбольших чисел (HugeInt/UBigInt) без потери точности благодаря конвертации типов в нативном Rust-слое.
-  * **Локальный ETL**: Быстрый импорт/экспорт данных (`COPY TO / COPY FROM`) в форматах Parquet и CSV через десктопный движок Tauri.
-* **Управление авто-лейаутом графов AST**:
-  * Переключение топологии графа: слева-направо (`LR`) или сверху-вниз (`TB`).
-  * Интерактивная фильтрация элементов графа (возможность скрыть узлы `Sort`, `Limit`, `Join` для упрощения сложных схем).
-* **Гибкая настройка горячих клавиш и форматирования**:
-  * Полное перенаправление комбинаций клавиш (Hotkeys) под свои нужды.
-  * Детализированная настройка правил форматирования кода (`sql-formatter`): регистр ключевых слов, отступы, пустые строки между запросами.
-  * Настраиваемое меню быстрой вставки пользовательских команд и префиксов (Quick Action Templates).
-* **Продвинутый движок формирования Excel-отчетов (`excelExporter`)**:
-  * Генерация стилизованных книг `.xlsx` без потери числовой точности и формул.
-  * Тонкая настройка тем оформления, чередования строк, кастомных шрифтов и автоматического подбора оптимальной ширины столбцов.
-  * Добавление итоговых строк агрегации (`SUM`, `AVERAGE`, `COUNT`) и закрепление шапки таблицы.
-* **Защищенное клиентское хранилище секретов (Vault)**:
+### Ключевые архитектурные решения
+
+* **Native DuckDB vs WASM Fallback**:
+  * Десктоп-версия (Tauri) использует нативный C++ DuckDB через Rust IPC для многопоточного выполнения запросов к дисковым файлам.
+  * Браузерная версия автоматически переключается на WebAssembly in-memory файловую систему (VFS).
+* **Data Profiler & Advanced Visualizer (DataStatsViewer)**:
+  * Интерактивные таблицы с поддержкой транспонирования (смена строк и колонок) и детальным просмотром ячеек (Cell Zoom).
+  * Автоматический расчет метрик (количество значений, процент null, уникальные значения, min, max, mean, stddev).
+* **Оптимизация производительности**:
+  * **Делегирование профилирования БД**: Перенос статистических вычислений на сторону базы данных (нативный `SUMMARIZE` в DuckDB или агрегатные запросы ClickHouse), чтобы избежать блокировок UI-потока.
+  * **128-bit Integer Safety**: Точная обработка типов `HugeInt` и `UBigInt` из DuckDB через прямую конвертацию в строки на стороне Rust.
+  * **Локальные ETL-процессы**: Молниеносный импорт и экспорт данных (`COPY TO` / `COPY FROM`) в форматах Parquet и CSV напрямую через локальную файловую систему Tauri.
+* **Кастомизация графов и AST**:
+  * Переключение ориентации графа: слева-направо (`LR`) или сверху-вниз (`TB`).
+  * Тонкое управление видимостью узлов для скрытия структурного шума (например, узлов `Sort`, `Limit`, `Join` в сложных деревьях).
+* **Настройки SQL и шорткаты**:
+  * Полностью настраиваемые клавиатурные сокращения (Hotkeys).
+  * Детальные настройки форматирования SQL (регистр ключевых слов, стиль отступов, переносы строк).
+* **Продвинутый экспорт в Excel (`excelExporter`)**:
+  * Генерация высокоточных `.xlsx` книг с нативными формулами, сохранением числовых типов и корпоративными цветовыми палитрами.
+* **Защищенное клиентское хранилище (Vault)**:
   * Надежное шифрование учетных данных ClickHouse и токенов на базе AES-GCM (256-bit) с использованием Web Crypto API.
-  * Защита паролей от попадания в открытый `localStorage` и поддержка настраиваемого времени автоблокировки.
+  * Защита от попадания данных в открытый `localStorage` и поддержка настраиваемого времени автоблокировки.
+
+### Плагины и расширения (Extensions)
+
+* 🔌 **Список расширений**: В файле `extension_list.txt` находится перечень расширений DuckDB, которые были протестированы и гарантированно работают в приложении.
+* 🛠️ **Интеграция сторонних систем**: Для быстрой выгрузки данных из нестандартных систем поддерживается связка расширения `shellfs` и утилиты [DB-Extractor-CLI](https://github.com/Hemlig371/DB-Extractor-CLI) (python + connectorx + polars) в качестве дополнительного инструмента.
 
 ---
 
 ## Description (EN)
 
-A technical application for visualizing, formatting, and executing SQL queries. It is designed to analyze Abstract Syntax Tree (AST) query structures using interactive graphs and interface directly with analytical databases. The application runs in web browsers (via WebAssembly), as a standalone desktop client (powered by Tauri), and as a mobile application for Android (powered by Capacitor).
+A technical application for visualizing, formatting, and executing SQL queries. It is designed to analyze Abstract Syntax Tree (AST) query structures using interactive graphs and interface directly with analytical databases. The application runs as a standalone desktop client (powered by Tauri), and as a mobile application for Android (powered by Capacitor).
 
 ### Core Features
-* **AST Graph Visualization & Mermaid**: Parses SQL queries (`node-sql-parser`) to generate interactive, node-based abstract syntax trees (`@xyflow/react`). Features a bi-directional Mermaid syntax parser (`mermaidToGraph.ts`) for graph rendering.
-* **Interactive Data Lineage tracing**: Dynamic highlighting of node relationships (data lineage) upon selection, enabling developers to quickly trace paths and dependencies between source tables, derived columns, and aliases across complex queries.
-* **Database Integration**: Connects to and executes queries against DuckDB (local file access in desktop mode or in-memory via WASM) and ClickHouse (via HTTP API with credentials and custom settings).
-* **Schema Management**: Database introspection UI to inspect tables, views, columns, and data types of the connected environment. Includes deep right-click context menu integration for rapid element injection.
-* **Data & Statistics Viewer**: Built-in data inspection panel (DataStatsViewer) with automated calculation of column metrics, unique values, data types, and value distributions. Uses page-based chunking (Pagination) for fast rendering of large query results.
-* **Interactive Query Modification**: Smart result filters (applying `WHERE IS NULL` / `IS NOT NULL` directly from data grid headers with automatic synchronization to the SQL code and AST graph).
-* **Advanced SQL Editor**: Multi-tab SQL editor featuring a full-screen view mode, syntax highlighting, autocomplete, automatic code formatting (`sql-formatter`), and multi-encoding (UTF-8, Windows-1251) support for local script imports.
-* **No-code Action Menu**: A visual action dashboard for executing common SQL pipelines and snippets with a single click, without requiring manual SQL writing.
-* **SQL Snippets & Templates Library**: Manager for saving custom reusable SQL snippets alongside a built-in library of analytical query presets.
-* **Version History**: Full query history tracking with saved version snapshots and fast rollback functionality (IndexedDB).
-* **Export Capabilities**: Exports visual node graphs to image formats (PNG, SVG, JPEG) and structural/diagram formats (JSON, XML, Mermaid, Draw.io).
-* **Advanced Excel Report Generator (Excel Engine)**: Full-featured `.xlsx` export (`exceljs`) with customizable styling: auto-fit column widths, styled header rows, zebra striping, localized number and currency formatting, freeze panes, and automatic formula totals (SUM, AVERAGE, COUNT).
-* **Secure Credentials Vault**: Client-side encryption for database connection parameters and secrets (AES-GCM Web Crypto API) featuring master password protection, in-memory security, and customizable auto-lock timeouts.
-* **Database Schema Cache & Offline Mode**: IndexedDB metadata caching for database schemas and column types, enabling near-instant app startup and offline autocomplete capabilities without unnecessary database queries.
-* **WASM Virtual File Manager**: Interactive graphical management modal for virtual files (Parquet, CSV, DuckDB) within the WebAssembly in-memory virtual filesystem (VFS) with Drag-and-Drop support.
-* **Safe Query Execution & Reliability**: Built-in support for query cancellation (aborting long-running executions). Implementation of React Error Boundaries isolated by component (Editor, Graph, Results Panel) ensures that an unhandled crash in one module does not take down the entire application.
-* **UI Customization & Workspace Management**: Granular control over UI element visibility, Global UI scaling functionality, light/dark theme toggling, local persistence of user sessions and tabs, and full workspace state import/export (JSON).
+
+* 🌳 **AST Graph Visualization & Mermaid**: Parses SQL queries (`node-sql-parser`) to generate interactive, node-based abstract syntax trees (`@xyflow/react`). Features a bi-directional Mermaid syntax parser (`mermaidToGraph.ts`) for graph rendering.
+* 🔗 **Interactive Data Lineage Tracing**: Dynamic highlighting of node relationships (data lineage) upon selection, enabling developers to quickly trace paths and dependencies between source tables, derived columns, and aliases across complex queries.
+* 🗄️ **Database Integration**: Connects to and executes queries against DuckDB (local file access in desktop mode or in-memory via WASM) and ClickHouse (via HTTP API with credentials and custom settings).
+* 🗂️ **Schema Management**: Database introspection UI to inspect tables, views, columns, and data types of the connected environment. Includes deep right-click context menu integration for rapid element injection.
+* 📊 **Data & Statistics Viewer**: Built-in data inspection panel (DataStatsViewer) with automated calculation of column metrics, unique values, data types, and value distributions. Uses page-based chunking (Pagination) for fast rendering of large query results.
+* 🛠️ **Interactive Query Modification**: Smart result filters (applying `WHERE IS NULL` / `IS NOT NULL` directly from data grid headers with automatic synchronization to the SQL code and AST graph).
+* 📝 **Advanced SQL Editor**: Multi-tab SQL editor featuring a full-screen view mode, syntax highlighting, autocomplete, automatic code formatting (`sql-formatter`), and multi-encoding (UTF-8, Windows-1251) support for local script imports.
+* ⚡️ **No-code Action Menu**: A visual action dashboard for executing common SQL pipelines and snippets with a single click, without requiring manual SQL writing.
+* 📚 **SQL Snippets & Templates Library**: Manager for saving custom reusable SQL snippets alongside a built-in library of analytical query presets.
+* 🕰️ **Version History**: Full query history tracking with saved version snapshots and fast rollback functionality (IndexedDB).
+* 📤 **Export Capabilities**: Exports visual node graphs to image formats (PNG, SVG, JPEG) and structural/diagram formats (JSON, XML, Mermaid, Draw.io).
+* 📑 **Advanced Excel Report Generator (Excel Engine)**: Full-featured `.xlsx` export (`exceljs`) with customizable styling: auto-fit column widths, styled header rows, zebra striping, localized number and currency formatting, freeze panes, and automatic formula totals (SUM, AVERAGE, COUNT).
+* 🔐 **Secure Credentials Vault**: Hardware-backed client-side encryption for database connection parameters and secrets (AES-GCM Web Crypto API) featuring master password protection, in-memory security, and customizable auto-lock timeouts.
+* 💾 **Database Schema Cache & Offline Mode**: IndexedDB metadata caching for database schemas and column types, enabling near-instant app startup and offline autocomplete capabilities without unnecessary database queries.
+* 📁 **WASM Virtual File Manager**: Interactive graphical management modal for virtual files (Parquet, CSV, DuckDB) within the WebAssembly in-memory virtual filesystem (VFS) with Drag-and-Drop support.
+* 🛡️ **Safe Query Execution & Reliability**: Built-in support for query cancellation (aborting long-running executions). Implementation of React Error Boundaries isolated by component (Editor, Graph, Results Panel) ensures that an unhandled crash in one module does not take down the entire application.
+* 🎨 **UI Customization & Workspace Management**: Granular control over UI element visibility, Global UI scaling functionality, light/dark theme toggling, local persistence of user sessions and tabs, and full workspace state import/export (JSON).
 
 ### Architecture & Technology Stack
+
 * **Frontend**: React 19, TypeScript 5.8, Vite 6, Tailwind CSS v4, Lucide React, Motion, Recharts.
 * **Graph & AST Engine**: `@xyflow/react` (React Flow), `dagre` (graph auto-layout), `node-sql-parser` (AST parser), `html-to-image`.
 * **Desktop Native Layer (Tauri / Rust)**:
@@ -94,6 +100,7 @@ A technical application for visualizing, formatting, and executing SQL queries. 
 * **Web Runtime**: `@duckdb/duckdb-wasm` utilizing browser WebAssembly workers for standalone in-browser execution.
 
 ### Key Architectural Highlights & Feature Deep-Dive
+
 * **Native DuckDB Engine vs WASM Fallback**:
   * Desktop (Tauri) utilizes native C++ DuckDB via Rust IPC bindings for multi-threaded disk file querying.
   * Browser environment gracefully falls back to WebAssembly in-memory virtual filesystem (VFS).
@@ -107,7 +114,7 @@ A technical application for visualizing, formatting, and executing SQL queries. 
   * **Local ETL Workflows**: Blazing-fast importing and exporting of data (`COPY TO` / `COPY FROM`) using Parquet and CSV directly against the local filesystem via the Tauri desktop engine.
 * **AST Layout & Graph Customization**:
   * Layout orientation switching between Left-to-Right (`LR`) and Top-to-Bottom (`TB`).
-  * Granular node visibility controls to hide structural noise such as `Sort`, `Limit`, or `Join` nodes for complex AST trees.
+  * Granular node visibility controls to hide structural noise such as `Sort`, `Limit`, `Join` nodes for complex AST trees.
 * **Custom Shortcuts & SQL Formatter Settings**:
   * Fully customizable keyboard shortcut (Hotkey) mappings.
   * Precise SQL formatting controls via `sql-formatter` (keyword case, indentation style, inter-statement line breaks).
@@ -118,6 +125,11 @@ A technical application for visualizing, formatting, and executing SQL queries. 
 * **Secure Client-Side Secrets Vault**:
   * 256-bit AES-GCM encrypted persistence for ClickHouse connection secrets and sensitive credentials, preventing plaintext storage in `localStorage`.
   * Auto-lock timer and secure master password derivation.
+
+### Extensions & Plugins
+
+* 🔌 **Extension List**: The `extension_list.txt` file contains a list of DuckDB extensions that have been tested and verified to work within the application.
+* 🛠️ **External Integrations**: For fast data extraction from non-standard systems, the `shellfs` extension can be combined with the [DB-Extractor-CLI](https://github.com/Hemlig371/DB-Extractor-CLI) utility (python + connectorx + polars) as an additional tool.
 
 ### Installation & Platform Notes
 
