@@ -1314,7 +1314,7 @@ export default function App() {
         setTabs(prev => [...prev.map(t => t.id === activeTabId ? { ...t, sql: activeTab?.sql || '' } : t), newTab]);
         setActiveTabId(newTabId);
         setTimeout(() => {
-          handleExecuteCurrentEngineQuery(newSql, 1);
+          handleExecuteCurrentEngineQuery(newSql, 1, undefined, false, undefined, newTabId);
         }, 50);
       }
     }
@@ -1354,7 +1354,7 @@ export default function App() {
         setTabs(prev => [...prev.map(t => t.id === activeTabId ? { ...t, sql: activeTab?.sql || '' } : t), newTab]);
         setActiveTabId(newTabId);
         setTimeout(() => {
-          handleExecuteCurrentEngineQuery(newSql, 1);
+          handleExecuteCurrentEngineQuery(newSql, 1, undefined, false, undefined, newTabId);
         }, 50);
       }
     }
@@ -1388,7 +1388,7 @@ export default function App() {
       setTabs(prev => [...prev.map(t => t.id === activeTabId ? { ...t, sql: activeTab?.sql || '' } : t), newTab]);
       setActiveTabId(newTabId);
       setTimeout(() => {
-        handleExecuteCurrentEngineQuery(newSql, 1);
+        handleExecuteCurrentEngineQuery(newSql, 1, undefined, false, undefined, newTabId);
       }, 50);
     }
   };
@@ -2420,15 +2420,15 @@ export default function App() {
     }
   };
 
-  const executeDuckDbQueryWithPagination = async (queryToExec: string, page: number = 1, pageSizeToUse?: number, isQuickAction?: boolean, executionMode?: 'sequential' | 'parallel') => {
-    const originTabId = activeTabId;
+  const executeDuckDbQueryWithPagination = async (queryToExec: string, page: number = 1, pageSizeToUse?: number, isQuickAction?: boolean, executionMode?: 'sequential' | 'parallel', targetTabId?: string) => {
+    const originTabId = targetTabId || activeTabId;
     if (!duckDbConnectedPath) {
       return;
     }
 
     if (!isQuickAction) {
       setLastExecutedSql(queryToExec);
-      setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, lastExecutedSql: queryToExec } : t));
+      setTabs(prev => prev.map(t => t.id === originTabId ? { ...t, lastExecutedSql: queryToExec } : t));
     }
     setDuckDbPage(page);
 
@@ -2631,15 +2631,15 @@ export default function App() {
     }
   };
 
-  const executeClickhouseQueryWithPagination = async (queryToExec: string, page: number = 1, pageSizeToUse?: number, isQuickAction?: boolean, executionMode?: 'sequential' | 'parallel') => {
-    const originTabId = activeTabId;
+  const executeClickhouseQueryWithPagination = async (queryToExec: string, page: number = 1, pageSizeToUse?: number, isQuickAction?: boolean, executionMode?: 'sequential' | 'parallel', targetTabId?: string) => {
+    const originTabId = targetTabId || activeTabId;
     if (!clickhouseConfig) {
       return;
     }
 
     if (!isQuickAction) {
       setLastExecutedSql(queryToExec);
-      setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, lastExecutedSql: queryToExec } : t));
+      setTabs(prev => prev.map(t => t.id === originTabId ? { ...t, lastExecutedSql: queryToExec } : t));
     }
     setDuckDbPage(page);
 
@@ -2925,7 +2925,7 @@ export default function App() {
     }
   };
 
-  const handleExecuteCurrentEngineQuery = (queryToExec: string, page: number = 1, pageSizeToUse?: number, isQuickAction?: boolean, executionMode?: 'sequential' | 'parallel') => {
+  const handleExecuteCurrentEngineQuery = (queryToExec: string, page: number = 1, pageSizeToUse?: number, isQuickAction?: boolean, executionMode?: 'sequential' | 'parallel', targetTabId?: string) => {
     if (isAnyQueryRunning) return;
     setResultsViewMode('table');
     setSelectedResultCell(null);
@@ -2939,9 +2939,9 @@ export default function App() {
     let finalQuery = queryToExec;
 
     if (activeEngine === 'clickhouse' || (!duckDbConnectedPath && clickhouseConfig)) {
-      executeClickhouseQueryWithPagination(finalQuery, page, pageSizeToUse, isQuickAction, executionMode);
+      executeClickhouseQueryWithPagination(finalQuery, page, pageSizeToUse, isQuickAction, executionMode, targetTabId);
     } else {
-      executeDuckDbQueryWithPagination(finalQuery, page, pageSizeToUse, isQuickAction, executionMode);
+      executeDuckDbQueryWithPagination(finalQuery, page, pageSizeToUse, isQuickAction, executionMode, targetTabId);
     }
   };
 
