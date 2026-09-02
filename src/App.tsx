@@ -2974,14 +2974,21 @@ export default function App() {
     setDuckDbSelectedCell(null);
     setColumnSearchTerm('');
     setValueSearchTerm('');
-    setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, originalSql: undefined } : t));
+    if (!isQuickAction) {
+      setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, originalSql: undefined } : t));
+    }
     handleExecuteCurrentEngineQuery(queryToExec, 1, undefined, isQuickAction);
   };
+
+  const executeSpecificDuckDbQueryRef = useRef(executeSpecificDuckDbQuery);
+  useLayoutEffect(() => {
+    executeSpecificDuckDbQueryRef.current = executeSpecificDuckDbQuery;
+  });
 
   const handleExecuteQuickAction = useCallback((qa: QuickActionTemplate) => {
     setShowQuickActionsMenu(false);
     const targetQuery = qa.template.replace(/\{table\}/g, extractedTableName);
-    executeSpecificDuckDbQuery(targetQuery, true);
+    executeSpecificDuckDbQueryRef.current(targetQuery, true);
   }, [extractedTableName]);
 
   const handleExecuteRawQueryForStats = useCallback(async (sqlToRun: string): Promise<any[]> => {
@@ -7397,7 +7404,7 @@ export default function App() {
                     : 'border-t flex flex-col shrink-0 h-[40%]'
                 }`}
               >
-                <div className={`flex flex-wrap items-center justify-between px-3 py-1.5 border-b shrink-0 ${
+                <div className={`relative z-30 flex flex-wrap items-center justify-between px-3 py-1.5 border-b shrink-0 ${
                   theme === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'
                 }`}>
                   <div className="flex items-center gap-2 min-w-0 pr-2">
