@@ -377,6 +377,27 @@ export const DEFAULT_HOTKEYS: HotkeyBinding[] = [
     defaultKey: 'Alt+Q'
   },
   {
+    id: 'exportSettings',
+    label: 'Экспорт настроек и данных (Workspace)',
+    description: 'Экспортировать полное рабочее пространство (настройки, шаблоны, сессии) в JSON',
+    category: 'Общие',
+    defaultKey: 'Ctrl+Alt+S'
+  },
+  {
+    id: 'importSettings',
+    label: 'Импорт настроек и данных (Workspace)',
+    description: 'Импортировать файл конфигурации рабочего пространства JSON',
+    category: 'Общие',
+    defaultKey: 'Ctrl+Alt+A'
+  },
+  {
+    id: 'exportExcelReport',
+    label: 'Сформировать Excel отчет',
+    description: 'Сгенерировать и скачать стилизованный Excel-файл из текущих результатов запроса',
+    category: 'Общие',
+    defaultKey: 'Ctrl+Alt+E'
+  },
+  {
     id: 'exportResultsCopy',
     label: 'Копировать результаты в TSV',
     description: 'Копирование содержимого таблицы результатов в буфер обмена',
@@ -412,6 +433,13 @@ export const DEFAULT_HOTKEYS: HotkeyBinding[] = [
     defaultKey: 'Ctrl+E'
   },
   {
+    id: 'openActionMenu',
+    label: 'Открыть меню действий',
+    description: 'Перейти на вкладку Меню действий (или переключить обратно)',
+    category: 'Вкладки',
+    defaultKey: 'Ctrl+`'
+  },
+  {
     id: 'tabSwitchModifier',
     label: 'Переключение вкладок (1–9)',
     description: 'Модификатор клавиш для быстрого перехода на вкладки от 1 до 9',
@@ -438,6 +466,189 @@ export function getSavedHotkeys(): Record<string, string> {
   return defaults;
 }
 
+export async function exportWorkspaceSettings(): Promise<void> {
+  try {
+    // First, trigger immediate session save so current in-memory tabs and state are saved
+    await new Promise<void>((resolve) => {
+      window.dispatchEvent(new CustomEvent('sql_save_session_now', { detail: { onComplete: resolve } }));
+    });
+
+    const backupData: Record<string, unknown> = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && !key.toLowerCase().includes('vault') && !key.toLowerCase().includes('secret')) {
+        const value = localStorage.getItem(key);
+        if (value !== null) {
+          try {
+            backupData[key] = JSON.parse(value);
+          } catch (_) {
+            backupData[key] = value;
+          }
+        }
+      }
+    }
+
+    // Add IndexedDB version history
+    try {
+      const versions = await getVersions();
+      backupData['sql_visualizer_version_history'] = versions;
+    } catch (err) {
+      console.warn('Failed to get IndexedDB versions for export:', err);
+    }
+
+    // Add IndexedDB schema cache at the very end of the JSON file
+    try {
+      const schemaCaches = await getAllSchemaCacheEntries();
+      backupData['sql_visualizer_schema_cache_data'] = schemaCaches;
+    } catch (err) {
+      console.warn('Failed to get IndexedDB schema caches for export:', err);
+    }
+
+    // Add IndexedDB custom snippets
+    try {
+      const snippets = await loadSnippetsFromDB();
+      backupData['sql_visualizer_snippets'] = snippets;
+    } catch (err) {
+      console.warn('Failed to get IndexedDB snippets for export:', err);
+    }
+
+    // Add IndexedDB session tabs
+    try {
+      const sessionTabs = await getSessionTabs();
+      if (sessionTabs) {
+        backupData['sql_visualizer_tabs_session'] = sessionTabs;
+      }
+    } catch (err) {
+      console.warn('Failed to get IndexedDB session tabs for export:', err);
+    }
+
+    const workspaceBundle = {
+      version: 1,
+      app: 'QueryAST Lens Workspace Bundle',
+      exportedAt: new Date().toISOString(),
+      data: backupData
+    };
+
+    const blob = new Blob([JSON.stringify(workspaceBundle, null, 2)], { type: 'application/json' });
+    const dateStr = new Date().toISOString().slice(0, 10);
+    downloadFileWithFallback(blob, `sql_visualizer_workspace_${dateStr}.json`);
+  } catch (e) {
+    console.error('Failed to export workspace', e);
+    alert('Ошибка при экспорте данных');
+  }
+}
+
+export async function importWorkspaceSettings(file: File, onBeforeImport?: () => Promise<void>): Promise<void> {
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    try {
+      const content = e.target?.result as string;
+      const parsed = JSON.parse(content);
+      if (typeof parsed !== 'object' || parsed === null) {
+        throw new Error('Invalid backup file format');
+      }
+
+      const dataObj: Record<string, unknown> = parsed.data && typeof parsed.data === 'object' ? parsed.data : parsed;
+
+      // Extract existing explicitly configured (non-default) DuckDB engine settings before clearing localStorage
+      let existingDuckDbSettings: Partial<UiVisibilitySettings> = {};
+      try {
+        const rawUiVisibility = localStorage.getItem(UI_VISIBILITY_STORAGE_KEY) || localStorage.getItem('sql_visualizer_ui_visibility');
+        if (rawUiVisibility) {
+          const currentVis = JSON.parse(rawUiVisibility) as Partial<UiVisibilitySettings>;
+          // Only preserve if explicitly set to a non-default value by the user
+          if (currentVis.duckDbMemoryLimit && currentVis.duckDbMemoryLimit !== '8GB') {
+            existingDuckDbSettings.duckDbMemoryLimit = currentVis.duckDbMemoryLimit;
+          }
+          if (currentVis.duckDbTempDirectory && currentVis.duckDbTempDirectory !== './tmp') {
+            existingDuckDbSettings.duckDbTempDirectory = currentVis.duckDbTempDirectory;
+          }
+          if (currentVis.duckDbExtensionDirectory && currentVis.duckDbExtensionDirectory !== './extensions') {
+            existingDuckDbSettings.duckDbExtensionDirectory = currentVis.duckDbExtensionDirectory;
+          }
+          if (currentVis.duckDbThreads !== undefined && Number(currentVis.duckDbThreads) !== 0) {
+            existingDuckDbSettings.duckDbThreads = Number(currentVis.duckDbThreads);
+          }
+        }
+      } catch {
+        // Ignore parse errors on pre-existing localStorage
+      }
+
+      // Ensure session key compatibility (if old key exists without _v2)
+      if (dataObj['sql_visualizer_session'] && !dataObj['sql_visualizer_session_v2']) {
+        dataObj['sql_visualizer_session_v2'] = dataObj['sql_visualizer_session'];
+      }
+
+      // Merge existing explicit DuckDB settings into imported ui_visibility if present
+      if (Object.keys(existingDuckDbSettings).length > 0) {
+        const importedVisKey = dataObj[UI_VISIBILITY_STORAGE_KEY] ? UI_VISIBILITY_STORAGE_KEY : (dataObj['sql_visualizer_ui_visibility'] ? 'sql_visualizer_ui_visibility' : UI_VISIBILITY_STORAGE_KEY);
+        let importedVisObj: Partial<UiVisibilitySettings> = {};
+        if (dataObj[importedVisKey]) {
+          try {
+            importedVisObj = typeof dataObj[importedVisKey] === 'string'
+              ? JSON.parse(dataObj[importedVisKey] as string)
+              : (dataObj[importedVisKey] as Partial<UiVisibilitySettings>);
+          } catch {
+            importedVisObj = {};
+          }
+        }
+        dataObj[UI_VISIBILITY_STORAGE_KEY] = {
+          ...importedVisObj,
+          ...existingDuckDbSettings,
+        };
+      }
+
+      // Disconnect from database to free locks in backend before replacing settings
+      if (onBeforeImport) {
+        await onBeforeImport();
+      }
+
+      // Clear existing local storage so obsolete keys from before the import are removed
+      localStorage.clear();
+
+      let importedCount = 0;
+      for (const [key, value] of Object.entries(dataObj)) {
+        if (key === 'sql_visualizer_version_history' || key === 'versionHistory') {
+          if (Array.isArray(value)) {
+            await importVersions(value as SqlVersionItem[]);
+          }
+        } else if (key === 'sql_visualizer_schema_cache_data' || key === 'schemaCache' || key === 'schemaCacheData') {
+          if (Array.isArray(value)) {
+            await importSchemaCacheEntries(value as SchemaCacheEntry[]);
+          }
+        } else if (key === 'sql_visualizer_snippets' || key === 'snippets') {
+          if (Array.isArray(value)) {
+            await saveSnippetsToDB(value as Snippet[]);
+          }
+        } else if (key === 'sql_visualizer_tabs_session' || key === 'tabsSession') {
+          if (Array.isArray(value)) {
+            await saveSessionTabs(value as EditorTab[]);
+          }
+        } else if (typeof value === 'string') {
+          localStorage.setItem(key, value);
+          importedCount++;
+        } else if (value !== null && typeof value === 'object') {
+          localStorage.setItem(key, JSON.stringify(value));
+          importedCount++;
+        } else if (typeof value === 'boolean' || typeof value === 'number') {
+          localStorage.setItem(key, JSON.stringify(value));
+          importedCount++;
+        }
+      }
+
+      // Mark session import flag so App.tsx unload listener doesn't overwrite imported session on page reload
+      sessionStorage.setItem('sql_is_importing_session', 'true');
+
+      alert(`Успешно импортировано рабочее пространство! Страница перезагружается...`);
+      window.location.reload();
+    } catch (err) {
+      console.error('Failed to import workspace', err);
+      alert('Ошибка при импорте. Проверьте формат JSON файла.');
+    }
+  };
+  reader.readAsText(file);
+}
+
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -448,6 +659,7 @@ interface SettingsModalProps {
   onUpdateFormatterSettings: (newSettings: FormatterSettings) => void;
   uiVisibility: UiVisibilitySettings;
   onUpdateUiVisibility: (newSettings: UiVisibilitySettings) => void;
+  onBeforeImport?: () => Promise<void>;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -459,7 +671,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   formatterSettings,
   onUpdateFormatterSettings,
   uiVisibility,
-  onUpdateUiVisibility
+  onUpdateUiVisibility,
+  onBeforeImport
 }) => {
   const [activeTab, setActiveTab] = useState<'formatter' | 'ui' | 'hotkeys' | 'excel'>('ui');
   const [listeningActionId, setListeningActionId] = useState<string | null>(null);
@@ -645,7 +858,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         keyName = '-';
       } else if (e.code === 'Equal') {
         keyName = '=';
-      } else if (e.code === 'Backquote') {
+      } else if (e.code === 'Backquote' || e.key === '`' || e.key === '~' || e.key === 'ё' || e.key === 'Ё') {
         keyName = '`';
       }
 
@@ -684,184 +897,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const handleExportLocalStorage = async () => {
-    try {
-      // First, trigger immediate session save so current in-memory tabs and state are saved
-      await new Promise<void>((resolve) => {
-        window.dispatchEvent(new CustomEvent('sql_save_session_now', { detail: { onComplete: resolve } }));
-      });
-
-      const backupData: Record<string, unknown> = {};
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && !key.toLowerCase().includes('vault') && !key.toLowerCase().includes('secret')) {
-          const value = localStorage.getItem(key);
-          if (value !== null) {
-            try {
-              backupData[key] = JSON.parse(value);
-            } catch (_) {
-              backupData[key] = value;
-            }
-          }
-        }
-      }
-
-      // Add IndexedDB version history
-      try {
-        const versions = await getVersions();
-        backupData['sql_visualizer_version_history'] = versions;
-      } catch (err) {
-        console.warn('Failed to get IndexedDB versions for export:', err);
-      }
-
-      // Add IndexedDB schema cache at the very end of the JSON file
-      try {
-        const schemaCaches = await getAllSchemaCacheEntries();
-        backupData['sql_visualizer_schema_cache_data'] = schemaCaches;
-      } catch (err) {
-        console.warn('Failed to get IndexedDB schema caches for export:', err);
-      }
-
-      // Add IndexedDB custom snippets
-      try {
-        const snippets = await loadSnippetsFromDB();
-        backupData['sql_visualizer_snippets'] = snippets;
-      } catch (err) {
-        console.warn('Failed to get IndexedDB snippets for export:', err);
-      }
-
-      // Add IndexedDB session tabs
-      try {
-        const sessionTabs = await getSessionTabs();
-        if (sessionTabs) {
-          backupData['sql_visualizer_tabs_session'] = sessionTabs;
-        }
-      } catch (err) {
-        console.warn('Failed to get IndexedDB session tabs for export:', err);
-      }
-
-      const workspaceBundle = {
-        version: 1,
-        app: 'QueryAST Lens Workspace Bundle',
-        exportedAt: new Date().toISOString(),
-        data: backupData
-      };
-
-      const blob = new Blob([JSON.stringify(workspaceBundle, null, 2)], { type: 'application/json' });
-      const dateStr = new Date().toISOString().slice(0, 10);
-      downloadFileWithFallback(blob, `sql_visualizer_workspace_${dateStr}.json`);
-    } catch (e) {
-      console.error('Failed to export workspace', e);
-      alert('Ошибка при экспорте данных');
-    }
+    await exportWorkspaceSettings();
   };
 
   const handleImportLocalStorage = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        const content = e.target?.result as string;
-        const parsed = JSON.parse(content);
-        if (typeof parsed !== 'object' || parsed === null) {
-          throw new Error('Invalid backup file format');
-        }
-
-        const dataObj: Record<string, unknown> = parsed.data && typeof parsed.data === 'object' ? parsed.data : parsed;
-
-        // Extract existing explicitly configured (non-default) DuckDB engine settings before clearing localStorage
-        let existingDuckDbSettings: Partial<UiVisibilitySettings> = {};
-        try {
-          const rawUiVisibility = localStorage.getItem(UI_VISIBILITY_STORAGE_KEY) || localStorage.getItem('sql_visualizer_ui_visibility');
-          if (rawUiVisibility) {
-            const currentVis = JSON.parse(rawUiVisibility) as Partial<UiVisibilitySettings>;
-            // Only preserve if explicitly set to a non-default value by the user
-            if (currentVis.duckDbMemoryLimit && currentVis.duckDbMemoryLimit !== '8GB') {
-              existingDuckDbSettings.duckDbMemoryLimit = currentVis.duckDbMemoryLimit;
-            }
-            if (currentVis.duckDbTempDirectory && currentVis.duckDbTempDirectory !== './tmp') {
-              existingDuckDbSettings.duckDbTempDirectory = currentVis.duckDbTempDirectory;
-            }
-            if (currentVis.duckDbExtensionDirectory && currentVis.duckDbExtensionDirectory !== './extensions') {
-              existingDuckDbSettings.duckDbExtensionDirectory = currentVis.duckDbExtensionDirectory;
-            }
-            if (currentVis.duckDbThreads !== undefined && Number(currentVis.duckDbThreads) !== 0) {
-              existingDuckDbSettings.duckDbThreads = Number(currentVis.duckDbThreads);
-            }
-          }
-        } catch {
-          // Ignore parse errors on pre-existing localStorage
-        }
-
-        // Ensure session key compatibility (if old key exists without _v2)
-        if (dataObj['sql_visualizer_session'] && !dataObj['sql_visualizer_session_v2']) {
-          dataObj['sql_visualizer_session_v2'] = dataObj['sql_visualizer_session'];
-        }
-
-        // Merge existing explicit DuckDB settings into imported ui_visibility if present
-        if (Object.keys(existingDuckDbSettings).length > 0) {
-          const importedVisKey = dataObj[UI_VISIBILITY_STORAGE_KEY] ? UI_VISIBILITY_STORAGE_KEY : (dataObj['sql_visualizer_ui_visibility'] ? 'sql_visualizer_ui_visibility' : UI_VISIBILITY_STORAGE_KEY);
-          let importedVisObj: Partial<UiVisibilitySettings> = {};
-          if (dataObj[importedVisKey]) {
-            try {
-              importedVisObj = typeof dataObj[importedVisKey] === 'string'
-                ? JSON.parse(dataObj[importedVisKey] as string)
-                : (dataObj[importedVisKey] as Partial<UiVisibilitySettings>);
-            } catch {
-              importedVisObj = {};
-            }
-          }
-          dataObj[UI_VISIBILITY_STORAGE_KEY] = {
-            ...importedVisObj,
-            ...existingDuckDbSettings,
-          };
-        }
-
-        // Clear existing local storage so obsolete keys from before the import are removed
-        localStorage.clear();
-
-        let importedCount = 0;
-        for (const [key, value] of Object.entries(dataObj)) {
-          if (key === 'sql_visualizer_version_history' || key === 'versionHistory') {
-            if (Array.isArray(value)) {
-              await importVersions(value as SqlVersionItem[]);
-            }
-          } else if (key === 'sql_visualizer_schema_cache_data' || key === 'schemaCache' || key === 'schemaCacheData') {
-            if (Array.isArray(value)) {
-              await importSchemaCacheEntries(value as SchemaCacheEntry[]);
-            }
-          } else if (key === 'sql_visualizer_snippets' || key === 'snippets') {
-            if (Array.isArray(value)) {
-              await saveSnippetsToDB(value as Snippet[]);
-            }
-          } else if (key === 'sql_visualizer_tabs_session' || key === 'tabsSession') {
-            if (Array.isArray(value)) {
-              await saveSessionTabs(value as EditorTab[]);
-            }
-          } else if (typeof value === 'string') {
-            localStorage.setItem(key, value);
-            importedCount++;
-          } else if (value !== null && typeof value === 'object') {
-            localStorage.setItem(key, JSON.stringify(value));
-            importedCount++;
-          } else if (typeof value === 'boolean' || typeof value === 'number') {
-            localStorage.setItem(key, JSON.stringify(value));
-            importedCount++;
-          }
-        }
-
-        // Mark session import flag so App.tsx unload listener doesn't overwrite imported session on page reload
-        sessionStorage.setItem('sql_is_importing_session', 'true');
-
-        alert(`Успешно импортировано рабочее пространство! Страница перезагружается...`);
-        window.location.reload();
-      } catch (err) {
-        console.error('Failed to import workspace', err);
-        alert('Ошибка при импорте. Проверьте формат JSON файла.');
-      }
-    };
-    reader.readAsText(file);
+    importWorkspaceSettings(file, onBeforeImport);
     event.target.value = '';
   };
 

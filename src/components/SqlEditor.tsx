@@ -64,7 +64,7 @@ export const getBaseHighlight = (sqlText: string, theme: 'dark' | 'light') => {
   const engineColor = isDark ? 'text-amber-300' : 'text-amber-500'; 
   const commentColor = isDark ? 'text-slate-500' : 'text-slate-500';
 
-  const tokenRegex = /(--.*$|\/\*[\s\S]*?\*\/)|('(?:''|[^'\\]|\\.)*')|("(?:""|[^"\\]|\\.)*"|`(?:``|[^`\\]|\\.)*`)|(\b\d+(?:\.\d+)?\b)|(\b(?:ENGINE|SETTINGS|DEFAULT)\b)|(\b(?:COUNT|SUM|AVG|MIN|MAX|ROUND|COALESCE|NOW|CONCAT|DATE_TRUNC|DATE|INT|INTEGER|DOUBLE|VARCHAR|TEXT|DECIMAL|TIME|TIMESTAMP|BOOLEAN|BLOB|INTERVAL|UUID|Float(?:64|32|16|8)|Int(?:64|32|16|8)|UInt(?:64|32|16|8)|STRING|LOWER|UPPER|CAST|ROW_NUMBER|DENSE_RANK|RANK|LEAD|LAG|FIRST_VALUE|LAST_VALUE|LISTAGG|TO_CHAR|TO_DATE|NVL|DECODE|UNIQEXACT|UNIQCOMBINED|ARGMAX|ARGMIN|TOSTARTOFHOUR|TOSTARTOFDAY|QUANTILESEXACT|DICTGET|READ_CSV_AUTO|READ_PARQUET|READ_CSV|LIST_TRANSFORM|FILTER|JSON_EXTRACT|ARRAY_JOIN|ARRAYMAP|ARRAYFILTER)\b)|(\b(?:SELECT|FROM|WHERE|JOIN|LEFT|RIGHT|INNER|OUTER|FULL|CROSS|ON|GROUP|BY|ORDER|HAVING|LIMIT|OFFSET|UNION|ALL|INSERT|INTO|UPDATE|SET|DELETE|CREATE|TABLE|AS|WITH|RECURSIVE|AND|OR|NOT|IN|IS|NULL|LIKE|ILIKE|BETWEEN|EXISTS|CASE|WHEN|THEN|ELSE|END|ASC|DESC|OVER|PARTITION|WINDOW|DISTINCT|VALUES|QUALIFY|PIVOT|UNPIVOT|COLUMNS|EXCLUDE|REPLACE|ATTACH|COPY|MERGE|MATCHED|USING|RETURNING|LATERAL|CONNECT|PRIOR|START|FINAL|UPSERT|CONFLICT|DO|RETURNING|BEGIN|TRANSACTION|COMMIT|ROLLBACK|ABORT)\b)/gim;
+  const tokenRegex = /(--.*$|\/\*[\s\S]*?\*\/)|('(?:''|[^'])*')|("(?:""|[^"])*"|`(?:``|[^`])*`)|(\b\d+(?:\.\d+)?\b)|(\b(?:ENGINE|SETTINGS|DEFAULT)\b)|(\b(?:COUNT|SUM|AVG|MIN|MAX|ROUND|COALESCE|NOW|CONCAT|DATE_TRUNC|DATE|INT|INTEGER|DOUBLE|VARCHAR|TEXT|DECIMAL|TIME|TIMESTAMP|BOOLEAN|BLOB|INTERVAL|UUID|Float(?:64|32|16|8)|Int(?:64|32|16|8)|UInt(?:64|32|16|8)|STRING|LOWER|UPPER|CAST|ROW_NUMBER|DENSE_RANK|RANK|LEAD|LAG|FIRST_VALUE|LAST_VALUE|LISTAGG|TO_CHAR|TO_DATE|NVL|DECODE|UNIQEXACT|UNIQCOMBINED|ARGMAX|ARGMIN|TOSTARTOFHOUR|TOSTARTOFDAY|QUANTILESEXACT|DICTGET|READ_CSV_AUTO|READ_PARQUET|READ_CSV|LIST_TRANSFORM|FILTER|JSON_EXTRACT|ARRAY_JOIN|ARRAYMAP|ARRAYFILTER)\b)|(\b(?:SELECT|FROM|WHERE|JOIN|LEFT|RIGHT|INNER|OUTER|FULL|CROSS|ON|GROUP|BY|ORDER|HAVING|LIMIT|OFFSET|UNION|ALL|INSERT|INTO|UPDATE|SET|DELETE|CREATE|TABLE|AS|WITH|RECURSIVE|AND|OR|NOT|IN|IS|NULL|LIKE|ILIKE|BETWEEN|EXISTS|CASE|WHEN|THEN|ELSE|END|ASC|DESC|OVER|PARTITION|WINDOW|DISTINCT|VALUES|QUALIFY|PIVOT|UNPIVOT|COLUMNS|EXCLUDE|REPLACE|ATTACH|COPY|MERGE|MATCHED|USING|RETURNING|LATERAL|CONNECT|PRIOR|START|FINAL|UPSERT|CONFLICT|DO|RETURNING|BEGIN|TRANSACTION|COMMIT|ROLLBACK|ABORT)\b)/gim;
 
   html = html.replace(tokenRegex, (match, comment, str, ident, num, engineKw, fn, kw) => {
     if (comment) {
@@ -96,6 +96,91 @@ export const getBaseHighlight = (sqlText: string, theme: 'dark' | 'light') => {
   }
 
   return html;
+};
+
+const chunkCache = new Map<string, string>();
+
+interface LineState {
+  inString: boolean;
+  stringChar: string;
+  inBlockComment: boolean;
+}
+
+function getLineEndState(line: string, startState: LineState): LineState {
+  let { inString, stringChar, inBlockComment } = startState;
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    const nextChar = line[i + 1];
+
+    if (!inBlockComment && !inString) {
+      if (char === "'" || char === '"' || char === "`") {
+        inString = true;
+        stringChar = char;
+      } else if (char === '/' && nextChar === '*') {
+        inBlockComment = true;
+        i++;
+      } else if (char === '-' && nextChar === '-') {
+        break;
+      }
+    } else if (inString) {
+      if (char === '\\') {
+        i++;
+      } else if (char === stringChar) {
+        if (nextChar === stringChar) {
+          i++;
+        } else {
+          inString = false;
+          stringChar = '';
+        }
+      }
+    } else if (inBlockComment) {
+      if (char === '*' && nextChar === '/') {
+        inBlockComment = false;
+        i++;
+      }
+    }
+  }
+  return { inString, stringChar, inBlockComment };
+}
+
+export const getChunkedHighlight = (sqlText: string, theme: 'dark' | 'light') => {
+  if (!sqlText) return '';
+
+  const rawLines = sqlText.split('\n');
+  const chunks: string[] = [];
+  let currentChunkLines: string[] = [];
+  let state: LineState = { inString: false, stringChar: '', inBlockComment: false };
+
+  for (let i = 0; i < rawLines.length; i++) {
+    const line = rawLines[i];
+    currentChunkLines.push(line);
+    state = getLineEndState(line, state);
+
+    if (currentChunkLines.length >= 50 && !state.inBlockComment && !state.inString) {
+      chunks.push(currentChunkLines.join('\n'));
+      currentChunkLines = [];
+    }
+  }
+
+  if (currentChunkLines.length > 0) {
+    chunks.push(currentChunkLines.join('\n'));
+  }
+
+  const htmlChunks = chunks.map(chunkText => {
+    const cacheKey = `${theme}_${chunkText}`;
+    let html = chunkCache.get(cacheKey);
+    if (!html) {
+      html = getBaseHighlight(chunkText, theme);
+      chunkCache.set(cacheKey, html);
+    }
+    return html;
+  });
+
+  if (chunkCache.size > 1000) {
+    chunkCache.clear();
+  }
+
+  return htmlChunks.join('\n');
 };
 
 export const processEscapeSequences = (str: string): string => {
@@ -150,7 +235,7 @@ export const matchHotkeyCombo = (e: KeyboardEvent | React.KeyboardEvent, targetS
     keyName = '-';
   } else if (e.code === 'Equal') {
     keyName = '=';
-  } else if (e.code === 'Backquote') {
+  } else if (e.code === 'Backquote' || e.key === '`' || e.key === '~' || e.key === 'ё' || e.key === 'Ё') {
     keyName = '`';
   }
 
@@ -357,7 +442,7 @@ export const applyBracketHighlightToHtml = (html: string, theme: 'dark' | 'light
 };
 
 export const highlightSqlHtml = (sqlText: string, theme: 'dark' | 'light', selectedText?: string) => {
-  let html = getBaseHighlight(sqlText, theme);
+  let html = getChunkedHighlight(sqlText, theme);
   if (selectedText) {
     html = applySelectionToHtml(html, theme, selectedText);
   }
@@ -422,7 +507,7 @@ const editorStyles: React.CSSProperties = {
   wordSpacing: 'normal',
 };
 
-export function SqlEditor({ 
+export const SqlEditor = React.memo(function SqlEditor({ 
   value: propValue, 
   onChange, 
   isWrapSql = false, 
@@ -963,7 +1048,7 @@ export function SqlEditor({
         keyName = '-';
       } else if (e.code === 'Equal') {
         keyName = '=';
-      } else if (e.code === 'Backquote') {
+      } else if (e.code === 'Backquote' || e.key === '`' || e.key === '~' || e.key === 'ё' || e.key === 'Ё') {
         keyName = '`';
       }
 
@@ -1753,7 +1838,7 @@ export function SqlEditor({
 
 
   const baseHighlightedHtml = useMemo(() => {
-    return getBaseHighlight(value, theme);
+    return getChunkedHighlight(value, theme);
   }, [value, theme]);
 
   const finalHtml = useMemo(() => {
@@ -2308,4 +2393,4 @@ export function SqlEditor({
       </div>
     </div>
   );
-}
+});

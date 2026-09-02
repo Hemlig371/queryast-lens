@@ -42,7 +42,7 @@ const getNullPctColor = (pct: number, isDark: boolean) => {
   return isDark ? '#94a3b8' : '#64748b'; // neutral gray for mid-range
 };
 
-export const DataStatsViewer: React.FC<DataStatsViewerProps> = ({
+export const DataStatsViewer: React.FC<DataStatsViewerProps> = React.memo(({
   data,
   theme,
   columnTypes,
@@ -131,7 +131,7 @@ export const DataStatsViewer: React.FC<DataStatsViewerProps> = ({
       res[col] = {
         type: isNumeric ? 'number' : isDate ? 'date' : 'string',
         nullCount,
-        nullPct: data.length > 0 ? Number(((nullCount / data.length) * 100).toFixed(1)) : 0,
+        nullPct: data.length > 0 ? Number(((nullCount / data.length) * 100).toFixed(2)) : 0,
         uniqueCount: values.size,
         count: data.length,
         min: isNumeric && min !== Infinity ? min : undefined,
@@ -198,7 +198,7 @@ export const DataStatsViewer: React.FC<DataStatsViewerProps> = ({
           colName,
           rawType,
           count: countVal,
-          nullPct: Number(nullPct.toFixed(1)),
+          nullPct: Number(nullPct.toFixed(2)),
           uniqueCount,
           min: minVal,
           max: maxVal,
@@ -324,16 +324,25 @@ export const DataStatsViewer: React.FC<DataStatsViewerProps> = ({
       const isClickhouse = activeEngine === 'clickhouse';
 
       let target = tableName?.trim();
-      if (!target || target.toLowerCase() === 'table') {
-        const stripped = (lastExecutedSql || '').trim().replace(/;+$/, '');
-        if (stripped) {
-          target = `(${stripped})`;
-        }
-      } else {
-        if (/^\s*SELECT\b/i.test(target)) {
-          target = `(${target})`;
-        } else if (target.includes(' ') && !/^\s*\(/.test(target)) {
-          target = `(${target})`;
+      const strippedSql = (lastExecutedSql || '').trim().replace(/;+$/, '');
+      
+      if (strippedSql) {
+        const selectCount = (strippedSql.match(/\bSELECT\b/gi) || []).length;
+        const isComplex = /\b(JOIN|GROUP\s+BY|UNION|LIMIT|OFFSET|HAVING|WITH|EXCEPT|INTERSECT)\b/i.test(strippedSql) || selectCount > 1;
+        const match = strippedSql.match(/^\s*SELECT\s+[\s\S]+?\s+FROM\s+([\s\S]+)$/i);
+        
+        if (match && !isComplex) {
+          target = match[1].trim();
+        } else {
+          if (!target || target.toLowerCase() === 'table') {
+            target = `(\n${strippedSql}\n)`;
+          } else {
+            if (/^\s*SELECT\b/i.test(target)) {
+              target = `(\n${target}\n)`;
+            } else if (target.includes(' ') && !/^\s*\(/.test(target)) {
+              target = `(\n${target}\n)`;
+            }
+          }
         }
       }
 
@@ -512,7 +521,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
 
           parsed[colName] = {
             count: countVal,
-            nullPct: Number(nullPct.toFixed(1)),
+            nullPct: Number(nullPct.toFixed(2)),
             uniqueCount: approxUniq !== undefined && approxUniq !== null ? approxUniq : '-',
             min: minVal,
             max: maxVal,
@@ -674,7 +683,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
           const nulls = rows.filter(
             (r) => r[yAxisCol] === null || r[yAxisCol] === undefined || r[yAxisCol] === ''
           ).length;
-          val = Number(((nulls / rows.length) * 100).toFixed(1));
+          val = Number(((nulls / rows.length) * 100).toFixed(2));
         } else {
           const nums = rows
             .map((row) => row[yAxisCol])
@@ -796,9 +805,9 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                   <span>Вставить SQL</span>
                 </button>
                 <span>•</span>
-                <span>Столбцов: <b className="font-semibold text-teal-600 dark:text-teal-400">{summarizeList.length}</b></span>
+                <span>Столбцов: <b className="font-semibold text-teal-600 dark:text-teal-400">{(summarizeList.length || 0).toLocaleString('ru-RU')}</b></span>
                 <span>•</span>
-                <span>Строк: <b className="font-semibold text-teal-600 dark:text-teal-400">{summarizeList[0]?.count || 0}</b></span>
+                <span>Строк: <b className="font-semibold text-teal-600 dark:text-teal-400">{(summarizeList[0]?.count || 0).toLocaleString('ru-RU')}</b></span>
               </div>
             </>
           ) : (
@@ -885,7 +894,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                       <span>Вставить SQL</span>
                     </button>
                     <span>•</span>
-                    <span>Столбцов: <b className="font-semibold text-teal-600 dark:text-teal-400">{columns.length}</b></span>
+                    <span>Столбцов: <b className="font-semibold text-teal-600 dark:text-teal-400">{(columns.length || 0).toLocaleString('ru-RU')}</b></span>
                     <span>•</span>
                     <span>Строк: <b className="font-semibold text-teal-600 dark:text-teal-400">{((remoteStatsInfo?.totalCount !== undefined ? remoteStatsInfo.totalCount : data.length) || 0).toLocaleString('ru-RU')}</b></span>
 
@@ -959,19 +968,19 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                   }`}>
                     {colAnalysis[yAxisCol].type === 'number' ? (
                       <>
-                        <span>Количество: <b className="font-semibold text-teal-600 dark:text-teal-400">{colAnalysis[yAxisCol].count}</b></span>
-                        <span>Уникальных: <b className="font-semibold text-teal-600 dark:text-teal-400">{colAnalysis[yAxisCol].uniqueCount}</b></span>
-                        <span>Сумма: <b className="font-semibold text-teal-600 dark:text-teal-400">{colAnalysis[yAxisCol].sum ?? 0}</b></span>
-                        <span>Среднее: <b className="font-semibold text-teal-600 dark:text-teal-400">{colAnalysis[yAxisCol].avg ?? 0}</b></span>
-                        <span>Мин: <b className="font-semibold text-teal-600 dark:text-teal-400">{colAnalysis[yAxisCol].min ?? 0}</b></span>
-                        <span>Макс: <b className="font-semibold text-teal-600 dark:text-teal-400">{colAnalysis[yAxisCol].max ?? 0}</b></span>
+                        <span>Количество: <b className="font-semibold text-teal-600 dark:text-teal-400">{formatStatVal(colAnalysis[yAxisCol].count)}</b></span>
+                        <span>Уникальных: <b className="font-semibold text-teal-600 dark:text-teal-400">{formatStatVal(colAnalysis[yAxisCol].uniqueCount)}</b></span>
+                        <span>Сумма: <b className="font-semibold text-teal-600 dark:text-teal-400">{formatStatVal(colAnalysis[yAxisCol].sum) ?? 0}</b></span>
+                        <span>Среднее: <b className="font-semibold text-teal-600 dark:text-teal-400">{formatStatVal(colAnalysis[yAxisCol].avg) ?? 0}</b></span>
+                        <span>Мин: <b className="font-semibold text-teal-600 dark:text-teal-400">{formatStatVal(colAnalysis[yAxisCol].min) ?? 0}</b></span>
+                        <span>Макс: <b className="font-semibold text-teal-600 dark:text-teal-400">{formatStatVal(colAnalysis[yAxisCol].max) ?? 0}</b></span>
                         <span>Пустых: <b className="font-semibold text-teal-600 dark:text-teal-400">{colAnalysis[yAxisCol].nullPct}%</b></span>
                       </>
                     ) : (
                       <>
-                        <span>Количество: <b className="font-semibold text-teal-600 dark:text-teal-400">{colAnalysis[yAxisCol].count}</b></span>
-                        <span>Уникальных: <b className="font-semibold text-teal-600 dark:text-teal-400">{colAnalysis[yAxisCol].uniqueCount}</b></span>
-                        <span>Пустых: <b className="font-semibold text-teal-600 dark:text-teal-400">{colAnalysis[yAxisCol].nullPct}%</b> ({colAnalysis[yAxisCol].nullCount} из {colAnalysis[yAxisCol].count})</span>
+                        <span>Количество: <b className="font-semibold text-teal-600 dark:text-teal-400">{formatStatVal(colAnalysis[yAxisCol].count)}</b></span>
+                        <span>Уникальных: <b className="font-semibold text-teal-600 dark:text-teal-400">{formatStatVal(colAnalysis[yAxisCol].uniqueCount)}</b></span>
+                        <span>Пустых: <b className="font-semibold text-teal-600 dark:text-teal-400">{colAnalysis[yAxisCol].nullPct}%</b> ({formatStatVal(colAnalysis[yAxisCol].nullCount)} из {formatStatVal(colAnalysis[yAxisCol].count)})</span>
                       </>
                     )}
                   </div>
@@ -1120,7 +1129,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                   <div
                     key={info.colName + '_' + idx}
                     onClick={() => handleCardClick(info.colName)}
-                    className={`relative flex flex-col px-3 py-1.5 rounded-lg border text-xs overflow-hidden cursor-pointer select-none transition-all gap-1.5 ${
+                    className={`relative flex flex-col justify-between px-2.5 py-1 rounded border text-xs overflow-hidden transition-all gap-1 cursor-pointer select-none ${
                       isSelected
                         ? isDark
                           ? 'bg-amber-950/30 border-amber-500 ring-1 ring-amber-500/50 text-slate-100 shadow-xs'
@@ -1141,7 +1150,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                     />
 
                     {/* Header: Column Name + Raw Type */}
-                    <div className="relative z-10 flex items-center justify-between gap-2 border-b border-slate-500/15 pb-1">
+                    <div className="relative z-10 flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5 min-w-0 truncate">
                         {isSelected && (
                           <span className="w-4 h-4 rounded-full bg-amber-500 text-white font-bold text-[10px] flex items-center justify-center shrink-0 shadow-xs">
@@ -1161,11 +1170,11 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                     </div>
 
                     {/* Full Stats Grid: 3 in a row with inline labels and values */}
-                    <div className="relative z-10 grid grid-cols-3 gap-x-2 gap-y-1 text-[11px] font-mono leading-tight">
+                    <div className="relative z-10 grid grid-cols-3 gap-x-2 gap-y-1 text-[11px] leading-tight">
                       {/* Row 1: Уникальных, Пустых, Среднее */}
-                      <div className="flex items-center gap-1 min-w-0 truncate text-teal-600 dark:text-teal-400 font-medium" title={`Уникальных: ${info.uniqueCount}`}>
+                      <div className="flex items-center gap-1 min-w-0 truncate text-teal-600 dark:text-teal-400 font-medium" title={`Уникальных: ${formatStatVal(info.uniqueCount)}`}>
                         <span className="shrink-0">Уникальных:</span>
-                        <b className="truncate font-semibold">{info.uniqueCount}</b>
+                        <b className="truncate font-semibold">{formatStatVal(info.uniqueCount)}</b>
                       </div>
 
                       <div className="flex items-center gap-1 min-w-0 truncate text-slate-800 dark:text-slate-100 font-medium" title={`Пустых: ${info.nullPct}%`}>
@@ -1263,13 +1272,13 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                         </div>
                       </div>
                       <div className="relative z-10 flex items-center justify-between gap-1 text-[11px]">
-                        <span className="font-mono text-teal-600 dark:text-teal-400 font-medium">
-                          Уникальных: <b>{displayUnique}</b>
+                        <span className="text-teal-600 dark:text-teal-400 font-medium">
+                          Уникальных: <b>{formatStatVal(displayUnique) ?? displayUnique}</b>
                         </span>
-                        <span className="font-mono opacity-80">
-                          Сумма: <b>{displaySum !== undefined && displaySum !== null ? displaySum : '-'}</b>
+                        <span className="opacity-80">
+                          Сумма: <b>{displaySum !== undefined && displaySum !== null ? (formatStatVal(displaySum) ?? displaySum) : '-'}</b>
                         </span>
-                        <span className="font-mono opacity-80">
+                        <span className="opacity-80">
                           Пустых: <b className="font-semibold" style={{ color: getNullPctColor(displayNullPct, isDark) }}>{displayNullPct}%</b>
                         </span>
                       </div>
@@ -1301,7 +1310,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                         {item.name}
                       </span>
                       <span className="relative z-10 font-mono font-bold text-teal-600 dark:text-teal-400 shrink-0">
-                        {item.value}
+                        {formatStatVal(item.value) ?? item.value}
                       </span>
                     </div>
                   );
@@ -1404,4 +1413,4 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
       </div>
     </div>
   );
-};
+});

@@ -1,3 +1,21 @@
+export async function copyToClipboard(text: string) {
+  const isTauri = typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_IPC__' in window);
+  if (isTauri) {
+    try {
+      const { writeText } = await import('@tauri-apps/api/clipboard');
+      await writeText(text);
+      return;
+    } catch (e) {
+      console.warn("Tauri clipboard failed, falling back to web:", e);
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (err) {
+    console.error("Clipboard write failed:", err);
+  }
+}
+
 export async function downloadFileWithFallback(blob: Blob, filename: string) {
   const isTauri = typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_IPC__' in window);
   if (isTauri) {

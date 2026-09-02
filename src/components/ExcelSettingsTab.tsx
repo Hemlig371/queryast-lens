@@ -27,7 +27,7 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
   const [savedFeedback, setSavedFeedback] = useState<boolean>(false);
   const [copiedTemplate, setCopiedTemplate] = useState<boolean>(false);
 
-  const sampleSqlComment = '/* #Заголовок ##Подзаголовок @file:ИмяФайла @sheet:ИмяЛиста @totals:SUM @split:№/Имя @group:№/Имя @group_cols:№ @group_hide:true @protect:12345 */';
+  const sampleSqlComment = '/* #Заголовок ##Подзаголовок @preset:ИмяПресета @file:ИмяФайла @sheet:ИмяЛиста @totals:SUM @split:№/Имя @group:№/Имя @group_cols:№ @group_hide:true @skip:№/Имя @protect:12345 */';
 
   const handleCopySqlCommentTemplate = () => {
     navigator.clipboard.writeText(sampleSqlComment);
@@ -373,7 +373,7 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
                 onChange={(e) => updateExcel({ showGridLines: e.target.checked })}
                 className="rounded border-slate-400 text-blue-600 focus:ring-blue-500 w-4 h-4"
               />
-              <span className="font-semibold text-xs">Отображать сетку листа Excel</span>
+              <span className="text-xs">Отображать сетку листа Excel</span>
             </label>
           </div>
         </div>
@@ -518,7 +518,7 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
                       onChange={(e) => updateExcel({ firstColumnBold: e.target.checked })}
                       className="rounded border-slate-400 text-blue-600 focus:ring-blue-500 w-4 h-4"
                     />
-                    <span className="font-semibold text-xs">Полужирный шрифт</span>
+                    <span className="text-xs">Полужирный шрифт</span>
                   </label>
                 </div>
               </div>
@@ -528,7 +528,7 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
           {/* Автогруппировка строк по категории */}
           <div className={`${dividerClass} mt-3 pt-3 pl-6 space-y-2.5`}>
             <div className="flex flex-wrap items-center gap-3">
-              <span className={`text-xs font-semibold shrink-0 ${theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}`}>
+              <span className={`text-xs shrink-0 ${theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}`}>
                 Автогруппировка строк по столбцу:
               </span>
               <input
@@ -569,6 +569,68 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
                     Свернуть группы при открытии файла в Excel
                   </span>
                 </label>
+
+                <label className={`flex items-center gap-2 cursor-pointer ${theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}`}>
+                  <input
+                    type="checkbox"
+                    checked={excelSettings.categoryGroupFormatSubtotals ?? false}
+                    onChange={(e) => updateExcel({ categoryGroupFormatSubtotals: e.target.checked })}
+                    className="rounded border-slate-400 text-blue-600 focus:ring-blue-500 w-4 h-4"
+                  />
+                  <span className="text-xs">
+                    Выделять первую строку категории как подытог
+                  </span>
+                </label>
+
+                {excelSettings.categoryGroupFormatSubtotals && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end pt-2 pl-6">
+                    <div>
+                      <label className={labelClass}>Цвет фона подытога:</label>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="color"
+                          value={`#${excelSettings.categorySubtotalBgColor || 'E2E8F0'}`}
+                          onChange={(e) => updateExcel({ categorySubtotalBgColor: e.target.value.replace('#', '').toUpperCase() })}
+                          className={colorPickerClass}
+                        />
+                        <input
+                          type="text"
+                          value={excelSettings.categorySubtotalBgColor || 'E2E8F0'}
+                          onChange={(e) => updateExcel({ categorySubtotalBgColor: e.target.value.toUpperCase() })}
+                          className={`w-full font-mono uppercase ${inputClass}`}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className={labelClass}>Цвет текста подытога:</label>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="color"
+                          value={`#${excelSettings.categorySubtotalTextColor || '0F172A'}`}
+                          onChange={(e) => updateExcel({ categorySubtotalTextColor: e.target.value.replace('#', '').toUpperCase() })}
+                          className={colorPickerClass}
+                        />
+                        <input
+                          type="text"
+                          value={excelSettings.categorySubtotalTextColor || '0F172A'}
+                          onChange={(e) => updateExcel({ categorySubtotalTextColor: e.target.value.toUpperCase() })}
+                          className={`w-full font-mono uppercase ${inputClass}`}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center pb-2">
+                      <label className={`flex items-center gap-2 cursor-pointer ${theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}`}>
+                        <input
+                          type="checkbox"
+                          checked={excelSettings.categorySubtotalBold ?? true}
+                          onChange={(e) => updateExcel({ categorySubtotalBold: e.target.checked })}
+                          className="rounded border-slate-400 text-blue-600 focus:ring-blue-500 w-4 h-4"
+                        />
+                        <span className="text-xs">Полужирный шрифт</span>
+                      </label>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -588,7 +650,7 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
                   onChange={(e) => updateExcel({ enableRowZebra: e.target.checked })}
                   className="rounded border-slate-400 text-blue-600 focus:ring-blue-500 w-4 h-4"
                 />
-                <span className="font-semibold text-xs">Чередовать цвет строк</span>
+                <span className="text-xs">Чередовать цвет строк</span>
               </label>
               {excelSettings.enableRowZebra && (
                 <div className="flex items-center gap-2 pl-6">
@@ -617,7 +679,7 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
                   onChange={(e) => updateExcel({ enableColumnZebra: e.target.checked })}
                   className="rounded border-slate-400 text-blue-600 focus:ring-blue-500 w-4 h-4"
                 />
-                <span className="font-semibold text-xs">Чередовать цвет столбцов</span>
+                <span className="text-xs">Чередовать цвет столбцов</span>
               </label>
               {excelSettings.enableColumnZebra && (
                 <div className="flex items-center gap-2 pl-6">
@@ -715,7 +777,7 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
                   onChange={(e) => updateExcel({ autoColumnWidth: e.target.checked })}
                   className="rounded border-slate-400 text-blue-600 focus:ring-blue-500 w-4 h-4"
                 />
-                <span className="font-semibold text-xs">Автоподбор ширины столбцов</span>
+                <span className="text-xs">Автоподбор ширины столбцов</span>
               </label>
 
               {excelSettings.autoColumnWidth ? (
@@ -767,7 +829,7 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
                   onChange={(e) => updateExcel({ wrapText: e.target.checked })}
                   className="rounded border-slate-400 text-blue-600 focus:ring-blue-500 w-4 h-4"
                 />
-                <span className="font-semibold text-xs">Перенос текста по словам</span>
+                <span className="text-xs">Перенос текста по словам</span>
               </label>
               <p className={`pl-6 ${hintClass}`}>
                 Автоматический перенос строк в ячейках с длинным текстом.
@@ -865,6 +927,26 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
               />
               <span className="font-medium">Отображать нулевые значения (0)</span>
             </label>
+
+            <div className={`sm:col-span-2 ${dividerClass} pt-3 flex flex-wrap items-center gap-3`}>
+              <span className={`text-xs shrink-0 ${theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}`}>
+                Исключить столбец из отчета:
+              </span>
+              <input
+                type="number"
+                min={0}
+                max={50}
+                value={excelSettings.skipColumnIndex ?? 0}
+                onChange={(e) => {
+                  const val = Math.max(0, parseInt(e.target.value) || 0);
+                  updateExcel({ skipColumnIndex: val > 0 ? val : null });
+                }}
+                className={`w-20 ${inputClass}`}
+              />
+              <span className={hintClass}>
+                (0 — не исключать, 1 — первый столбец, 2 — второй и т.д.)
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -893,7 +975,7 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
                 onChange={(e) => updateExcel({ enableReportTitle: e.target.checked })}
                 className="rounded border-slate-400 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
               />
-              <span className="text-[11px] font-semibold">Добавить заголовок отчета</span>
+              <span className="text-[11px]">Добавить заголовок отчета</span>
             </label>
           </div>
 
@@ -975,7 +1057,7 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
                       onChange={(e) => updateExcel({ reportTitleBold: e.target.checked })}
                       className="rounded border-slate-400 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5 shrink-0"
                     />
-                    <span className="font-semibold text-xs">Полужирный</span>
+                    <span className="text-xs">Полужирный</span>
                   </label>
                   <label className={`flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}`}>
                     <input
@@ -984,7 +1066,7 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
                       onChange={(e) => updateExcel({ reportTitleItalic: e.target.checked })}
                       className="rounded border-slate-400 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5 shrink-0"
                     />
-                    <span className="font-semibold text-xs">Курсив</span>
+                    <span className="text-xs">Курсив</span>
                   </label>
                 </div>
               </div>
@@ -1043,7 +1125,7 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
                       onChange={(e) => updateExcel({ reportSubtitleBold: e.target.checked })}
                       className="rounded border-slate-400 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5 shrink-0"
                     />
-                    <span className="font-semibold text-xs">Полужирный</span>
+                    <span className="text-xs">Полужирный</span>
                   </label>
                   <label className={`flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}`}>
                     <input
@@ -1052,7 +1134,7 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
                       onChange={(e) => updateExcel({ reportSubtitleItalic: e.target.checked })}
                       className="rounded border-slate-400 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5 shrink-0"
                     />
-                    <span className="font-semibold text-xs">Курсив</span>
+                    <span className="text-xs">Курсив</span>
                   </label>
                 </div>
               </div>
@@ -1062,19 +1144,53 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
 
         {/* 3.2 Итоговая Строка */}
         <div className={cardClass}>
-          <label className={`flex items-center gap-2 cursor-pointer ${theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}`}>
-            <input
-              type="checkbox"
-              checked={excelSettings.enableTotalsRow}
-              onChange={(e) => updateExcel({ enableTotalsRow: e.target.checked })}
-              className="rounded border-slate-400 text-blue-600 focus:ring-blue-500 w-4 h-4"
-            />
+          <div className="space-y-2">
             <span className={subHeaderClass}>
               3.2 Строка итогов
             </span>
-          </label>
+            <div className="flex flex-wrap gap-4 pt-3">
+              <label className={`flex items-center gap-2 cursor-pointer ${theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}`}>
+                <input
+                  type="radio"
+                  name="totalsRowMode"
+                  checked={!excelSettings.enableTotalsRow && !excelSettings.formatExistingRowAsTotal}
+                  onChange={() => updateExcel({ enableTotalsRow: false, formatExistingRowAsTotal: false })}
+                  className="border-slate-400 text-blue-600 focus:ring-blue-500 w-4 h-4"
+                />
+                <span className="text-xs">
+                  Отключено
+                </span>
+              </label>
 
-          {excelSettings.enableTotalsRow && (
+              <label className={`flex items-center gap-2 cursor-pointer ${theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}`}>
+                <input
+                  type="radio"
+                  name="totalsRowMode"
+                  checked={excelSettings.enableTotalsRow}
+                  onChange={() => updateExcel({ enableTotalsRow: true, formatExistingRowAsTotal: false })}
+                  className="border-slate-400 text-blue-600 focus:ring-blue-500 w-4 h-4"
+                />
+                <span className="text-xs">
+                  Вычисляемая строка (формула Excel)
+                </span>
+              </label>
+
+              <label className={`flex items-center gap-2 cursor-pointer ${theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}`}>
+                <input
+                  type="radio"
+                  name="totalsRowMode"
+                  checked={excelSettings.formatExistingRowAsTotal ?? false}
+                  onChange={() => updateExcel({ enableTotalsRow: false, formatExistingRowAsTotal: true })}
+                  className="border-slate-400 text-blue-600 focus:ring-blue-500 w-4 h-4"
+                />
+                <span className="text-xs">
+                  Форматировать строку как итог
+                </span>
+              </label>
+            </div>
+          </div>
+
+          {(excelSettings.enableTotalsRow || excelSettings.formatExistingRowAsTotal) && (
             <div className="space-y-3 pl-6 pt-3">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
@@ -1084,23 +1200,31 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
                     onChange={(e) => updateExcel({ totalsRowPosition: e.target.value as any })}
                     className={`w-full ${inputClass}`}
                   >
-                    <option value="bottom">Внизу таблицы</option>
-                    <option value="top">Вверху (под заголовком таблицы)</option>
+                    <option value="bottom">Внизу таблицы (последняя строка)</option>
+                    <option value="top">Вверху таблицы (первая строка)</option>
                   </select>
                 </div>
 
-                <div>
-                  <label className={labelClass}>Функция:</label>
-                  <select
-                    value={excelSettings.totalsRowFunction}
-                    onChange={(e) => updateExcel({ totalsRowFunction: e.target.value as any })}
-                    className={`w-full ${inputClass}`}
-                  >
-                    <option value="SUM">Сумма (SUM)</option>
-                    <option value="AVERAGE">Среднее (AVERAGE)</option>
-                    <option value="COUNT">Количество (COUNTA)</option>
-                  </select>
-                </div>
+                {excelSettings.enableTotalsRow ? (
+                  <div>
+                    <label className={labelClass}>Функция формулы:</label>
+                    <select
+                      value={excelSettings.totalsRowFunction}
+                      onChange={(e) => updateExcel({ totalsRowFunction: e.target.value as any })}
+                      className={`w-full ${inputClass}`}
+                    >
+                      <option value="SUM">Сумма (SUM)</option>
+                      <option value="AVERAGE">Среднее (AVERAGE)</option>
+                      <option value="COUNT">Количество (COUNTA)</option>
+                    </select>
+                  </div>
+                ) : (
+                  <div className="flex items-center pt-5">
+                    <span className={hintClass}>
+                      Значения берутся из результата SQL-запроса
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end pt-1">
@@ -1146,7 +1270,7 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
                       onChange={(e) => updateExcel({ totalsRowBold: e.target.checked })}
                       className="rounded border-slate-400 text-blue-600 focus:ring-blue-500 w-4 h-4"
                     />
-                    <span className="font-semibold text-xs">Полужирный</span>
+                    <span className="text-xs">Полужирный</span>
                   </label>
                 </div>
               </div>
@@ -1156,19 +1280,53 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
 
         {/* 3.3 Итоговый Столбец */}
         <div className={cardClass}>
-          <label className={`flex items-center gap-2 cursor-pointer ${theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}`}>
-            <input
-              type="checkbox"
-              checked={excelSettings.enableTotalsColumn}
-              onChange={(e) => updateExcel({ enableTotalsColumn: e.target.checked })}
-              className="rounded border-slate-400 text-blue-600 focus:ring-blue-500 w-4 h-4"
-            />
+          <div className="space-y-2">
             <span className={subHeaderClass}>
               3.3 Столбец итогов
             </span>
-          </label>
+            <div className="flex flex-wrap gap-4 pt-3">
+              <label className={`flex items-center gap-2 cursor-pointer ${theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}`}>
+                <input
+                  type="radio"
+                  name="totalsColumnMode"
+                  checked={!excelSettings.enableTotalsColumn && !excelSettings.formatExistingColumnAsTotal}
+                  onChange={() => updateExcel({ enableTotalsColumn: false, formatExistingColumnAsTotal: false })}
+                  className="border-slate-400 text-blue-600 focus:ring-blue-500 w-4 h-4"
+                />
+                <span className="text-xs">
+                  Отключено
+                </span>
+              </label>
 
-          {excelSettings.enableTotalsColumn && (
+              <label className={`flex items-center gap-2 cursor-pointer ${theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}`}>
+                <input
+                  type="radio"
+                  name="totalsColumnMode"
+                  checked={excelSettings.enableTotalsColumn}
+                  onChange={() => updateExcel({ enableTotalsColumn: true, formatExistingColumnAsTotal: false })}
+                  className="border-slate-400 text-blue-600 focus:ring-blue-500 w-4 h-4"
+                />
+                <span className="text-xs">
+                  Вычисляемый столбец (формула Excel)
+                </span>
+              </label>
+
+              <label className={`flex items-center gap-2 cursor-pointer ${theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}`}>
+                <input
+                  type="radio"
+                  name="totalsColumnMode"
+                  checked={excelSettings.formatExistingColumnAsTotal ?? false}
+                  onChange={() => updateExcel({ enableTotalsColumn: false, formatExistingColumnAsTotal: true })}
+                  className="border-slate-400 text-blue-600 focus:ring-blue-500 w-4 h-4"
+                />
+                <span className="text-xs">
+                  Форматировать столбец как итог
+                </span>
+              </label>
+            </div>
+          </div>
+
+          {(excelSettings.enableTotalsColumn || excelSettings.formatExistingColumnAsTotal) && (
             <div className="space-y-3 pl-6 pt-3">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
@@ -1178,23 +1336,31 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
                     onChange={(e) => updateExcel({ totalsColumnPosition: e.target.value as any })}
                     className={`w-full ${inputClass}`}
                   >
-                    <option value="right">Справа (в конце таблицы)</option>
+                    <option value="right">Справа (последний столбец)</option>
                     <option value="left">Слева (после категорий)</option>
                   </select>
                 </div>
 
-                <div>
-                  <label className={labelClass}>Функция:</label>
-                  <select
-                    value={excelSettings.totalsColumnFunction}
-                    onChange={(e) => updateExcel({ totalsColumnFunction: e.target.value as any })}
-                    className={`w-full ${inputClass}`}
-                  >
-                    <option value="SUM">Сумма (SUM)</option>
-                    <option value="AVERAGE">Среднее (AVERAGE)</option>
-                    <option value="COUNT">Количество (COUNTA)</option>
-                  </select>
-                </div>
+                {excelSettings.enableTotalsColumn ? (
+                  <div>
+                    <label className={labelClass}>Функция формулы:</label>
+                    <select
+                      value={excelSettings.totalsColumnFunction}
+                      onChange={(e) => updateExcel({ totalsColumnFunction: e.target.value as any })}
+                      className={`w-full ${inputClass}`}
+                    >
+                      <option value="SUM">Сумма (SUM)</option>
+                      <option value="AVERAGE">Среднее (AVERAGE)</option>
+                      <option value="COUNT">Количество (COUNTA)</option>
+                    </select>
+                  </div>
+                ) : (
+                  <div className="flex items-center pt-5">
+                    <span className={hintClass}>
+                      Значения берутся из результата SQL-запроса
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end pt-1">
@@ -1240,7 +1406,7 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
                       onChange={(e) => updateExcel({ totalsColumnBold: e.target.checked })}
                       className="rounded border-slate-400 text-blue-600 focus:ring-blue-500 w-4 h-4"
                     />
-                    <span className="font-semibold text-xs">Полужирный</span>
+                    <span className="text-xs">Полужирный</span>
                   </label>
                 </div>
               </div>

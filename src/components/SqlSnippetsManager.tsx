@@ -79,7 +79,7 @@ FROM _temp_staging;`
     id: 'act-ch-tables',
     title: 'ClickHouse: Список таблиц и их размер',
     category: ACTION_MENU_CATEGORY,
-    dialect: 'ClickHouse',
+    dialect: 'Clickhouse',
     description: 'Вывод всех таблиц текущей базы данных ClickHouse с подсчетом количества строк и занимаемого объема.',
     sql: `SELECT name, total_rows, formatReadableSize(total_bytes) AS size, engine FROM system.tables WHERE database = currentDatabase() ORDER BY total_bytes DESC;`
   },
@@ -87,7 +87,7 @@ FROM _temp_staging;`
     id: 'act-ch-processes',
     title: 'ClickHouse: Активные запросы (Processes)',
     category: ACTION_MENU_CATEGORY,
-    dialect: 'ClickHouse',
+    dialect: 'Clickhouse',
     description: 'Мониторинг текущих выполняющихся запросов и потребления ресурсов в ClickHouse.',
     sql: `SELECT query_id, user, elapsed, formatReadableSize(memory_usage) AS memory, query FROM system.processes WHERE is_initial_query = 1;`
   },

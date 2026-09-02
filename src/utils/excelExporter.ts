@@ -187,6 +187,21 @@ export async function exportToExcel({
         }
       }
 
+      // @skip: column index (1-based) or column name to exclude from sheet output
+      const skipMatch = combinedComments.match(/@skip:\s*([^@\n*]+)/i);
+      if (skipMatch) {
+        const val = skipMatch[1].trim();
+        const num = parseInt(val, 10);
+        if (!isNaN(num)) {
+          settings.skipColumnIndex = num > 0 ? num : null;
+        } else {
+          const colIdx = rawColumns.findIndex(c => c.toLowerCase() === val.toLowerCase());
+          if (colIdx !== -1) {
+            settings.skipColumnIndex = colIdx + 1;
+          }
+        }
+      }
+
       // @group: column index (1-based) or column name
       const groupMatch = combinedComments.match(/@group:\s*([^@\n*]+)/i);
       if (groupMatch) {
@@ -280,6 +295,13 @@ export async function exportToExcel({
   } else {
     const primarySheetName = sanitizeSheetName(settings.defaultSheetName || 'Отчет', 'Отчет');
     sheetsData[primarySheetName] = data;
+  }
+
+  // Skip / Exclude column from report output if specified
+  const skipIndex = settings.skipColumnIndex;
+  if (skipIndex !== null && skipIndex !== undefined && skipIndex > 0 && skipIndex <= rawColumns.length) {
+    const skipColKey = rawColumns[skipIndex - 1];
+    activeColumns = activeColumns.filter(c => c !== skipColKey);
   }
 
   // Pre-calculate base colsMeta once
@@ -611,11 +633,17 @@ export async function exportToExcel({
     // Fonts
     const firstDataColIdx = settings.enableRowIndexColumn ? 1 : 0;
     const isCategoryCol = settings.enableFirstColumnStyle && effectiveCatCols > 0 && (colIdx >= firstDataColIdx && colIdx < firstDataColIdx + effectiveCatCols);
-    const fontColor = isCategoryCol ? cleanHexColor(settings.firstColumnTextColor) : cleanHexColor(settings.dataTextColor || '000000');
+    const targetFormattedColKey = settings.totalsColumnPosition === 'left'
+      ? baseColsMeta[effectiveCatCols]?.key || baseColsMeta[0]?.key
+      : baseColsMeta[baseColsMeta.length - 1]?.key;
+    const isFormattedTotalCol = Boolean(settings.formatExistingColumnAsTotal) && (col.key === targetFormattedColKey);
+    const fontColor = isFormattedTotalCol 
+      ? cleanHexColor(settings.totalsColumnTextColor)
+      : (isCategoryCol ? cleanHexColor(settings.firstColumnTextColor) : cleanHexColor(settings.dataTextColor || '000000'));
 
     if (col.isRowIndexCol) {
       sheetCol.font = { name: settings.fontFamily, size: Math.max(6, settings.dataFontSize - 2), color: { argb: cleanHexColor(settings.dataTextColor || '000000') } };
-    } else if (col.isTotalCol) {
+    } else if (col.isTotalCol || isFormattedTotalCol) {
       sheetCol.font = { name: settings.fontFamily, size: settings.dataFontSize, bold: settings.totalsColumnBold, color: { argb: cleanHexColor(settings.totalsColumnTextColor) } };
     } else {
       sheetCol.font = { name: settings.fontFamily, size: settings.dataFontSize, bold: isCategoryCol ? settings.firstColumnBold : false, color: { argb: fontColor } };
@@ -717,6 +745,7 @@ export async function exportToExcel({
   }
 
   // PRE-COMPUTE row patterns outside the loop (calling cleanHexColor inside a 500,000 cell loop causes lag)
+  const totalsRowBg = settings.totalsRowBgColor ? cleanHexColor(settings.totalsRowBgColor) : undefined;
   const totalsColBg = settings.totalsColumnBgColor ? cleanHexColor(settings.totalsColumnBgColor) : undefined;
   const firstColBg = settings.firstColumnBgColor ? cleanHexColor(settings.firstColumnBgColor) : undefined;
   const zebraRowBg = settings.rowZebraBgColor ? cleanHexColor(settings.rowZebraBgColor) : undefined;
@@ -729,11 +758,24 @@ export async function exportToExcel({
     const excelRow = mainSheet.getRow(currentExcelRowIdx);
 
     const isZebraRow = settings.enableRowZebra && dataIndex % 2 === 1;
+    const isFormattedTotalRow = Boolean(settings.formatExistingRowAsTotal) && (
+      (settings.totalsRowPosition === 'top' && dataIndex === 0) ||
+      (settings.totalsRowPosition === 'bottom' && dataIndex === sheetData.length - 1)
+    );
+
+    if (isFormattedTotalRow) {
+      excelRow.height = Math.max(24, Math.ceil(settings.totalFontSize * 1.7));
+    }
 
     colsMeta.forEach((col, colIdx) => {
       const cell = excelRow.getCell(colIdx + 1);
       const isFirstCol = colIdx === 0;
       const isZebraCol = settings.enableColumnZebra && colIdx % 2 === 1;
+      const targetFormattedColKey = settings.totalsColumnPosition === 'left'
+        ? baseColsMeta[effectiveCatCols]?.key || baseColsMeta[0]?.key
+        : baseColsMeta[baseColsMeta.length - 1]?.key;
+      const isFormattedTotalCol = Boolean(settings.formatExistingColumnAsTotal) && (col.key === targetFormattedColKey);
+
       if (col.isRowIndexCol) {
         const rowNum = (hasTotalsRow && totalsRowPos === 'top') ? dataIndex + 2 : dataIndex + 1;
         cell.value = rowNum;
@@ -778,7 +820,11 @@ export async function exportToExcel({
           if (rawVal instanceof Date) {
             cell.value = rawVal;
           } else {
-            const parsedDt = new Date(rawVal as string | number);
+            let dtStr = rawVal as string | number;
+            if (typeof dtStr === 'string' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(dtStr)) {
+              dtStr = dtStr.replace(' ', 'T');
+            }
+            const parsedDt = new Date(dtStr);
             if (!isNaN(parsedDt.getTime())) {
               cell.value = parsedDt;
             } else {
@@ -790,11 +836,33 @@ export async function exportToExcel({
         }
       }
 
-      // Fills / Zebra
+      // Fills / Zebra / Totals formatting
       const firstDataColIdx = settings.enableRowIndexColumn ? 1 : 0;
       const isCategoryCol = settings.enableFirstColumnStyle && effectiveCatCols > 0 && (colIdx >= firstDataColIdx && colIdx < firstDataColIdx + effectiveCatCols);
       
-      if (col.isTotalCol && totalsColBg) {
+      if (isFormattedTotalRow) {
+        if (totalsRowBg && !col.isRowIndexCol) {
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: totalsRowBg }
+          };
+        }
+        if (!col.isRowIndexCol) {
+          cell.font = {
+            name: settings.fontFamily,
+            size: settings.totalFontSize,
+            bold: settings.totalsRowBold,
+            color: { argb: cleanHexColor(settings.totalsRowTextColor) }
+          };
+        }
+      } else if (col.isTotalCol && totalsColBg) {
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: totalsColBg }
+        };
+      } else if (isFormattedTotalCol && totalsColBg) {
         cell.fill = {
           type: 'pattern',
           pattern: 'solid',
@@ -820,7 +888,10 @@ export async function exportToExcel({
         };
       }
 
-      if (dataBorder) {
+      if (isFormattedTotalRow && !col.isRowIndexCol) {
+        const tBorder = getCellBorder(true);
+        if (tBorder) cell.border = tBorder;
+      } else if (dataBorder) {
         cell.border = dataBorder;
       }
     });
@@ -835,42 +906,53 @@ export async function exportToExcel({
   ) {
     const groupColKey = rawColumns[settings.categoryGroupColumn - 1];
     const groupColMetaIdx = colsMeta.findIndex(cm => cm.key === groupColKey);
+    const sheetGroupColIdx = groupColMetaIdx !== -1 ? groupColMetaIdx + 1 : null;
+    const subtotalBg = settings.categorySubtotalBgColor ? cleanHexColor(settings.categorySubtotalBgColor) : 'E2E8F0';
+    const subtotalTextColor = settings.categorySubtotalTextColor ? cleanHexColor(settings.categorySubtotalTextColor) : '0F172A';
+    const subtotalBold = settings.categorySubtotalBold !== false;
 
-    if (groupColMetaIdx !== -1) {
-      const sheetGroupColIdx = groupColMetaIdx + 1;
+    for (let i = 0; i < sheetData.length; i++) {
+      const isFormattedTotalRow = Boolean(settings.formatExistingRowAsTotal) && (
+        (settings.totalsRowPosition === 'top' && i === 0) ||
+        (settings.totalsRowPosition === 'bottom' && i === sheetData.length - 1)
+      );
 
-      for (let i = 0; i < sheetData.length; i++) {
-        const currentExcelRowIdx = dataStartRowIdx + i;
-        const row = mainSheet.getRow(currentExcelRowIdx);
-        const cell = row.getCell(sheetGroupColIdx);
-        const currentVal = sheetData[i] ? sheetData[i][groupColKey] : undefined;
-        const prevVal = i > 0 && sheetData[i - 1] ? sheetData[i - 1][groupColKey] : undefined;
-        const nextVal = i < sheetData.length - 1 && sheetData[i + 1] ? sheetData[i + 1][groupColKey] : undefined;
+      if (isFormattedTotalRow) {
+        continue;
+      }
 
-        const isNewGroup = i === 0 || currentVal !== prevVal;
-        const isLastInGroup = i === sheetData.length - 1 || currentVal !== nextVal;
+      const currentExcelRowIdx = dataStartRowIdx + i;
+      const row = mainSheet.getRow(currentExcelRowIdx);
+      const cell = sheetGroupColIdx ? row.getCell(sheetGroupColIdx) : null;
+      const currentVal = sheetData[i] ? sheetData[i][groupColKey] : undefined;
+      const prevVal = i > 0 && sheetData[i - 1] ? sheetData[i - 1][groupColKey] : undefined;
+      const nextVal = i < sheetData.length - 1 && sheetData[i + 1] ? sheetData[i + 1][groupColKey] : undefined;
 
-        if (!isNewGroup) {
-          // Child row: assign outline level
-          row.outlineLevel = 1;
-          if (settings.categoryGroupCollapse) {
-            row.hidden = true;
+      const isNewGroup = i === 0 || currentVal !== prevVal;
+      const isLastInGroup = i === sheetData.length - 1 || currentVal !== nextVal;
+
+      if (!isNewGroup) {
+        // Child row: assign outline level
+        row.outlineLevel = 1;
+        if (settings.categoryGroupCollapse) {
+          row.hidden = true;
+        }
+
+        if (settings.categoryGroupCleanDuplicates && cell) {
+          cell.value = '';
+
+          // Cleanly remove top border and keep bottom only on the last element of the group
+          if (cell.border) {
+            const existingBorder = cell.border;
+            cell.border = {
+              ...existingBorder,
+              top: undefined,
+              bottom: isLastInGroup ? existingBorder.bottom : undefined
+            };
           }
-
-          if (settings.categoryGroupCleanDuplicates) {
-            cell.value = '';
-
-            // Cleanly remove top border and keep bottom only on the last element of the group
-            if (cell.border) {
-              const existingBorder = cell.border;
-              cell.border = {
-                ...existingBorder,
-                top: undefined,
-                bottom: isLastInGroup ? existingBorder.bottom : undefined
-              };
-            }
-          }
-        } else if (settings.categoryGroupCleanDuplicates) {
+        }
+      } else {
+        if (settings.categoryGroupCleanDuplicates && cell) {
           // Main / Parent row of the category: remove bottom border if group continues
           if (cell.border && !isLastInGroup) {
             cell.border = {
@@ -878,6 +960,38 @@ export async function exportToExcel({
               bottom: undefined
             };
           }
+        }
+
+        // If category subtotals formatting is enabled, format the first row of category as a subtotal
+        if (settings.categoryGroupFormatSubtotals) {
+          const targetFormattedColKey = settings.totalsColumnPosition === 'left'
+            ? baseColsMeta[effectiveCatCols]?.key || baseColsMeta[0]?.key
+            : baseColsMeta[baseColsMeta.length - 1]?.key;
+
+          colsMeta.forEach((col, cIdx) => {
+            if (col.isRowIndexCol) return;
+            
+            // Skip total columns so Totals styling takes priority
+            const isFormattedTotalCol = Boolean(settings.formatExistingColumnAsTotal) && (col.key === targetFormattedColKey);
+            if (col.isTotalCol || isFormattedTotalCol) {
+              return;
+            }
+
+            const rCell = row.getCell(cIdx + 1);
+            if (subtotalBg) {
+              rCell.fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: subtotalBg }
+              };
+            }
+            rCell.font = {
+              name: settings.fontFamily,
+              size: settings.dataFontSize,
+              bold: subtotalBold,
+              color: { argb: subtotalTextColor }
+            };
+          });
         }
       }
     }
@@ -1148,7 +1262,7 @@ export async function exportToExcel({
     
     // Increase row height manually so we don't need mergeCells to show content vertically
     const lineCount = (sqlQuery || '').split('\n').length;
-    metaSheet.getRow(sqlTextRow).height = Math.max(200, lineCount * 15);
+    metaSheet.getRow(sqlTextRow).height = Math.min(400, Math.max(200, lineCount * 15));
   }
 
   // Write to Binary Buffer

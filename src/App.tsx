@@ -12,7 +12,7 @@ import {
   getViewportForBounds
 } from '@xyflow/react';
 import { toPng, toSvg, toJpeg, toBlob } from 'html-to-image';
-import { downloadFileWithFallback } from "./utils/exportUtils";
+import { downloadFileWithFallback, copyToClipboard } from "./utils/exportUtils";
 
 import { 
   Play, 
@@ -88,7 +88,7 @@ import { SqlSnippetsManager, ACTION_MENU_CATEGORY } from './components/SqlSnippe
 import { ActionMenuTabContent, ACTION_MENU_TAB_ID } from './components/ActionMenuTabContent';
 import { SqlEditor, SqlEditorRef, highlightSqlHtml, getBaseHighlight } from './components/SqlEditor';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { SettingsModal, getSavedHotkeys, getSavedFormatterSettings, FormatterSettings, getSavedUiVisibilitySettings, UiVisibilitySettings, QuickActionTemplate, getQuickActionTemplates } from './components/SettingsModal';
+import { SettingsModal, getSavedHotkeys, getSavedFormatterSettings, FormatterSettings, getSavedUiVisibilitySettings, UiVisibilitySettings, QuickActionTemplate, getQuickActionTemplates, exportWorkspaceSettings, importWorkspaceSettings } from './components/SettingsModal';
 import { VersionHistoryModal } from './components/VersionHistoryModal';
 import { saveVersion, getVersions, getLatestVersion } from './utils/versionHistory';
 import { format as formatSql } from 'sql-formatter';
@@ -173,7 +173,7 @@ const MermaidActionGroup = ({ theme, onVisualize }: { theme: 'dark'|'light', onV
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(color);
+    copyToClipboard(color);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -238,7 +238,7 @@ export default function App() {
   const [queryExecutionDuration, setQueryExecutionDuration] = useState<string | null>(null);
   const [resultColumnTypes, setResultColumnTypes] = useState<Record<string, string>>({});
   const [duckDbError, setDuckDbError] = useState<string | null>(null);
-  const [isDuckDbRunning, setIsDuckDbRunning] = useState<boolean>(false);
+  const [runningTabId, setRunningTabId] = useState<string | null>(null);
   const [isDuckDbResultVisible, setIsDuckDbResultVisible] = useState<boolean>(false);
   const [isDuckDbResultExpanded, setIsDuckDbResultExpanded] = useState<boolean>(false);
   const [duckDbSelectedCell, setDuckDbSelectedCell] = useState<{ title: string; content: string } | null>(null);
@@ -546,7 +546,7 @@ export default function App() {
           ? `SELECT ${colList} FROM "${dbName}"."${tableName}"`
           : `SELECT ${colList} FROM "${dbName}"."${schemaName}"."${tableName}"`;
       }
-      navigator.clipboard.writeText(sel);
+      copyToClipboard(sel);
       return;
     }
 
@@ -563,7 +563,7 @@ export default function App() {
           ins = `INSERT INTO ${fullTable} VALUES (NULL);`;
         }
       }
-      navigator.clipboard.writeText(ins);
+      copyToClipboard(ins);
       return;
     }
 
@@ -629,7 +629,7 @@ export default function App() {
   const extractedTableName = useMemo(() => {
     if (!lastExecutedSql.trim()) return 'table';
     const cleanSql = lastExecutedSql.replace(/^(\s*(--[^\n]*\n|\/\*[\s\S]*?\*\/))*/g, '').trim();
-    return `(${cleanSql.replace(/;+$/, '')}) AS _sub`;
+    return `(\n${cleanSql.replace(/;+$/, '')}\n) AS _sub`;
   }, [lastExecutedSql]);
 
   const prevDuckDbPathRef = useRef<string | null>(duckDbConnectedPath);
@@ -1059,14 +1059,14 @@ export default function App() {
           if (textToCopy) {
             e.preventDefault();
             e.stopPropagation();
-            navigator.clipboard.writeText(textToCopy);
+            copyToClipboard(textToCopy);
             setCopiedResultCell({ rowIndex: selectedResultCell.rowIndex, colKey: selectedResultCell.colKey });
             setTimeout(() => setCopiedResultCell(null), 1500);
           }
         } else if (duckDbSelectedCell?.content) {
           e.preventDefault();
           e.stopPropagation();
-          navigator.clipboard.writeText(duckDbSelectedCell.content);
+          copyToClipboard(duckDbSelectedCell.content);
           setCopiedCellValue(true);
           setTimeout(() => setCopiedCellValue(false), 1500);
         }
@@ -1080,9 +1080,21 @@ export default function App() {
     formatterSettingsRef.current = formatterSettings;
   }, [formatterSettings]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const settingsImportFileInputRef = useRef<HTMLInputElement>(null);
   const win1251FileInputRef = useRef<HTMLInputElement>(null);
   const duckDbFileInputRef = useRef<HTMLInputElement>(null);
   const duckDbAttachFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImportSettingsFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    importWorkspaceSettings(file, async () => {
+      if (duckDbConnectedPath || clickhouseConfig) {
+        await handleDisconnectDuckDb();
+      }
+    });
+    event.target.value = '';
+  };
 
   // Tabs state for fullscreen editor
   const [tabs, setTabs] = useState<EditorTab[]>(() => {
@@ -1091,13 +1103,23 @@ export default function App() {
     }
     return [{ id: '1', title: 'Вкладка 1', sql: sqlPresets[0].sql }];
   });
+  const activeTabIdRef = useRef<string>("");
+  const lastActiveSqlTabIdRef = useRef<string>('1');
   const [activeTabId, setActiveTabId] = useState<string>(() => {
     if (savedSession?.activeTabId && savedSession?.tabs?.some(t => t.id === savedSession.activeTabId)) {
       return savedSession.activeTabId;
     }
     return savedSession?.tabs?.[0]?.id || '1';
   });
+
+  const isDuckDbRunning = runningTabId === activeTabId;
+  const isAnyQueryRunning = runningTabId !== null;
+  const setIsDuckDbRunning = (isRunning: boolean) => {
+    setRunningTabId(isRunning ? activeTabIdRef.current : null);
+  };
   const [editingTabId, setEditingTabId] = useState<string | null>(null);
+  const [loadedTabId, setLoadedTabId] = useState<string | null>(null);
+  useLayoutEffect(() => { activeTabIdRef.current = activeTabId; }, [activeTabId]);
 
   const [isTabsLoaded, setIsTabsLoaded] = useState<boolean>(false);
   const isTabsLoadedRef = useRef<boolean>(false);
@@ -1144,6 +1166,7 @@ export default function App() {
         setDuckDbPage(1);
         setDuckDbError(null);
       }
+      setLoadedTabId(activeTabId);
       setTimeout(() => {
         if (isMounted) isRestoringTabRef.current = false;
       }, 50);
@@ -1170,7 +1193,7 @@ export default function App() {
 
   // Save results to IndexedDB when they change in RAM
   useEffect(() => {
-    if (isRestoringTabRef.current) return;
+    if (isRestoringTabRef.current || loadedTabId !== activeTabId) return;
     saveTabResult(activeTabId, {
       duckDbResults,
       queryExecutionDuration,
@@ -1180,7 +1203,7 @@ export default function App() {
       duckDbError,
       lastExecutedSql
     }).catch(console.error);
-  }, [duckDbResults, queryExecutionDuration, resultColumnTypes, isDuckDbResultVisible, duckDbPage, duckDbError, lastExecutedSql, activeTabId]);
+  }, [duckDbResults, queryExecutionDuration, resultColumnTypes, isDuckDbResultVisible, duckDbPage, duckDbError, lastExecutedSql, activeTabId, loadedTabId]);
   
   // Cleanup orphaned tab results once tabs are fully loaded from session
   useEffect(() => {
@@ -1254,7 +1277,7 @@ export default function App() {
 
     const orderClauses = sorts.map(s => `"${s.colKey.replace(/"/g, '""')}" ${s.dir}`);
 
-    let wrappedSql = `SELECT * FROM (${cleanSql}) AS _filtered_query`;
+    let wrappedSql = `SELECT * FROM (\n${cleanSql}\n) AS _filtered_query`;
     if (whereClauses.length > 0) {
       wrappedSql += `\nWHERE ${whereClauses.join(' AND ')}`;
     }
@@ -2281,9 +2304,13 @@ export default function App() {
   };
 
   const handleExecuteDuckDb = async () => {
-    // If query is already running, clicking Execute acts as CANCEL / ABORT
+    // If query is already running on THIS tab, clicking Execute acts as CANCEL / ABORT
     if (isDuckDbRunning) {
       handleCancelDuckDbQuery();
+      return;
+    }
+    // If ANY query is running, don't start a new one
+    if (isAnyQueryRunning) {
       return;
     }
 
@@ -2329,7 +2356,72 @@ export default function App() {
     }
   };
 
+
+  const updateEngineState = (
+    originTabId: string, 
+    queryToExec: string, 
+    page: number, 
+    updates: { 
+      results?: any[] | null, 
+      error?: string | null, 
+      duration?: string | null, 
+      colTypes?: any 
+    }
+  ) => {
+    if (activeTabIdRef.current === originTabId) {
+      if (updates.results !== undefined) {
+        setDuckDbResults(updates.results);
+        if (updates.results && Array.isArray(updates.results) && updates.results.length > 0) {
+          maybeAutoSelectFirstCell(updates.results, queryToExec);
+        }
+      }
+      if (updates.error !== undefined) setDuckDbError(updates.error);
+      if (updates.duration !== undefined) setQueryExecutionDuration(updates.duration);
+      if (updates.colTypes !== undefined) setResultColumnTypes(updates.colTypes);
+      
+      if (updates.results !== undefined || updates.error !== undefined) {
+        if (updates.results !== null && updates.error !== null) {
+          setIsDuckDbResultVisible(true);
+        }
+      }
+    } else {
+      getTabResult(originTabId).then(existing => {
+        const newData = existing ? { ...existing } : {
+          duckDbResults: null,
+          queryExecutionDuration: null,
+          resultColumnTypes: {},
+          isDuckDbResultVisible: false,
+          duckDbPage: 1,
+          duckDbError: null,
+          lastExecutedSql: queryToExec
+        } as any;
+        if (updates.results !== undefined) newData.duckDbResults = updates.results;
+        if (updates.error !== undefined) newData.duckDbError = updates.error;
+        if (updates.duration !== undefined) newData.queryExecutionDuration = updates.duration;
+        if (updates.colTypes !== undefined) newData.resultColumnTypes = updates.colTypes;
+        newData.lastExecutedSql = queryToExec;
+        newData.duckDbPage = page;
+        if (updates.results !== undefined || updates.error !== undefined) {
+           if (updates.results !== null && updates.error !== null) {
+             newData.isDuckDbResultVisible = true;
+           }
+           saveTabResult(originTabId, newData).catch(console.error);
+           
+           // In case the user switched back to this tab while we were fetching from IDB
+           if (activeTabIdRef.current === originTabId) {
+             setDuckDbResults(newData.duckDbResults);
+             setDuckDbError(newData.duckDbError);
+             setQueryExecutionDuration(newData.queryExecutionDuration);
+             setResultColumnTypes(newData.resultColumnTypes || {});
+             setIsDuckDbResultVisible(newData.isDuckDbResultVisible);
+           }
+        }
+      }).catch(console.error);
+    }
+  };
+
   const executeDuckDbQueryWithPagination = async (queryToExec: string, page: number = 1, pageSizeToUse?: number, isQuickAction?: boolean, executionMode?: 'sequential' | 'parallel') => {
+    const originTabId = activeTabId;
     if (!duckDbConnectedPath) {
       return;
     }
@@ -2347,9 +2439,8 @@ export default function App() {
     try {
       setIsDuckDbRunning(true);
       setIsDuckDbResultVisible(true);
-      setDuckDbError(null);
-      setDuckDbResults(null);
-      setQueryExecutionDuration(null);
+      updateEngineState(originTabId, queryToExec, page, { error: null });
+      updateEngineState(originTabId, queryToExec, page, { results: null, duration: null });
       setSummarizeResults(null);
       setDuckDbSelectedCell(null);
 
@@ -2358,7 +2449,7 @@ export default function App() {
         finalQuery = replaceSecretsInSql(finalQuery);
       } catch (vaultErr: any) {
         setIsDuckDbRunning(false);
-        setDuckDbError(vaultErr.message || String(vaultErr));
+        updateEngineState(originTabId, queryToExec, page, { error: vaultErr.message || String(vaultErr) });
         setIsDuckDbResultVisible(true);
         return;
       }
@@ -2410,8 +2501,7 @@ export default function App() {
               return { Query: stmt.length > 100 ? stmt.substring(0, 100) + '...' : stmt, Status: `Error: ${e.message || String(e)}` };
             }
           }));
-          setDuckDbResults(results);
-          setQueryExecutionDuration(((performance.now() - queryStartTime) / 1000).toFixed(2));
+          updateEngineState(originTabId, queryToExec, page, { results: results, duration: ((performance.now() - queryStartTime) / 1000).toFixed(2) });
           setIsDuckDbRunning(false);
           duckDbAbortControllerRef.current = null;
           return;
@@ -2426,13 +2516,27 @@ export default function App() {
 
       if (maxRows > 0 && /^\s*\(?\s*(SELECT|WITH|FROM)\b/i.test(cleanSqlHead)) {
         const stripped = finalQuery.replace(/;+$/, '');
-        if (page > 1) {
-          const offset = (page - 1) * maxRows;
-          queryWithLimit = `SELECT * FROM (${stripped}) AS _limited_subquery LIMIT ${maxRows} OFFSET ${offset}`;
-        } else {
-          if (!/\bLIMIT\s+\d+/i.test(cleanSqlHead)) {
-            queryWithLimit = `SELECT * FROM (${stripped}) AS _limited_subquery LIMIT ${maxRows}`;
+        const hasUnion = /\b(UNION|EXCEPT|INTERSECT)\b/i.test(stripped);
+        const hasLimit = /\bLIMIT\s+\d+/i.test(cleanSqlHead);
+        
+        if (!hasLimit) {
+          if (page > 1) {
+            const offset = (page - 1) * maxRows;
+            if (hasUnion) {
+              queryWithLimit = `SELECT * FROM (\n${stripped}\n) AS _limited_subquery LIMIT ${maxRows} OFFSET ${offset}`;
+            } else {
+              queryWithLimit = `${stripped}\nLIMIT ${maxRows} OFFSET ${offset}`;
+            }
+          } else {
+            if (hasUnion) {
+              queryWithLimit = `SELECT * FROM (\n${stripped}\n) AS _limited_subquery LIMIT ${maxRows}`;
+            } else {
+              queryWithLimit = `${stripped}\nLIMIT ${maxRows}`;
+            }
           }
+        } else if (page > 1) {
+          const offset = (page - 1) * maxRows;
+          queryWithLimit = `SELECT * FROM (\n${stripped}\n) AS _limited_subquery LIMIT ${maxRows} OFFSET ${offset}`;
         }
       }
 
@@ -2449,21 +2553,19 @@ export default function App() {
             });
             return obj;
           });
-          setDuckDbResults(parsed);
-          setQueryExecutionDuration(((performance.now() - queryStartTime) / 1000).toFixed(2));
           
+          let finalColTypes = {};
           if (res?.columns && res?.column_types) {
             const typesDict: Record<string, string> = {};
             res.columns.forEach((col, idx) => {
               typesDict[col] = res.column_types![idx] || 'UNKNOWN';
             });
-            setResultColumnTypes(typesDict);
-          } else {
-            setResultColumnTypes({});
+            finalColTypes = typesDict;
           }
+          updateEngineState(originTabId, queryToExec, page, { results: parsed, duration: ((performance.now() - queryStartTime) / 1000).toFixed(2), colTypes: finalColTypes });
+  
           
-          maybeAutoSelectFirstCell(parsed, queryToExec);
-          if ((uiVisibility.autoUpdateSchema ?? true) && /^\s*(CREATE|DROP|ATTACH|DETACH|RENAME)\b/i.test(cleanSqlHead)) {
+                    if ((uiVisibility.autoUpdateSchema ?? true) && /^\s*(CREATE|DROP|ATTACH|DETACH|RENAME)\b/i.test(cleanSqlHead)) {
             fetchDuckDbSchema(true);
           }
         } catch (tauriErr: any) {
@@ -2472,20 +2574,14 @@ export default function App() {
           if (errMsg.includes("invalid escaped character") || errMsg.includes("trailing escape")) {
             errMsg += "\n\n💡 Подсказка: В строках SQL пути Windows содержат обратные слэши '\\', которые считаются спецсимволами. Замените '\\' на прямые слэши '/' (напр. 'C:/Users/...') или удвойте их '\\\\'.";
           }
-          setDuckDbError(errMsg);
+          updateEngineState(originTabId, queryToExec, page, { error: errMsg });
         }
       } else if (isWasmMode) {
         const rows = await queryDuckDbWasm(queryWithLimit);
         if (controller.signal.aborted) throw new Error("Запрос отменен пользователем");
-        setDuckDbResults(rows);
-        setQueryExecutionDuration(((performance.now() - queryStartTime) / 1000).toFixed(2));
-        if ((rows as any).__columnTypes) {
-          setResultColumnTypes((rows as any).__columnTypes);
-        } else {
-          setResultColumnTypes({});
-        }
-        maybeAutoSelectFirstCell(rows, queryToExec);
-        if ((uiVisibility.autoUpdateSchema ?? true) && /^\s*(CREATE|DROP|ATTACH|DETACH|RENAME)\b/i.test(cleanSqlHead)) {
+        const finalColTypes = (rows as any).__columnTypes ? (rows as any).__columnTypes : {};
+        updateEngineState(originTabId, queryToExec, page, { results: rows, duration: ((performance.now() - queryStartTime) / 1000).toFixed(2), colTypes: finalColTypes });
+                if ((uiVisibility.autoUpdateSchema ?? true) && /^\s*(CREATE|DROP|ATTACH|DETACH|RENAME)\b/i.test(cleanSqlHead)) {
           fetchDuckDbSchema(true);
         }
       } else {
@@ -2497,12 +2593,11 @@ export default function App() {
         });
         
         if (data.error) {
-          setDuckDbError(data.error);
+          updateEngineState(originTabId, queryToExec, page, { error: data.error });
         } else {
           const res = data.data || [];
-          setDuckDbResults(res);
-          setQueryExecutionDuration(((performance.now() - queryStartTime) / 1000).toFixed(2));
           
+          let finalColTypes = {};
           if (data.meta && Array.isArray(data.meta)) {
             const typesDict: Record<string, string> = {};
             data.meta.forEach((col: any) => {
@@ -2510,26 +2605,25 @@ export default function App() {
                 typesDict[col.name] = col.type;
               }
             });
-            setResultColumnTypes(typesDict);
-          } else {
-            setResultColumnTypes({});
+            finalColTypes = typesDict;
           }
+          updateEngineState(originTabId, queryToExec, page, { results: res, duration: ((performance.now() - queryStartTime) / 1000).toFixed(2), colTypes: finalColTypes });
+  
           
-          maybeAutoSelectFirstCell(res, queryToExec);
-          if ((uiVisibility.autoUpdateSchema ?? true) && /^\s*(CREATE|DROP|ATTACH|DETACH|RENAME)\b/i.test(cleanSqlHead)) {
+                    if ((uiVisibility.autoUpdateSchema ?? true) && /^\s*(CREATE|DROP|ATTACH|DETACH|RENAME)\b/i.test(cleanSqlHead)) {
             fetchDuckDbSchema(true);
           }
         }
       }
     } catch (err: any) {
       if (err.name === 'AbortError' || controller.signal.aborted) {
-        setDuckDbError("Запрос отменен пользователем");
+        updateEngineState(originTabId, queryToExec, page, { error: "Запрос отменен пользователем" });
       } else {
         let errMsg = err.message || "Ошибка выполнения запроса";
         if (errMsg.includes("invalid escaped character") || errMsg.includes("trailing escape")) {
           errMsg += "\n\n💡 Подсказка: В строках SQL пути Windows содержат обратные слэши '\\', которые считаются спецсимволами. Замените '\\' на прямые слэши '/' (напр. 'C:/Users/...') или удвойте их '\\\\'.";
         }
-        setDuckDbError(errMsg);
+        updateEngineState(originTabId, queryToExec, page, { error: errMsg });
       }
     } finally {
       setIsDuckDbRunning(false);
@@ -2538,6 +2632,7 @@ export default function App() {
   };
 
   const executeClickhouseQueryWithPagination = async (queryToExec: string, page: number = 1, pageSizeToUse?: number, isQuickAction?: boolean, executionMode?: 'sequential' | 'parallel') => {
+    const originTabId = activeTabId;
     if (!clickhouseConfig) {
       return;
     }
@@ -2555,9 +2650,8 @@ export default function App() {
     try {
       setIsDuckDbRunning(true);
       setIsDuckDbResultVisible(true);
-      setDuckDbError(null);
-      setDuckDbResults(null);
-      setQueryExecutionDuration(null);
+      updateEngineState(originTabId, queryToExec, page, { error: null });
+      updateEngineState(originTabId, queryToExec, page, { results: null, duration: null });
       setDuckDbSelectedCell(null);
       
       let finalQuery = queryToExec.trim();
@@ -2565,7 +2659,7 @@ export default function App() {
         finalQuery = replaceSecretsInSql(finalQuery);
       } catch (vaultErr: any) {
         setIsDuckDbRunning(false);
-        setDuckDbError(vaultErr.message || String(vaultErr));
+        updateEngineState(originTabId, queryToExec, page, { error: vaultErr.message || String(vaultErr) });
         setIsDuckDbResultVisible(true);
         return;
       }
@@ -2613,8 +2707,7 @@ export default function App() {
               return { Query: stmt.length > 100 ? stmt.substring(0, 100) + '...' : stmt, Status: `Error: ${e.message || String(e)}` };
             }
           }));
-          setDuckDbResults(results);
-          setQueryExecutionDuration(((performance.now() - queryStartTime) / 1000).toFixed(2));
+          updateEngineState(originTabId, queryToExec, page, { results: results, duration: ((performance.now() - queryStartTime) / 1000).toFixed(2) });
           setIsDuckDbRunning(false);
           duckDbAbortControllerRef.current = null;
           return;
@@ -2640,9 +2733,9 @@ export default function App() {
                   Bytes: `${res.bytes} bytes`,
                 },
               ]);
-              setQueryExecutionDuration(((performance.now() - queryStartTime) / 1000).toFixed(2));
+              updateEngineState(originTabId, queryToExec, page, { duration: ((performance.now() - queryStartTime) / 1000).toFixed(2) });
             } catch (err: any) {
-              setDuckDbError(err.message || String(err));
+              updateEngineState(originTabId, queryToExec, page, { error: err.message || String(err) });
             }
           } else {
             const data = await fetchApiJson('/api/clickhouse/copy-to', {
@@ -2657,7 +2750,7 @@ export default function App() {
             });
 
             if (data.error) {
-              setDuckDbError(data.error);
+              updateEngineState(originTabId, queryToExec, page, { error: data.error });
             } else {
               setDuckDbResults([
                 {
@@ -2666,7 +2759,7 @@ export default function App() {
                   Message: data.message || `File saved (${data.bytes || 0} bytes)`,
                 },
               ]);
-              setQueryExecutionDuration(((performance.now() - queryStartTime) / 1000).toFixed(2));
+              updateEngineState(originTabId, queryToExec, page, { duration: ((performance.now() - queryStartTime) / 1000).toFixed(2) });
             }
           }
         } else if (copyCmd.type === 'COPY_FROM') {
@@ -2681,9 +2774,9 @@ export default function App() {
                   Response: res.response || 'OK',
                 },
               ]);
-              setQueryExecutionDuration(((performance.now() - queryStartTime) / 1000).toFixed(2));
+              updateEngineState(originTabId, queryToExec, page, { duration: ((performance.now() - queryStartTime) / 1000).toFixed(2) });
             } catch (err: any) {
-              setDuckDbError(err.message || String(err));
+              updateEngineState(originTabId, queryToExec, page, { error: err.message || String(err) });
             }
           } else {
             const data = await fetchApiJson('/api/clickhouse/copy-from', {
@@ -2698,7 +2791,7 @@ export default function App() {
             });
 
             if (data.error) {
-              setDuckDbError(data.error);
+              updateEngineState(originTabId, queryToExec, page, { error: data.error });
             } else {
               setDuckDbResults([
                 {
@@ -2708,7 +2801,7 @@ export default function App() {
                   Response: data.response || 'OK',
                 },
               ]);
-              setQueryExecutionDuration(((performance.now() - queryStartTime) / 1000).toFixed(2));
+              updateEngineState(originTabId, queryToExec, page, { duration: ((performance.now() - queryStartTime) / 1000).toFixed(2) });
             }
           }
         }
@@ -2728,13 +2821,13 @@ export default function App() {
           if (page > 1) {
             const offset = (page - 1) * maxRows;
             if (hasUnion) {
-              queryWithLimit = `SELECT * FROM (${stripped}) AS _limited_subquery LIMIT ${maxRows} OFFSET ${offset}`;
+              queryWithLimit = `SELECT * FROM (\n${stripped}\n) AS _limited_subquery LIMIT ${maxRows} OFFSET ${offset}`;
             } else {
               queryWithLimit = `${stripped}\nLIMIT ${maxRows} OFFSET ${offset}`;
             }
           } else {
             if (hasUnion) {
-              queryWithLimit = `SELECT * FROM (${stripped}) AS _limited_subquery LIMIT ${maxRows}`;
+              queryWithLimit = `SELECT * FROM (\n${stripped}\n) AS _limited_subquery LIMIT ${maxRows}`;
             } else {
               queryWithLimit = `${stripped}\nLIMIT ${maxRows}`;
             }
@@ -2743,11 +2836,11 @@ export default function App() {
           // If query already has a LIMIT, but user asks for page > 1, we must wrap it to safely paginate 
           // (otherwise appending LIMIT causes a syntax error, e.g. "LIMIT 10 LIMIT 100")
           const offset = (page - 1) * maxRows;
-          queryWithLimit = `SELECT * FROM (${stripped}) AS _limited_subquery LIMIT ${maxRows} OFFSET ${offset}`;
+          queryWithLimit = `SELECT * FROM (\n${stripped}\n) AS _limited_subquery LIMIT ${maxRows} OFFSET ${offset}`;
         }
       }
 
-      if (!/\bFORMAT\b/i.test(queryWithLimit) && !/^\s*(CREATE|INSERT|DELETE|ALTER|DROP|TRUNCATE|SET|USE|OPTIMIZE|SYSTEM)\b/i.test(queryWithLimit)) {
+      if (!/\bFORMAT\b/i.test(queryWithLimit) && /^\s*(SELECT|SHOW|DESCRIBE|DESC|EXPLAIN|WITH)\b/i.test(queryWithLimit)) {
         queryWithLimit += '\nFORMAT JSON';
       }
 
@@ -2792,7 +2885,7 @@ export default function App() {
       }
 
       if (data && data.error) {
-        setDuckDbError(data.error);
+        updateEngineState(originTabId, queryToExec, page, { error: data.error });
       } else if (data) {
         let resArr: any[] = [];
         if (Array.isArray(data.data)) {
@@ -2802,9 +2895,8 @@ export default function App() {
         } else {
           resArr = [data.data || { Status: 'OK' }];
         }
-        setDuckDbResults(resArr);
-        setQueryExecutionDuration(((performance.now() - queryStartTime) / 1000).toFixed(2));
         
+        let finalColTypes = {};
         if (data.meta && Array.isArray(data.meta)) {
           const typesDict: Record<string, string> = {};
           data.meta.forEach((col: any) => {
@@ -2812,21 +2904,20 @@ export default function App() {
               typesDict[col.name] = col.type;
             }
           });
-          setResultColumnTypes(typesDict);
-        } else {
-          setResultColumnTypes({});
+          finalColTypes = typesDict;
         }
+        updateEngineState(originTabId, queryToExec, page, { results: resArr, duration: ((performance.now() - queryStartTime) / 1000).toFixed(2), colTypes: finalColTypes });
+  
         
-        maybeAutoSelectFirstCell(resArr, queryToExec);
-        if ((uiVisibility.autoUpdateSchema ?? true) && /^\s*(CREATE|DROP|ATTACH|DETACH|RENAME)\b/i.test(cleanSqlHead)) {
+                if ((uiVisibility.autoUpdateSchema ?? true) && /^\s*(CREATE|DROP|ATTACH|DETACH|RENAME)\b/i.test(cleanSqlHead)) {
           fetchDuckDbSchema(true);
         }
       }
     } catch (err: any) {
       if (err.name === 'AbortError' || controller.signal?.aborted) {
-        setDuckDbError('Запрос отменен пользователем');
+        updateEngineState(originTabId, queryToExec, page, { error: 'Запрос отменен пользователем' });
       } else {
-        setDuckDbError(err.message || 'Ошибка выполнения ClickHouse запроса');
+        updateEngineState(originTabId, queryToExec, page, { error: err.message || 'Ошибка выполнения ClickHouse запроса' });
       }
     } finally {
       setIsDuckDbRunning(false);
@@ -2835,6 +2926,7 @@ export default function App() {
   };
 
   const handleExecuteCurrentEngineQuery = (queryToExec: string, page: number = 1, pageSizeToUse?: number, isQuickAction?: boolean, executionMode?: 'sequential' | 'parallel') => {
+    if (isAnyQueryRunning) return;
     setResultsViewMode('table');
     setSelectedResultCell(null);
     setDuckDbSelectedCell(null);
@@ -2886,17 +2978,17 @@ export default function App() {
     handleExecuteCurrentEngineQuery(queryToExec, 1, undefined, isQuickAction);
   };
 
-  const handleExecuteQuickAction = (qa: QuickActionTemplate) => {
+  const handleExecuteQuickAction = useCallback((qa: QuickActionTemplate) => {
     setShowQuickActionsMenu(false);
     const targetQuery = qa.template.replace(/\{table\}/g, extractedTableName);
     executeSpecificDuckDbQuery(targetQuery, true);
-  };
+  }, [extractedTableName]);
 
   const handleExecuteRawQueryForStats = useCallback(async (sqlToRun: string): Promise<any[]> => {
     const isClickhouse = activeEngine === 'clickhouse' || (!duckDbConnectedPath && !!clickhouseConfig);
     if (isClickhouse && clickhouseConfig) {
       let queryWithFormat = sqlToRun.trim();
-      if (!/\bFORMAT\b/i.test(queryWithFormat) && !/^\s*(CREATE|INSERT|DELETE|ALTER|DROP|TRUNCATE|SET|USE|OPTIMIZE|SYSTEM)\b/i.test(queryWithFormat)) {
+      if (!/\bFORMAT\b/i.test(queryWithFormat) && /^\s*(SELECT|SHOW|DESCRIBE|DESC|EXPLAIN|WITH)\b/i.test(queryWithFormat)) {
         queryWithFormat += ' FORMAT JSON';
       }
       
@@ -2969,6 +3061,7 @@ export default function App() {
 
     // First, save current edits of the old active tab using the captured currentSql if it was an ordinary tab
     if (activeTabId !== ACTION_MENU_TAB_ID) {
+      lastActiveSqlTabIdRef.current = activeTabId;
       setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: currentSql } : t));
     }
 
@@ -3062,17 +3155,26 @@ export default function App() {
   };
   const sqlEditorRef = useRef<SqlEditorRef>(null);
 
+  const handleSqlChangeTimeoutRef = useRef<any>(null);
+
   const handleSqlChange = useCallback((newSql: string) => {
     if (activeTabId === ACTION_MENU_TAB_ID) return;
     sqlRef.current = newSql;
-    setTabs(prev => prev.map(t => {
-      if (t.id === activeTabId) {
-        if (t.sql === newSql) return t;
-        if (t.isModified) return { ...t, sql: newSql };
-        return { ...t, sql: newSql, isModified: true };
-      }
-      return t;
-    }));
+    
+    if (handleSqlChangeTimeoutRef.current) {
+      clearTimeout(handleSqlChangeTimeoutRef.current);
+    }
+    
+    handleSqlChangeTimeoutRef.current = setTimeout(() => {
+      setTabs(prev => prev.map(t => {
+        if (t.id === activeTabId) {
+          if (t.sql === newSql) return t;
+          if (t.isModified) return { ...t, sql: newSql };
+          return { ...t, sql: newSql, isModified: true };
+        }
+        return t;
+      }));
+    }, 200);
   }, [activeTabId]);
 
   // Auto-save version into IndexedDB every 10 minutes if current tab SQL differs from the existing latest snapshot (ignores action menu tab)
@@ -3390,7 +3492,7 @@ export default function App() {
         e.preventDefault();
         handleExecuteDuckDb();
       }
-      if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S' || e.code === 'KeyS' || e.key === 'ы' || e.key === 'Ы')) {
+      if (!e.altKey && (e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S' || e.code === 'KeyS' || e.key === 'ы' || e.key === 'Ы')) {
         e.preventDefault();
         if (e.shiftKey) {
           handleSaveAsSqlFile();
@@ -4067,7 +4169,7 @@ export default function App() {
 
     if (content) {
       if (toClipboard) {
-        navigator.clipboard.writeText(content);
+        copyToClipboard(content);
         setCopied(format);
         setTimeout(() => setCopied(false), 2000);
       } else {
@@ -4093,6 +4195,8 @@ export default function App() {
     hotkeysStateRef.current = {
       hotkeys,
       tabs,
+      activeTabId,
+      lastActiveSqlTabIdRef,
       isMaximizedSql,
       uiVisibility,
       duckDbConnectedPath,
@@ -4105,6 +4209,9 @@ export default function App() {
       handleCopySql,
       handleFormatSql,
       handleSelectTab,
+      handleExportExcel,
+      exportWorkspaceSettings,
+      settingsImportFileInputRef,
       isDuckDbRunning,
       showSettingsModal,
       showSnippetsModal,
@@ -4143,6 +4250,8 @@ export default function App() {
       const {
         hotkeys: currentHotkeys,
         tabs: currentTabs,
+        activeTabId: currentActiveTabId,
+        lastActiveSqlTabIdRef: currentLastActiveSqlTabIdRef,
         isMaximizedSql: currentIsMaximizedSql,
         uiVisibility: currentUiVisibility,
         duckDbConnectedPath: currentDuckDbConnectedPath,
@@ -4155,6 +4264,9 @@ export default function App() {
         handleCopySql: currentHandleCopySql,
         handleFormatSql: currentHandleFormatSql,
         handleSelectTab: currentHandleSelectTab,
+        handleExportExcel: currentHandleExportExcel,
+        exportWorkspaceSettings: currentExportWorkspaceSettings,
+        settingsImportFileInputRef: currentSettingsImportFileInputRef,
         isDuckDbRunning: currentIsDuckDbRunning,
         showSettingsModal: currentShowSettingsModal,
         showSnippetsModal: currentShowSnippetsModal,
@@ -4221,7 +4333,7 @@ export default function App() {
         keyName = '-';
       } else if (e.code === 'Equal') {
         keyName = '=';
-      } else if (e.code === 'Backquote') {
+      } else if (e.code === 'Backquote' || e.key === '`' || e.key === '~' || e.key === 'ё' || e.key === 'Ё') {
         keyName = '`';
       }
 
@@ -4430,6 +4542,29 @@ export default function App() {
           currentSetIsDuckDbResultExpanded(true);
           currentSetStatsInitialMode({ chartType: 'list', listSubMode: 'columns' });
         }
+      } else if (combo === (currentHotkeys.openActionMenu || 'Ctrl+`')) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (currentActiveTabId === ACTION_MENU_TAB_ID) {
+          const returnTabId = currentLastActiveSqlTabIdRef?.current && currentTabs.some((t: EditorTab) => t.id === currentLastActiveSqlTabIdRef.current)
+            ? currentLastActiveSqlTabIdRef.current
+            : (currentTabs[0]?.id || '1');
+          currentHandleSelectTab(returnTabId);
+        } else {
+          currentHandleSelectTab(ACTION_MENU_TAB_ID);
+        }
+      } else if (combo === (currentHotkeys.exportSettings || 'Ctrl+Alt+S')) {
+        e.preventDefault();
+        e.stopPropagation();
+        currentExportWorkspaceSettings?.();
+      } else if (combo === (currentHotkeys.importSettings || 'Ctrl+Alt+A')) {
+        e.preventDefault();
+        e.stopPropagation();
+        currentSettingsImportFileInputRef?.current?.click();
+      } else if (combo === (currentHotkeys.exportExcelReport || 'Ctrl+Alt+E')) {
+        e.preventDefault();
+        e.stopPropagation();
+        currentHandleExportExcel?.();
       }
     };
 
@@ -4591,7 +4726,7 @@ export default function App() {
   };
 
   const handleCopySql = () => {
-    navigator.clipboard.writeText(sqlRef.current);
+    copyToClipboard(sqlRef.current);
     setCopied('sql');
     setTimeout(() => setCopied(false), 2000);
   };
@@ -4603,11 +4738,11 @@ export default function App() {
     };
 
     if (duckDbError) {
-      navigator.clipboard.writeText(duckDbError)
+      copyToClipboard(duckDbError)
         .then(triggerCopied)
         .catch(() => {
           try {
-            navigator.clipboard.writeText(duckDbError);
+            copyToClipboard(duckDbError);
             triggerCopied();
           } catch (e) {
             console.error('Failed to copy error to clipboard:', e);
@@ -4620,7 +4755,7 @@ export default function App() {
     if (rowsToCopy && rowsToCopy.length > 0) {
       let csv = '';
       if (isTransposed) {
-        const headers = ['Поле \\ №', ...rowsToCopy.map((_, i) => `#${(duckDbPage - 1) * (uiVisibility.duckDbMaxRows || 100) + i + 1}`)];
+        const headers = ['Поле \\ №', ...rowsToCopy.map((_, i) => `#${(duckDbPage - 1) * effectiveMaxRows + i + 1}`)];
         const rows = Object.keys(rowsToCopy[0]).map(colKey => [
           colKey,
           ...rowsToCopy.map(r => r[colKey] === null ? 'null' : String(r[colKey]))
@@ -4629,16 +4764,16 @@ export default function App() {
       } else {
         const headers = ['#', ...Object.keys(rowsToCopy[0])];
         const rows = rowsToCopy.map((r, i) => [
-          (duckDbPage - 1) * (uiVisibility.duckDbMaxRows || 100) + i + 1,
+          (duckDbPage - 1) * effectiveMaxRows + i + 1,
           ...Object.values(r).map(v => v === null ? 'null' : String(v))
         ]);
         csv = [headers.join('\t'), ...rows.map(r => r.join('\t'))].join('\n');
       }
-      navigator.clipboard.writeText(csv)
+      copyToClipboard(csv)
         .then(triggerCopied)
         .catch(() => {
           try {
-            navigator.clipboard.writeText(csv);
+            copyToClipboard(csv);
             triggerCopied();
           } catch (e) {
             console.error('Failed to copy results to clipboard:', e);
@@ -4647,22 +4782,22 @@ export default function App() {
     } else if (duckDbResults && duckDbResults.length > 0) {
       const cols = Object.keys(duckDbResults[0]);
       const csv = ['#', ...cols].join('\t');
-      navigator.clipboard.writeText(csv)
+      copyToClipboard(csv)
         .then(triggerCopied)
         .catch(() => {
           try {
-            navigator.clipboard.writeText(csv);
+            copyToClipboard(csv);
             triggerCopied();
           } catch (e) {}
         });
     } else if (Object.keys(resultColumnTypes).length > 0) {
       const cols = Object.keys(resultColumnTypes);
       const csv = ['#', ...cols].join('\t');
-      navigator.clipboard.writeText(csv)
+      copyToClipboard(csv)
         .then(triggerCopied)
         .catch(() => {
           try {
-            navigator.clipboard.writeText(csv);
+            copyToClipboard(csv);
             triggerCopied();
           } catch (e) {}
         });
@@ -4677,7 +4812,20 @@ export default function App() {
     setIsExportingExcel(true);
     try {
       const activeSql = lastExecutedSql || getActiveTabSql();
-      const settings = preset.settings;
+      let settings = preset.settings;
+
+      // Check for @preset directive in SQL comments
+      const combinedComments = (activeSql.match(/\/\*[\s\S]*?\*\//g) || []).join(' ') + ' ' + (activeSql.match(/--.*$/gm) || []).join(' ');
+      const presetMatch = combinedComments.match(/@preset:\s*([^@\n*]+)/i);
+      
+      if (presetMatch) {
+        const targetPresetName = presetMatch[1].trim().toLowerCase();
+        const allPresets = getSavedExcelPresets();
+        const foundPreset = allPresets.find(p => p.name.trim().toLowerCase() === targetPresetName);
+        if (foundPreset) {
+          settings = { ...foundPreset.settings };
+        }
+      }
 
       await exportToExcel({
         data: duckDbResults,
@@ -4939,7 +5087,15 @@ export default function App() {
       return cleanedStatements.join(';\n\n') + (hasSemicolon ? ';' : '');
     };
 
-    const preprocessedText = convertInlineDashComments(text);
+    let preprocessedText = convertInlineDashComments(text);
+    
+    // sql-formatter doesn't support queries starting with FROM properly.
+    // Hack: if query starts with FROM, prepend 'SELECT * ' and strip it after formatting.
+    let isFromFirst = false;
+    if (/^\s*FROM\b/i.test(preprocessedText)) {
+      isFromFirst = true;
+      preprocessedText = 'SELECT * \n' + preprocessedText;
+    }
 
     for (const lang of fallbackLangs) {
       try {
@@ -4951,6 +5107,10 @@ export default function App() {
           expressionWidth: cfg.expressionWidth,
           denseOperators: cfg.denseOperators,
         });
+
+        if (isFromFirst) {
+          formatted = formatted.replace(/^SELECT\s+\*\s+/i, '');
+        }
 
         // Apply custom clause line wrapping if expressionWidth >= 0
         if (cfg.expressionWidth >= 0) {
@@ -5194,7 +5354,7 @@ export default function App() {
     }
   };
 
-  const handleCompactSql = () => {
+  const handleCompactSql = useCallback(() => {
     setIsCompacted(true);
     setTimeout(() => setIsCompacted(false), 1500);
 
@@ -5210,7 +5370,7 @@ export default function App() {
     const compacted = compactSql(currentSqlText);
     sqlRef.current = compacted;
     setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: compacted } : t));
-  };
+  }, [activeTabId]);
 
   const handleNodeClick = (_event: any, node: any) => {
     setSelectedNode(node);
@@ -5253,6 +5413,13 @@ export default function App() {
                   ref={fileInputRef} 
                   accept=".sql,.txt,text/plain" 
                   onChange={handleOpenFile} 
+                  className="hidden" 
+                />
+                <input 
+                  type="file" 
+                  ref={settingsImportFileInputRef} 
+                  accept=".json,application/json" 
+                  onChange={handleImportSettingsFile} 
                   className="hidden" 
                 />
                 <input 
@@ -7073,7 +7240,7 @@ export default function App() {
                                                                 className={`cursor-pointer text-[10px] flex items-center justify-between gap-2 px-1.5 py-0.5 rounded transition-colors ${theme === 'dark' ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-200'}`}
                                                                 onClick={() => {
                                                                   const colKey = `${dbName}.${schemaName}.${tableName}.${col.column_name}`;
-                                                                  navigator.clipboard.writeText(col.column_name);
+                                                                  copyToClipboard(col.column_name);
                                                                   setCopiedSchemaCol(colKey);
                                                                   setTimeout(() => setCopiedSchemaCol(null), 1500);
                                                                 }}
@@ -7226,7 +7393,7 @@ export default function App() {
                   theme === 'dark' ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300'
                 } ${
                   isDuckDbResultExpanded 
-                    ? 'border-t flex flex-col shrink-0 h-[calc(100%-155px)]' 
+                    ? 'border-t flex flex-col shrink-0 h-[calc(100%-175px)]' 
                     : 'border-t flex flex-col shrink-0 h-[40%]'
                 }`}
               >
@@ -7257,7 +7424,7 @@ export default function App() {
 
                         <div className="flex items-center gap-1">
                           <button
-                            disabled={duckDbPage <= 1 || isDuckDbRunning}
+                            disabled={duckDbPage <= 1 || isAnyQueryRunning}
                             onClick={() => handleExecuteCurrentEngineQuery(lastExecutedSql, duckDbPage - 1)}
                             className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded transition-all font-mono disabled:opacity-30 disabled:cursor-not-allowed ${
                               theme === 'dark' ? 'text-slate-300 hover:text-slate-100 hover:bg-slate-700/40' : 'text-slate-700 hover:text-slate-900 hover:bg-slate-400/30'
@@ -7272,7 +7439,7 @@ export default function App() {
                             стр {duckDbPage}
                           </span>
                           <button
-                            disabled={isDuckDbRunning || !duckDbResults || duckDbResults.length < effectiveMaxRows}
+                            disabled={isAnyQueryRunning || !duckDbResults || duckDbResults.length < effectiveMaxRows}
                             onClick={() => handleExecuteCurrentEngineQuery(lastExecutedSql, duckDbPage + 1)}
                             className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded transition-all font-mono disabled:opacity-30 disabled:cursor-not-allowed ${
                               theme === 'dark' ? 'text-slate-300 hover:text-slate-100 hover:bg-slate-700/40' : 'text-slate-700 hover:text-slate-900 hover:bg-slate-400/30'
@@ -7418,7 +7585,7 @@ export default function App() {
                     <div className="relative">
                       <button
                         onClick={() => setShowQuickActionsMenu(!showQuickActionsMenu)}
-                        disabled={!duckDbResults || duckDbResults.length === 0 || isDuckDbRunning}
+                        disabled={!duckDbResults || duckDbResults.length === 0 || isAnyQueryRunning}
                         className={`h-6 w-6 flex items-center justify-center rounded transition-colors disabled:opacity-40 ${
                           theme === 'dark'
                             ? 'hover:bg-slate-700 text-slate-400'
@@ -7493,7 +7660,7 @@ export default function App() {
                             const isClickhouse = activeEngine === 'clickhouse' || (!duckDbConnectedPath && !!clickhouseConfig);
                             if (isClickhouse && clickhouseConfig) {
                               let queryWithFormat = sqlToRun.trim();
-                              if (!/\bFORMAT\b/i.test(queryWithFormat) && !/^\s*(CREATE|INSERT|DELETE|ALTER|DROP|TRUNCATE|SET|USE|OPTIMIZE|SYSTEM)\b/i.test(queryWithFormat)) {
+                              if (!/\bFORMAT\b/i.test(queryWithFormat) && /^\s*(SELECT|SHOW|DESCRIBE|DESC|EXPLAIN|WITH)\b/i.test(queryWithFormat)) {
                                 queryWithFormat += ' FORMAT JSON';
                               }
                               if (isTauriEnvironment()) {
@@ -7546,7 +7713,7 @@ export default function App() {
                               targetTable = '';
                             }
 
-                            let sqlToRun = targetTable ? `SUMMARIZE ${targetTable}` : (strippedSql ? `SUMMARIZE (${strippedSql})` : '');
+                            let sqlToRun = targetTable ? `SUMMARIZE ${targetTable}` : (strippedSql ? `SUMMARIZE (\n${strippedSql}\n)` : '');
                             if (!sqlToRun) {
                               throw new Error('Нет таблицы или SQL-запроса для выполнения SUMMARIZE');
                             }
@@ -7556,7 +7723,7 @@ export default function App() {
                               rows = await runRawQuery(sqlToRun);
                             } catch (firstErr: any) {
                               if (targetTable && strippedSql) {
-                                rows = await runRawQuery(`SUMMARIZE (${strippedSql})`);
+                                rows = await runRawQuery(`SUMMARIZE (\n${strippedSql}\n)`);
                               } else {
                                 throw firstErr;
                               }
@@ -7816,7 +7983,7 @@ export default function App() {
                                 Поле \ №
                               </th>
                               {displayedResults.map((_, i) => {
-                                const rowNum = (duckDbPage - 1) * (uiVisibility.duckDbMaxRows || 100) + i + 1;
+                                const rowNum = (duckDbPage - 1) * effectiveMaxRows + i + 1;
                                 const isRowSelected = selectedResultCell?.rowIndex === i;
                                 return (
                                   <th
@@ -7993,7 +8160,7 @@ export default function App() {
                           </thead>
                           <tbody>
                             {displayedResults.map((row, i) => {
-                              const rowNum = (duckDbPage - 1) * (uiVisibility.duckDbMaxRows || 100) + i + 1;
+                              const rowNum = (duckDbPage - 1) * effectiveMaxRows + i + 1;
                               const isRowSelected = selectedResultCell?.rowIndex === i;
                               return (
                                 <tr key={i}>
@@ -8128,9 +8295,9 @@ export default function App() {
                                   const v = r[colKey];
                                   return v === null || v === undefined ? 'null' : String(v);
                                 });
-                                navigator.clipboard.writeText([colKey, ...rows].join('\n'));
+                                copyToClipboard([colKey, ...rows].join('\n'));
                               } else {
-                                navigator.clipboard.writeText(duckDbSelectedCell.content);
+                                copyToClipboard(duckDbSelectedCell.content);
                               }
                               setCopiedCellValue(true);
                               setTimeout(() => setCopiedCellValue(false), 2000);
@@ -8573,7 +8740,7 @@ export default function App() {
                   onClick={handleExecuteDuckDb}
                   onContextMenu={(e) => {
                     e.preventDefault();
-                    if (isDuckDbRunning) return;
+                    if (isAnyQueryRunning) return;
                     
                     let queryToExecute = sqlRef.current;
                     const textareas = document.querySelectorAll('textarea');
@@ -8586,17 +8753,17 @@ export default function App() {
 
                     setExecuteContextMenu({ x: e.clientX, y: e.clientY, text: queryToExecute });
                   }}
-                  disabled={isDuckDbRunning}
+                  disabled={isAnyQueryRunning}
                   className={`flex items-center justify-center gap-1.5 px-4 py-1.5 rounded-lg font-bold text-xs shadow-md transition-all ${
-                    isDuckDbRunning
-                      ? 'bg-slate-500 cursor-not-allowed text-white'
+                    isAnyQueryRunning
+                      ? 'bg-slate-500 cursor-not-allowed text-white opacity-80'
                       : theme === 'dark'
                         ? 'bg-teal-600 hover:bg-teal-500 text-white'
                         : 'bg-teal-500 hover:bg-teal-600 text-white'
                   }`}
                   title="Выполнить запрос в DB"
                 >
-                  {isDuckDbRunning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Terminal className="w-3.5 h-3.5" />}
+                  {isAnyQueryRunning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Terminal className="w-3.5 h-3.5" />}
                   <span>Execute</span>
                 </button>
                 )}
@@ -8644,6 +8811,11 @@ export default function App() {
         onUpdateFormatterSettings={setFormatterSettings}
         uiVisibility={uiVisibility}
         onUpdateUiVisibility={setUiVisibility}
+        onBeforeImport={async () => {
+          if (duckDbConnectedPath || clickhouseConfig) {
+            await handleDisconnectDuckDb();
+          }
+        }}
       />
 
       {/* VERSION HISTORY MODAL */}

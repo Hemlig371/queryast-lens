@@ -11,7 +11,10 @@ import {
   FileCode, 
   ChevronDown, 
   ChevronUp, 
-  RefreshCw 
+  RefreshCw,
+  ChevronLeft,
+  ChevronRight,
+  Briefcase
 } from 'lucide-react';
 import { Snippet, POPULAR_SNIPPETS, ACTION_MENU_CATEGORY } from './SqlSnippetsManager';
 import { loadSnippetsFromDB } from '../utils/snippetsStorage';
@@ -29,6 +32,178 @@ interface ActionMenuTabContentProps {
 export const ACTION_MENU_TAB_ID = '__action_menu_tab__';
 
 let cachedActionMenuSnippets: Snippet[] | null = null;
+
+interface ActionCardProps {
+  snippet: Snippet;
+  theme: 'dark' | 'light';
+  isDuckDbRunning: boolean;
+  isExecutingThis: boolean;
+  onOpenSnippetsManager: (category?: string, snippetId?: string) => void;
+  onExecute: (snippet: Snippet, modifiedSql: string) => void;
+}
+
+const ActionCard: React.FC<ActionCardProps> = ({ 
+  snippet, 
+  theme, 
+  isDuckDbRunning, 
+  isExecutingThis, 
+  onOpenSnippetsManager, 
+  onExecute 
+}) => {
+  const isJob = snippet.sql.trim().startsWith('-- @job');
+  const statements = splitBySemicolonIgnoringQuotes(snippet.sql).map(s => s.trim()).filter(Boolean);
+  const isPipeline = statements.length > 1;
+
+  const parsedVariables = useMemo(() => {
+    const vars: { token: string; name: string; defaultValue: string }[] = [];
+    const regex = /\{\{\$([^}]+)\}\}/g;
+    let match;
+    const seen = new Set<string>();
+
+    while ((match = regex.exec(snippet.sql)) !== null) {
+      const token = match[0];
+      if (seen.has(token)) continue;
+      seen.add(token);
+
+      const inner = match[1];
+      const eqIndex = inner.indexOf('=');
+      let name = '';
+      let defaultValue = inner;
+
+      if (eqIndex !== -1) {
+        name = inner.substring(0, eqIndex);
+        defaultValue = inner.substring(eqIndex + 1);
+      }
+
+      vars.push({ token, name, defaultValue });
+    }
+    return vars;
+  }, [snippet.sql]);
+
+  const initialVars = useMemo(() => {
+    const init: Record<string, string> = {};
+    parsedVariables.forEach((v) => {
+      init[v.token] = v.defaultValue;
+    });
+    return init;
+  }, [parsedVariables]);
+
+  const [varValues, setVarValues] = useState<Record<string, string>>(initialVars);
+
+  useEffect(() => {
+    setVarValues(initialVars);
+  }, [initialVars]);
+
+  const handleExecute = () => {
+    let finalSql = snippet.sql;
+    parsedVariables.forEach((v) => {
+      finalSql = finalSql.split(v.token).join(varValues[v.token] || '');
+    });
+    onExecute(snippet, finalSql);
+    setVarValues(initialVars);
+  };
+
+  return (
+    <div
+      onDoubleClick={() => onOpenSnippetsManager(ACTION_MENU_CATEGORY, snippet.id)}
+      title={snippet.title}
+      className={`flex flex-col gap-2.5 rounded-xl border p-3 transition-all shadow-2xs group cursor-default ${
+        theme === 'dark'
+          ? 'bg-slate-850/90 border-slate-700/80 hover:border-blue-500/40 hover:bg-slate-850'
+          : 'bg-white border-slate-200/90 hover:border-blue-400/50 hover:shadow-xs'
+      }`}
+    >
+      <div className="flex items-start justify-between gap-3 w-full">
+        <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+          {(isJob || isPipeline) && (
+            <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+              {isJob && (
+                <span className={`text-[10px] font-medium px-2 py-0.5 rounded border flex items-center gap-1 ${
+                  theme === 'dark'
+                    ? 'bg-blue-900/30 text-blue-300 border-blue-800/50'
+                    : 'bg-blue-50 text-blue-700 border-blue-200'
+                }`}>
+                  <span>Job</span>
+                </span>
+              )}
+              {isPipeline && (
+                <span className={`text-[10px] font-medium px-2 py-0.5 rounded border flex items-center gap-1 ${
+                  theme === 'dark'
+                    ? 'bg-purple-900/30 text-purple-300 border-purple-800/50'
+                    : 'bg-purple-50 text-purple-700 border-purple-200'
+                }`}>
+                  <span>Пайплайн ({statements.length} ст.)</span>
+                </span>
+              )}
+            </div>
+          )}
+          <h3 className="text-xs font-bold leading-tight text-slate-900 dark:text-slate-100 group-hover:text-blue-500 dark:group-hover:text-blue-400 transition-colors">
+            {snippet.title}
+          </h3>
+        </div>
+
+        <div className="flex flex-col items-end shrink-0 pt-0.5">
+          <button
+            onClick={handleExecute}
+            disabled={isDuckDbRunning}
+            className={`relative flex items-center justify-center px-3 py-1 rounded-md text-xs font-medium border transition-colors select-none ${
+              isExecutingThis
+                ? theme === 'dark'
+                  ? 'bg-amber-500/15 border-amber-500/40 text-amber-300 cursor-wait'
+                  : 'bg-amber-50 border-amber-400 text-amber-700 cursor-wait'
+                : isDuckDbRunning
+                  ? theme === 'dark'
+                    ? 'opacity-40 cursor-not-allowed bg-slate-800 border-slate-700 text-slate-400'
+                    : 'opacity-40 cursor-not-allowed bg-slate-100 border-slate-300 text-slate-500'
+                  : theme === 'dark'
+                    ? 'bg-slate-800 border-slate-700/80 text-emerald-400 hover:bg-emerald-950/40 hover:border-emerald-700/60 hover:text-emerald-300 active:scale-98'
+                    : 'bg-white border-slate-300/90 text-emerald-700 hover:bg-emerald-50/70 hover:border-emerald-400 hover:text-emerald-800 shadow-2xs active:scale-98'
+            }`}
+            title={isPipeline ? "Запустить цепочку запросов (Sequential Pipeline)" : "Выполнить запрос"}
+          >
+            <div className={`flex items-center gap-1.5 transition-opacity ${isExecutingThis ? 'opacity-0' : 'opacity-100'}`}>
+              <Play className="w-3 h-3 fill-current opacity-80" />
+              <span>Запустить</span>
+            </div>
+            {isExecutingThis && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-current" />
+              </div>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {snippet.description && (
+        <p className={`text-[11px] leading-relaxed line-clamp-2 ${
+          theme === 'dark' ? 'text-slate-400' : 'text-slate-600'
+        }`}>
+          {snippet.description}
+        </p>
+      )}
+
+      {parsedVariables.length > 0 && (
+        <div className="mt-2 grid grid-cols-2 gap-2 border-t pt-2 border-slate-200 dark:border-slate-700">
+          {parsedVariables.map((v) => (
+            <div key={v.token} className="flex flex-col justify-end gap-1">
+              {v.name && <label className={`text-[10px] font-semibold ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>{v.name}</label>}
+              <input
+                type="text"
+                className={`w-full px-2 py-1 text-xs border rounded focus:outline-none transition-colors ${
+                  theme === 'dark'
+                    ? 'bg-slate-900 border-slate-700 text-slate-200 focus:border-blue-500'
+                    : 'bg-slate-50 border-slate-200 text-slate-800 focus:border-blue-400'
+                }`}
+                value={varValues[v.token] || ''}
+                onChange={(e) => setVarValues({ ...varValues, [v.token]: e.target.value })}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const ActionMenuTabContent: React.FC<ActionMenuTabContentProps> = ({
   theme,
@@ -55,7 +230,13 @@ export const ActionMenuTabContent: React.FC<ActionMenuTabContentProps> = ({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedDialectFilter, setSelectedDialectFilter] = useState<string>('Все');
   const [onlyPipelines, setOnlyPipelines] = useState<boolean>(false);
+  const [onlyJobs, setOnlyJobs] = useState<boolean>(false);
   const [runningSnippetId, setRunningSnippetId] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedDialectFilter, onlyPipelines, onlyJobs]);
 
   const reloadSnippets = async (showSpinner: boolean = false) => {
     if (showSpinner && snippets.length === 0) {
@@ -104,17 +285,17 @@ export const ActionMenuTabContent: React.FC<ActionMenuTabContentProps> = ({
     }
   }, [isDuckDbRunning, runningSnippetId]);
 
-  const handleExecute = (snippet: Snippet) => {
+  const handleExecute = (snippet: Snippet, modifiedSql: string) => {
     if (isDuckDbRunning) return;
     setRunningSnippetId(snippet.id);
     
     // Check if multi-statement pipeline
-    const statements = splitBySemicolonIgnoringQuotes(snippet.sql)
+    const statements = splitBySemicolonIgnoringQuotes(modifiedSql)
       .map(s => s.trim())
       .filter(Boolean);
     const isSequential = statements.length > 1;
 
-    onExecuteSql(snippet.sql, snippet.dialect, isSequential);
+    onExecuteSql(modifiedSql, snippet.dialect, isSequential);
   };
 
   // Stats & Filters
@@ -122,6 +303,7 @@ export const ActionMenuTabContent: React.FC<ActionMenuTabContentProps> = ({
     let duckdbCount = 0;
     let clickhouseCount = 0;
     let pipelineCount = 0;
+    let jobsCount = 0;
     const dialectsSet = new Set<string>();
 
     snippets.forEach(s => {
@@ -134,6 +316,7 @@ export const ActionMenuTabContent: React.FC<ActionMenuTabContentProps> = ({
       
       const stmts = splitBySemicolonIgnoringQuotes(s.sql).map(st => st.trim()).filter(Boolean);
       if (stmts.length > 1) pipelineCount++;
+      if (s.sql.trim().startsWith('-- @job')) jobsCount++;
     });
 
     // Sort dialects: 'General' first, then alphabetical
@@ -144,7 +327,7 @@ export const ActionMenuTabContent: React.FC<ActionMenuTabContentProps> = ({
     });
 
     return { 
-      stats: { total: snippets.length, duckdbCount, clickhouseCount, pipelineCount },
+      stats: { total: snippets.length, duckdbCount, clickhouseCount, pipelineCount, jobsCount },
       availableDialects: ['Все', ...dialectsArr]
     };
   }, [snippets]);
@@ -155,6 +338,11 @@ export const ActionMenuTabContent: React.FC<ActionMenuTabContentProps> = ({
       if (selectedDialectFilter !== 'Все') {
         const d = (s.dialect || 'General').trim();
         if (d !== selectedDialectFilter) return false;
+      }
+
+      // Jobs filter
+      if (onlyJobs) {
+        if (!s.sql.trim().startsWith('-- @job')) return false;
       }
 
       // Pipeline filter
@@ -175,7 +363,7 @@ export const ActionMenuTabContent: React.FC<ActionMenuTabContentProps> = ({
 
       return true;
     });
-  }, [snippets, selectedDialectFilter, onlyPipelines, searchQuery]);
+  }, [snippets, selectedDialectFilter, onlyPipelines, onlyJobs, searchQuery]);
 
   return (
     <div className={`flex-1 flex flex-col h-full overflow-hidden select-none ${
@@ -211,7 +399,23 @@ export const ActionMenuTabContent: React.FC<ActionMenuTabContentProps> = ({
           <div className="h-4 w-px bg-slate-300 dark:bg-slate-700 mx-1" />
 
           <button
-            onClick={() => setOnlyPipelines(!onlyPipelines)}
+            onClick={() => { setOnlyJobs(!onlyJobs); if (!onlyJobs) setOnlyPipelines(false); }}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium outline-hidden focus:outline-hidden focus:ring-0 select-none transition-colors border ${
+              onlyJobs
+                ? theme === 'dark'
+                    ? 'bg-blue-500/15 border-blue-500/40 text-blue-300'
+                    : 'bg-blue-50 border-blue-300 text-blue-700 shadow-2xs'
+                : theme === 'dark'
+                  ? 'bg-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-750 border-slate-700/60'
+                  : 'bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 border-slate-300/80 shadow-2xs'
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>Jobs ({stats.jobsCount})</span>
+          </button>
+
+          <button
+            onClick={() => { setOnlyPipelines(!onlyPipelines); if (!onlyPipelines) setOnlyJobs(false); }}
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium outline-hidden focus:outline-hidden focus:ring-0 select-none transition-colors border ${
               onlyPipelines
                 ? theme === 'dark'
@@ -222,7 +426,6 @@ export const ActionMenuTabContent: React.FC<ActionMenuTabContentProps> = ({
                   : 'bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 border-slate-300/80 shadow-2xs'
             }`}
           >
-            <Layers className="w-3.5 h-3.5" />
             <span>Пайплайны ({stats.pipelineCount})</span>
           </button>
         </div>
@@ -268,91 +471,48 @@ export const ActionMenuTabContent: React.FC<ActionMenuTabContentProps> = ({
             </p>
           </div>
         ) : (
-          <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))' }}>
-            {filteredSnippets.map((snippet) => {
-              const statements = splitBySemicolonIgnoringQuotes(snippet.sql)
-                .map(s => s.trim())
-                .filter(Boolean);
-              const isPipeline = statements.length > 1;
-              const isExecutingThis = isDuckDbRunning && runningSnippetId === snippet.id;
-
-              return (
-                <div
-                  key={snippet.id}
-                  onDoubleClick={() => onOpenSnippetsManager(ACTION_MENU_CATEGORY, snippet.id)}
-                  title={snippet.description ? `${snippet.title}\n\n${snippet.description}` : snippet.title}
-                  className={`flex flex-col gap-2.5 rounded-xl border p-2.5 transition-all shadow-2xs group cursor-default ${
-                    theme === 'dark'
-                      ? 'bg-slate-850/90 border-slate-700/80 hover:border-blue-500/40 hover:bg-slate-850'
-                      : 'bg-white border-slate-200/90 hover:border-blue-400/50 hover:shadow-xs'
+          <div className="flex flex-col min-h-full">
+            <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', alignContent: 'start' }}>
+              {filteredSnippets.slice((currentPage - 1) * 20, currentPage * 20).map((snippet) => {
+                const isExecutingThis = isDuckDbRunning && runningSnippetId === snippet.id;
+                return (
+                  <ActionCard
+                    key={snippet.id}
+                    snippet={snippet}
+                    theme={theme}
+                    isDuckDbRunning={isDuckDbRunning}
+                    isExecutingThis={isExecutingThis}
+                    onOpenSnippetsManager={onOpenSnippetsManager}
+                    onExecute={handleExecute}
+                  />
+                );
+              })}
+            </div>
+            {filteredSnippets.length > 20 && (
+              <div className="mt-auto pt-6 mb-2 flex items-center justify-center gap-4 shrink-0">
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className={`p-1.5 rounded transition-colors disabled:opacity-30 disabled:hover:bg-transparent ${
+                    theme === 'dark' ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-200 text-slate-600'
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-3 w-full">
-                    <div className="flex flex-col gap-1.5 flex-1 min-w-0">
-                      {isPipeline && (
-                        <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
-                          <span className={`text-[10px] font-medium px-2 py-0.5 rounded border flex items-center gap-1 ${
-                            theme === 'dark'
-                              ? 'bg-purple-900/30 text-purple-300 border-purple-800/50'
-                              : 'bg-purple-50 text-purple-700 border-purple-200'
-                          }`}>
-                            <Zap className="w-2.5 h-2.5" />
-                            <span>Пайплайн ({statements.length} ст.)</span>
-                          </span>
-                        </div>
-                      )}
-                      {/* TITLE */}
-                      <h3 className="text-xs font-bold leading-tight text-slate-900 dark:text-slate-100 group-hover:text-blue-500 dark:group-hover:text-blue-400 transition-colors">
-                        {snippet.title}
-                      </h3>
-                    </div>
-
-                    <div className="flex flex-col items-end shrink-0 pt-0.5">
-                      <button
-                      onClick={() => handleExecute(snippet)}
-                      disabled={isDuckDbRunning}
-                      className={`relative flex items-center justify-center px-3 py-1 rounded-md text-xs font-medium border transition-colors select-none ${
-                        isExecutingThis
-                          ? theme === 'dark'
-                            ? 'bg-amber-500/15 border-amber-500/40 text-amber-300 cursor-wait'
-                            : 'bg-amber-50 border-amber-400 text-amber-700 cursor-wait'
-                          : isDuckDbRunning
-                            ? theme === 'dark'
-                              ? 'opacity-40 cursor-not-allowed bg-slate-800 border-slate-700 text-slate-400'
-                              : 'opacity-40 cursor-not-allowed bg-slate-100 border-slate-300 text-slate-500'
-                            : theme === 'dark'
-                              ? 'bg-slate-800 border-slate-700/80 text-emerald-400 hover:bg-emerald-950/40 hover:border-emerald-700/60 hover:text-emerald-300 active:scale-98'
-                              : 'bg-white border-slate-300/90 text-emerald-700 hover:bg-emerald-50/70 hover:border-emerald-400 hover:text-emerald-800 shadow-2xs active:scale-98'
-                      }`}
-                      title={isPipeline ? "Запустить цепочку запросов (Sequential Pipeline)" : "Выполнить запрос"}
-                    >
-                      <div className={`flex items-center gap-1.5 transition-opacity ${isExecutingThis ? 'opacity-0' : 'opacity-100'}`}>
-                        <Play className="w-3 h-3 fill-current opacity-80" />
-                        <span>Запустить</span>
-                      </div>
-                      {isExecutingThis && (
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <Loader2 className="w-3.5 h-3.5 animate-spin text-current" />
-                        </div>
-                      )}
-                    </button>
-                  </div>
-                  </div>
-
-                  {/* DESCRIPTION */}
-                  {snippet.description && (
-                    <p 
-                      title={snippet.description}
-                      className={`text-[11px] leading-relaxed line-clamp-2 ${
-                        theme === 'dark' ? 'text-slate-400' : 'text-slate-600'
-                      }`}
-                    >
-                      {snippet.description}
-                    </p>
-                  )}
-                </div>
-              );
-            })}
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <span className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
+                  Страница {currentPage} из {Math.ceil(filteredSnippets.length / 20)}
+                </span>
+                <button
+                  onClick={() => setCurrentPage((p) => Math.min(Math.ceil(filteredSnippets.length / 20), p + 1))}
+                  disabled={currentPage === Math.ceil(filteredSnippets.length / 20)}
+                  className={`p-1.5 rounded transition-colors disabled:opacity-30 disabled:hover:bg-transparent ${
+                    theme === 'dark' ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -419,7 +419,7 @@ export function replaceSecretsInSql(sql: string): string {
   // Replace {{key_name}}
   return sql.replace(/\{\{([a-zA-Z0-9_\-]+)\}\}/g, (match, keyName) => {
     if (!secretMap.has(keyName)) {
-      throw new Error(`Ключ {{${keyName}}} не найден в хранилище ключей.`);
+      return match;
     }
     return secretMap.get(keyName)!;
   });

@@ -13,6 +13,10 @@ export interface ExcelSettings {
   categoryGroupColumn?: number;
   categoryGroupCleanDuplicates?: boolean;
   categoryGroupCollapse?: boolean;
+  categoryGroupFormatSubtotals?: boolean;
+  categorySubtotalBgColor?: string;
+  categorySubtotalTextColor?: string;
+  categorySubtotalBold?: boolean;
   firstColumnBgColor: string;
   firstColumnTextColor: string;
   firstColumnBold: boolean;
@@ -51,12 +55,14 @@ export interface ExcelSettings {
   pageNumberPosition: 'center' | 'right';
   pageNumberFormat: 'full' | 'simple';
   enableTotalsRow: boolean;
+  formatExistingRowAsTotal?: boolean;
   totalsRowFunction: 'SUM' | 'AVERAGE' | 'COUNT';
   totalsRowPosition: 'bottom' | 'top';
   totalsRowBgColor: string;
   totalsRowTextColor: string;
   totalsRowBold: boolean;
   enableTotalsColumn: boolean;
+  formatExistingColumnAsTotal?: boolean;
   totalsColumnFunction: 'SUM' | 'AVERAGE' | 'COUNT';
   totalsColumnPosition: 'right' | 'left';
   totalsColumnBgColor: string;
@@ -84,6 +90,7 @@ export interface ExcelSettings {
   reportTitleBold: boolean;
   reportTitleItalic: boolean;
   splitByColumnIndex?: number | null;
+  skipColumnIndex?: number | null;
 }
 
 export const DEFAULT_EXCEL_SETTINGS: ExcelSettings = {
@@ -101,6 +108,10 @@ export const DEFAULT_EXCEL_SETTINGS: ExcelSettings = {
   categoryGroupColumn: 0,
   categoryGroupCleanDuplicates: false,
   categoryGroupCollapse: false,
+  categoryGroupFormatSubtotals: false,
+  categorySubtotalBgColor: 'E2E8F0',
+  categorySubtotalTextColor: '0F172A',
+  categorySubtotalBold: true,
   firstColumnBgColor: 'F1F5F9',
   firstColumnTextColor: '0F172A',
   firstColumnBold: true,
@@ -139,12 +150,14 @@ export const DEFAULT_EXCEL_SETTINGS: ExcelSettings = {
   pageNumberPosition: 'center',
   pageNumberFormat: 'full',
   enableTotalsRow: true,
+  formatExistingRowAsTotal: false,
   totalsRowFunction: 'SUM',
   totalsRowPosition: 'bottom',
   totalsRowBgColor: 'F1F5F9',
   totalsRowTextColor: '0F172A',
   totalsRowBold: true,
   enableTotalsColumn: false,
+  formatExistingColumnAsTotal: false,
   totalsColumnFunction: 'SUM',
   totalsColumnPosition: 'right',
   totalsColumnBgColor: 'F1F5F9',
@@ -171,7 +184,8 @@ export const DEFAULT_EXCEL_SETTINGS: ExcelSettings = {
   reportTitleBgColor: '',
   reportTitleBold: true,
   reportTitleItalic: false,
-  splitByColumnIndex: null
+  splitByColumnIndex: null,
+  skipColumnIndex: null
 };
 
 export interface ExcelPreset {
