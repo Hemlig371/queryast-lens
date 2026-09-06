@@ -39,13 +39,10 @@ pub struct DuckDbConfigOptions {
     pub temp_directory: Option<String>,
     pub extension_directory: Option<String>,
     pub threads: Option<i32>,
+    pub init_sql: Option<String>,
 }
 
 fn apply_duckdb_options(conn: &Connection, opts: &DuckDbConfigOptions) {
-    if let Some(allow_unsigned) = opts.allow_unsigned_extensions {
-        let sql = format!("SET allow_unsigned_extensions = {};", allow_unsigned);
-        let _ = conn.execute_batch(&sql);
-    }
     if let Some(ref mem) = opts.memory_limit {
         if !mem.trim().is_empty() {
             let clean = mem.trim().replace('\'', "").replace('"', "").replace(';', "");
@@ -71,6 +68,11 @@ fn apply_duckdb_options(conn: &Connection, opts: &DuckDbConfigOptions) {
             let clean = ext_dir.trim().replace('\'', "").replace('"', "").replace(';', "");
             let sql = format!("PRAGMA extension_directory = '{}';", clean);
             let _ = conn.execute_batch(&sql);
+        }
+    }
+    if let Some(ref init_sql) = opts.init_sql {
+        if !init_sql.trim().is_empty() {
+            let _ = conn.execute_batch(init_sql);
         }
     }
 }

@@ -1,3 +1,4 @@
+import { t } from "../utils/i18n";
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { toBlob } from 'html-to-image';
 import {
@@ -59,7 +60,7 @@ export const DataStatsViewer: React.FC<DataStatsViewerProps> = React.memo(({
   if (!data || data.length === 0) {
     return (
       <div className={`p-4 text-center text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
-        Нет данных для визуализации.
+        {t("Нет данных для визуализации.")}
       </div>
     );
   }
@@ -348,7 +349,7 @@ export const DataStatsViewer: React.FC<DataStatsViewerProps> = React.memo(({
 
 
       if (!target) {
-        throw new Error('Не указано имя таблицы или SQL-запрос для выполнения агрегации');
+        throw new Error(t('Не указано имя таблицы или SQL-запрос для выполнения агрегации'));
       }
 
       let limitClause = '';
@@ -429,7 +430,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
       const rows = await onExecuteQuery(query);
 
       if (!rows || rows.length === 0) {
-        throw new Error('База данных вернула пустой результат');
+        throw new Error(t('База данных вернула пустой результат'));
       }
 
       let processedRows = rows;
@@ -538,7 +539,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
       });
     } catch (err: any) {
       const rawMsg = err?.message !== undefined ? String(err.message) : String(err);
-      setRemoteError(rawMsg || 'Ошибка выполнения SQL запроса');
+      setRemoteError(rawMsg || t('Ошибка выполнения SQL запроса'));
     } finally {
       setIsFetchingRemote(false);
     }
@@ -780,7 +781,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                       onClick={() => setSelectedColumns([])}
                       className="text-[11px] text-amber-600 dark:text-amber-400 hover:underline transition-opacity shrink-0"
                     >
-                      Сбросить выбор
+                      {t("Сбросить выбор")}
                     </button>
                     <span>•</span>
                   </>
@@ -797,17 +798,17 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                   }`}
                   title={
                     selectedColumns.length > 0
-                      ? `Вставить SELECT с выбранными столбцами (${selectedColumns.length}) в редактор`
-                      : 'Вставить SELECT со всеми столбцами в редактор'
+                      ? `${t('Вставить SELECT с выбранными столбцами')} (${selectedColumns.length}) ${t('в редактор')}`
+                      : t('Вставить SELECT со всеми столбцами в редактор')
                   }
                 >
                   <Code className="w-3 h-3 shrink-0" />
-                  <span>Вставить SQL</span>
+                  <span>{t("Вставить SQL")}</span>
                 </button>
                 <span>•</span>
-                <span>Столбцов: <b className="font-semibold text-teal-600 dark:text-teal-400">{(summarizeList.length || 0).toLocaleString('ru-RU')}</b></span>
+                <span>{t("Столбцов:")} <b className="font-semibold text-teal-600 dark:text-teal-400">{(summarizeList.length || 0).toLocaleString('ru-RU')}</b></span>
                 <span>•</span>
-                <span>Строк: <b className="font-semibold text-teal-600 dark:text-teal-400">{(summarizeList[0]?.count || 0).toLocaleString('ru-RU')}</b></span>
+                <span>{t("Строк:")} <b className="font-semibold text-teal-600 dark:text-teal-400">{(summarizeList[0]?.count || 0).toLocaleString('ru-RU')}</b></span>
               </div>
             </>
           ) : (
@@ -823,9 +824,9 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                         : 'bg-teal-600 text-white'
                       : 'hover:bg-slate-500/20'
                   }`}
-                  title="Нажмите повторно для переключения между статистикой по категориям и по столбцам"
+                  title={t("Нажмите повторно для переключения между статистикой по категориям и по столбцам")}
                 >
-                  <List className="w-3.5 h-3.5" /> Список
+                  <List className="w-3.5 h-3.5" /> {t("Список")}
                 </button>
                 <button
                   onClick={handleBarClick}
@@ -836,9 +837,9 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                         : 'bg-teal-600 text-white'
                       : 'hover:bg-slate-500/20'
                   }`}
-                  title="Нажмите повторно для переключения ориентации (вертикальная / горизонтальная)"
+                  title={t("Нажмите повторно для переключения ориентации (вертикальная / горизонтальная)")}
                 >
-                  <BarChart3 className="w-3.5 h-3.5" /> Столбцы
+                  <BarChart3 className="w-3.5 h-3.5" /> {t("Столбцы")}
                 </button>
                 <button
                   onClick={() => setChartType('line')}
@@ -846,7 +847,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                     chartType === 'line' ? (isDark ? 'bg-teal-600 text-white' : 'bg-teal-600 text-white') : 'hover:bg-slate-500/20'
                   }`}
                 >
-                  <TrendingUp className="w-3.5 h-3.5" /> Линия
+                  <TrendingUp className="w-3.5 h-3.5" /> {t("Линия")}
                 </button>
                 <button
                   onClick={() => setChartType('pie')}
@@ -854,7 +855,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                     chartType === 'pie' ? (isDark ? 'bg-teal-600 text-white' : 'bg-teal-600 text-white') : 'hover:bg-slate-500/20'
                   }`}
                 >
-                  <PieIcon className="w-3.5 h-3.5" /> Круговая
+                  <PieIcon className="w-3.5 h-3.5" /> {t("Круговая")}
                 </button>
               </div>
 
@@ -869,7 +870,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                           onClick={() => setSelectedColumns([])}
                           className="text-[11px] text-amber-600 dark:text-amber-400 hover:underline transition-opacity shrink-0"
                         >
-                          Сбросить выбор
+                          {t("Сбросить выбор")}
                         </button>
                         <span>•</span>
                       </>
@@ -886,17 +887,17 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                       }`}
                       title={
                         selectedColumns.length > 0
-                          ? `Вставить SELECT с выбранными столбцами (${selectedColumns.length}) в редактор`
-                          : 'Вставить SELECT со всеми столбцами в редактор'
+                          ? `${t('Вставить SELECT с выбранными столбцами')} (${selectedColumns.length})`
+                          : t('Вставить SELECT со всеми столбцами в редактор')
                       }
                     >
                       <Code className="w-3 h-3 shrink-0" />
-                      <span>Вставить SQL</span>
+                      <span>{t("Вставить SQL")}</span>
                     </button>
                     <span>•</span>
-                    <span>Столбцов: <b className="font-semibold text-teal-600 dark:text-teal-400">{(columns.length || 0).toLocaleString('ru-RU')}</b></span>
+                    <span>{t("Столбцов:")} <b className="font-semibold text-teal-600 dark:text-teal-400">{(columns.length || 0).toLocaleString('ru-RU')}</b></span>
                     <span>•</span>
-                    <span>Строк: <b className="font-semibold text-teal-600 dark:text-teal-400">{((remoteStatsInfo?.totalCount !== undefined ? remoteStatsInfo.totalCount : data.length) || 0).toLocaleString('ru-RU')}</b></span>
+                    <span>{t("Строк:")} <b className="font-semibold text-teal-600 dark:text-teal-400">{((remoteStatsInfo?.totalCount !== undefined ? remoteStatsInfo.totalCount : data.length) || 0).toLocaleString('ru-RU')}</b></span>
 
                     {onExecuteQuery && (
                       <>
@@ -909,12 +910,12 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                             className={`px-1.5 py-0.5 rounded text-[11px] font-mono font-medium border focus:outline-hidden transition-colors ${
                               isDark ? 'bg-slate-800 border-slate-600 text-slate-200' : 'bg-white border-slate-300 text-slate-700'
                             }`}
-                            title="Лимит сканирования датасета в БД"
+                            title={t("Лимит сканирования датасета в БД")}
                           >
-                            <option value="1M">1 млн</option>
-                            <option value="10M">10 млн</option>
-                            <option value="50M">50 млн</option>
-                            <option value="100M">100 млн</option>
+                            <option value="1M">{t("1 млн")}</option>
+                            <option value="10M">{t("10 млн")}</option>
+                            <option value="50M">{t("50 млн")}</option>
+                            <option value="100M">{t("100 млн")}</option>
                             <option value="ALL">ALL</option>
                           </select>
 
@@ -933,17 +934,17 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                                     ? 'bg-amber-600/20 text-amber-300 border-amber-500/40 hover:bg-amber-600/30'
                                     : 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
                             }`}
-                            title="Выполнить SQL агрегацию по всему датасету из базы данных и обновить карточки"
+                            title={t("Выполнить SQL агрегацию по всему датасету из базы данных и обновить карточки")}
                           >
                             {isFetchingRemote ? (
                               <>
                                 <Loader2 className="w-3 h-3 animate-spin shrink-0" />
-                                <span>Загрузка...</span>
+                                <span>{t("Загрузка...")}</span>
                               </>
                             ) : (
                               <>
                                 <RefreshCw className="w-3 h-3 shrink-0" />
-                                <span>{remoteStats ? 'Обновлено' : 'Обновить по БД'}</span>
+                                <span>{remoteStats ? t('Обновлено') : t('Обновить по БД')}</span>
                               </>
                             )}
                           </button>
@@ -968,19 +969,19 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                   }`}>
                     {colAnalysis[yAxisCol].type === 'number' ? (
                       <>
-                        <span>Количество: <b className="font-semibold text-teal-600 dark:text-teal-400">{formatStatVal(colAnalysis[yAxisCol].count)}</b></span>
-                        <span>Уникальных: <b className="font-semibold text-teal-600 dark:text-teal-400">{formatStatVal(colAnalysis[yAxisCol].uniqueCount)}</b></span>
-                        <span>Сумма: <b className="font-semibold text-teal-600 dark:text-teal-400">{formatStatVal(colAnalysis[yAxisCol].sum) ?? 0}</b></span>
-                        <span>Среднее: <b className="font-semibold text-teal-600 dark:text-teal-400">{formatStatVal(colAnalysis[yAxisCol].avg) ?? 0}</b></span>
-                        <span>Мин: <b className="font-semibold text-teal-600 dark:text-teal-400">{formatStatVal(colAnalysis[yAxisCol].min) ?? 0}</b></span>
-                        <span>Макс: <b className="font-semibold text-teal-600 dark:text-teal-400">{formatStatVal(colAnalysis[yAxisCol].max) ?? 0}</b></span>
-                        <span>Пустых: <b className="font-semibold text-teal-600 dark:text-teal-400">{colAnalysis[yAxisCol].nullPct}%</b></span>
+                        <span>{t("Количество:")} <b className="font-semibold text-teal-600 dark:text-teal-400">{formatStatVal(colAnalysis[yAxisCol].count)}</b></span>
+                        <span>{t("Уникальных:")} <b className="font-semibold text-teal-600 dark:text-teal-400">{formatStatVal(colAnalysis[yAxisCol].uniqueCount)}</b></span>
+                        <span>{t("Сумма:")} <b className="font-semibold text-teal-600 dark:text-teal-400">{formatStatVal(colAnalysis[yAxisCol].sum) ?? 0}</b></span>
+                        <span>{t("Среднее:")} <b className="font-semibold text-teal-600 dark:text-teal-400">{formatStatVal(colAnalysis[yAxisCol].avg) ?? 0}</b></span>
+                        <span>{t("Мин:")} <b className="font-semibold text-teal-600 dark:text-teal-400">{formatStatVal(colAnalysis[yAxisCol].min) ?? 0}</b></span>
+                        <span>{t("Макс:")} <b className="font-semibold text-teal-600 dark:text-teal-400">{formatStatVal(colAnalysis[yAxisCol].max) ?? 0}</b></span>
+                        <span>{t("Пустых:")} <b className="font-semibold text-teal-600 dark:text-teal-400">{colAnalysis[yAxisCol].nullPct}%</b></span>
                       </>
                     ) : (
                       <>
-                        <span>Количество: <b className="font-semibold text-teal-600 dark:text-teal-400">{formatStatVal(colAnalysis[yAxisCol].count)}</b></span>
-                        <span>Уникальных: <b className="font-semibold text-teal-600 dark:text-teal-400">{formatStatVal(colAnalysis[yAxisCol].uniqueCount)}</b></span>
-                        <span>Пустых: <b className="font-semibold text-teal-600 dark:text-teal-400">{colAnalysis[yAxisCol].nullPct}%</b> ({formatStatVal(colAnalysis[yAxisCol].nullCount)} из {formatStatVal(colAnalysis[yAxisCol].count)})</span>
+                        <span>{t("Количество:")} <b className="font-semibold text-teal-600 dark:text-teal-400">{formatStatVal(colAnalysis[yAxisCol].count)}</b></span>
+                        <span>{t("Уникальных:")} <b className="font-semibold text-teal-600 dark:text-teal-400">{formatStatVal(colAnalysis[yAxisCol].uniqueCount)}</b></span>
+                        <span>{t("Пустых:")} <b className="font-semibold text-teal-600 dark:text-teal-400">{colAnalysis[yAxisCol].nullPct}%</b> ({formatStatVal(colAnalysis[yAxisCol].nullCount)} {t("из")} {formatStatVal(colAnalysis[yAxisCol].count)})</span>
                       </>
                     )}
                   </div>
@@ -995,7 +996,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
           <div className="flex items-center gap-3 flex-wrap">
             {/* X Axis Selector & Category Limit Selector */}
             <div className="flex items-center gap-1.5">
-              <span className="opacity-70">Ось X :</span>
+              <span className="opacity-70">{t("Ось X :")}</span>
               <select
                 value={xAxisCol}
                 onChange={(e) => setXAxisCol(e.target.value)}
@@ -1018,9 +1019,9 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                   className={`px-1.5 py-1 rounded border text-xs font-medium focus:outline-hidden ${
                     isDark ? 'border-slate-600 text-slate-200 bg-slate-800' : 'border-slate-300 text-slate-800 bg-white'
                   }`}
-                  title="Количество отображаемых категорий"
+                  title={t("Количество отображаемых категорий")}
                 >
-                  <option value="all">Все ({totalCategoryCount})</option>
+                  <option value="all">{t("Все")} ({totalCategoryCount})</option>
                   <option value="5">5</option>
                   <option value="10">10</option>
                   <option value="20">20</option>
@@ -1031,7 +1032,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
             {/* Y Axis Selector */}
             {chartType !== 'pie' && (
               <div className="flex items-center gap-1.5">
-                <span className="opacity-70">Ось Y :</span>
+                <span className="opacity-70">{t("Ось Y :")}</span>
                 <select
                   value={yAxisCol}
                   onChange={(e) => handleYAxisChange(e.target.value)}
@@ -1050,7 +1051,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
 
             {/* Aggregation Mode Selector */}
             <div className="flex items-center gap-1.5">
-              <span className="opacity-70">Агрегация:</span>
+              <span className="opacity-70">{t("Агрегация:")}</span>
               <select
                 value={aggMode}
                 onChange={(e) => setAggMode(e.target.value as any)}
@@ -1058,19 +1059,19 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                   isDark ? 'border-slate-600 text-slate-200 bg-slate-800' : 'border-slate-300 text-slate-800 bg-white'
                 }`}
               >
-                <option value="count" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>Кол-во (Count)</option>
-                <option value="uniqueCount" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>Уникальных</option>
-                <option value="sum" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>Сумма (Sum)</option>
-                <option value="avg" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>Среднее (Avg)</option>
-                <option value="min" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>Минимум (Min)</option>
-                <option value="max" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>Максимум (Max)</option>
-                <option value="nullPct" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>% пустых</option>
+                <option value="count" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>{t("Кол-во (Count)")}</option>
+                <option value="uniqueCount" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>{t("Уникальных")}</option>
+                <option value="sum" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>{t("Сумма (Sum)")}</option>
+                <option value="avg" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>{t("Среднее (Avg)")}</option>
+                <option value="min" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>{t("Минимум (Min)")}</option>
+                <option value="max" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>{t("Максимум (Max)")}</option>
+                <option value="nullPct" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>{t("% пустых")}</option>
               </select>
             </div>
 
             {/* Category Sorting Selector */}
             <div className="flex items-center gap-1.5">
-              <span className="opacity-70">Сортировка:</span>
+              <span className="opacity-70">{t("Сортировка:")}</span>
               <select
                 value={sortMode}
                 onChange={(e) => setSortMode(e.target.value as any)}
@@ -1078,9 +1079,9 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                   isDark ? 'border-slate-600 text-slate-200 bg-slate-800' : 'border-slate-300 text-slate-800 bg-white'
                 }`}
               >
-                <option value="alphabet" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>По алфавиту</option>
-                <option value="desc" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>По убыванию</option>
-                <option value="asc" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>По возрастанию</option>
+                <option value="alphabet" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>{t("По алфавиту")}</option>
+                <option value="desc" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>{t("По убыванию")}</option>
+                <option value="asc" className={isDark ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}>{t("По возрастанию")}</option>
               </select>
             </div>
           </div>
@@ -1098,7 +1099,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                 ? 'bg-slate-800/80 hover:bg-slate-700 text-slate-300 border-slate-600/60'
                 : 'bg-white/90 hover:bg-slate-100 text-slate-600 border-slate-200'
             }`}
-            title={copiedChartImage ? "Скопировано в буфер (PNG)!" : "Скопировать график как PNG с прозрачным фоном"}
+            title={copiedChartImage ? t("Скопировано в буфер (PNG)!") : t("Скопировать график как PNG с прозрачным фоном")}
           >
             {copiedChartImage ? (
               <Check className="w-3.5 h-3.5 text-emerald-500" />
@@ -1109,7 +1110,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
         )}
         {isSummarizeMode ? (
           <div className="h-full overflow-y-auto pr-1">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
               {summarizeList.map((info, idx) => {
                 const isSelected = selectedColumns.includes(info.colName);
                 const selectedIdx = selectedColumns.indexOf(info.colName);
@@ -1162,7 +1163,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                         </span>
                       </div>
                       <span 
-                        className="text-[10px] opacity-75 font-mono px-1.5 py-0.5 rounded bg-slate-500/10 border border-slate-500/20 shrink-0 font-medium" 
+                        className="text-[10px] opacity-60 font-mono px-1 rounded border border-current" 
                         title={info.rawType}
                       >
                         {formatColumnType(info.rawType)}
@@ -1172,37 +1173,37 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                     {/* Full Stats Grid: 3 in a row with inline labels and values */}
                     <div className="relative z-10 grid grid-cols-3 gap-x-2 gap-y-1 text-[11px] leading-tight">
                       {/* Row 1: Уникальных, Пустых, Среднее */}
-                      <div className="flex items-center gap-1 min-w-0 truncate text-teal-600 dark:text-teal-400 font-medium" title={`Уникальных: ${formatStatVal(info.uniqueCount)}`}>
-                        <span className="shrink-0">Уникальных:</span>
-                        <b className="truncate font-semibold">{formatStatVal(info.uniqueCount)}</b>
+                      <div className="flex items-center gap-1 min-w-0 truncate text-teal-600 dark:text-teal-400" title={`${t("Уникальных:")} ${formatStatVal(info.uniqueCount)}`}>
+                        <span className="shrink-0">{t("Уникальных:")}</span>
+                        <b className="truncate">{formatStatVal(info.uniqueCount)}</b>
                       </div>
 
-                      <div className="flex items-center gap-1 min-w-0 truncate text-slate-800 dark:text-slate-100 font-medium" title={`Пустых: ${info.nullPct}%`}>
-                        <span className="shrink-0">Пустых:</span>
-                        <b className="truncate font-semibold" style={{ color: getNullPctColor(info.nullPct, isDark) }}>
+                      <div className="flex items-center gap-1 min-w-0 truncate text-slate-800 dark:text-slate-100" title={`${t("Среднее:")} ${avgStr ?? '-'}`}>
+                        <span className="shrink-0">{t("Среднее:")}</span>
+                        <b className="truncate">{avgStr ?? '-'}</b>
+                      </div>
+
+                      <div className="flex items-center gap-1 min-w-0 truncate text-slate-800 dark:text-slate-100" title={`${t("Пустых:")} ${info.nullPct}%`}>
+                        <span className="shrink-0">{t("Пустых:")}</span>
+                        <b className="truncate" style={{ color: getNullPctColor(info.nullPct, isDark) }}>
                           {info.nullPct}%
                         </b>
                       </div>
 
-                      <div className="flex items-center gap-1 min-w-0 truncate text-slate-800 dark:text-slate-100 font-medium" title={`Среднее: ${avgStr ?? '-'}`}>
-                        <span className="shrink-0">Среднее:</span>
-                        <b className="truncate font-semibold">{avgStr ?? '-'}</b>
-                      </div>
-
                       {/* Row 2: Мин, Макс, Медиана */}
-                      <div className="flex items-center gap-1 min-w-0 truncate text-slate-800 dark:text-slate-100 font-medium" title={`Мин: ${minStr ?? '-'}`}>
-                        <span className="shrink-0">Мин:</span>
-                        <b className="truncate font-semibold">{minStr ?? '-'}</b>
+                      <div className="flex items-center gap-1 min-w-0 truncate text-slate-800 dark:text-slate-100" title={`${t("Мин:")} ${minStr ?? '-'}`}>
+                        <span className="shrink-0">{t("Мин:")}</span>
+                        <b className="truncate">{minStr ?? '-'}</b>
                       </div>
 
-                      <div className="flex items-center gap-1 min-w-0 truncate text-slate-800 dark:text-slate-100 font-medium" title={`Макс: ${maxStr ?? '-'}`}>
-                        <span className="shrink-0">Макс:</span>
-                        <b className="truncate font-semibold">{maxStr ?? '-'}</b>
+                      <div className="flex items-center gap-1 min-w-0 truncate text-slate-800 dark:text-slate-100" title={`${t("Макс:")} ${maxStr ?? '-'}`}>
+                        <span className="shrink-0">{t("Макс:")}</span>
+                        <b className="truncate">{maxStr ?? '-'}</b>
                       </div>
 
-                      <div className="flex items-center gap-1 min-w-0 truncate text-slate-800 dark:text-slate-100 font-medium" title={`Медиана: ${q50Str ?? '-'}`}>
-                        <span className="shrink-0">Медиана:</span>
-                        <b className="truncate font-semibold">{q50Str ?? '-'}</b>
+                      <div className="flex items-center gap-1 min-w-0 truncate text-slate-800 dark:text-slate-100" title={`${t("Медиана:")} ${q50Str ?? '-'}`}>
+                        <span className="shrink-0">{t("Медиана:")}</span>
+                        <b className="truncate">{q50Str ?? '-'}</b>
                       </div>
                     </div>
                   </div>
@@ -1272,14 +1273,14 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                         </div>
                       </div>
                       <div className="relative z-10 flex items-center justify-between gap-1 text-[11px]">
-                        <span className="text-teal-600 dark:text-teal-400 font-medium">
-                          Уникальных: <b>{formatStatVal(displayUnique) ?? displayUnique}</b>
+                        <span className="text-teal-600 dark:text-teal-400">
+                          {t("Уникальных:")} <b>{formatStatVal(displayUnique) ?? displayUnique}</b>
                         </span>
                         <span className="opacity-80">
-                          Сумма: <b>{displaySum !== undefined && displaySum !== null ? (formatStatVal(displaySum) ?? displaySum) : '-'}</b>
+                          {t("Сумма:")} <b>{displaySum !== undefined && displaySum !== null ? (formatStatVal(displaySum) ?? displaySum) : '-'}</b>
                         </span>
                         <span className="opacity-80">
-                          Пустых: <b className="font-semibold" style={{ color: getNullPctColor(displayNullPct, isDark) }}>{displayNullPct}%</b>
+                          {t("Пустых:")} <b className="font-semibold" style={{ color: getNullPctColor(displayNullPct, isDark) }}>{displayNullPct}%</b>
                         </span>
                       </div>
                     </div>
@@ -1368,7 +1369,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                   dataKey="value"
                   fill="#0d9488"
                   radius={barLayout === 'vertical' ? [0, 4, 4, 0] : [4, 4, 0, 0]}
-                  name={yAxisCol || 'Количество'}
+                  name={yAxisCol || t('Кол-во (Count)')}
                   isAnimationActive={false}
                 />
               </BarChart>
@@ -1387,7 +1388,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                     fontSize: '12px',
                   }}
                 />
-                <Line type="monotone" dataKey="value" stroke="#0d9488" strokeWidth={2} dot={{ r: 3 }} name={yAxisCol || 'Значение'} isAnimationActive={false} />
+                <Line type="monotone" dataKey="value" stroke="#0d9488" strokeWidth={2} dot={{ r: 3 }} name={yAxisCol || t('Значение')} isAnimationActive={false} />
               </LineChart>
             ) : (
               <PieChart>

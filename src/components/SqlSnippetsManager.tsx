@@ -1,27 +1,28 @@
-import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useDeferredValue, useMemo } from 'react';
 import { downloadFileWithFallback } from '../utils/exportUtils';
 import { 
   Code, 
   Plus, 
   Trash2, 
   Download, 
-  Upload, 
   Copy, 
   Check, 
   Search, 
   FolderPlus, 
   Edit3, 
-  Layers, 
-  X, 
-  FileSpreadsheet,
+  X,
+  Layers,
   FileJson,
   Play,
   CornerDownRight,
   Database,
-  Star
+  Star,
+  Workflow,
+  PlaySquare
 } from 'lucide-react';
-import { loadSnippetsFromDB, saveSnippetsToDB, cachedSnippets } from '../utils/snippetsStorage';
+import { loadSnippetsFromDB, saveSnippetsToDB, addSnippetToDB, updateSnippetInDB, deleteSnippetFromDB, cachedSnippets } from '../utils/snippetsStorage';
 import { SqlEditor, highlightSqlHtml } from './SqlEditor';
+import { t } from '../utils/i18n';
 
 export interface Snippet {
   id: string;
@@ -34,6 +35,7 @@ export interface Snippet {
 }
 
 export const ACTION_MENU_CATEGORY = 'Меню действий';
+export const JOBS_CATEGORY = 'Jobs';
 
 export const POPULAR_SNIPPETS: Snippet[] = [
   // ==========================================
@@ -1451,6 +1453,22 @@ interface SqlSnippetsManagerProps {
 const LOCAL_STORAGE_KEY = 'sql_custom_snippets_v2';
 const LOCAL_STORAGE_FAVORITES_KEY = 'sql_favorite_snippets_ids_v1';
 const LOCAL_STORAGE_DELETED_KEY = 'sql_deleted_snippets_ids_v1';
+const SNIPPETS_PER_PAGE = 50;
+
+const naturalCollator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
+
+/**
+ * Стандартная сортировка как в проводнике:
+ * спецсимволы -> цифры -> латиница (A-Z) -> кириллица (А-Я).
+ * Без учета регистра и с поддержкой чисел (natural sort).
+ */
+export function naturalStringCompare(a: string, b: string): number {
+  return naturalCollator.compare(a, b);
+}
+
+export function compareSnippetsAlphabetical(a: Snippet, b: Snippet): number {
+  return naturalStringCompare(a.title, b.title);
+}
 
 export function SqlSnippetsManager({
   isOpen,
@@ -1466,8 +1484,15 @@ export function SqlSnippetsManager({
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>(initialCategory || 'Все');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+  const [currentPage, setCurrentPage] = useState<number>(1);
   const [isCreating, setIsCreating] = useState<boolean>(false);
   const [editingSnippetId, setEditingSnippetId] = useState<string | null>(null);
+
+  // Reset current page when category or search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedCategory, searchQuery]);
 
   // Update selectedCategory when modal opens with initialCategory
   useEffect(() => {
@@ -1506,7 +1531,6 @@ export function SqlSnippetsManager({
   const [formDialect, setFormDialect] = useState<string>('General');
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const rightPanelRef = useRef<HTMLDivElement>(null);
   const hasInitializedEditRef = useRef<boolean>(false);
 
@@ -1582,10 +1606,17 @@ export function SqlSnippetsManager({
   };
 
   // Deduplicate and filter out deleted snippets
-  const customIds = new Set(customSnippets.map(s => s.id));
-  const popularFiltered = POPULAR_SNIPPETS.filter(s => !customIds.has(s.id));
-  const rawSnippets = [...customSnippets, ...popularFiltered];
-  const allSnippets = rawSnippets.filter(s => !deletedIds.includes(s.id));
+  const rawSnippets = useMemo(() => {
+    const customIds = new Set(customSnippets.map(s => s.id));
+    const popularFiltered = POPULAR_SNIPPETS.filter(s => !customIds.has(s.id));
+    return [...customSnippets, ...popularFiltered];
+  }, [customSnippets]);
+
+  const allSnippets = useMemo(() => {
+    if (!isOpen) return [];
+    const deletedSet = new Set(deletedIds);
+    return rawSnippets.filter(s => !deletedSet.has(s.id));
+  }, [isOpen, rawSnippets, deletedIds]);
 
   useLayoutEffect(() => {
     if (initialEditSnippetId && isOpen && !hasInitializedEditRef.current) {
@@ -1603,7 +1634,7 @@ export function SqlSnippetsManager({
     } else if (!initialEditSnippetId || !isOpen) {
       hasInitializedEditRef.current = false;
     }
-  }, [initialEditSnippetId, isOpen, customSnippets]);
+  }, [initialEditSnippetId, isOpen, rawSnippets]);
 
   // Scroll to top when entering create/edit mode
   useEffect(() => {
@@ -1616,54 +1647,121 @@ export function SqlSnippetsManager({
 
   const isInitializingEdit = Boolean(initialEditSnippetId && isOpen && !hasInitializedEditRef.current);
 
+  // Extract all distinct dialects and regular categories
+  const { categories, categorySuggestions, dialectSuggestions, knownDialectSet } = useMemo(() => {
+    if (!isOpen) {
+      return { 
+        categories: ['Все'], 
+        categorySuggestions: [ACTION_MENU_CATEGORY, JOBS_CATEGORY, 'Запросы', 'Схемы', 'Агрегаты'], 
+        dialectSuggestions: ['General', 'PostgreSQL', 'MySQL', 'SQLite', 'ClickHouse', 'DuckDB'], 
+        knownDialectSet: new Set<string>() 
+      };
+    }
+
+    const rawDialects = Array.from(
+      new Set(allSnippets.map(s => s.dialect).filter((d): d is string => Boolean(d)))
+    );
+    
+    // Set of dialects to separate them into bottom group
+    const knownDialectSet = new Set([
+      'General', 'PostgreSQL', 'Oracle', 'Clickhouse', 'ClickHouse', 'DuckDB', 'MySQL', 'SQLite', 'MS SQL', 'Snowflake',
+      ...rawDialects
+    ]);
+
+    const rawCategories = Array.from(new Set(allSnippets.map(s => s.category))).filter(Boolean);
+    const regularCategories = rawCategories.filter(c => !knownDialectSet.has(c) && c !== ACTION_MENU_CATEGORY && c !== JOBS_CATEGORY && c !== 'Все' && c !== 'Избранное');
+    const activeDialects = Array.from(new Set(allSnippets.map(s => s.dialect).filter((d): d is string => Boolean(d))));
+
+    // Sort alphabetically
+    const sortedCategories = [...regularCategories].sort(naturalStringCompare);
+    const sortedDialects = [...activeDialects].sort(naturalStringCompare);
+
+    // Move General to the bottom of the list
+    const filteredDialects = sortedDialects.filter(d => d !== 'General');
+    const hasGeneral = sortedDialects.includes('General') || allSnippets.some(s => s.dialect === 'General');
+
+    const categories = Array.from(new Set([
+      'Все', 
+      ACTION_MENU_CATEGORY,
+      ...(uiVisibility?.showSnippetFavorites !== false ? ['Избранное'] : []), 
+      JOBS_CATEGORY,
+      ...sortedCategories,
+      ...filteredDialects,
+      ...(hasGeneral ? ['General'] : [])
+    ]));
+
+    const categorySuggestions = Array.from(new Set([ACTION_MENU_CATEGORY, JOBS_CATEGORY, 'Запросы', 'Схемы', 'Агрегаты', 'Соединения (JOIN)', 'Транзакции', ...regularCategories]));
+    
+    // Move General to the bottom of suggestions too
+    const activeDialectSuggestions = Array.from(new Set(['PostgreSQL', 'MySQL', 'SQLite', 'Oracle', 'ClickHouse', 'DuckDB', 'MS SQL', ...activeDialects]));
+    const dialectSuggestions = Array.from(new Set([
+      ...activeDialectSuggestions.filter(d => d !== 'General'),
+      'General'
+    ]));
+
+    return { categories, categorySuggestions, dialectSuggestions, knownDialectSet };
+  }, [isOpen, allSnippets, uiVisibility?.showSnippetFavorites]);
+
+  const categoryCounts = useMemo(() => {
+    if (!isOpen) return {};
+
+    const favSet = new Set(favoriteIds);
+    const counts: Record<string, number> = {
+      'Все': allSnippets.length,
+      'Избранное': 0,
+      [JOBS_CATEGORY]: 0,
+    };
+    
+    for (const s of allSnippets) {
+      if (s.category && counts[s.category] === undefined) counts[s.category] = 0;
+      if (s.dialect && counts[s.dialect] === undefined) counts[s.dialect] = 0;
+      
+      if (favSet.has(s.id)) counts['Избранное']++;
+      if (s.sql.trim().startsWith('-- @job')) counts[JOBS_CATEGORY]++;
+      if (s.category) counts[s.category]++;
+      if (s.dialect && s.dialect !== s.category) counts[s.dialect]++;
+    }
+    return counts;
+  }, [isOpen, allSnippets, favoriteIds]);
+
+  // Filter and sort snippets alphabetically by title
+  const filteredSnippets = useMemo(() => {
+    if (!isOpen) return [];
+
+    const favSet = new Set(favoriteIds);
+    const query = deferredSearchQuery.trim().toLowerCase();
+
+    return allSnippets.filter(s => {
+      const matchesCat = 
+        selectedCategory === 'Все' ? true :
+        selectedCategory === 'Избранное' ? favSet.has(s.id) :
+        selectedCategory === JOBS_CATEGORY ? s.sql.trim().startsWith('-- @job') :
+        s.category === selectedCategory || s.dialect === selectedCategory;
+
+      if (!matchesCat) return false;
+      if (!query) return true;
+
+      const searchableSql = s.sql.length > 3000 ? s.sql.substring(0, 3000) : s.sql;
+      const displayTitle = s.isCustom ? s.title : t(s.title);
+      const displayDesc = s.isCustom ? (s.description || '') : (s.description ? t(s.description) : '');
+      const displayCat = s.category ? t(s.category) : '';
+      return (
+        s.title.toLowerCase().includes(query) || 
+        displayTitle.toLowerCase().includes(query) ||
+        searchableSql.toLowerCase().includes(query) ||
+        (s.description && s.description.toLowerCase().includes(query)) ||
+        (displayDesc && displayDesc.toLowerCase().includes(query)) ||
+        (s.category && s.category.toLowerCase().includes(query)) ||
+        (displayCat && displayCat.toLowerCase().includes(query))
+      );
+    }).sort(compareSnippetsAlphabetical);
+  }, [isOpen, allSnippets, selectedCategory, favoriteIds, deferredSearchQuery]);
+
   if (!isOpen) return null;
 
-  // Extract all distinct dialects and regular categories
-  const rawDialects = Array.from(
-    new Set(allSnippets.map(s => s.dialect).filter((d): d is string => Boolean(d)))
-  );
-  
-  // Set of dialects to separate them into bottom group
-  const knownDialectSet = new Set([
-    'General', 'PostgreSQL', 'Oracle', 'Clickhouse', 'ClickHouse', 'DuckDB', 'MySQL', 'SQLite', 'MS SQL', 'Snowflake',
-    ...rawDialects
-  ]);
-
-  const rawCategories = Array.from(new Set(allSnippets.map(s => s.category))).filter(Boolean);
-  const regularCategories = rawCategories.filter(c => !knownDialectSet.has(c) && c !== ACTION_MENU_CATEGORY && c !== 'Все' && c !== 'Избранное');
-  const activeDialects = Array.from(new Set(allSnippets.map(s => s.dialect).filter((d): d is string => Boolean(d))));
-
-  // Sort alphabetically
-  const sortedCategories = [...regularCategories].sort((a, b) => a.localeCompare(b, 'ru', { sensitivity: 'base' }));
-  const sortedDialects = [...activeDialects].sort((a, b) => a.localeCompare(b, 'ru', { sensitivity: 'base' }));
-
-  const categories = Array.from(new Set([
-    'Все', 
-    ACTION_MENU_CATEGORY,
-    ...(uiVisibility?.showSnippetFavorites !== false ? ['Избранное'] : []), 
-    ...sortedCategories,
-    ...sortedDialects
-  ]));
-
-  const categorySuggestions = Array.from(new Set([ACTION_MENU_CATEGORY, 'Запросы', 'Схемы', 'Агрегаты', 'Соединения (JOIN)', 'Транзакции', ...regularCategories]));
-  const dialectSuggestions = Array.from(new Set(['General', 'PostgreSQL', 'MySQL', 'SQLite', 'Oracle', 'ClickHouse', 'DuckDB', 'MS SQL', ...activeDialects]));
-
-  // Filter snippets
-  const filteredSnippets = allSnippets.filter(s => {
-    const matchesCat = 
-      selectedCategory === 'Все' ? true :
-      selectedCategory === 'Избранное' ? favoriteIds.includes(s.id) :
-      s.category === selectedCategory || s.dialect === selectedCategory;
-
-    const matchesSearch = 
-      !searchQuery || 
-      s.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      s.sql.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (s.description && s.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (s.category && s.category.toLowerCase().includes(searchQuery.toLowerCase()));
-
-    return matchesCat && matchesSearch;
-  });
+  const totalPages = Math.max(1, Math.ceil(filteredSnippets.length / SNIPPETS_PER_PAGE));
+  const effectivePage = Math.min(currentPage, totalPages);
+  const paginatedSnippets = filteredSnippets.slice((effectivePage - 1) * SNIPPETS_PER_PAGE, effectivePage * SNIPPETS_PER_PAGE);
 
   const handleSaveSnippet = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1685,34 +1783,24 @@ export function SqlSnippetsManager({
 
     if (editingSnippetId) {
       const existsInCustom = customSnippets.some(s => s.id === editingSnippetId);
+      const newSnippet: Snippet = {
+        id: editingSnippetId,
+        title: formTitle,
+        category: finalCategory,
+        sql: formSql,
+        description: formDescription,
+        dialect: finalDialect,
+        isCustom: true
+      };
+
       if (existsInCustom) {
-        const updated = customSnippets.map(s => {
-          if (s.id === editingSnippetId) {
-            return {
-              ...s,
-              title: formTitle,
-              category: finalCategory,
-              sql: formSql,
-              description: formDescription,
-              dialect: finalDialect,
-              isCustom: true
-            };
-          }
-          return s;
-        });
-        saveCustomSnippetsToStorage(updated);
+        setCustomSnippets(prev => prev.map(s => s.id === editingSnippetId ? newSnippet : s));
+        updateSnippetInDB(newSnippet).catch(e => console.error(e));
       } else {
-        const newOverrideSnippet: Snippet = {
-          id: editingSnippetId,
-          title: formTitle,
-          category: finalCategory,
-          sql: formSql,
-          description: formDescription,
-          dialect: finalDialect,
-          isCustom: true
-        };
-        saveCustomSnippetsToStorage([newOverrideSnippet, ...customSnippets]);
+        setCustomSnippets(prev => [newSnippet, ...prev]);
+        addSnippetToDB(newSnippet).catch(e => console.error(e));
       }
+      window.dispatchEvent(new Event('sql_snippets_updated'));
     } else {
       const newSnippet: Snippet = {
         id: `custom-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
@@ -1723,7 +1811,9 @@ export function SqlSnippetsManager({
         dialect: finalDialect,
         isCustom: true
       };
-      saveCustomSnippetsToStorage([newSnippet, ...customSnippets]);
+      setCustomSnippets(prev => [newSnippet, ...prev]);
+      addSnippetToDB(newSnippet).catch(e => console.error(e));
+      window.dispatchEvent(new Event('sql_snippets_updated'));
     }
 
     resetForm();
@@ -1733,8 +1823,9 @@ export function SqlSnippetsManager({
     e.stopPropagation();
 
     // 1. Remove from customSnippets array (for both custom created and custom overrides)
-    const updatedCustom = customSnippets.filter(s => s.id !== id);
-    saveCustomSnippetsToStorage(updatedCustom);
+    setCustomSnippets(prev => prev.filter(s => s.id !== id));
+    deleteSnippetFromDB(id).catch(e => console.error(e));
+    window.dispatchEvent(new Event('sql_snippets_updated'));
 
     // 2. Only store in deletedIds if it is a built-in template from POPULAR_SNIPPETS
     const isBuiltIn = POPULAR_SNIPPETS.some(s => s.id === id);
@@ -1809,81 +1900,57 @@ export function SqlSnippetsManager({
 
   // Export to JSON
   const handleExportJson = () => {
-    const listToExport = customSnippets.length > 0 ? customSnippets : POPULAR_SNIPPETS;
+    const listToExport = allSnippets.length > 0 ? allSnippets : POPULAR_SNIPPETS;
     const blob = new Blob([JSON.stringify(listToExport, null, 2)], { type: 'application/json' });
     downloadFileWithFallback(blob, `sql_snippets_${new Date().toISOString().slice(0,10)}.json`);
   };
   
   // Export to CSV
-  const handleExportCsv = () => {
-    const listToExport = customSnippets.length > 0 ? customSnippets : POPULAR_SNIPPETS;
-    const headers = ['id', 'title', 'category', 'dialect', 'description', 'sql'];
-    const csvRows = [headers.join(',')];
+  const handleExportZip = async () => {
+    // Export all snippets that the user currently sees (custom + popular, minus deleted)
+    const listToExport = allSnippets.length > 0 ? allSnippets : POPULAR_SNIPPETS;
+    
+    try {
+      const JSZip = (await import('jszip')).default;
+      const zip = new JSZip();
 
-    listToExport.forEach(s => {
-      const row = [
-        `"${s.id.replace(/"/g, '""')}"`,
-        `"${s.title.replace(/"/g, '""')}"`,
-        `"${s.category.replace(/"/g, '""')}"`,
-        `"${(s.dialect || 'General').replace(/"/g, '""')}"`,
-        `"${(s.description || '').replace(/"/g, '""')}"`,
-        `"${s.sql.replace(/"/g, '""')}"`
-      ];
-      csvRows.push(row.join(','));
-    });
-    const blob = new Blob(["\uFEFF" + csvRows.join("\n")], { type: "text/csv;charset=utf-8" });
-    downloadFileWithFallback(blob, `sql_snippets_${new Date().toISOString().slice(0,10)}.csv`);
-  };
+      const usedPaths = new Set<string>();
 
-  // Import from JSON
-  const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+      listToExport.forEach(s => {
+        // Create a safe filename (allow words, numbers, dashes, underscores, spaces)
+        let safeTitle = s.title.replace(/[^a-zа-я0-9\s-_]/gi, '').trim().replace(/\s+/g, '_');
+        if (!safeTitle) safeTitle = `snippet_${s.id.substring(0, 6)}`;
+        safeTitle = safeTitle.substring(0, 80); // Prevent extremely long filenames
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const content = event.target?.result as string;
-      if (!content) return;
-
-      try {
-        let imported: Snippet[] = [];
-
-        if (file.name.endsWith('.json')) {
-          const parsed = JSON.parse(content);
-          if (Array.isArray(parsed)) {
-            imported = parsed.map(item => ({
-              id: item.id || `custom-${Date.now()}-${Math.random().toString(36).substr(2,4)}`,
-              title: item.title || 'Импортированный шаблон',
-              category: item.category || 'Импорт',
-              sql: item.sql || '',
-              description: item.description || '',
-              dialect: item.dialect || 'General',
-              isCustom: true
-            }));
-          }
+        // Category as folder (sanitized against invalid OS path characters)
+        const rawFolder = s.category || 'Без_категории';
+        const folderName = rawFolder.replace(/[/\\:*?"<>|]/g, '_').trim() || 'Без_категории';
+        
+        let fileContent = '';
+        fileContent += `-- ${s.dialect || 'General'}\n`;
+        if (s.description) {
+          // Replace newlines in description with newline + comment to maintain valid SQL
+          fileContent += `-- ${s.description.replace(/\n/g, '\n-- ')}\n`;
         }
+        fileContent += `\n${s.sql}`;
 
-        if (imported.length > 0) {
-          const existingIds = new Set(customSnippets.map(s => s.id));
-          const newEntries = imported.filter(s => !existingIds.has(s.id));
-          const merged = [...newEntries, ...customSnippets];
-          saveCustomSnippetsToStorage(merged);
-          alert(`Успешно импортировано шаблонов: ${newEntries.length}`);
-        } else {
-          alert('Файл не содержит корректных шаблонов');
+        // Prevent file collisions within the same category
+        let finalPath = `${folderName}/${safeTitle}.sql`;
+        let counter = 1;
+        while (usedPaths.has(finalPath)) {
+          finalPath = `${folderName}/${safeTitle}_${counter}.sql`;
+          counter++;
         }
-      } catch (err) {
-        console.error('Import error:', err);
-        alert('Ошибка при чтении файла. Проверьте валидность JSON.');
-      }
-    };
+        usedPaths.add(finalPath);
 
-    if (file.name.endsWith('.json')) {
-      reader.readAsText(file);
-    } else {
-      alert('Пожалуйста, выберите файл .json');
+        zip.file(finalPath, fileContent);
+      });
+
+      const blob = await zip.generateAsync({ type: 'blob' });
+      downloadFileWithFallback(blob, `sql_snippets_${new Date().toISOString().slice(0,10)}.zip`);
+    } catch (err) {
+      console.error('Failed to generate ZIP archive', err);
     }
-    e.target.value = '';
   };
 
   return (
@@ -1910,24 +1977,24 @@ export function SqlSnippetsManager({
             </div>
             <div>
               <h3 className="font-bold text-sm sm:text-base flex items-center gap-2">
-                Библиотека шаблонов
+                {t('Библиотека шаблонов')}
               </h3>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            {/* EXPORT CSV */}
+            {/* EXPORT ZIP */}
             <button
-              onClick={handleExportCsv}
+              onClick={handleExportZip}
               className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all ${
                 theme === 'dark' 
                   ? 'bg-slate-750 border-slate-600 text-slate-200 hover:bg-slate-700' 
                   : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50 shadow-xs'
               }`}
-              title="Экспортировать шаблоны в CSV Таблицу"
+              title={t('Экспортировать шаблоны в ZIP архив (.sql)')}
             >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500" />
-              <span className="hidden sm:inline">Экспорт CSV</span>
+              <Layers className="w-3.5 h-3.5 text-emerald-500" />
+              <span className="hidden sm:inline">{t('Экспорт ZIP')}</span>
             </button>
 
             {/* EXPORT JSON */}
@@ -1938,32 +2005,11 @@ export function SqlSnippetsManager({
                   ? 'bg-slate-750 border-slate-600 text-slate-200 hover:bg-slate-700' 
                   : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50 shadow-xs'
               }`}
-              title="Экспортировать шаблоны в JSON файл"
+              title={t('Экспортировать шаблоны в JSON файл')}
             >
               <Download className="w-3.5 h-3.5 text-blue-500" />
-              <span className="hidden sm:inline">Экспорт</span>
+              <span className="hidden sm:inline">{t('Экспорт')}</span>
             </button>
-
-            {/* IMPORT */}
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-                theme === 'dark' 
-                  ? 'bg-slate-750 border-slate-600 text-slate-200 hover:bg-slate-700' 
-                  : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50 shadow-xs'
-              }`}
-              title="Импортировать шаблоны из файла"
-            >
-              <Upload className="w-3.5 h-3.5 text-amber-500" />
-              <span className="hidden sm:inline">Импорт</span>
-            </button>
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              onChange={handleImportFile} 
-              accept=".json" 
-              className="hidden" 
-            />
 
             {uiVisibility?.showSnippetCreateBtn !== false && (
             <>
@@ -1983,7 +2029,7 @@ export function SqlSnippetsManager({
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs shadow-xs transition-all"
               >
                 <Plus className="w-4 h-4" />
-                <span>Создать</span>
+                <span>{t('Создать')}</span>
               </button>
             </>
             )}
@@ -2014,7 +2060,7 @@ export function SqlSnippetsManager({
               <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400 pointer-events-none" />
               <input
                 type="text"
-                placeholder="Поиск шаблонов..."
+                placeholder={t('Поиск шаблонов...')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className={`w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border outline-none transition-colors ${
@@ -2030,16 +2076,13 @@ export function SqlSnippetsManager({
             {uiVisibility?.showSnippetCategories !== false && (
             <div className="flex-1 overflow-y-auto space-y-1.5 pr-1">
               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-2 pt-1 pb-1">
-                Категории
+                {t('Категории')}
               </div>
               {categories.map((cat) => {
-                const count = allSnippets.filter(s => 
-                  cat === 'Все' ? true :
-                  cat === 'Избранное' ? favoriteIds.includes(s.id) :
-                  s.category === cat || s.dialect === cat
-                ).length;
+                const count = categoryCounts[cat] || 0;
 
                 const isSelected = selectedCategory === cat;
+                const isGeneral = cat === 'General';
 
                 return (
                   <button
@@ -2048,22 +2091,26 @@ export function SqlSnippetsManager({
                     className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${
                       isSelected
                         ? 'bg-blue-600 text-white font-semibold'
-                        : theme === 'dark' 
-                          ? 'text-slate-300 hover:bg-slate-700/60' 
-                          : 'text-slate-700 hover:bg-slate-300/60'
+                        : theme === 'dark' ? 'text-slate-300 hover:bg-slate-700/60' : 'text-slate-700 hover:bg-slate-300/60'
                     }`}
                   >
                     <span className="truncate flex items-center gap-1.5">
                       {cat === 'Избранное' && (
                         <Star className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-amber-400' : 'text-amber-500'}`} />
                       )}
-                      {cat === ACTION_MENU_CATEGORY && (
-                        <Code className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-blue-200' : 'text-blue-500'}`} />
+                      {cat === JOBS_CATEGORY && (
+                        <Workflow className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-blue-200' : 'text-blue-400'}`} />
                       )}
-                      {knownDialectSet.has(cat) && cat !== 'Все' && cat !== 'Избранное' && (
+                      {cat === ACTION_MENU_CATEGORY && (
+                        <PlaySquare className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-blue-200' : 'text-blue-500'}`} />
+                      )}
+                      {knownDialectSet.has(cat) && cat !== 'Все' && cat !== 'Избранное' && !isGeneral && (
                         <Database className="w-3 h-3 text-blue-400 shrink-0" />
                       )}
-                      <span>{cat}</span>
+                      {isGeneral && (
+                        <Database className="w-3 h-3 text-slate-500 shrink-0" />
+                      )}
+                      <span>{t(cat)}</span>
                     </span>
                     <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
                       isSelected 
@@ -2093,7 +2140,7 @@ export function SqlSnippetsManager({
                 <div className="flex items-center justify-between border-b pb-2">
                   <h4 className="font-bold text-sm flex items-center gap-2">
                     <Code className="w-4 h-4 text-blue-500" />
-                    <span>{editingSnippetId ? 'Редактировать шаблон' : 'Новый собственный шаблон'}</span>
+                    <span>{editingSnippetId ? t('Редактировать шаблон') : t('Новый собственный шаблон')}</span>
                   </h4>
                   <button
                     type="button"
@@ -2106,11 +2153,11 @@ export function SqlSnippetsManager({
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div className="sm:col-span-1">
-                    <label className="block text-[11px] font-semibold text-slate-400 mb-1">Название шаблона *</label>
+                    <label className="block text-[11px] font-semibold text-slate-400 mb-1">{t('Название шаблона *')}</label>
                     <input
                       type="text"
                       required
-                      placeholder="Например: JSONB поиск по тегам"
+                      placeholder={t('Например: JSONB поиск по тегам')}
                       value={formTitle}
                       onChange={(e) => setFormTitle(e.target.value)}
                       className={`w-full px-3 py-1.5 text-xs rounded-md border outline-none ${
@@ -2120,12 +2167,12 @@ export function SqlSnippetsManager({
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-400 mb-1">Категория *</label>
+                    <label className="block text-[11px] font-semibold text-slate-400 mb-1">{t('Категория *')}</label>
                     <input
                       type="text"
                       required
                       list="category-suggestions"
-                      placeholder="Выберите или введите..."
+                      placeholder={t('Выберите или введите...')}
                       value={formCategory}
                       onChange={(e) => setFormCategory(e.target.value)}
                       className={`w-full px-3 py-1.5 text-xs rounded-md border outline-none ${
@@ -2140,11 +2187,11 @@ export function SqlSnippetsManager({
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-400 mb-1">Диалект / СУБД</label>
+                    <label className="block text-[11px] font-semibold text-slate-400 mb-1">{t('Диалект / СУБД')}</label>
                     <input
                       type="text"
                       list="dialect-suggestions"
-                      placeholder="Выберите или введите..."
+                      placeholder={t('Выберите или введите...')}
                       value={formDialect}
                       onChange={(e) => setFormDialect(e.target.value)}
                       className={`w-full px-3 py-1.5 text-xs rounded-md border outline-none ${
@@ -2160,10 +2207,10 @@ export function SqlSnippetsManager({
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-400 mb-1">Описание (необязательно)</label>
+                  <label className="block text-[11px] font-semibold text-slate-400 mb-1">{t('Описание (необязательно)')}</label>
                   <input
                     type="text"
-                    placeholder="Краткое пояснение, для чего используется этот шаблон"
+                    placeholder={t('Краткое пояснение, для чего используется этот шаблон')}
                     value={formDescription}
                     onChange={(e) => setFormDescription(e.target.value)}
                     className={`w-full px-3 py-1.5 text-xs rounded-md border outline-none ${
@@ -2173,7 +2220,7 @@ export function SqlSnippetsManager({
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-400 mb-1">Код с подсветкой синтаксиса SQL *</label>
+                  <label className="block text-[11px] font-semibold text-slate-400 mb-1">{t('Код с подсветкой синтаксиса SQL *')}</label>
                   <div className="h-44 flex flex-col">
                     <SqlEditor
                       value={formSql}
@@ -2192,13 +2239,13 @@ export function SqlSnippetsManager({
                       theme === 'dark' ? 'bg-slate-700 border-slate-600 text-slate-300' : 'bg-slate-200 border-slate-300 text-slate-700'
                     }`}
                   >
-                    Отмена
+                    {t('Отмена')}
                   </button>
                   <button
                     type="submit"
                     className="px-4 py-1.5 rounded-lg text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-xs"
                   >
-                    {editingSnippetId ? 'Сохранить изменения' : 'Добавить шаблон'}
+                    {editingSnippetId ? t('Сохранить изменения') : t('Добавить шаблон')}
                   </button>
                 </div>
               </form>
@@ -2214,16 +2261,17 @@ export function SqlSnippetsManager({
                     <Code className="w-10 h-10 mx-auto mb-2 opacity-50" />
                   )}
                   <p className="text-sm font-medium">
-                    {selectedCategory === 'Избранное' ? 'В избранном пока нет шаблонов' : 'шаблонов в этой категории не найдено'}
+                    {selectedCategory === 'Избранное' ? t('В избранном пока нет шаблонов') : t('Шаблонов в этой категории не найдено')}
                   </p>
                   <p className="text-xs text-slate-500 mt-1">
                     {selectedCategory === 'Избранное' 
-                      ? 'Нажмите на звездочку у любого шаблона, чтобы добавить его в избранное'
-                      : 'Нажмите "Создать шаблон" или выберите другую категорию'}
+                      ? t('Нажмите на звездочку у любого шаблона, чтобы добавить его в избранное')
+                      : t('Нажмите "Создать шаблон" или выберите другую категорию')}
                   </p>
                 </div>
               ) : (
-                filteredSnippets.map((snippet) => {
+                <>
+                  {paginatedSnippets.map((snippet) => {
                   const isFav = favoriteIds.includes(snippet.id);
                   return (
                     <div 
@@ -2238,7 +2286,7 @@ export function SqlSnippetsManager({
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
                             <h4 className="font-bold text-xs sm:text-sm text-slate-800 dark:text-slate-100">
-                              {snippet.title}
+                              {snippet.isCustom ? snippet.title : t(snippet.title)}
                             </h4>
                             {snippet.dialect && snippet.dialect !== 'General' && (
                               <span className={`px-1.5 py-0.2 rounded text-[9px] font-mono border font-semibold ${
@@ -2254,7 +2302,7 @@ export function SqlSnippetsManager({
                           </div>
                           {snippet.description && (
                             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                              {snippet.description}
+                              {snippet.isCustom ? snippet.description : t(snippet.description)}
                             </p>
                           )}
                         </div>
@@ -2272,7 +2320,7 @@ export function SqlSnippetsManager({
                                   ? 'bg-slate-750 border-slate-600 text-slate-400 hover:text-amber-400 hover:border-amber-500/40' 
                                   : 'bg-slate-100 border-slate-300 text-slate-400 hover:text-amber-500 hover:border-amber-400'
                             }`}
-                            title={isFav ? 'Убрать из избранного' : 'Добавить в избранное'}
+                            title={isFav ? t('Убрать из избранного') : t('Добавить в избранное')}
                           >
                             <Star className={`w-3.5 h-3.5 ${isFav ? 'fill-amber-400 text-amber-400' : ''}`} />
                           </button>
@@ -2285,10 +2333,10 @@ export function SqlSnippetsManager({
                               onClose();
                             }}
                             className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs shadow-xs transition-all"
-                            title="Добавить данный блок в конец редактора SQL"
+                            title={t('Добавить данный блок в конец редактора SQL')}
                           >
                             <CornerDownRight className="w-3.5 h-3.5" />
-                            <span>Вставить</span>
+                            <span>{t('Вставить')}</span>
                           </button>
 
                           {/* REPLACE BUTTON */}
@@ -2302,10 +2350,10 @@ export function SqlSnippetsManager({
                                 ? 'bg-slate-700/80 hover:bg-slate-700 text-slate-200 border-slate-600' 
                                 : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'
                             }`}
-                            title="Заменить весь текущий текст SQL данным шаблоном"
+                            title={t('Заменить весь текущий текст SQL данным шаблоном')}
                           >
                             <Play className="w-3 h-3 text-emerald-500" />
-                            <span>Заменить</span>
+                            <span>{t('Заменить')}</span>
                           </button>
 
                           {/* COPY BUTTON */}
@@ -2316,7 +2364,7 @@ export function SqlSnippetsManager({
                                 ? 'bg-slate-750 border-slate-600 text-slate-300 hover:text-white' 
                                 : 'bg-slate-100 border-slate-300 text-slate-600 hover:text-slate-900'
                             }`}
-                            title="Скопировать код"
+                            title={t('Скопировать код')}
                           >
                             {copiedId === snippet.id ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
                           </button>
@@ -2328,7 +2376,7 @@ export function SqlSnippetsManager({
                                 ? 'bg-slate-750 border-slate-600 text-slate-300 hover:text-blue-400' 
                                 : 'bg-slate-100 border-slate-300 text-slate-600 hover:text-blue-600'
                             }`}
-                            title="Редактировать шаблон"
+                            title={t('Редактировать шаблон')}
                           >
                             <Edit3 className="w-3.5 h-3.5" />
                           </button>
@@ -2339,7 +2387,7 @@ export function SqlSnippetsManager({
                                 ? 'bg-slate-750 border-slate-600 text-slate-300 hover:text-red-400' 
                                 : 'bg-slate-100 border-slate-300 text-slate-600 hover:text-red-600'
                             }`}
-                            title="Удалить шаблон"
+                            title={t('Удалить шаблон')}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -2357,8 +2405,53 @@ export function SqlSnippetsManager({
                     </div>
                   </div>
                 );
-              })
-            )}
+              })}
+
+              {/* PAGINATION FOOTER */}
+              {filteredSnippets.length > 0 && (
+                <div className={`p-2.5 flex items-center justify-between text-[11px] min-h-[44px] ${
+                  theme === 'dark' 
+                    ? 'text-slate-400' 
+                    : 'text-slate-600'
+                }`}>
+                  <span>{t('Шаблонов:')} {filteredSnippets.length}</span>
+                  {totalPages > 1 && (
+                    <div className="flex items-center gap-1">
+                      <button
+                        disabled={effectivePage <= 1}
+                        onClick={() => {
+                          setCurrentPage(effectivePage - 1);
+                          if (rightPanelRef.current) rightPanelRef.current.scrollTop = 0;
+                        }}
+                        className={`flex items-center justify-center px-1.5 h-6 rounded transition-all font-mono disabled:opacity-30 disabled:cursor-not-allowed ${
+                          theme === 'dark' ? 'hover:bg-slate-700 text-slate-300' : 'hover:bg-slate-200 text-slate-700'
+                        }`}
+                        title={t('Предыдущая страница')}
+                      >
+                        &lt;
+                      </button>
+                      <span className={`font-mono text-[10px] px-1 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>
+                        {effectivePage} / {totalPages}
+                      </span>
+                      <button
+                        disabled={effectivePage >= totalPages}
+                        onClick={() => {
+                          setCurrentPage(effectivePage + 1);
+                          if (rightPanelRef.current) rightPanelRef.current.scrollTop = 0;
+                        }}
+                        className={`flex items-center justify-center px-1.5 h-6 rounded transition-all font-mono disabled:opacity-30 disabled:cursor-not-allowed ${
+                          theme === 'dark' ? 'hover:bg-slate-700 text-slate-300' : 'hover:bg-slate-200 text-slate-700'
+                        }`}
+                        title={t('Следующая страница')}
+                      >
+                        &gt;
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
             </div>
 
           </div>

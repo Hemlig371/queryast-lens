@@ -1,3 +1,4 @@
+import { t } from '../utils/i18n';
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Database, Check, AlertCircle, Loader2, Unplug, Key, ChevronDown } from 'lucide-react';
 import { ClickhouseConfig, getClickhouseUrl, getClickhouseHeaders, isTauriEnvironment, executeClickhouseQueryTauri } from '../lib/clickhouse';
@@ -94,7 +95,7 @@ export const ClickhouseModal: React.FC<ClickhouseModalProps> = ({
 
   const handleTestConnection = async () => {
     if (!host.trim()) {
-      setTestResult({ success: false, message: 'Укажите хост сервера ClickHouse' });
+      setTestResult({ success: false, message: t('Укажите хост сервера ClickHouse') });
       return;
     }
 
@@ -108,12 +109,12 @@ export const ClickhouseModal: React.FC<ClickhouseModalProps> = ({
           const textRes = res.text || (typeof res.data === 'string' ? res.data : JSON.stringify(res.data));
           setTestResult({
             success: true,
-            message: `Подключение успешно! Ответ на query "SELECT 1" :  ${textRes || '1'}`,
+            message: `${t('Подключение успешно!')} SELECT 1: ${textRes || '1'}`,
           });
         } catch (err: any) {
           setTestResult({
             success: false,
-            message: err.message || String(err) || 'Ошибка сети или недоступности хоста ClickHouse (Tauri)',
+            message: err.message || String(err) || t('Ошибка сети или недоступности хоста ClickHouse (Tauri)'),
           });
         }
       } else {
@@ -129,7 +130,7 @@ export const ClickhouseModal: React.FC<ClickhouseModalProps> = ({
             const textRes = proxyData.text || (typeof proxyData.data === 'string' ? proxyData.data : JSON.stringify(proxyData.data));
             setTestResult({
               success: true,
-              message: `Подключение успешно! Ответ на query "SELECT 1" :  ${textRes || '1'}`,
+              message: `${t('Подключение успешно!')} SELECT 1: ${textRes || '1'}`,
             });
             setIsTesting(false);
             return;
@@ -155,12 +156,12 @@ export const ClickhouseModal: React.FC<ClickhouseModalProps> = ({
           if (res.ok) {
             setTestResult({
               success: true,
-              message: `Подключение успешно! Ответ на query "SELECT 1" :  ${responseText.trim()}`,
+              message: `${t('Подключение успешно!')} SELECT 1: ${responseText.trim()}`,
             });
           } else {
             setTestResult({
               success: false,
-              message: `Ошибка HTTP ${res.status}: ${responseText.trim() || 'Не удалось подключиться к серверу ClickHouse'}`,
+              message: `HTTP ${res.status}: ${responseText.trim() || t('Не удалось подключиться к серверу ClickHouse')}`,
             });
           }
         }
@@ -168,7 +169,7 @@ export const ClickhouseModal: React.FC<ClickhouseModalProps> = ({
     } catch (err: any) {
       setTestResult({
         success: false,
-        message: err.message || 'Ошибка сети или недоступности хоста ClickHouse',
+        message: err.message || t('Ошибка сети или недоступности хоста ClickHouse'),
       });
     } finally {
       setIsTesting(false);
@@ -177,7 +178,7 @@ export const ClickhouseModal: React.FC<ClickhouseModalProps> = ({
 
   const handleApplyConnect = () => {
     if (!host.trim()) {
-      alert('Пожалуйста, введите хост и порт (например, 127.0.0.1:8123)');
+      alert(t('Пожалуйста, введите хост и порт (например, 127.0.0.1:8123)'));
       return;
     }
     onConnect(currentConfig);
@@ -201,7 +202,7 @@ export const ClickhouseModal: React.FC<ClickhouseModalProps> = ({
         }`}>
           <div className="flex items-center gap-2">
             <Database className="w-4 h-4 text-amber-500" />
-            <h3 className="font-bold text-sm">Подключение ClickHouse</h3>
+            <h3 className="font-bold text-sm">{t("Подключение ClickHouse")}</h3>
           </div>
           <button
             onClick={onClose}
@@ -217,7 +218,7 @@ export const ClickhouseModal: React.FC<ClickhouseModalProps> = ({
         <div className="p-4 space-y-4 text-xs overflow-y-auto max-h-[75vh]">
           {/* HOST & PROTOCOL */}
           <div className="space-y-1.5">
-            <label className="font-semibold block text-slate-400">Протокол и Хост:Порт</label>
+            <label className="font-semibold block text-slate-400">{t("Протокол и хост:порт")}</label>
             <div className="flex gap-2">
               <select
                 value={protocol}
@@ -233,7 +234,7 @@ export const ClickhouseModal: React.FC<ClickhouseModalProps> = ({
               <div className="relative flex-1" ref={dropdownRef}>
                 <input
                   type="text"
-                  placeholder="127.0.0.1:8123 или ch.server.com:8443"
+                  placeholder={t("127.0.0.1:8123 или ch.server.com:8443")}
                   value={host}
                   onChange={(e) => setHost(e.target.value)}
                   onFocus={() => {
@@ -249,7 +250,7 @@ export const ClickhouseModal: React.FC<ClickhouseModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                    title="Выбрать из сохраненных ключей"
+                    title={t("Выбрать из сохраненных ключей")}
                     className={`absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded transition-colors cursor-pointer ${
                       theme === 'dark' ? 'text-slate-400 hover:text-amber-400' : 'text-slate-500 hover:text-amber-600'
                     }`}
@@ -301,7 +302,7 @@ export const ClickhouseModal: React.FC<ClickhouseModalProps> = ({
           {/* USER & PASSWORD */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <label className="font-semibold block text-slate-400">Логин (User)</label>
+              <label className="font-semibold block text-slate-400">{t("Логин")}</label>
               <input
                 type="text"
                 placeholder="default"
@@ -313,10 +314,10 @@ export const ClickhouseModal: React.FC<ClickhouseModalProps> = ({
               />
             </div>
             <div className="space-y-1.5">
-              <label className="font-semibold block text-slate-400">Пароль (Password)</label>
+              <label className="font-semibold block text-slate-400">{t("Пароль")}</label>
               <input
                 type="password"
-                placeholder="без пароля"
+                placeholder={t("без пароля")}
                 value={key}
                 onChange={(e) => setKey(e.target.value)}
                 className={`w-full px-3 py-1.5 rounded-lg border font-mono outline-none text-xs ${
@@ -328,7 +329,7 @@ export const ClickhouseModal: React.FC<ClickhouseModalProps> = ({
 
           {/* DATABASE */}
           <div className="space-y-1.5">
-            <label className="font-semibold block text-slate-400">База данных (Database)</label>
+            <label className="font-semibold block text-slate-400">{t("База данных")}</label>
             <input
               type="text"
               placeholder="default"
@@ -354,12 +355,12 @@ export const ClickhouseModal: React.FC<ClickhouseModalProps> = ({
               {isTesting ? (
                 <>
                   <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />
-                  <span>Проверка подключения...</span>
+                  <span>{t("Проверка подключения...")}</span>
                 </>
               ) : (
                 <>
                   <Check className="w-3.5 h-3.5 text-amber-500" />
-                  <span>Проверить подключение</span>
+                  <span>{t("Проверить подключение")}</span>
                 </>
               )}
             </button>
@@ -403,13 +404,13 @@ export const ClickhouseModal: React.FC<ClickhouseModalProps> = ({
                 theme === 'dark' ? 'border-slate-700 text-slate-300 hover:bg-slate-700' : 'border-slate-300 text-slate-700 hover:bg-slate-200'
               }`}
             >
-              Отмена
+              {t("Отмена")}
             </button>
             <button
               onClick={handleApplyConnect}
               className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-md transition-all active:scale-95"
             >
-              Подключиться
+              {t("Подключиться")}
             </button>
           </div>
         </div>

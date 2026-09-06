@@ -1,75 +1,82 @@
-// @vitest-environment jsdom
-import { describe, it, expect, beforeEach, vi, afterAll } from 'vitest';
-import 'fake-indexeddb/auto';
-import { loadSnippetsFromDB, saveSnippetsToDB } from '../src/utils/snippetsStorage';
+import './setupIndexedDB';
+import { describe, it, expect, beforeEach } from 'vitest';
+import {
+  addSnippetToDB,
+  updateSnippetInDB,
+  deleteSnippetFromDB,
+  saveSnippetsToDB,
+  loadSnippetsFromDB
+} from '../src/utils/snippetsStorage';
+import { Snippet } from '../src/components/SqlSnippetsManager';
 
-describe('snippetsStorage', () => {
+describe('snippetsStorage (IndexedDB storage)', () => {
   beforeEach(async () => {
-    // Just clear by saving empty
     await saveSnippetsToDB([]);
   });
 
-  afterAll(async () => {
-    await saveSnippetsToDB([]);
-  });
-
-  it('returns empty array when no snippets exist', async () => {
-    const snippets = await loadSnippetsFromDB();
-    expect(snippets).toEqual([]);
-  });
-
-  it('saves and retrieves multiple snippets (bulk insert)', async () => {
-    const snippets = [
-      {
-        id: 'snippet-1',
-        title: 'Get Users',
-        sql: 'SELECT * FROM users;',
-        createdAt: Date.now(),
-        updatedAt: Date.now()
-      },
-      {
-        id: 'snippet-2',
-        title: 'Get Posts',
-        sql: 'SELECT * FROM posts;',
-        createdAt: Date.now(),
-        updatedAt: Date.now()
-      }
-    ];
-    
-    await saveSnippetsToDB(snippets);
-    const retrieved = await loadSnippetsFromDB();
-    
-    expect(retrieved).toHaveLength(2);
-    expect(retrieved).toEqual(snippets);
-  });
-
-  it('clears all snippets if empty array is saved', async () => {
-    const snippet1 = { id: 's1', title: 'S1', sql: 'S1', createdAt: 1, updatedAt: 1 };
-    
-    await saveSnippetsToDB([snippet1]);
-    expect(await loadSnippetsFromDB()).toHaveLength(1);
-    
-    await saveSnippetsToDB([]);
-    expect(await loadSnippetsFromDB()).toHaveLength(0);
-  });
-
-  it('secures sensitive data by storing exactly what is provided without external leaks', async () => {
-    const sensitiveSnippet = {
-      id: 's-secure',
-      title: 'DB Password',
-      sql: "CREATE USER 'admin' IDENTIFIED BY 'SuperSecretPassword_123!!';",
-      createdAt: Date.now(),
-      updatedAt: Date.now()
+  it('should add a snippet and load it back', async () => {
+    const snippet: Snippet = {
+      id: 'snip_1',
+      title: 'Get Active Users',
+      sql: 'SELECT * FROM users WHERE active = true',
+      category: 'Analytics',
+      tags: ['users', 'active']
     };
-    
-    await saveSnippetsToDB([sensitiveSnippet]);
+
+    await addSnippetToDB(snippet);
     const snippets = await loadSnippetsFromDB();
-    
-    expect(snippets).toHaveLength(1);
-    expect(snippets[0].sql).toContain('SuperSecretPassword_123!!');
-    
-    await saveSnippetsToDB([]);
-    const remaining = await loadSnippetsFromDB();
-    expect(remaining).toHaveLength(0);
+    expect(snippets.length).toBe(1);
+    expect(snippets[0].title).toBe('Get Active Users');
+  });
+
+  it('should update an existing snippet', async () => {
+    const snippet: Snippet = {
+      id: 'snip_1',
+      title: 'Original Title',
+      sql: 'SELECT 1',
+      category: 'General'
+    };
+
+    await addSnippetToDB(snippet);
+
+    const updated: Snippet = {
+      ...snippet,
+      title: 'Updated Title',
+      sql: 'SELECT 100'
+    };
+
+    await updateSnippetInDB(updated);
+    const snippets = await loadSnippetsFromDB();
+    expect(snippets.length).toBe(1);
+    expect(snippets[0].title).toBe('Updated Title');
+    expect(snippets[0].sql).toBe('SELECT 100');
+  });
+
+  it('should delete snippet by id', async () => {
+    const snippet: Snippet = {
+      id: 'snip_1',
+      title: 'To Delete',
+      sql: 'SELECT 0'
+    };
+
+    await addSnippetToDB(snippet);
+    let list = await loadSnippetsFromDB();
+    expect(list.length).toBe(1);
+
+    await deleteSnippetFromDB('snip_1');
+    list = await loadSnippetsFromDB();
+    expect(list.length).toBe(0);
+  });
+
+  it('should bulk save snippets to DB', async () => {
+    const list: Snippet[] = [
+      { id: '1', title: 'Template A', sql: 'SELECT A' },
+      { id: '2', title: 'Template B', sql: 'SELECT B' }
+    ];
+
+    await saveSnippetsToDB(list);
+    const loaded = await loadSnippetsFromDB();
+    expect(loaded.length).toBe(2);
+    expect(loaded.map(s => s.title)).toEqual(['Template A', 'Template B']);
   });
 });

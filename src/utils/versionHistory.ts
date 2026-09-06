@@ -11,8 +11,8 @@ export interface SqlVersionItem {
 
 const DB_NAME = 'SQL_VersionHistory_DB';
 const STORE_NAME = 'versions';
-const MAX_AUTO_VERSIONS = 300;
-const MAX_MANUAL_VERSIONS = 200;
+const MAX_AUTO_VERSIONS = 500;
+const MAX_MANUAL_VERSIONS = 300;
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -40,8 +40,6 @@ export async function saveVersion(
 ): Promise<SqlVersionItem> {
   if (!sql.trim()) throw new Error('SQL query is empty');
   const db = await openDB();
-
-  await cleanupOldVersions(db);
 
   const timestamp = Date.now();
   const dateObj = new Date(timestamp);
@@ -78,7 +76,6 @@ export async function saveVersion(
 export async function getVersions(): Promise<SqlVersionItem[]> {
   try {
     const db = await openDB();
-    await cleanupOldVersions(db);
 
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readonly');
@@ -176,7 +173,8 @@ export async function getVersionById(id: string): Promise<SqlVersionItem | null>
   }
 }
 
-async function cleanupOldVersions(db: IDBDatabase): Promise<void> {
+export async function cleanupOldVersions(): Promise<void> {
+  const db = await openDB();
   // Get all items to check their categories and timestamps
   const allItems = await new Promise<SqlVersionItem[]>((resolve) => {
     const tx = db.transaction(STORE_NAME, 'readonly');

@@ -1,3 +1,4 @@
+import { t } from "../utils/i18n";
 import React, { useRef, useState, useLayoutEffect, useEffect, useCallback, useMemo } from 'react';
 import { Search, Replace, ChevronUp, ChevronDown, X, CaseSensitive, Zap, Table } from 'lucide-react';
 import { getSavedHotkeys, getSavedUiVisibilitySettings, getQuickActionTemplates, QuickActionTemplate } from './SettingsModal';
@@ -10,11 +11,11 @@ export interface AutocompleteTemplate {
 }
 
 export const DEFAULT_AUTOCOMPLETE_TEMPLATES: AutocompleteTemplate[] = [
-  { id: 'tpl-1', keyword: 'SELECT * FROM', insertion: 'SELECT * FROM ', description: 'Базовая выборка из таблицы' },
-  { id: 'tpl-2', keyword: 'LEFT JOIN', insertion: 'LEFT JOIN ', description: 'Левое соединение таблиц' },
-  { id: 'tpl-3', keyword: 'GROUP BY', insertion: 'GROUP BY ', description: 'Группировка по полю' },
-  { id: 'tpl-4', keyword: 'ORDER BY', insertion: 'ORDER BY ', description: 'Сортировка по полю' },
-  { id: 'tpl-5', keyword: 'COUNT(DISTINCT)', insertion: 'COUNT(DISTINCT )', description: 'Подсчет уникальных значений' },
+  { id: 'tpl-1', keyword: 'SELECT * FROM', insertion: 'SELECT * FROM ', description: t('Базовая выборка из таблицы') },
+  { id: 'tpl-2', keyword: 'LEFT JOIN', insertion: 'LEFT JOIN ', description: t('Левое соединение таблиц') },
+  { id: 'tpl-3', keyword: 'GROUP BY', insertion: 'GROUP BY ', description: t('Группировка по полю') },
+  { id: 'tpl-4', keyword: 'ORDER BY', insertion: 'ORDER BY ', description: t('Сортировка по полю') },
+  { id: 'tpl-5', keyword: 'COUNT(DISTINCT)', insertion: 'COUNT(DISTINCT )', description: t('Подсчет уникальных значений') },
 ];
 
 export const getCustomAutocompleteTemplates = (): AutocompleteTemplate[] => {
@@ -1868,11 +1869,7 @@ export const SqlEditor = React.memo(function SqlEditor({
       const end = textareaRef.current.selectionEnd;
       if (start !== null && end !== null && start < end) {
         const textToDrag = value.slice(start, end);
-        dragSelectionRef.current = {
-          start,
-          end,
-          text: textToDrag,
-        };
+        dragSelectionRef.current = { start, end, text: textToDrag };
         e.dataTransfer.setData('text/plain', textToDrag);
         (window as any).__currentDragText = textToDrag;
       }
@@ -1900,32 +1897,45 @@ export const SqlEditor = React.memo(function SqlEditor({
 
     let currentY = 0;
     let targetLineIdx = 0;
-    const lines = value.split('\n');
-    for (let i = 0; i < lineHeights.length; i++) {
+    const lines = sqlLines;
+    for (let i = 0; i < lines.length; i++) {
       const h = lineHeights[i] || 20;
       if (yWithScroll >= currentY && yWithScroll < currentY + h) {
         targetLineIdx = i;
         break;
       }
       currentY += h;
-      if (i === lineHeights.length - 1) {
+      if (i === lines.length - 1) {
         targetLineIdx = i;
       }
     }
 
     const charWidth = charWidthRef.current;
     const lineText = lines[targetLineIdx] || '';
-    const colIdx = Math.max(0, Math.min(lineText.length, Math.round(xWithScroll / charWidth)));
-
-    const prevHeights = lineHeights.slice(0, targetLineIdx).reduce((acc, h) => acc + (h || 20), 0);
-    const visualTop = 12 + prevHeights - scrollTop;
-    const visualLeft = 12 + colIdx * charWidth - scrollLeft;
-    const visualHeight = lineHeights[targetLineIdx] || 20;
+    
+    // Capping column index to string length so it doesn't overshoot
+    let colIdx = Math.max(0, Math.min(lineText.length, Math.round(xWithScroll / charWidth)));
+    
+    let prevHeights = 0;
+    for (let i = 0; i < targetLineIdx; i++) {
+      prevHeights += lineHeights[i] || 20;
+    }
+    
+    // Fix: determine which visual sub-line the mouse is over (for word-wrap)
+    const yWithinLine = yWithScroll - prevHeights;
+    const subLineIdx = Math.max(0, Math.floor(yWithinLine / 20));
+    
+    let visualTop = 12 + prevHeights - scrollTop + (subLineIdx * 20);
+    let visualLeft = 12 + colIdx * charWidth - scrollLeft;
+    
+    // Fix: limit left position so it doesn't go off-screen right
+    const maxLeft = textareaRef.current.clientWidth - 16;
+    if (visualLeft > maxLeft) visualLeft = maxLeft;
 
     setDragCaretPos({
       top: visualTop,
       left: visualLeft,
-      height: visualHeight,
+      height: 20, // Fix: always 20px, not full block height
     });
   };
 
@@ -1938,27 +1948,28 @@ export const SqlEditor = React.memo(function SqlEditor({
     const droppedText = e.dataTransfer.getData('text/plain') || e.dataTransfer.getData('text') || (window as any).__currentDragText;
     if (!droppedText || !onChange || !textareaRef.current) return;
     e.preventDefault();
+    e.stopPropagation();
 
     const rect = textareaRef.current.getBoundingClientRect();
     const relX = e.clientX - rect.left;
     const relY = e.clientY - rect.top;
-    const scrollTop = textareaRef.current.scrollTop;
-    const scrollLeft = textareaRef.current.scrollLeft;
+    const savedScrollTop = textareaRef.current.scrollTop;
+    const savedScrollLeft = textareaRef.current.scrollLeft;
 
-    const yWithScroll = relY + scrollTop - 12;
-    const xWithScroll = relX + scrollLeft - 12;
+    const yWithScroll = relY + savedScrollTop - 12;
+    const xWithScroll = relX + savedScrollLeft - 12;
 
     let currentY = 0;
     let targetLineIdx = 0;
-    const lines = value.split('\n');
-    for (let i = 0; i < lineHeights.length; i++) {
+    const lines = sqlLines;
+    for (let i = 0; i < lines.length; i++) {
       const h = lineHeights[i] || 20;
       if (yWithScroll >= currentY && yWithScroll < currentY + h) {
         targetLineIdx = i;
         break;
       }
       currentY += h;
-      if (i === lineHeights.length - 1) {
+      if (i === lines.length - 1) {
         targetLineIdx = i;
       }
     }
@@ -1976,11 +1987,26 @@ export const SqlEditor = React.memo(function SqlEditor({
     const internalDrag = dragSelectionRef.current;
     dragSelectionRef.current = null;
 
+    const restoreScroll = () => {
+      if (textareaRef.current) {
+        textareaRef.current.scrollTop = savedScrollTop;
+        textareaRef.current.scrollLeft = savedScrollLeft;
+      }
+      if (lineNumbersRef.current) {
+        lineNumbersRef.current.scrollTop = savedScrollTop;
+      }
+      if (highlightRef.current) {
+        highlightRef.current.scrollTop = savedScrollTop;
+        highlightRef.current.scrollLeft = savedScrollLeft;
+      }
+    };
+
     if (internalDrag && !e.ctrlKey) {
       const { start, end } = internalDrag;
       if (charIndex >= start && charIndex <= end) {
-        textareaRef.current.focus();
+        textareaRef.current.focus({ preventScroll: true });
         textareaRef.current.setSelectionRange(start, end);
+        restoreScroll();
         return;
       }
 
@@ -1994,24 +2020,28 @@ export const SqlEditor = React.memo(function SqlEditor({
         newValue = value.slice(0, start) + value.slice(end, charIndex) + droppedText + value.slice(charIndex);
         newSelStart = charIndex - offset;
       }
+      
+      textareaRef.current.value = newValue;
+      textareaRef.current.focus({ preventScroll: true });
+      textareaRef.current.setSelectionRange(newSelStart, newSelStart + droppedText.length);
+      restoreScroll();
       pushChange(newValue);
-      setTimeout(() => {
-        if (textareaRef.current) {
-          textareaRef.current.focus();
-          textareaRef.current.setSelectionRange(newSelStart, newSelStart + droppedText.length);
-        }
-      }, 0);
     } else {
       const newValue = value.slice(0, charIndex) + droppedText + value.slice(charIndex);
+      
+      textareaRef.current.value = newValue;
+      textareaRef.current.focus({ preventScroll: true });
+      const newPos = charIndex + droppedText.length;
+      textareaRef.current.setSelectionRange(newPos, newPos);
+      restoreScroll();
       pushChange(newValue);
-      setTimeout(() => {
-        if (textareaRef.current) {
-          textareaRef.current.focus();
-          const newPos = charIndex + droppedText.length;
-          textareaRef.current.setSelectionRange(newPos, newPos);
-        }
-      }, 0);
     }
+
+    // Ensure scroll position remains preserved across React render and browser layout passes
+    restoreScroll();
+    requestAnimationFrame(restoreScroll);
+    setTimeout(restoreScroll, 0);
+    setTimeout(restoreScroll, 50);
   };
 
   return (
@@ -2035,7 +2065,7 @@ export const SqlEditor = React.memo(function SqlEditor({
               <input
                 ref={searchInputRef}
                 type="text"
-                placeholder="Поиск (Ctrl+F)..."
+                placeholder={t("Поиск (Ctrl+F)...")}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => {
@@ -2054,7 +2084,7 @@ export const SqlEditor = React.memo(function SqlEditor({
                 }`}
               />
               <span className="text-[10px] text-slate-400 shrink-0 min-w-[45px] text-center font-mono">
-                {searchQuery ? (matches.length > 0 ? `${currentMatchIndex + 1}/${matches.length}` : '0 совп.') : ''}
+                {searchQuery ? (matches.length > 0 ? `${currentMatchIndex + 1}/${matches.length}` : t(t('0 совп.'))) : ''}
               </span>
             </div>
 
@@ -2062,7 +2092,7 @@ export const SqlEditor = React.memo(function SqlEditor({
               <button
                 type="button"
                 onClick={handlePrevMatch}
-                title="Предыдущее совпадение (Shift+Enter)"
+                title={t("Предыдущее совпадение (Shift+Enter)")}
                 className="p-1 rounded hover:bg-slate-700/40 text-slate-400 hover:text-slate-100 transition-colors"
               >
                 <ChevronUp className="w-3.5 h-3.5" />
@@ -2070,7 +2100,7 @@ export const SqlEditor = React.memo(function SqlEditor({
               <button
                 type="button"
                 onClick={handleNextMatch}
-                title="Следующее совпадение (Enter)"
+                title={t("Следующее совпадение (Enter)")}
                 className="p-1 rounded hover:bg-slate-700/40 text-slate-400 hover:text-slate-100 transition-colors"
               >
                 <ChevronDown className="w-3.5 h-3.5" />
@@ -2078,7 +2108,7 @@ export const SqlEditor = React.memo(function SqlEditor({
               <button
                 type="button"
                 onClick={() => setMatchCase(!matchCase)}
-                title={matchCase ? "Учитывать регистр (включено)" : "Учитывать регистр (выключено)"}
+                title={matchCase ? t("Учитывать регистр (включено)") : t("Учитывать регистр (выключено)")}
                 className={`px-1.5 py-1 rounded transition-colors text-[10px] font-bold flex items-center gap-0.5 ${
                   matchCase
                     ? 'bg-blue-600 text-white'
@@ -2091,7 +2121,7 @@ export const SqlEditor = React.memo(function SqlEditor({
               <button
                 type="button"
                 onClick={() => setUseRegex(!useRegex)}
-                title={useRegex ? "Регулярные выражения и спецсимволы \\n, \\t (включено)" : "Регулярные выражения и спецсимволы \\n, \\t (выключено)"}
+                title={useRegex ? t("Регулярные выражения и спецсимволы \\n, \\t (включено)") : t("Регулярные выражения и спецсимволы \\n, \\t (выключено)")}
                 className={`px-1.5 py-1 rounded transition-colors text-[10px] font-bold flex items-center gap-0.5 ${
                   useRegex
                     ? 'bg-blue-600 text-white'
@@ -2103,7 +2133,7 @@ export const SqlEditor = React.memo(function SqlEditor({
               <button
                 type="button"
                 onClick={() => setShowReplace(!showReplace)}
-                title="Переключить замену (Ctrl+H)"
+                title={t("Переключить замену (Ctrl+H)")}
                 className={`px-1.5 py-1 rounded transition-colors text-[10px] font-semibold flex items-center gap-1 ${
                   showReplace
                     ? 'bg-emerald-600 text-white'
@@ -2111,12 +2141,12 @@ export const SqlEditor = React.memo(function SqlEditor({
                 }`}
               >
                 <Replace className="w-3.5 h-3.5" />
-                <span>Замена</span>
+                <span>{t("Замена")}</span>
               </button>
               <button
                 type="button"
                 onClick={closeSearch}
-                title="Закрыть панель (Esc)"
+                title={t("Закрыть панель (Esc)")}
                 className="p-1 rounded text-slate-400 hover:text-slate-100 hover:bg-slate-700/40 transition-colors ml-1"
               >
                 <X className="w-3.5 h-3.5" />
@@ -2130,7 +2160,7 @@ export const SqlEditor = React.memo(function SqlEditor({
               <Replace className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
               <input
                 type="text"
-                placeholder="Заменить на..."
+                placeholder={t("Заменить на...")}
                 value={replaceQuery}
                 onChange={(e) => setReplaceQuery(e.target.value)}
                 onKeyDown={(e) => {
@@ -2149,18 +2179,18 @@ export const SqlEditor = React.memo(function SqlEditor({
                 <button
                   type="button"
                   onClick={handleReplaceCurrent}
-                  title="Заменить текущее"
+                  title={t("Заменить текущее")}
                   className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-[10px] font-semibold rounded transition-all"
                 >
-                  Заменить
+                  {t("Заменить")}
                 </button>
                 <button
                   type="button"
                   onClick={handleReplaceAll}
-                  title="Заменить все совпадения"
+                  title={t("Заменить все совпадения")}
                   className="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-600 active:scale-95 text-white text-[10px] font-semibold rounded transition-all"
                 >
-                  Заменить всё
+                  {t("Заменить всё")}
                 </button>
               </div>
             </div>
@@ -2337,7 +2367,7 @@ export const SqlEditor = React.memo(function SqlEditor({
                     >
                       <span className="truncate pr-1">{kw}</span>
                       <span className={`text-[9px] shrink-0 ${idx === selectedIndex ? 'text-blue-200' : 'text-slate-400'}`}>
-                        {customMatch ? 'шаблон' : 'ключевое слово'}
+                        {customMatch ? t('шаблон') : t('ключевое слово')}
                       </span>
                     </button>
                   );
@@ -2377,12 +2407,12 @@ export const SqlEditor = React.memo(function SqlEditor({
                         setShowQuickActionsPopup(false);
                         if (onExecuteQuickAction) onExecuteQuickAction(action);
                       }}
-                      title={action.name}
+                      title={t(action.name)}
                       className={`w-full text-left px-2 py-1 rounded text-xs flex items-center gap-2 transition-colors min-w-0 ${
                         theme === 'dark' ? 'hover:bg-slate-700 text-slate-200' : 'hover:bg-slate-100 text-slate-800'
                       }`}
                     >
-                      <span className="truncate">{action.name}</span>
+                      <span className="truncate">{t(action.name)}</span>
                     </button>
                   ))}
                 </div>

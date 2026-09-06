@@ -1,3 +1,4 @@
+import { t } from '../utils/i18n';
 import React, { useState, useEffect } from 'react';
 import { Key, Lock, Unlock, Shield, Eye, EyeOff, Plus, Trash2, Check, Copy, AlertCircle, AlertTriangle, RotateCcw } from 'lucide-react';
 import {
@@ -88,7 +89,7 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
     if (e) e.preventDefault();
     setPinError(null);
     if (!/^\d{4,}$/.test(pinInput.trim())) {
-      setPinError('ПИН-код должен состоять только из цифр (минимум 4 цифры)');
+      setPinError(t('ПИН-код должен состоять только из цифр (минимум 4 цифры)'));
       return;
     }
     try {
@@ -96,7 +97,7 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
       setPinInput('');
       await refreshState();
     } catch (err: any) {
-      setPinError(err.message || 'Ошибка установки ПИН-кода');
+      setPinError(err.message || t('Ошибка установки ПИН-кода'));
     }
   };
 
@@ -104,7 +105,7 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
     if (e) e.preventDefault();
     setPinError(null);
     if (!pinInput.trim()) {
-      setPinError('Введите ПИН-код');
+      setPinError(t('Введите ПИН-код'));
       return;
     }
     try {
@@ -113,10 +114,10 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
         setPinInput('');
         await refreshState();
       } else {
-        setPinError('Неверный ПИН-код');
+        setPinError(t('Неверный ПИН-код'));
       }
     } catch (err: any) {
-      setPinError(err.message || 'Ошибка разблокировки');
+      setPinError(err.message || t('Ошибка разблокировки'));
     }
   };
 
@@ -153,11 +154,11 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
     const cleanVal = newKeyValue.trim();
 
     if (!cleanName) {
-      setSecretError('Укажите имя ключа');
+      setSecretError(t('Укажите имя ключа'));
       return;
     }
     if (!cleanVal) {
-      setSecretError('Укажите значение ключа');
+      setSecretError(t('Укажите значение ключа'));
       return;
     }
 
@@ -167,7 +168,7 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
       setNewKeyValue('');
       await refreshState();
     } catch (err: any) {
-      setSecretError(err.message || 'Ошибка сохранения ключа');
+      setSecretError(err.message || t('Ошибка сохранения ключа'));
     }
   };
 
@@ -192,7 +193,7 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
     setChangePinSuccess(false);
 
     if (!/^\d{4,}$/.test(newPin.trim())) {
-      setChangePinError('Новый ПИН-код должен состоять минимум из 4 цифр');
+      setChangePinError(t('Новый ПИН-код должен состоять минимум из 4 цифр'));
       return;
     }
 
@@ -207,7 +208,7 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
       }, 1500);
       await refreshState();
     } catch (err: any) {
-      setChangePinError(err.message || 'Неверный текущий ПИН-код');
+      setChangePinError(err.message || t('Неверный текущий ПИН-код'));
     }
   };
 
@@ -226,7 +227,7 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
         <div className="flex items-center gap-2">
           <Key className="w-4 h-4 text-amber-500" />
           <h4 className={`font-bold text-xs ${theme === 'dark' ? 'text-slate-200' : 'text-slate-900'}`}>
-            Ключи и секреты (PIN-код)
+            {t('Ключи и секреты (PIN-код)')}
           </h4>
         </div>
 
@@ -239,10 +240,10 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
                   ? 'bg-amber-950/40 border-amber-600/40 text-amber-300 hover:bg-amber-900/60'
                   : 'bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-100'
               }`}
-              title="Заблокировать хранилище ключей"
+              title={t("Заблокировать хранилище ключей")}
             >
               <Lock className="w-3 h-3" />
-              <span>Заблокировать</span>
+              <span>{t("Заблокировать")}</span>
             </button>
             <button
               onClick={handlePromptResetVault}
@@ -251,10 +252,10 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
                   ? 'border-red-500/30 text-red-400 hover:bg-red-950/40'
                   : 'border-red-200 text-red-600 hover:bg-red-50'
               }`}
-              title="Полный сброс хранилища"
+              title={t("Полный сброс хранилища")}
             >
               <RotateCcw className="w-3 h-3" />
-              <span>Сбросить</span>
+              <span>{t("Сбросить")}</span>
             </button>
           </div>
         )}
@@ -270,9 +271,9 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
           <div className="flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
             <div className="text-xs leading-relaxed">
-              <span className="font-bold">Сбросить всё хранилище?</span>
+              <span className="font-bold">{t("Сбросить всё хранилище?")}</span>
               <p className={`mt-0.5 text-[11px] ${theme === 'dark' ? 'text-red-300/80' : 'text-red-800/80'}`}>
-                Все сохраненные ключи будут безвозвратно удалены, а текущий ПИН-код сброшен.
+                {t("Все сохраненные ключи будут безвозвратно удалены, а текущий ПИН-код сброшен.")}
               </p>
             </div>
           </div>
@@ -286,7 +287,7 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
                   : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
               }`}
             >
-              Отмена
+              {t("Отмена")}
             </button>
             <button
               type="button"
@@ -298,20 +299,20 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
               }`}
             >
               <RotateCcw className="w-3 h-3" />
-              <span>Да, сбросить всё</span>
+              <span>{t("Да, сбросить всё")}</span>
             </button>
           </div>
         </div>
       )}
 
       <p className={`text-[11px] leading-relaxed ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>
-        Безопасное хранение URI подключений и секретов с шифрованием AES-GCM. Подстановка в SQL через{' '}
+        {t('Безопасное хранение URI подключений и секретов с шифрованием AES-GCM. Подстановка в SQL через ')}
         <code className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-semibold border ${
           theme === 'dark' ? 'bg-slate-700/60 text-amber-400 border-slate-600/50' : 'bg-amber-50 text-amber-800 border-amber-200'
         }`}>
-          {'{{имя_ключа}}'}
+          {t('{{имя_ключа}}')}
         </code>{' '}
-        и автозаполнение ClickHouse (ключи с префиксом{' '}
+        {t(' и автозаполнение ClickHouse (ключи с префиксом ')}
         <code className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-semibold border ${
           theme === 'dark' ? 'bg-slate-700/60 text-amber-400 border-slate-600/50' : 'bg-amber-50 text-amber-800 border-amber-200'
         }`}>
@@ -328,7 +329,7 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
               inputMode="numeric"
               pattern="[0-9]*"
               maxLength={16}
-              placeholder="Задайте ПИН-код (от 4 цифр)"
+              placeholder={t("Задайте ПИН-код (от 4 цифр)")}
               value={pinInput}
               onChange={(e) => setPinInput(e.target.value.replace(/\D/g, ''))}
               className={`flex-1 px-3 py-1.5 rounded-lg border font-mono text-xs outline-none ${
@@ -341,7 +342,7 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
               type="submit"
               className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-xs transition-all text-sm truncate"
             >
-              Установить ПИН-код
+              {t("Установить ПИН-код")}
             </button>
           </div>
           {pinError && (
@@ -363,7 +364,7 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
                 inputMode="numeric"
                 pattern="[0-9]*"
                 maxLength={16}
-                placeholder="Введите ПИН-код для доступа"
+                placeholder={t("Введите ПИН-код для доступа")}
                 value={pinInput}
                 onChange={(e) => setPinInput(e.target.value.replace(/\D/g, ''))}
                 className={`w-full px-3 py-1.5 rounded-lg border font-mono text-xs outline-none ${
@@ -378,7 +379,7 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
               className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold shadow-xs transition-all flex items-center gap-1.5"
             >
               <Unlock className="w-3.5 h-3.5" />
-              <span>Разблокировать</span>
+              <span>{t("Разблокировать")}</span>
             </button>
           </form>
 
@@ -397,7 +398,7 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
                 theme === 'dark' ? 'text-slate-500 hover:text-red-400' : 'text-slate-400 hover:text-red-600'
               }`}
             >
-              Забыли ПИН-код? Сбросить хранилище
+              {t("Забыли ПИН-код? Сбросить хранилище")}
             </button>
           </div>
         </div>
@@ -411,7 +412,7 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
             <div className="flex flex-col sm:flex-row gap-2">
               <input
                 type="text"
-                placeholder="Имя (напр. ch_prod)"
+                placeholder={t("Имя (напр. ch_prod)")}
                 value={newKeyName}
                 onChange={(e) => setNewKeyName(e.target.value)}
                 className={`w-full sm:w-40 px-3 py-1.5 rounded-lg border font-mono text-xs outline-none shrink-0 ${
@@ -423,7 +424,7 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
               <div className="flex-1 min-w-0 flex gap-2">
                 <input
                   type="text"
-                  placeholder="Значение / URI подключения"
+                  placeholder={t("Значение / URI подключения")}
                   value={newKeyValue}
                   onChange={(e) => setNewKeyValue(e.target.value)}
                   className={`flex-1 min-w-0 px-3 py-1.5 rounded-lg border font-mono text-xs outline-none ${
@@ -437,7 +438,7 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
                   className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-xs transition-all flex items-center gap-1 shrink-0 cursor-pointer"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>Добавить</span>
+                  <span>{t("Добавить")}</span>
                 </button>
               </div>
             </div>
@@ -456,7 +457,7 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
               <button
                 type="button"
                 onClick={handleCopyUriFormat}
-                title="Нажмите, чтобы скопировать шаблон URI"
+                title={t("Нажмите, чтобы скопировать шаблон URI")}
                 className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded font-mono text-[10px] border transition-colors cursor-pointer ${
                   theme === 'dark'
                     ? 'bg-slate-900 border-slate-700 text-amber-300 hover:border-amber-500/50 hover:bg-slate-800'
@@ -479,7 +480,7 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
               <div className={`p-3 rounded-lg border text-center text-xs ${
                 theme === 'dark' ? 'border-slate-800 text-slate-500' : 'border-slate-200 text-slate-400'
               }`}>
-                Нет сохраненных ключей. Добавьте первый ключ выше.
+                {t("Нет сохраненных ключей. Добавьте первый ключ выше.")}
               </div>
             ) : (
               <div className="max-h-48 overflow-y-auto space-y-1.5 pr-0.5">
@@ -518,7 +519,7 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
                           className={`p-1 rounded transition-colors ${
                             theme === 'dark' ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-500'
                           }`}
-                          title={isVisible ? 'Скрыть значение' : 'Показать значение'}
+                          title={isVisible ? t('Скрыть значение') : t('Показать значение')}
                         >
                           {isVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                         </button>
@@ -528,7 +529,7 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
                           className={`p-1 rounded transition-colors ${
                             theme === 'dark' ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-500'
                           }`}
-                          title="Скопировать значение"
+                          title={t("Скопировать значение")}
                         >
                           {copiedKey === sec.name ? (
                             <Check className="w-3.5 h-3.5 text-emerald-500" />
@@ -542,7 +543,7 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
                           className={`p-1 rounded transition-colors ${
                             theme === 'dark' ? 'hover:bg-slate-800 text-red-400' : 'hover:bg-slate-100 text-red-500'
                           }`}
-                          title="Удалить ключ"
+                          title={t("Удалить ключ")}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -564,18 +565,18 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
                   theme === 'dark' ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                Сменить ПИН-код
+                {t("Сменить ПИН-код")}
               </button>
             ) : (
               <form onSubmit={handleChangePin} className={`p-3 rounded-lg border space-y-2 ${
                 theme === 'dark' ? 'bg-slate-900/60 border-slate-700' : 'bg-white border-slate-200'
               }`}>
-                <div className="text-[11px] font-bold">Смена ПИН-кода</div>
+                <div className="text-[11px] font-bold">{t("Смена ПИН-кода")}</div>
                 <div className="grid grid-cols-2 gap-2">
                   <input
                     type="password"
                     inputMode="numeric"
-                    placeholder="Текущий ПИН"
+                    placeholder={t("Текущий ПИН")}
                     value={oldPin}
                     onChange={(e) => setOldPin(e.target.value.replace(/\D/g, ''))}
                     className={`px-2.5 py-1 rounded border text-xs outline-none ${
@@ -585,7 +586,7 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
                   <input
                     type="password"
                     inputMode="numeric"
-                    placeholder="Новый ПИН (4+ цифр)"
+                    placeholder={t("Новый ПИН (4+ цифр)")}
                     value={newPin}
                     onChange={(e) => setNewPin(e.target.value.replace(/\D/g, ''))}
                     className={`px-2.5 py-1 rounded border text-xs outline-none ${
@@ -598,7 +599,7 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
                     type="submit"
                     className="px-2.5 py-1 rounded bg-blue-600 text-white text-xs font-semibold hover:bg-blue-500"
                   >
-                    Сохранить
+                    {t("Сохранить")}
                   </button>
                   <button
                     type="button"
@@ -612,12 +613,12 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
                       theme === 'dark' ? 'border-slate-700 text-slate-300' : 'border-slate-300 text-slate-700'
                     }`}
                   >
-                    Отмена
+                    {t("Отмена")}
                   </button>
                   {changePinSuccess && (
                     <span className="text-xs text-emerald-500 font-semibold flex items-center gap-1">
                       <Check className="w-3.5 h-3.5" />
-                      ПИН изменен
+                      {t("ПИН изменен")}
                     </span>
                   )}
                 </div>

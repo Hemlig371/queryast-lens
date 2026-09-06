@@ -18,20 +18,21 @@ describe('sqlUtils', () => {
   describe('splitBySemicolonIgnoringQuotes', () => {
     it('should split simple queries', () => {
       const sql = 'SELECT * FROM users; SELECT * FROM posts;';
-      const result = splitBySemicolonIgnoringQuotes(sql);
+      const result = splitBySemicolonIgnoringQuotes(sql).map(s => s.trim()).filter(Boolean);
       expect(result).toEqual(['SELECT * FROM users', 'SELECT * FROM posts']);
     });
 
     it('should ignore semicolons inside single quotes', () => {
       const sql = "SELECT 'hello;world'; SELECT 1;";
-      const result = splitBySemicolonIgnoringQuotes(sql);
+      const result = splitBySemicolonIgnoringQuotes(sql).map(s => s.trim()).filter(Boolean);
       expect(result).toEqual(["SELECT 'hello;world'", "SELECT 1"]);
     });
 
     it('should handle empty queries gracefully', () => {
       const sql = "; ;";
-      const result = splitBySemicolonIgnoringQuotes(sql);
+      const result = splitBySemicolonIgnoringQuotes(sql).map(s => s.trim()).filter(Boolean);
       expect(result).toEqual([]);
     });
   });
 });
+

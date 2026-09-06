@@ -104,6 +104,37 @@ export async function getAllSchemaCacheEntries(): Promise<SchemaCacheEntry[]> {
   }
 }
 
+export async function cleanupOldSchemaCaches(daysOld: number = 7): Promise<void> {
+  try {
+    const db = await getDb();
+    if (!db) return;
+    const staleMs = daysOld * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.openCursor();
+
+      req.onsuccess = (event: any) => {
+        const cursor = event.target.result;
+        if (cursor) {
+          const entry = cursor.value as SchemaCacheEntry;
+          if (now - entry.timestamp > staleMs) {
+            cursor.delete();
+          }
+          cursor.continue();
+        } else {
+          resolve();
+        }
+      };
+      req.onerror = () => reject(tx.error);
+    });
+  } catch (e) {
+    console.error('cleanupOldSchemaCaches error:', e);
+  }
+}
+
 export async function importSchemaCacheEntries(entries: SchemaCacheEntry[]): Promise<void> {
   if (!Array.isArray(entries)) return;
   try {

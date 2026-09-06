@@ -42,12 +42,8 @@ let currentDbPath: string | null = null;
 
 function applyDuckDbPragmas(dbObj: any, config: any) {
   if (!dbObj || !config) return;
-  const { allowUnsignedExtensions, memoryLimit, tempDirectory, extensionDirectory, threads } = config;
+  const { memoryLimit, tempDirectory, extensionDirectory, threads, initSql } = config;
   
-  if (allowUnsignedExtensions !== undefined) {
-    const val = allowUnsignedExtensions ? 'true' : 'false';
-    dbObj.run(`SET allow_unsigned_extensions=${val};`, () => {});
-  }
   if (memoryLimit && String(memoryLimit).trim()) {
     const cleanMem = String(memoryLimit).trim().replace(/['";]/g, '');
     dbObj.run(`PRAGMA memory_limit='${cleanMem}';`, () => {});
@@ -62,6 +58,13 @@ function applyDuckDbPragmas(dbObj: any, config: any) {
   if (extensionDirectory && String(extensionDirectory).trim()) {
     const cleanDir = String(extensionDirectory).trim().replace(/['";]/g, '');
     dbObj.run(`PRAGMA extension_directory='${cleanDir}';`, () => {});
+  }
+  if (initSql && String(initSql).trim()) {
+    dbObj.run(String(initSql), (err: any) => {
+      if (err) {
+        console.warn("Failed to execute DuckDB initSql:", err.message);
+      }
+    });
   }
 }
 

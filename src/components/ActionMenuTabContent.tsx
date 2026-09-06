@@ -7,6 +7,7 @@ import {
   Search, 
   Plus, 
   Layers, 
+  Workflow,
   Zap, 
   FileCode, 
   ChevronDown, 
@@ -16,9 +17,10 @@ import {
   ChevronRight,
   Briefcase
 } from 'lucide-react';
-import { Snippet, POPULAR_SNIPPETS, ACTION_MENU_CATEGORY } from './SqlSnippetsManager';
+import { Snippet, POPULAR_SNIPPETS, ACTION_MENU_CATEGORY, compareSnippetsAlphabetical, naturalStringCompare } from './SqlSnippetsManager';
 import { loadSnippetsFromDB } from '../utils/snippetsStorage';
 import { splitBySemicolonIgnoringQuotes } from '../lib/sqlUtils';
+import { t } from '../utils/i18n';
 
 interface ActionMenuTabContentProps {
   theme: 'dark' | 'light';
@@ -89,10 +91,22 @@ const ActionCard: React.FC<ActionCardProps> = ({
   }, [parsedVariables]);
 
   const [varValues, setVarValues] = useState<Record<string, string>>(initialVars);
+  const [copied, setCopied] = useState<boolean>(false);
 
   useEffect(() => {
     setVarValues(initialVars);
   }, [initialVars]);
+
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    let finalSql = snippet.sql;
+    parsedVariables.forEach((v) => {
+      finalSql = finalSql.split(v.token).join(varValues[v.token] || '');
+    });
+    navigator.clipboard.writeText(finalSql);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
 
   const handleExecute = () => {
     let finalSql = snippet.sql;
@@ -100,7 +114,6 @@ const ActionCard: React.FC<ActionCardProps> = ({
       finalSql = finalSql.split(v.token).join(varValues[v.token] || '');
     });
     onExecute(snippet, finalSql);
-    setVarValues(initialVars);
   };
 
   return (
@@ -115,38 +128,38 @@ const ActionCard: React.FC<ActionCardProps> = ({
     >
       <div className="flex items-start justify-between gap-3 w-full">
         <div className="flex flex-col gap-1.5 flex-1 min-w-0">
-          {(isJob || isPipeline) && (
-            <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
-              {isJob && (
-                <span className={`text-[10px] font-medium px-2 py-0.5 rounded border flex items-center gap-1 ${
-                  theme === 'dark'
-                    ? 'bg-blue-900/30 text-blue-300 border-blue-800/50'
-                    : 'bg-blue-50 text-blue-700 border-blue-200'
-                }`}>
-                  <span>Job</span>
-                </span>
-              )}
-              {isPipeline && (
-                <span className={`text-[10px] font-medium px-2 py-0.5 rounded border flex items-center gap-1 ${
-                  theme === 'dark'
-                    ? 'bg-purple-900/30 text-purple-300 border-purple-800/50'
-                    : 'bg-purple-50 text-purple-700 border-purple-200'
-                }`}>
-                  <span>Пайплайн ({statements.length} ст.)</span>
-                </span>
-              )}
-            </div>
-          )}
           <h3 className="text-xs font-bold leading-tight text-slate-900 dark:text-slate-100 group-hover:text-blue-500 dark:group-hover:text-blue-400 transition-colors">
-            {snippet.title}
+            {(isJob || isPipeline) && (
+              <span className="inline-flex items-center gap-1.5 mr-1.5 font-normal relative -top-[1px]">
+                {isJob && (
+                  <span className={`text-[10px] leading-tight font-medium px-1.5 py-[1px] rounded border inline-flex items-center ${
+                    theme === 'dark'
+                      ? 'bg-blue-900/30 text-blue-300 border-blue-800/50'
+                      : 'bg-blue-50 text-blue-700 border-blue-200'
+                  }`}>
+                    Job
+                  </span>
+                )}
+                {isPipeline && (
+                  <span className={`text-[10px] leading-tight font-medium px-1.5 py-[1px] rounded border inline-flex items-center whitespace-nowrap ${
+                    theme === 'dark'
+                      ? 'bg-purple-900/30 text-purple-300 border-purple-800/50'
+                      : 'bg-purple-50 text-purple-700 border-purple-200'
+                  }`}>
+                    {statements.length} {t('ст.')}
+                  </span>
+                )}
+              </span>
+            )}
+            <span>{snippet.isCustom ? snippet.title : t(snippet.title)}</span>
           </h3>
         </div>
 
-        <div className="flex flex-col items-end shrink-0 pt-0.5">
+        <div className="flex items-center gap-1.5 shrink-0 pt-0.5">
           <button
             onClick={handleExecute}
             disabled={isDuckDbRunning}
-            className={`relative flex items-center justify-center px-3 py-1 rounded-md text-xs font-medium border transition-colors select-none ${
+            className={`relative flex items-center justify-center h-7 px-3 rounded-md text-xs font-medium border transition-colors select-none ${
               isExecutingThis
                 ? theme === 'dark'
                   ? 'bg-amber-500/15 border-amber-500/40 text-amber-300 cursor-wait'
@@ -159,16 +172,33 @@ const ActionCard: React.FC<ActionCardProps> = ({
                     ? 'bg-slate-800 border-slate-700/80 text-emerald-400 hover:bg-emerald-950/40 hover:border-emerald-700/60 hover:text-emerald-300 active:scale-98'
                     : 'bg-white border-slate-300/90 text-emerald-700 hover:bg-emerald-50/70 hover:border-emerald-400 hover:text-emerald-800 shadow-2xs active:scale-98'
             }`}
-            title={isPipeline ? "Запустить цепочку запросов (Sequential Pipeline)" : "Выполнить запрос"}
+            title={isPipeline ? t("Запустить цепочку запросов (Sequential Pipeline)") : t("Выполнить запрос")}
           >
             <div className={`flex items-center gap-1.5 transition-opacity ${isExecutingThis ? 'opacity-0' : 'opacity-100'}`}>
               <Play className="w-3 h-3 fill-current opacity-80" />
-              <span>Запустить</span>
+              <span>{t("Запустить")}</span>
             </div>
             {isExecutingThis && (
               <div className="absolute inset-0 flex items-center justify-center">
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-current" />
               </div>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={handleCopy}
+            className={`flex items-center justify-center h-7 w-7 rounded-md border text-xs transition-colors select-none active:scale-98 ${
+              theme === 'dark'
+                ? 'bg-slate-800 border-slate-700/80 text-slate-400 hover:text-slate-200 hover:bg-slate-700/70'
+                : 'bg-white border-slate-300/90 text-slate-600 hover:text-slate-900 hover:bg-slate-50 shadow-2xs'
+            }`}
+            title={copied ? t("Скопировано!") : t("Скопировать SQL")}
+          >
+            {copied ? (
+              <Check className="w-3.5 h-3.5 text-emerald-500" />
+            ) : (
+              <Copy className="w-3.5 h-3.5 opacity-70" />
             )}
           </button>
         </div>
@@ -178,12 +208,12 @@ const ActionCard: React.FC<ActionCardProps> = ({
         <p className={`text-[11px] leading-relaxed line-clamp-2 ${
           theme === 'dark' ? 'text-slate-400' : 'text-slate-600'
         }`}>
-          {snippet.description}
+          {snippet.isCustom ? snippet.description : t(snippet.description)}
         </p>
       )}
 
       {parsedVariables.length > 0 && (
-        <div className="mt-2 grid grid-cols-2 gap-2 border-t pt-2 border-slate-200 dark:border-slate-700">
+        <div className="mt-0.5 grid grid-cols-2 gap-2 border-t pt-2 border-slate-200 dark:border-slate-700">
           {parsedVariables.map((v) => (
             <div key={v.token} className="flex flex-col justify-end gap-1">
               {v.name && <label className={`text-[10px] font-semibold ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>{v.name}</label>}
@@ -229,14 +259,13 @@ export const ActionMenuTabContent: React.FC<ActionMenuTabContentProps> = ({
   const [loading, setLoading] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedDialectFilter, setSelectedDialectFilter] = useState<string>('Все');
-  const [onlyPipelines, setOnlyPipelines] = useState<boolean>(false);
   const [onlyJobs, setOnlyJobs] = useState<boolean>(false);
   const [runningSnippetId, setRunningSnippetId] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState<number>(1);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, selectedDialectFilter, onlyPipelines, onlyJobs]);
+  }, [searchQuery, selectedDialectFilter, onlyJobs]);
 
   const reloadSnippets = async (showSpinner: boolean = false) => {
     if (showSpinner && snippets.length === 0) {
@@ -323,7 +352,7 @@ export const ActionMenuTabContent: React.FC<ActionMenuTabContentProps> = ({
     const dialectsArr = Array.from(dialectsSet).sort((a, b) => {
       if (a === 'General') return -1;
       if (b === 'General') return 1;
-      return a.localeCompare(b, 'ru', { sensitivity: 'base' });
+      return naturalStringCompare(a, b);
     });
 
     return { 
@@ -345,25 +374,21 @@ export const ActionMenuTabContent: React.FC<ActionMenuTabContentProps> = ({
         if (!s.sql.trim().startsWith('-- @job')) return false;
       }
 
-      // Pipeline filter
-      if (onlyPipelines) {
-        const stmts = splitBySemicolonIgnoringQuotes(s.sql).map(st => st.trim()).filter(Boolean);
-        if (stmts.length <= 1) return false;
-      }
-
       // Search query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
-        const matchesTitle = s.title.toLowerCase().includes(q);
-        const matchesDesc = (s.description || '').toLowerCase().includes(q);
+        const displayTitle = s.isCustom ? s.title : t(s.title);
+        const displayDesc = s.isCustom ? (s.description || '') : (s.description ? t(s.description) : '');
+        const matchesTitle = s.title.toLowerCase().includes(q) || displayTitle.toLowerCase().includes(q);
+        const matchesDesc = (s.description || '').toLowerCase().includes(q) || displayDesc.toLowerCase().includes(q);
         const matchesSql = s.sql.toLowerCase().includes(q);
         const matchesDialect = (s.dialect || '').toLowerCase().includes(q);
         if (!matchesTitle && !matchesDesc && !matchesSql && !matchesDialect) return false;
       }
 
       return true;
-    });
-  }, [snippets, selectedDialectFilter, onlyPipelines, onlyJobs, searchQuery]);
+    }).sort(compareSnippetsAlphabetical);
+  }, [snippets, selectedDialectFilter, onlyJobs, searchQuery]);
 
   return (
     <div className={`flex-1 flex flex-col h-full overflow-hidden select-none ${
@@ -391,7 +416,7 @@ export const ActionMenuTabContent: React.FC<ActionMenuTabContentProps> = ({
                       : 'bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 border-slate-300/80 shadow-2xs'
                 }`}
               >
-                {dialectOption}
+                {dialectOption === 'Все' ? t('Все') : dialectOption}
               </button>
             );
           })}
@@ -399,7 +424,7 @@ export const ActionMenuTabContent: React.FC<ActionMenuTabContentProps> = ({
           <div className="h-4 w-px bg-slate-300 dark:bg-slate-700 mx-1" />
 
           <button
-            onClick={() => { setOnlyJobs(!onlyJobs); if (!onlyJobs) setOnlyPipelines(false); }}
+            onClick={() => setOnlyJobs(!onlyJobs)}
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium outline-hidden focus:outline-hidden focus:ring-0 select-none transition-colors border ${
               onlyJobs
                 ? theme === 'dark'
@@ -410,23 +435,8 @@ export const ActionMenuTabContent: React.FC<ActionMenuTabContentProps> = ({
                   : 'bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 border-slate-300/80 shadow-2xs'
             }`}
           >
-            <Layers className="w-3.5 h-3.5" />
+            <Workflow className="w-3.5 h-3.5" />
             <span>Jobs ({stats.jobsCount})</span>
-          </button>
-
-          <button
-            onClick={() => { setOnlyPipelines(!onlyPipelines); if (!onlyPipelines) setOnlyJobs(false); }}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium outline-hidden focus:outline-hidden focus:ring-0 select-none transition-colors border ${
-              onlyPipelines
-                ? theme === 'dark'
-                    ? 'bg-purple-500/15 border-purple-500/40 text-purple-300'
-                    : 'bg-purple-50 border-purple-300 text-purple-700 shadow-2xs'
-                : theme === 'dark'
-                  ? 'bg-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-750 border-slate-700/60'
-                  : 'bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 border-slate-300/80 shadow-2xs'
-            }`}
-          >
-            <span>Пайплайны ({stats.pipelineCount})</span>
           </button>
         </div>
 
@@ -437,7 +447,7 @@ export const ActionMenuTabContent: React.FC<ActionMenuTabContentProps> = ({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Поиск"
+            placeholder={t("Поиск")}
             className={`w-full pl-8 pr-3 py-1 rounded-md text-xs border outline-none transition-all ${
               theme === 'dark'
                 ? 'bg-slate-800 border-slate-700 text-slate-100 placeholder-slate-500 focus:border-blue-500'
@@ -453,7 +463,7 @@ export const ActionMenuTabContent: React.FC<ActionMenuTabContentProps> = ({
           <div className="flex flex-col items-center justify-center h-48 space-y-3">
             <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
             <span className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
-              Загрузка быстрых действий...
+              {t('Загрузка быстрых действий...')}
             </span>
           </div>
         ) : filteredSnippets.length === 0 ? (
@@ -463,16 +473,16 @@ export const ActionMenuTabContent: React.FC<ActionMenuTabContentProps> = ({
             <div className={`p-3 rounded-full mb-3 ${theme === 'dark' ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
               <Zap className="w-6 h-6" />
             </div>
-            <h3 className="text-sm font-semibold mb-1">Действия не найдены</h3>
+            <h3 className="text-sm font-semibold mb-1">{t('Действия не найдены')}</h3>
             <p className={`text-xs max-w-sm ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
-              {searchQuery || selectedDialectFilter !== 'Все' || onlyPipelines
-                ? 'Попробуйте изменить параметры поиска или сбросить фильтры.'
-                : 'Добавьте свои действия и пайплайны в Библиотеке шаблонов с категорией "Меню действий".'}
+              {searchQuery || selectedDialectFilter !== 'Все' || onlyJobs
+                ? t('Попробуйте изменить параметры поиска или сбросить фильтры.')
+                : t('Добавьте свои действия и пайплайны в Библиотеке шаблонов с категорией "Меню действий".')}
             </p>
           </div>
         ) : (
           <div className="flex flex-col min-h-full">
-            <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', alignContent: 'start' }}>
+            <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', alignContent: 'start' }}>
               {filteredSnippets.slice((currentPage - 1) * 20, currentPage * 20).map((snippet) => {
                 const isExecutingThis = isDuckDbRunning && runningSnippetId === snippet.id;
                 return (
@@ -500,7 +510,7 @@ export const ActionMenuTabContent: React.FC<ActionMenuTabContentProps> = ({
                   <ChevronLeft className="w-5 h-5" />
                 </button>
                 <span className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
-                  Страница {currentPage} из {Math.ceil(filteredSnippets.length / 20)}
+                  {t('Страница')} {currentPage} {t('из')} {Math.ceil(filteredSnippets.length / 20)}
                 </span>
                 <button
                   onClick={() => setCurrentPage((p) => Math.min(Math.ceil(filteredSnippets.length / 20), p + 1))}

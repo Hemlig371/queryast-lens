@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { X, Keyboard, RotateCcw, Settings, AlignLeft, Eye, Download, Upload, Plus, Trash2, Edit3, Check, Code, Zap, FileSpreadsheet, Palette, Columns, Calculator, Printer } from 'lucide-react';
 import { downloadFileWithFallback } from '../utils/exportUtils';
 import { AutocompleteTemplate, DEFAULT_AUTOCOMPLETE_TEMPLATES, getCustomAutocompleteTemplates } from './SqlEditor';
-import { getVersions, importVersions, SqlVersionItem } from '../utils/versionHistory';
-import { getAllSchemaCacheEntries, importSchemaCacheEntries, SchemaCacheEntry } from '../utils/schemaDbCache';
+import { getVersions, importVersions, SqlVersionItem, cleanupOldVersions } from '../utils/versionHistory';
+import { getAllSchemaCacheEntries, importSchemaCacheEntries, SchemaCacheEntry, cleanupOldSchemaCaches } from '../utils/schemaDbCache';
 import { loadSnippetsFromDB, saveSnippetsToDB } from '../utils/snippetsStorage';
 import { Snippet } from './SqlSnippetsManager';
 import { getSessionTabs, saveSessionTabs } from '../utils/sessionStorage';
@@ -12,6 +12,7 @@ import { VaultSettingsSection } from './VaultSettingsSection';
 import { ExcelSettings } from '../types/excelSettings';
 import { getSavedExcelSettings, saveExcelSettings, resetExcelSettings } from '../utils/excelSettingsStorage';
 import { ExcelSettingsTab } from './ExcelSettingsTab';
+import { t, changeLanguage, currentLang } from '../utils/i18n';
 
 export interface QuickActionTemplate {
   id: string;
@@ -74,6 +75,7 @@ export interface UiVisibilitySettings {
   duckDbTempDirectory?: string;
   duckDbExtensionDirectory?: string;
   duckDbThreads?: number;
+  duckDbInitSql?: string;
   showClickhouseConfig?: boolean;
   clickhouseMaxRows?: number;
   showExcelExport?: boolean;
@@ -139,6 +141,7 @@ export const DEFAULT_UI_VISIBILITY: UiVisibilitySettings = {
   duckDbTempDirectory: './tmp',
   duckDbExtensionDirectory: './extensions',
   duckDbThreads: 0,
+  duckDbInitSql: '',
   showClickhouseConfig: true,
   clickhouseMaxRows: 100,
   showExcelExport: true,
@@ -488,16 +491,19 @@ export async function exportWorkspaceSettings(): Promise<void> {
       }
     }
 
-    // Add IndexedDB version history
+    // Add IndexedDB version history (limited to latest 500 records to prevent massive JSON files)
     try {
+      await cleanupOldVersions();
       const versions = await getVersions();
-      backupData['sql_visualizer_version_history'] = versions;
+      const limitedVersions = versions.slice(0, 500);
+      backupData['sql_visualizer_version_history'] = limitedVersions;
     } catch (err) {
       console.warn('Failed to get IndexedDB versions for export:', err);
     }
 
     // Add IndexedDB schema cache at the very end of the JSON file
     try {
+      await cleanupOldSchemaCaches(7); // Clean up caches older than 7 days
       const schemaCaches = await getAllSchemaCacheEntries();
       backupData['sql_visualizer_schema_cache_data'] = schemaCaches;
     } catch (err) {
@@ -534,7 +540,7 @@ export async function exportWorkspaceSettings(): Promise<void> {
     downloadFileWithFallback(blob, `sql_visualizer_workspace_${dateStr}.json`);
   } catch (e) {
     console.error('Failed to export workspace', e);
-    alert('Ошибка при экспорте данных');
+    alert(t('Ошибка при экспорте данных'));
   }
 }
 
@@ -568,6 +574,9 @@ export async function importWorkspaceSettings(file: File, onBeforeImport?: () =>
           }
           if (currentVis.duckDbThreads !== undefined && Number(currentVis.duckDbThreads) !== 0) {
             existingDuckDbSettings.duckDbThreads = Number(currentVis.duckDbThreads);
+          }
+          if (currentVis.duckDbInitSql && currentVis.duckDbInitSql.trim() !== '') {
+            existingDuckDbSettings.duckDbInitSql = currentVis.duckDbInitSql;
           }
         }
       } catch {
@@ -639,11 +648,11 @@ export async function importWorkspaceSettings(file: File, onBeforeImport?: () =>
       // Mark session import flag so App.tsx unload listener doesn't overwrite imported session on page reload
       sessionStorage.setItem('sql_is_importing_session', 'true');
 
-      alert(`Успешно импортировано рабочее пространство! Страница перезагружается...`);
+      alert(t('Успешно импортировано рабочее пространство! Страница перезагружается...'));
       window.location.reload();
     } catch (err) {
       console.error('Failed to import workspace', err);
-      alert('Ошибка при импорте. Проверьте формат JSON файла.');
+      alert(t('Ошибка при импорте. Проверьте формат JSON файла.'));
     }
   };
   reader.readAsText(file);
@@ -984,7 +993,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 }`}
               >
                 <Eye className="w-3.5 h-3.5" />
-                <span>Элементы UI</span>
+                <span>{t('Элементы UI')}</span>
               </button>
               <button
                 onClick={() => setActiveTab('formatter')}
@@ -997,7 +1006,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 }`}
               >
                 <AlignLeft className="w-3.5 h-3.5" />
-                <span>Форматы</span>
+                <span>{t('Форматы')}</span>
               </button>
               <button
                 onClick={() => setActiveTab('hotkeys')}
@@ -1010,7 +1019,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 }`}
               >
                 <Keyboard className="w-3.5 h-3.5" />
-                <span>Hotkeys</span>
+                <span>{t('Hotkeys')}</span>
               </button>
               {uiVisibility.showExcelExport !== false && (
                 <button
@@ -1024,7 +1033,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   }`}
                 >
                   <FileSpreadsheet className={`w-3.5 h-3.5 ${activeTab === 'excel' ? 'text-white' : 'text-emerald-500'}`} />
-                  <span>Excel</span>
+                  <span>{t('Excel')}</span>
                 </button>
               )}
             </div>
@@ -1053,7 +1062,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <h3 className={`text-xs uppercase font-bold tracking-wider ${
                     theme === 'dark' ? 'text-slate-400' : 'text-slate-900'
                   }`}>
-                    Панель редактора SQL (слева)
+                    {t('Панель редактора SQL (слева)')}
                   </h3>
                   <button
                     onClick={handleResetDefaults}
@@ -1062,10 +1071,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-slate-100'
                         : 'bg-slate-100 border-slate-300 text-slate-900 font-bold hover:bg-slate-200 hover:text-slate-950'
                     }`}
-                    title="Сбросить параметры к исходным значениям"
+                    title={t('Сбросить параметры к исходным значениям')}
                   >
                     <RotateCcw className="w-3 h-3 text-amber-500" />
-                    <span>Сбросить</span>
+                    <span>{t('Сбросить')}</span>
                   </button>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -1113,8 +1122,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           />
                           <div className="flex-1 min-w-0">
                             <label htmlFor={`toggle-${item.key}`} className="cursor-pointer select-none block">
-                              <div className="text-xs font-semibold">{item.label}</div>
-                              <div className="text-[10px] opacity-75 mb-1">{item.desc}</div>
+                              <div className="text-xs font-semibold">{t(item.label)}</div>
+                              <div className="text-[10px] opacity-75 mb-1">{t(item.desc)}</div>
                             </label>
                             {item.key === 'showDuckDbConfig' && isChecked && (
                               <div className="mt-2.5 pt-2 border-t border-slate-700/40 space-y-2 text-[11px]" onClick={e => e.stopPropagation()}>
@@ -1188,6 +1197,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                       className={`w-28 px-1.5 py-0.5 text-xs rounded border outline-none ${theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'}`}
                                     />
                                   </div>
+
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="opacity-80 shrink-0">Init SQL Script:</span>
+                                    <input
+                                      type="text"
+                                      value={uiVisibility.duckDbInitSql ?? ''}
+                                      onChange={e => updateDuckDbSettings({ duckDbInitSql: e.target.value })}
+                                      placeholder="e.g. LOAD 'spatial';"
+                                      className={`w-28 px-1.5 py-0.5 text-xs rounded border outline-none ${theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'}`}
+                                    />
+                                  </div>
                                 </div>
                               </div>
                             )}
@@ -1220,7 +1240,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <h3 className={`text-xs uppercase font-bold tracking-wider border-b pb-1 ${
                   theme === 'dark' ? 'text-slate-400 border-slate-700/50' : 'text-slate-900 border-slate-300'
                 }`}>
-                  Панель графа и холста (справа)
+                  {t('Панель графа и холста (справа)')}
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   {[
@@ -1253,8 +1273,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           className="mt-0.5 rounded border-slate-600 text-blue-600 focus:ring-blue-500 w-4 h-4 shrink-0"
                         />
                         <div>
-                          <div className="text-xs font-semibold">{item.label}</div>
-                          <div className="text-[10px] opacity-75">{item.desc}</div>
+                          <div className="text-xs font-semibold">{t(item.label)}</div>
+                          <div className="text-[10px] opacity-75">{t(item.desc)}</div>
                         </div>
                       </label>
                     );
@@ -1267,7 +1287,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <h3 className={`text-xs uppercase font-bold tracking-wider border-b pb-1 ${
                   theme === 'dark' ? 'text-slate-400 border-slate-700/50' : 'text-slate-900 border-slate-300'
                 }`}>
-                  Библиотека шаблонов (Окно)
+                  {t('Библиотека шаблонов (Окно)')}
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   {[
@@ -1297,8 +1317,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           className="mt-0.5 rounded border-slate-600 text-blue-600 focus:ring-blue-500 w-4 h-4 shrink-0"
                         />
                         <div>
-                          <div className="text-xs font-semibold">{item.label}</div>
-                          <div className="text-[10px] opacity-75">{item.desc}</div>
+                          <div className="text-xs font-semibold">{t(item.label)}</div>
+                          <div className="text-[10px] opacity-75">{t(item.desc)}</div>
                         </div>
                       </label>
                     );
@@ -1311,7 +1331,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <h3 className={`text-xs uppercase font-bold tracking-wider border-b pb-1 ${
                   theme === 'dark' ? 'text-slate-400 border-slate-700/50' : 'text-slate-900 border-slate-300'
                 }`}>
-                  История версий (Окно)
+                  {t('История версий (Окно)')}
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   {[
@@ -1341,8 +1361,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           className="mt-0.5 rounded border-slate-600 text-blue-600 focus:ring-blue-500 w-4 h-4 shrink-0"
                         />
                         <div>
-                          <div className="text-xs font-semibold">{item.label}</div>
-                          <div className="text-[10px] opacity-75">{item.desc}</div>
+                          <div className="text-xs font-semibold">{t(item.label)}</div>
+                          <div className="text-[10px] opacity-75">{t(item.desc)}</div>
                         </div>
                       </label>
                     );
@@ -1355,7 +1375,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <h3 className={`text-xs uppercase font-bold tracking-wider border-b pb-1 ${
                   theme === 'dark' ? 'text-slate-400 border-slate-700/50' : 'text-slate-900 border-slate-300'
                 }`}>
-                  Меню Экспорта (Кнопка Export)
+                  {t('Меню Экспорта (Кнопка Export)')}
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   {[
@@ -1390,8 +1410,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           className="mt-0.5 rounded border-slate-600 text-blue-600 focus:ring-blue-500 w-4 h-4 shrink-0"
                         />
                         <div>
-                          <div className="text-xs font-semibold">{item.label}</div>
-                          <div className="text-[10px] opacity-75">{item.desc}</div>
+                          <div className="text-xs font-semibold">{t(item.label)}</div>
+                          <div className="text-[10px] opacity-75">{t(item.desc)}</div>
                         </div>
                       </label>
                     );
@@ -1399,65 +1419,94 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               </div>
 
-              {/* UI SCALE / ZOOM SETTING */}
-              <div className="space-y-3 pt-1">
-                <h3 className={`text-xs uppercase font-bold tracking-wider border-b pb-1 ${
-                  theme === 'dark' ? 'text-slate-400 border-slate-700/50' : 'text-slate-900 border-slate-300'
-                }`}>
-                  Масштаб интерфейса (Zoom)
-                </h3>
-                <div className={`p-3.5 rounded-lg border space-y-3 ${
-                  theme === 'dark' ? 'bg-slate-800/60 border-slate-700' : 'bg-slate-50 border-slate-200'
-                }`}>
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-xs font-semibold">Масштаб всего приложения</div>                    </div>
-                    <div className="flex items-center gap-2">
-                      {(uiVisibility.uiScale ?? 100) !== 100 && (
-                        <button
-                          onClick={() => updateUiScale(100)}
-                          className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
-                            theme === 'dark' ? 'bg-slate-700 border-slate-600 text-slate-300 hover:text-white' : 'bg-slate-200 border-slate-300 text-slate-700 hover:text-black'
-                          }`}
-                        >
-                          Сбросить (100%)
-                        </button>
-                      )}
+              {/* UI SCALE / ZOOM AND LANGUAGE SETTING */}
+              <div className="flex flex-col md:grid md:grid-cols-[1fr_auto] gap-4 items-start md:items-stretch pt-1">
+                {/* UI SCALE / ZOOM SETTING */}
+                <div className="flex flex-col gap-3 w-full">
+                  <h3 className={`text-xs uppercase font-bold tracking-wider border-b pb-1 ${
+                    theme === 'dark' ? 'text-slate-400 border-slate-700/50' : 'text-slate-900 border-slate-300'
+                  }`}>
+                    {t('Масштаб интерфейса (Zoom)')}
+                  </h3>
+                  <div className={`p-2.5 rounded-lg border flex items-center min-h-[46px] flex-1 ${
+                    theme === 'dark' ? 'bg-slate-800/60 border-slate-700' : 'bg-slate-50 border-slate-200'
+                  }`}>
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 w-full">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {[70, 80, 90, 100, 110, 125, 150].map((scaleVal) => (
+                          <button
+                            key={scaleVal}
+                            onClick={() => updateUiScale(scaleVal)}
+                            className={`px-2 py-1 text-xs rounded border transition-all ${
+                              (uiVisibility.uiScale ?? 100) === scaleVal
+                                ? 'bg-blue-600 border-blue-500 text-white font-bold shadow-2xs'
+                                : theme === 'dark'
+                                ? 'bg-slate-900/60 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white'
+                                : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                            }`}
+                          >
+                            {scaleVal}%
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {(uiVisibility.uiScale ?? 100) !== 100 && (
+                          <button
+                            onClick={() => updateUiScale(100)}
+                            className={`text-[10px] px-2 py-1 rounded border transition-colors ${
+                              theme === 'dark' ? 'bg-slate-700 border-slate-600 text-slate-300 hover:text-white' : 'bg-slate-200 border-slate-300 text-slate-700 hover:text-black'
+                            }`}
+                          >
+                            {t('Сбросить (100%)')}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
+                </div>
 
-                  {/* Quick Preset Buttons */}
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {[67, 75, 80, 90, 100, 110, 125, 150].map((scaleVal) => (
-                      <button
-                        key={scaleVal}
-                        onClick={() => updateUiScale(scaleVal)}
-                        className={`px-2.5 py-1 text-xs rounded border transition-all ${
-                          (uiVisibility.uiScale ?? 100) === scaleVal
-                            ? 'bg-blue-600 border-blue-500 text-white font-bold shadow-2xs'
-                            : theme === 'dark'
-                            ? 'bg-slate-900/60 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white'
-                            : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100 hover:text-slate-900'
-                        }`}
+                {/* LANGUAGE SETTING */}
+                <div className="flex flex-col gap-3 w-full md:min-w-[140px]">
+                  <h3 className={`text-xs uppercase font-bold tracking-wider border-b pb-1 ${
+                    theme === 'dark' ? 'text-slate-400 border-slate-700/50' : 'text-slate-900 border-slate-300'
+                  }`}>
+                    {t('Язык (Language)')}
+                  </h3>
+                  <div className={`p-2.5 rounded-lg border flex items-center justify-center min-h-[46px] flex-1 ${
+                    theme === 'dark' ? 'bg-slate-800/60 border-slate-700' : 'bg-slate-50 border-slate-200'
+                  }`}>
+                    <div className="flex bg-slate-900/10 dark:bg-slate-900/40 p-0.5 rounded-lg border border-slate-300 dark:border-slate-700/50 w-full relative">
+                      {/* Animated indicator */}
+                      <div 
+                        className="absolute inset-y-1 bg-white dark:bg-blue-600 rounded shadow transition-all duration-300 ease-out z-0"
+                        style={{
+                          width: 'calc(50% - 4px)',
+                          left: currentLang === 'en' ? 'calc(50% + 2px)' : '2px',
+                        }}
+                      />
+                      
+                      <button 
+                        className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-colors relative z-10 ${
+                          currentLang === 'ru' 
+                            ? 'text-blue-600 dark:text-white' 
+                            : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                        }`} 
+                        onClick={() => changeLanguage('ru')}
                       >
-                        {scaleVal}%
+                        RU
                       </button>
-                    ))}
-                  </div>
-
-                  {/* Range Slider */}
-                  <div className="flex items-center gap-3 pt-1">
-                    <span className="text-[10px] opacity-60">50%</span>
-                    <input
-                      type="range"
-                      min={50}
-                      max={200}
-                      step={5}
-                      value={uiVisibility.uiScale ?? 100}
-                      onChange={(e) => updateUiScale(Number(e.target.value))}
-                      className="flex-1 accent-blue-500 cursor-pointer h-1.5 bg-slate-700 rounded-lg"
-                    />
-                    <span className="text-[10px] opacity-60">200%</span>
+                      
+                      <button 
+                        className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-colors relative z-10 ${
+                          currentLang === 'en' 
+                            ? 'text-blue-600 dark:text-white' 
+                            : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                        }`} 
+                        onClick={() => changeLanguage('en')}
+                      >
+                        ENG
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1474,10 +1523,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <label className={`font-bold text-xs block ${theme === 'dark' ? 'text-slate-200' : 'text-slate-900'}`}>
-                      Перечисление столбцов и выражений в одну строку
+                      {t('Перечисление столбцов и выражений в одну строку')}
                     </label>
                     <p className={`text-[11px] mt-0.5 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>
-                      Управляет порогом переноса строк (Expression Width). Повысьте значение, чтобы список столбцов `SELECT a, b, c` оставался в одну компактную строку.
+                      {t('Управляет порогом переноса строк (Expression Width). Повысьте значение, чтобы список столбцов `SELECT a, b, c` оставался в одну компактную строку.')}
                     </p>
                   </div>
                   <button
@@ -1487,10 +1536,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-slate-100'
                         : 'bg-slate-100 border-slate-300 text-slate-900 font-bold hover:bg-slate-200 hover:text-slate-950'
                     }`}
-                    title="Сбросить параметры к исходным значениям"
+                    title={t('Сбросить параметры к исходным значениям')}
                   >
                     <RotateCcw className="w-3 h-3 text-amber-500" />
-                    <span>Сбросить</span>
+                    <span>{t('Сбросить')}</span>
                   </button>
                 </div>
 
@@ -1513,18 +1562,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           : 'bg-white border-slate-300 text-slate-800 hover:bg-slate-100'
                       }`}
                     >
-                      <div className="text-xs font-bold">{preset.label}</div>
+                      <div className="text-xs font-bold">{t(preset.label)}</div>
                       <div className={`text-[10px] ${
                         formatterSettings.expressionWidth === preset.width
                           ? theme === 'dark' ? 'text-blue-300' : 'text-blue-800'
                           : 'opacity-75'
-                      }`}>{preset.desc}</div>
+                      }`}>{t(preset.desc)}</div>
                     </button>
                   ))}
                 </div>
 
                 <div className="flex items-center gap-3 pt-1">
-                  <span className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>Макс. длина строки:</span>
+                  <span className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>{t('Макс. длина строки:')}</span>
                   <input
                     type="number"
                     min={1}
@@ -1535,7 +1584,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-900'
                     }`}
                   />
-                  <span className="text-[11px] text-slate-500">символов (1 = каждый столбец с новой строки)</span>
+                  <span className="text-[11px] text-slate-500">{t('символов (1 = каждый столбец с новой строки)')}</span>
                 </div>
               </div>
 
@@ -1545,10 +1594,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               }`}>
                 <div>
                   <label className={`font-bold text-xs block ${theme === 'dark' ? 'text-slate-200' : 'text-slate-900'}`}>
-                    Регистр ключевых слов (SELECT, FROM, WHERE...)
+                    {t('Регистр ключевых слов (SELECT, FROM, WHERE...)')}
                   </label>
                   <p className={`text-[11px] mt-0.5 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>
-                    Приведение ключевых слов к верхнему или нижнему регистру
+                    {t('Приведение ключевых слов к верхнему или нижнему регистру')}
                   </p>
                 </div>
 
@@ -1571,12 +1620,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           : 'bg-white border-slate-300 text-slate-800 hover:bg-slate-100'
                       }`}
                     >
-                      <div className="text-xs font-bold">{opt.label}</div>
+                      <div className="text-xs font-bold">{t(opt.label)}</div>
                       <div className={`text-[10px] font-mono ${
                         formatterSettings.keywordCase === opt.id
                           ? theme === 'dark' ? 'text-blue-300' : 'text-blue-800'
                           : 'opacity-75'
-                      }`}>{opt.example}</div>
+                      }`}>{t(opt.example)}</div>
                     </button>
                   ))}
                 </div>
@@ -1588,7 +1637,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               }`}>
                 <div>
                   <label className={`font-bold text-xs block mb-1.5 ${theme === 'dark' ? 'text-slate-200' : 'text-slate-900'}`}>
-                    Размер отступа
+                    {t('Размер отступа')}
                   </label>
                   <select
                     value={formatterSettings.useTabs ? 'tab' : formatterSettings.tabWidth}
@@ -1603,15 +1652,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-900'
                     }`}
                   >
-                    <option value="2">2 пробела</option>
-                    <option value="4">4 пробела</option>
-                    <option value="tab">Табуляция (Tab)</option>
+                    <option value="2">{t('2 пробела')}</option>
+                    <option value="4">{t('4 пробела')}</option>
+                    <option value="tab">{t('Табуляция (Tab)')}</option>
                   </select>
                 </div>
 
                 <div>
                   <label className={`font-bold text-xs block mb-1.5 ${theme === 'dark' ? 'text-slate-200' : 'text-slate-900'}`}>
-                    Плотные операторы
+                    {t('Плотные операторы')}
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer mt-2">
                     <input
@@ -1621,14 +1670,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       className="rounded border-slate-700 text-blue-600 focus:ring-blue-500 w-4 h-4"
                     />
                     <span className={`text-xs ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>
-                      Без пробелов вокруг операторов (`a+b`)
+                      {t('Без пробелов вокруг операторов (`a+b`)')}
                     </span>
                   </label>
                 </div>
 
                 <div>
                   <label className={`font-bold text-xs block mb-1.5 ${theme === 'dark' ? 'text-slate-200' : 'text-slate-900'}`}>
-                    Запятые в начале строки
+                    {t('Запятые в начале строки')}
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer mt-2">
                     <input
@@ -1638,7 +1687,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       className="rounded border-slate-700 text-blue-600 focus:ring-blue-500 w-4 h-4"
                     />
                     <span className={`text-xs ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>
-                      Переносить запятую на новую строку (, col)
+                      {t('Переносить запятую на новую строку (, col)')}
                     </span>
                   </label>
                 </div>
@@ -1651,10 +1700,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="flex items-center justify-between">
                   <div>
                     <label className={`font-bold text-xs block ${theme === 'dark' ? 'text-slate-200' : 'text-slate-900'}`}>
-                      Шаблоны автодополнения SQL (Autocomplete)
+                      {t('Шаблоны автодополнения SQL (Autocomplete)')}
                     </label>
                     <p className={`text-[11px] mt-0.5 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>
-                      Добавляет, редактирует и удаляет пользовательские шаблоны для выпадающего списка автокомплита
+                      {t('Добавляет, редактирует и удаляет пользовательские шаблоны для выпадающего списка автокомплита')}
                     </p>
                   </div>
                   <button
@@ -1665,10 +1714,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-slate-100'
                         : 'bg-white border-slate-300 text-slate-800 hover:bg-slate-100'
                     }`}
-                    title="Восстановить стандартные шаблоны"
+                    title={t('Восстановить стандартные шаблоны')}
                   >
                     <RotateCcw className="w-3 h-3 text-amber-500" />
-                    <span>Сбросить шаблоны</span>
+                    <span>{t('Сбросить шаблоны')}</span>
                   </button>
                 </div>
 
@@ -1678,12 +1727,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 }`}>
                   <div className="text-xs font-bold flex items-center gap-1.5 text-blue-500">
                     <Plus className="w-3.5 h-3.5" />
-                    <span>Добавить новый шаблон</span>
+                    <span>{t('Добавить новый шаблон')}</span>
                   </div>
                   <div className="flex flex-col sm:flex-row gap-2 items-center">
                     <input
                       type="text"
-                      placeholder="Триггер (SELECT)"
+                      placeholder={t('Триггер (SELECT)')}
                       value={newKeyword}
                       onChange={(e) => setNewKeyword(e.target.value)}
                       className={`w-full sm:w-28 px-2 py-1.5 text-xs font-mono rounded border outline-none shrink-0 ${
@@ -1692,7 +1741,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     />
                     <input
                       type="text"
-                      placeholder="Текст вставки (напр. SELECT * FROM )"
+                      placeholder={t('Текст вставки (напр. SELECT * FROM )')}
                       value={newInsertion}
                       onChange={(e) => setNewInsertion(e.target.value)}
                       className={`w-full sm:flex-1 px-2 py-1.5 text-xs font-mono rounded border outline-none min-w-0 ${
@@ -1701,7 +1750,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     />
                     <input
                       type="text"
-                      placeholder="Описание"
+                      placeholder={t('Описание')}
                       value={newDesc}
                       onChange={(e) => setNewDesc(e.target.value)}
                       className={`w-full sm:w-32 px-2 py-1.5 text-xs rounded border outline-none shrink-0 ${
@@ -1713,7 +1762,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       onClick={handleAddTemplate}
                       disabled={!newKeyword.trim()}
                       className="p-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold text-xs rounded transition-colors shrink-0 flex items-center justify-center h-8 w-8"
-                      title="Добавить шаблон"
+                      title={t('Добавить шаблон')}
                     >
                       <Plus className="w-4 h-4" />
                     </button>
@@ -1733,7 +1782,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         <div className="flex-1 flex flex-col sm:flex-row gap-1.5 items-center w-full min-w-0">
                           <input
                             type="text"
-                            placeholder="Триггер"
+                            placeholder={t('Триггер')}
                             value={editKeyword}
                             onChange={(e) => setEditKeyword(e.target.value)}
                             className={`w-full sm:w-28 shrink-0 px-2 py-1 text-xs font-mono rounded border min-w-0 ${
@@ -1742,7 +1791,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           />
                           <input
                             type="text"
-                            placeholder="Текст вставки"
+                            placeholder={t('Текст вставки')}
                             value={editInsertion}
                             onChange={(e) => setEditInsertion(e.target.value)}
                             className={`w-full sm:flex-1 px-2 py-1 text-xs font-mono rounded border min-w-0 ${
@@ -1751,7 +1800,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           />
                           <input
                             type="text"
-                            placeholder="Описание"
+                            placeholder={t('Описание')}
                             value={editDesc}
                             onChange={(e) => setEditDesc(e.target.value)}
                             className={`w-full sm:w-28 shrink-0 px-2 py-1 text-xs rounded border min-w-0 ${
@@ -1763,7 +1812,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               type="button"
                               onClick={handleSaveEditTemplate}
                               className="p-1.5 bg-emerald-600 text-white rounded hover:bg-emerald-500 transition-colors"
-                              title="Сохранить изменения"
+                              title={t('Сохранить изменения')}
                             >
                               <Check className="w-3.5 h-3.5" />
                             </button>
@@ -1771,7 +1820,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               type="button"
                               onClick={() => setEditingId(null)}
                               className="p-1.5 bg-slate-600 text-white rounded hover:bg-slate-500 transition-colors"
-                              title="Отмена"
+                              title={t('Отмена')}
                             >
                               <X className="w-3.5 h-3.5" />
                             </button>
@@ -1798,7 +1847,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               className={`p-1 rounded transition-colors ${
                                 theme === 'dark' ? 'hover:bg-slate-700 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-100 text-slate-500 hover:text-slate-800'
                               }`}
-                              title="Редактировать шаблон"
+                              title={t('Редактировать шаблон')}
                             >
                               <Edit3 className="w-3.5 h-3.5" />
                             </button>
@@ -1806,7 +1855,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               type="button"
                               onClick={() => handleDeleteTemplate(tpl.id)}
                               className="p-1 rounded text-red-400 hover:bg-red-500/20 hover:text-red-300 transition-colors"
-                              title="Удалить шаблон"
+                              title={t('Удалить шаблон')}
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -1825,10 +1874,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="flex items-center justify-between">
                   <div>
                     <label className={`font-bold text-xs block ${theme === 'dark' ? 'text-slate-200' : 'text-slate-900'}`}>
-                      Быстрые действия над результатами запроса (Quick Actions)
+                      {t('Быстрые действия над результатами запроса (Quick Actions)')}
                     </label>
                     <p className={`text-[11px] mt-0.5 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>
-                      Настройка шаблонов быстрых действий для кнопки «Быстрые действия» (использует <code className="font-mono text-amber-500">{"{table}"}</code>)
+                      {t('Настройка шаблонов быстрых действий для кнопки «Быстрые действия» (использует {table})')}
                     </p>
                   </div>
                   <button
@@ -1839,10 +1888,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-slate-100'
                         : 'bg-white border-slate-300 text-slate-800 hover:bg-slate-100'
                     }`}
-                    title="Восстановить быстрые действия по умолчанию"
+                    title={t('Восстановить быстрые действия по умолчанию')}
                   >
                     <RotateCcw className="w-3 h-3 text-amber-500" />
-                    <span>Сбросить действия</span>
+                    <span>{t('Сбросить действия')}</span>
                   </button>
                 </div>
 
@@ -1852,12 +1901,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 }`}>
                   <div className="text-xs font-bold flex items-center gap-1.5 text-amber-500">
                     <Plus className="w-3.5 h-3.5" />
-                    <span>Добавить быстрое действие</span>
+                    <span>{t('Добавить быстрое действие')}</span>
                   </div>
                   <div className="flex flex-col sm:flex-row gap-2 items-center">
                     <input
                       type="text"
-                      placeholder="Название (напр. Схема)"
+                      placeholder={t('Название (напр. Схема)')}
                       value={newQaName}
                       onChange={(e) => setNewQaName(e.target.value)}
                       className={`w-full sm:w-36 px-2 py-1.5 text-xs rounded border outline-none shrink-0 ${
@@ -1866,7 +1915,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     />
                     <input
                       type="text"
-                      placeholder="Запрос (напр. SELECT * FROM {table} LIMIT 10;)"
+                      placeholder={t('Запрос (напр. SELECT * FROM {table} LIMIT 10;)')}
                       value={newQaTemplate}
                       onChange={(e) => setNewQaTemplate(e.target.value)}
                       className={`w-full sm:flex-1 px-2 py-1.5 text-xs font-mono rounded border outline-none min-w-0 ${
@@ -1878,7 +1927,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       onClick={handleAddQuickAction}
                       disabled={!newQaName.trim() || !newQaTemplate.trim()}
                       className="p-1.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-bold text-xs rounded transition-colors shrink-0 flex items-center justify-center h-8 w-8"
-                      title="Добавить действие"
+                      title={t('Добавить действие')}
                     >
                       <Plus className="w-4 h-4" />
                     </button>
@@ -1917,7 +1966,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               type="button"
                               onClick={handleSaveEditQuickAction}
                               className="p-1 bg-emerald-600 text-white rounded hover:bg-emerald-500 transition-colors"
-                              title="Сохранить изменения"
+                              title={t('Сохранить изменения')}
                             >
                               <Check className="w-3.5 h-3.5" />
                             </button>
@@ -1925,7 +1974,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               type="button"
                               onClick={() => setEditingQaId(null)}
                               className="p-1 bg-slate-600 text-white rounded hover:bg-slate-500 transition-colors"
-                              title="Отмена"
+                              title={t('Отмена')}
                             >
                               <X className="w-3.5 h-3.5" />
                             </button>
@@ -1935,7 +1984,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         <>
                           <div className="flex items-center gap-2 overflow-hidden flex-1">
                             <Zap className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                            <span className="font-bold text-amber-500 shrink-0">{qa.name}</span>
+                            <span className="font-bold text-amber-500 shrink-0">{t(qa.name)}</span>
                             <span className={`text-[11px] font-mono truncate ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>
                               → {qa.template}
                             </span>
@@ -1947,7 +1996,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               className={`p-1 rounded transition-colors ${
                                 theme === 'dark' ? 'hover:bg-slate-700 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-100 text-slate-500 hover:text-slate-800'
                               }`}
-                              title="Редактировать действие"
+                              title={t('Редактировать действие')}
                             >
                               <Edit3 className="w-3.5 h-3.5" />
                             </button>
@@ -1955,7 +2004,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               type="button"
                               onClick={() => handleDeleteQuickAction(qa.id)}
                               className="p-1 rounded text-red-400 hover:bg-red-500/20 hover:text-red-300 transition-colors"
-                              title="Удалить действие"
+                              title={t('Удалить действие')}
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -1988,7 +2037,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       <h3 className={`text-xs uppercase font-bold tracking-wider ${
                         theme === 'dark' ? 'text-slate-400' : 'text-slate-900'
                       }`}>
-                        {cat}
+                        {t(cat)}
                       </h3>
                       {index === 0 && (
                         <button
@@ -1998,10 +2047,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-slate-100'
                               : 'bg-slate-100 border-slate-300 text-slate-900 font-bold hover:bg-slate-200 hover:text-slate-950'
                           }`}
-                          title="Сбросить параметры к исходным значениям"
+                          title={t('Сбросить параметры к исходным значениям')}
                         >
                           <RotateCcw className="w-3 h-3 text-amber-500" />
-                          <span>Сбросить</span>
+                          <span>{t('Сбросить')}</span>
                         </button>
                       )}
                     </div>
@@ -2025,11 +2074,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               <div className={`font-semibold text-xs ${
                                 theme === 'dark' ? 'text-slate-100' : 'text-slate-900 font-bold'
                               }`}>
-                                {item.label}
+                                {t(item.label)}
                               </div>
                               <div className={`text-[11px] ${
                                 theme === 'dark' ? 'text-slate-400' : 'text-slate-700'
-                              }`}>{item.description}</div>
+                              }`}>{t(item.description)}</div>
                             </div>
 
                             {item.id === 'tabSwitchModifier' ? (
@@ -2062,7 +2111,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                     : 'bg-white hover:bg-slate-100 border-slate-300 text-blue-800 font-bold shadow-2xs'
                                 }`}
                               >
-                                {isListening ? 'Нажмите клавиши...' : currentKey}
+                                {isListening ? t('Нажмите клавиши...') : currentKey}
                               </button>
                             )}
                           </div>
@@ -2090,10 +2139,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   ? 'bg-slate-750 hover:bg-slate-700 border-slate-600 text-slate-200'
                   : 'bg-white hover:bg-slate-50 border-slate-300 text-slate-800 shadow-2xs'
               }`}
-              title="Экспортировать все настройки, шаблоны и историю в JSON файл"
+              title={t('Экспортировать все настройки, шаблоны и историю в JSON файл')}
             >
               <Download className="w-3.5 h-3.5 text-blue-500" />
-              <span>Экспорт</span>
+              <span>{t('Экспорт')}</span>
             </button>
 
             <label
@@ -2102,10 +2151,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   ? 'bg-slate-750 hover:bg-slate-700 border-slate-600 text-slate-200'
                   : 'bg-white hover:bg-slate-50 border-slate-300 text-slate-800 shadow-2xs'
               }`}
-              title="Импортировать резервную копию JSON для переноса на другой ПК"
+              title={t('Импортировать резервную копию JSON для переноса на другой ПК')}
             >
               <Upload className="w-3.5 h-3.5 text-emerald-500" />
-              <span>Импорт</span>
+              <span>{t('Импорт')}</span>
               <input
                 type="file"
                 accept=".json"
@@ -2119,7 +2168,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             onClick={onClose}
             className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs rounded-md shadow-sm transition-colors"
           >
-            Готово
+            {t('Готово')}
           </button>
         </div>
       </div>

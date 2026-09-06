@@ -1,3 +1,4 @@
+import { t } from '../utils/i18n';
 import React, { useState, useEffect, useMemo } from 'react';
 import { downloadFileWithFallback } from '../utils/exportUtils';
 import { 
@@ -10,7 +11,8 @@ import {
   Clock, 
   FileText, 
   Check, 
-  Download, 
+  Download,
+  Layers, 
   ArrowLeftRight,
   Info
 } from 'lucide-react';
@@ -32,6 +34,7 @@ interface VersionHistoryModalProps {
   theme: 'dark' | 'light';
   uiVisibility?: UiVisibilitySettings;
   currentDialect?: string;
+  currentTabTitle?: string;
 }
 
 interface DiffLine {
@@ -95,7 +98,8 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
   onRestoreVersion,
   theme,
   uiVisibility,
-  currentDialect
+  currentDialect,
+  currentTabTitle
 }) => {
   const currentSql = typeof rawCurrentSql === 'string' ? rawCurrentSql : '';
   const [versions, setVersions] = useState<SqlVersionItem[]>([]);
@@ -104,6 +108,12 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
   const [newLabel, setNewLabel] = useState('');
   const [showDiff, setShowDiff] = useState(false);
   const [restoredId, setRestoredId] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 20;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery]);
 
   const loadHistory = async () => {
     const list = await getVersions();
@@ -120,16 +130,17 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
   }, [isOpen]);
 
   const diffResult = useMemo(() => {
-    if (!selectedVersion) return [];
+    if (!showDiff || !selectedVersion) return [];
     return computeLineDiff(selectedVersion.sql, currentSql);
-  }, [selectedVersion, currentSql]);
+  }, [showDiff, selectedVersion, currentSql]);
 
   if (!isOpen) return null;
 
   const handleCreateSnapshot = async () => {
     if (!currentSql.trim()) return;
     try {
-      const item = await saveVersion(currentSql, newLabel.trim() || 'Ручной снимок', false);
+      const defaultLabel = currentTabTitle || t('Вкладка');
+      const item = await saveVersion(currentSql, newLabel.trim() || defaultLabel, false);
       setNewLabel('');
       await loadHistory();
       setSelectedVersion(item);
@@ -148,7 +159,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
   };
 
   const handleClearAll = async () => {
-    if (window.confirm('Вы уверены, что хотите полностью очистить всю историю версий?')) {
+    if (window.confirm(t('Вы уверены, что хотите полностью очистить всю историю версий?'))) {
       await clearAllVersions();
       setSelectedVersion(null);
       await loadHistory();
@@ -169,21 +180,59 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
     downloadFileWithFallback(blob, `sql-history-export-${Date.now()}.json`);
   };
 
+  const handleExportZip = async () => {
+    try {
+      const JSZip = (await import('jszip')).default;
+      const zip = new JSZip();
+
+      versions.forEach(v => {
+        // 1. Ручной снимок vs Автосохранение
+        const rootFolder = v.isAutoSave ? t('Автосохранение') : t('Ручной снимок');
+        
+        // 2. Метка (Отдельная папка)
+        const rawLabel = v.label && v.label.trim() ? v.label : t('Без метки');
+        const tagFolder = rawLabel.replace(/[/\\:*?"<>|]/g, '_').trim() || t('Без_метки');
+
+        // 3. Временная метка
+        // Remove commas from formattedTime, then replace unsafe chars with dashes and spaces with underscores
+        const safeTime = v.formattedTime.replace(/,/g, '').replace(/[/\\:*?"<>|]/g, '-').replace(/\s+/g, '_');
+        const fileName = `${safeTime}.sql`;
+
+        let fileContent = '';
+        if (v.label) {
+          fileContent += `-- ${v.label}\n\n`;
+        }
+        fileContent += v.sql;
+
+        zip.file(`${rootFolder}/${tagFolder}/${fileName}`, fileContent);
+      });
+
+      const blob = await zip.generateAsync({ type: 'blob' });
+      downloadFileWithFallback(blob, `sql_history_${new Date().toISOString().slice(0,10)}.zip`);
+    } catch (err) {
+      console.error('Failed to generate ZIP archive', err);
+    }
+  };
+
   const filteredVersions = versions.filter(v => 
     (v.label && v.label.toLowerCase().includes(searchQuery.toLowerCase())) ||
     v.sql.toLowerCase().includes(searchQuery.toLowerCase()) ||
     v.formattedTime.includes(searchQuery)
   );
 
+  const totalPages = Math.max(1, Math.ceil(filteredVersions.length / ITEMS_PER_PAGE));
+  const effectivePage = Math.min(currentPage, totalPages);
+  const paginatedVersions = filteredVersions.slice((effectivePage - 1) * ITEMS_PER_PAGE, effectivePage * ITEMS_PER_PAGE);
+
   const formatRelativeTime = (timestamp: number) => {
     const diffSec = Math.floor((Date.now() - timestamp) / 1000);
-    if (diffSec < 60) return 'Только что';
+    if (diffSec < 60) return t('Только что');
     const diffMin = Math.floor(diffSec / 60);
-    if (diffMin < 60) return `${diffMin} мин назад`;
+    if (diffMin < 60) return `${diffMin}${t(' мин назад')}`;
     const diffHours = Math.floor(diffMin / 60);
-    if (diffHours < 24) return `${diffHours} ч назад`;
+    if (diffHours < 24) return `${diffHours}${t(' ч назад')}`;
     const diffDays = Math.floor(diffHours / 24);
-    return `${diffDays} дн назад`;
+    return `${diffDays}${t(' дн назад')}`;
   };
 
   return (
@@ -215,26 +264,41 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
               <h2 className={`text-sm ${
                 theme === 'dark' ? 'text-slate-100' : 'text-slate-800'
               }`}>
-                История версий кода
+                {t('История версий кода')}
               </h2>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
             {uiVisibility?.showHistoryExport !== false && (
-            <button
-              onClick={handleExportJson}
-              disabled={versions.length === 0}
-              className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border transition-colors disabled:opacity-40 ${
-                theme === 'dark' 
-                  ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200' 
-                  : 'bg-white hover:bg-slate-50 border-slate-300 text-slate-800 shadow-2xs'
-              }`}
-              title="Экспорт снимков в JSON файл"
-            >
-              <Download className="w-3.5 h-3.5 text-blue-500" />
-              <span>Экспорт</span>
-            </button>
+            <>
+              <button
+                onClick={handleExportZip}
+                disabled={versions.length === 0}
+                className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border transition-colors disabled:opacity-40 ${
+                  theme === 'dark' 
+                    ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200' 
+                    : 'bg-white hover:bg-slate-50 border-slate-300 text-slate-800 shadow-2xs'
+                }`}
+                title={t("Экспорт снимков в ZIP архив (.sql)")}
+              >
+                <Layers className="w-3.5 h-3.5 text-emerald-500" />
+                <span>{t("Экспорт ZIP")}</span>
+              </button>
+              <button
+                onClick={handleExportJson}
+                disabled={versions.length === 0}
+                className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border transition-colors disabled:opacity-40 ${
+                  theme === 'dark' 
+                    ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200' 
+                    : 'bg-white hover:bg-slate-50 border-slate-300 text-slate-800 shadow-2xs'
+                }`}
+                title={t("Экспорт снимков в JSON файл")}
+              >
+                <Download className="w-3.5 h-3.5 text-blue-500" />
+                <span className="hidden sm:inline">{t("Экспорт JSON")}</span>
+              </button>
+            </>
             )}
 
             <button
@@ -263,7 +327,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
               <div className="flex items-center gap-2">
                 <input
                   type="text"
-                  placeholder="Метка снимка..."
+                  placeholder={currentTabTitle ? `${t("Метка снимка...")} (${currentTabTitle})` : t("Метка снимка...")}
                   value={newLabel}
                   onChange={(e) => setNewLabel(e.target.value)}
                   className={`flex-1 text-xs px-2.5 py-1.5 rounded border focus:outline-hidden ${
@@ -277,7 +341,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
                   className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded flex items-center gap-1 shadow-xs transition-colors shrink-0"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>Снимок</span>
+                  <span>{t("Снимок")}</span>
                 </button>
               </div>
               )}
@@ -287,7 +351,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
                 <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
                 <input
                   type="text"
-                  placeholder="Поиск по истории..."
+                  placeholder={t("Поиск по истории...")}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className={`w-full text-xs pl-8 pr-2.5 py-1.5 rounded border focus:outline-hidden ${
@@ -307,11 +371,11 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
                 <div className="text-center py-12 px-4 text-xs text-slate-400 space-y-2">
                   <Clock className="w-8 h-8 mx-auto opacity-40 text-slate-400" />
                   <p className={theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}>
-                    История версий пуста
+                    {t("История версий пуста")}
                   </p>
                 </div>
               ) : (
-                filteredVersions.map((ver) => {
+                paginatedVersions.map((ver) => {
                   const isSelected = selectedVersion?.id === ver.id;
                   return (
                     <div
@@ -347,7 +411,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
                         <span>{ver.formattedTime}</span>
                         <div className="flex items-center gap-2 font-mono text-[10px]">
                           <span className={theme === 'dark' ? 'text-blue-400' : 'text-blue-700'}></span>
-                          <span className={theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}>{ver.lineCount} строк</span>
+                          <span className={theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}>{ver.lineCount}{t(" строк")}</span>
                         </div>
                       </div>
 
@@ -355,7 +419,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
                       <button
                         onClick={(e) => handleDeleteVersion(ver.id, e)}
                         className="absolute right-1.5 top-2 p-1.5 rounded opacity-0 group-hover:opacity-100 hover:bg-red-500/20 text-slate-400 hover:text-red-500 transition-all z-10"
-                        title="Удалить запись"
+                        title={t("Удалить запись")}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -367,10 +431,37 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
 
             {/* FOOTER CLEAR */}
             {versions.length > 0 && (
-              <div className={`p-2.5 border-t flex items-center justify-between text-[11px] ${
+              <div className={`p-2.5 border-t flex items-center justify-between text-[11px] min-h-[44px] ${
                 theme === 'dark' ? 'border-slate-700/50 text-slate-400' : 'border-slate-200 text-slate-600'
               }`}>
-                <span>Записей: {versions.length}</span>
+                <span>{t("Записей:")} {filteredVersions.length}</span>
+                {totalPages > 1 && (
+                  <div className="flex items-center gap-1">
+                    <button
+                      disabled={effectivePage <= 1}
+                      onClick={() => setCurrentPage(effectivePage - 1)}
+                      className={`flex items-center justify-center px-1.5 h-6 rounded transition-all font-mono disabled:opacity-30 disabled:cursor-not-allowed ${
+                        theme === 'dark' ? 'hover:bg-slate-700 text-slate-300' : 'hover:bg-slate-300 text-slate-700'
+                      }`}
+                      title={t("Предыдущая страница")}
+                    >
+                      &lt;
+                    </button>
+                    <span className={`font-mono text-[10px] px-1 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>
+                      {effectivePage} / {totalPages}
+                    </span>
+                    <button
+                      disabled={effectivePage >= totalPages}
+                      onClick={() => setCurrentPage(effectivePage + 1)}
+                      className={`flex items-center justify-center px-1.5 h-6 rounded transition-all font-mono disabled:opacity-30 disabled:cursor-not-allowed ${
+                        theme === 'dark' ? 'hover:bg-slate-700 text-slate-300' : 'hover:bg-slate-300 text-slate-700'
+                      }`}
+                      title={t("Следующая страница")}
+                    >
+                      &gt;
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -398,10 +489,10 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
                           ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
                           : 'bg-white hover:bg-slate-100 text-slate-800 border-slate-300 shadow-2xs'
                       }`}
-                      title="Сравнить снимок с текущим кодом в редакторе"
+                      title={t("Сравнить снимок с текущим кодом в редакторе")}
                     >
                       <ArrowLeftRight className="w-3.5 h-3.5" />
-                      <span>{showDiff ? 'Код версии' : 'Сравнить (Diff)'}</span>
+                      <span>{showDiff ? t('Код версии') : t('Сравнить (Diff)')}</span>
                     </button>
                     )}
 
@@ -416,12 +507,12 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
                       {restoredId === selectedVersion.id ? (
                         <>
                           <Check className="w-3.5 h-3.5" />
-                          <span>Восстановлено!</span>
+                          <span>{t("Восстановлено!")}</span>
                         </>
                       ) : (
                         <>
                           <RotateCcw className="w-3.5 h-3.5" />
-                          <span>Восстановить в редактор</span>
+                          <span>{t("Восстановить в редактор")}</span>
                         </>
                       )}
                     </button>
@@ -438,7 +529,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
                       }`}>
                         <div className="flex items-center gap-2">
                           <Info className="w-3.5 h-3.5 text-blue-500" />
-                          <span>Сравнение: <span className={theme === 'dark' ? 'text-red-400' : 'text-red-600'}>Снимок (-)</span> VS <span className={theme === 'dark' ? 'text-emerald-400' : 'text-emerald-700'}>Текущий редактор (+)</span></span>
+                          <span>{t("Сравнение:")} <span className={theme === 'dark' ? 'text-red-400' : 'text-red-600'}>{t("Снимок (-)")}</span> VS <span className={theme === 'dark' ? 'text-emerald-400' : 'text-emerald-700'}>{t("Текущий редактор (+)")}</span></span>
                         </div>
                       </div>
 
@@ -492,7 +583,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
                 theme === 'dark' ? 'text-slate-500' : 'text-slate-500'
               }`}>
                 <FileText className="w-12 h-12 mb-2 opacity-30" />
-                <p>Выберите снимок из списка слева для просмотра</p>
+                <p>{t("Выберите снимок из списка слева для просмотра")}</p>
               </div>
             )}
           </div>

@@ -14,7 +14,7 @@ export async function getDuckDbWasm() {
     let timer = setTimeout(() => {
       duckDbInitPromise = null;
       reject(new Error("DuckDB WASM worker initialization timed out"));
-    }, 3000);
+    }, 10000);
 
     try {
       const duckdb = await import('@duckdb/duckdb-wasm');
@@ -68,6 +68,7 @@ export interface DuckDbConfigOptions {
   tempDirectory?: string;
   extensionDirectory?: string;
   threads?: number;
+  initSql?: string;
 }
 
 export async function applyDuckDbConfigWasm(options?: DuckDbConfigOptions) {
@@ -78,10 +79,6 @@ export async function applyDuckDbConfigWasm(options?: DuckDbConfigOptions) {
   }
 
   try {
-    if (options.allowUnsignedExtensions !== undefined) {
-      const val = options.allowUnsignedExtensions ? 'true' : 'false';
-      await connInstance.query(`SET allow_unsigned_extensions = ${val};`);
-    }
     if (options.memoryLimit && options.memoryLimit.trim()) {
       const cleanMem = options.memoryLimit.trim().replace(/['";]/g, '');
       await connInstance.query(`PRAGMA memory_limit = '${cleanMem}';`);
@@ -99,6 +96,14 @@ export async function applyDuckDbConfigWasm(options?: DuckDbConfigOptions) {
     }
   } catch (e) {
     console.warn("Failed to apply DuckDB WASM config PRAGMAs:", e);
+  }
+
+  if (options.initSql && options.initSql.trim()) {
+    try {
+      await connInstance.query(options.initSql);
+    } catch (e) {
+      console.warn("Failed to execute DuckDB WASM initSql:", e);
+    }
   }
 }
 
@@ -335,6 +340,7 @@ export async function ensureWasmFilesRegistered(db: any) {
       try {
         await db.registerFileBuffer(name, meta.buffer);
         wasmRegisteredSet.add(name);
+        meta.buffer = undefined;
       } catch (e) {
         console.warn("Failed to register file buffer in DuckDB WASM:", name, e);
       }
@@ -550,6 +556,11 @@ export async function registerWasmFile(fileName: string, buffer: Uint8Array): Pr
       } catch (_) {}
       await db.registerFileBuffer(cleanFileName, buffer);
       wasmRegisteredSet.add(cleanFileName);
+      // Free buffer reference from JS memory once registered in WASM VFS
+      const entry = registeredVfsFiles.get(cleanFileName);
+      if (entry) {
+        entry.buffer = undefined;
+      }
     };
 
     const timeoutPromise = new Promise((_, reject) => 

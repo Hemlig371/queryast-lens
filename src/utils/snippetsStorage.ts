@@ -26,6 +26,67 @@ function openDB(): Promise<IDBDatabase> {
 
 export let cachedSnippets: Snippet[] | null = null;
 
+export async function addSnippetToDB(snippet: Snippet): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.put(snippet);
+    tx.oncomplete = () => {
+      if (cachedSnippets) {
+        const index = cachedSnippets.findIndex(s => s.id === snippet.id);
+        if (index !== -1) {
+          cachedSnippets[index] = snippet;
+        } else {
+          cachedSnippets.push(snippet);
+        }
+      }
+      resolve();
+    };
+    tx.onerror = () => reject(tx.error);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function updateSnippetInDB(snippet: Snippet): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.put(snippet);
+    tx.oncomplete = () => {
+      if (cachedSnippets) {
+        const index = cachedSnippets.findIndex(s => s.id === snippet.id);
+        if (index !== -1) {
+          cachedSnippets[index] = snippet;
+        } else {
+          cachedSnippets.push(snippet);
+        }
+      }
+      resolve();
+    };
+    tx.onerror = () => reject(tx.error);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function deleteSnippetFromDB(id: string): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.delete(id);
+    tx.oncomplete = () => {
+      if (cachedSnippets) {
+        cachedSnippets = cachedSnippets.filter(s => s.id !== id);
+      }
+      resolve();
+    };
+    tx.onerror = () => reject(tx.error);
+    req.onerror = () => reject(req.error);
+  });
+}
+
 export async function saveSnippetsToDB(snippets: Snippet[]): Promise<void> {
   cachedSnippets = snippets;
   const db = await openDB();

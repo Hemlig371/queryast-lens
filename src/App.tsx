@@ -13,6 +13,7 @@ import {
 } from '@xyflow/react';
 import { toPng, toSvg, toJpeg, toBlob } from 'html-to-image';
 import { downloadFileWithFallback, copyToClipboard } from "./utils/exportUtils";
+import { t } from './utils/i18n';
 
 import { 
   Play, 
@@ -129,9 +130,9 @@ function getTableSizeBadge(columns: any[]): string | null {
   } else if (firstCol?.estimated_rows !== undefined && firstCol?.estimated_rows !== null) {
     const r = Number(firstCol.estimated_rows);
     if (!isNaN(r) && r >= 0) {
-      if (r < 1000) return `~${r} стр.`;
-      if (r < 1000000) return `~${(r / 1000).toFixed(1)}k стр.`;
-      return `~${(r / 1000000).toFixed(1)}M стр.`;
+      if (r < 1000) return `~${r}${t(" стр.")}`;
+      if (r < 1000000) return `~${(r / 1000).toFixed(1)}k${t(" стр.")}`;
+      return `~${(r / 1000000).toFixed(1)}M${t(" стр.")}`;
     }
   }
   return null;
@@ -186,7 +187,7 @@ const MermaidActionGroup = ({ theme, onVisualize }: { theme: 'dark'|'light', onV
       }`}>
       <div 
         className={`flex items-center justify-center px-1.5 border-r ${theme === 'dark' ? 'border-teal-700 hover:bg-teal-500' : 'border-teal-600 hover:bg-teal-600'} rounded-l-md transition-colors`}
-        title="Выбрать цвет"
+        title={t("Выбрать цвет")}
       >
         <input 
            type="color" 
@@ -199,7 +200,7 @@ const MermaidActionGroup = ({ theme, onVisualize }: { theme: 'dark'|'light', onV
       <button
          onClick={handleCopy}
          className={`px-2 border-r flex items-center justify-center transition-colors ${theme === 'dark' ? 'border-teal-700 hover:bg-teal-500' : 'border-teal-600 hover:bg-teal-600'}`}
-         title="Скопировать HEX"
+         title={t("Скопировать HEX")}
       >
          {copied ? <Check className="w-2.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5 opacity-70 hover:opacity-100" />}
       </button>
@@ -207,7 +208,7 @@ const MermaidActionGroup = ({ theme, onVisualize }: { theme: 'dark'|'light', onV
       <button
         onClick={onVisualize}
         className={`px-3 py-1.5 active:bg-teal-700 transition-colors rounded-r-md ${theme === 'dark' ? 'hover:bg-teal-500' : 'hover:bg-teal-600'}`}
-        title="Визуализировать Mermaid диаграмму"
+        title={t("Визуализировать Mermaid диаграмму")}
       >
         <span>Mermaid</span>
       </button>
@@ -328,7 +329,7 @@ export default function App() {
         }
       } catch (err: any) {
         console.warn("Attach file failed:", err);
-        setDuckDbError("Ошибка ATTACH базы данных: " + (err.message || String(err)));
+        setDuckDbError(t("Ошибка ATTACH базы данных: ") + (err.message || String(err)));
         setIsDuckDbResultVisible(true);
       } finally {
         setIsDuckDbRunning(false);
@@ -363,7 +364,7 @@ export default function App() {
         }
       } catch (err: any) {
         console.warn("Attach DuckDB failed:", err);
-        setDuckDbError("Ошибка ATTACH базы данных: " + (err.message || String(err)));
+        setDuckDbError(t("Ошибка ATTACH базы данных: ") + (err.message || String(err)));
       }
     } else {
       duckDbAttachFileInputRef.current?.click();
@@ -376,7 +377,7 @@ export default function App() {
       await fetchDuckDbSchema(true);
     } catch (err: any) {
       console.warn("Detach DuckDB failed:", err);
-      setDuckDbError("Ошибка DETACH базы данных: " + (err.message || String(err)));
+      setDuckDbError(t("Ошибка DETACH базы данных: ") + (err.message || String(err)));
     }
   };
 
@@ -962,7 +963,7 @@ export default function App() {
   }, [pagedResults, valueSearchTerm]);
 
   const computeColumnStats = useCallback((colKey: string, rows: any[]) => {
-    if (!rows || rows.length === 0) return `Количество (Count): 0\nУникальных (Distinct): 0\nПустых (Null/Empty): 0`;
+    if (!rows || rows.length === 0) return `${t("Количество (Count)")}: 0\n${t("Уникальных (Distinct)")}: 0\n${t("Пустых (Null/Empty)")}: 0`;
 
     const totalCount = rows.length;
     let nullOrEmptyCount = 0;
@@ -992,9 +993,9 @@ export default function App() {
       return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
     };
 
-    let result = `Количество (Count): ${formatInt(totalCount)}\n`;
-    result += `Уникальных (Distinct): ${formatInt(distinctCount)}\n`;
-    result += `Пустых (Null/Empty): ${formatInt(nullOrEmptyCount)}`;
+    let result = `${t("Количество (Count)")}: ${formatInt(totalCount)}\n`;
+    result += `${t("Уникальных (Distinct)")}: ${formatInt(distinctCount)}\n`;
+    result += `${t("Пустых (Null/Empty)")}: ${formatInt(nullOrEmptyCount)}`;
 
     const nonNullCount = totalCount - nullOrEmptyCount;
     const isNumericCol = nonNullCount > 0 && numericValues.length >= Math.ceil(nonNullCount * 0.5);
@@ -1020,11 +1021,11 @@ export default function App() {
         ? sortedNum[mid] 
         : (sortedNum[mid - 1] + sortedNum[mid]) / 2;
 
-      result += `\n\nСумма (Sum): ${formatNum(sum)}`;
-      result += `\nМин. (Min): ${formatNum(min)}`;
-      result += `\nМакс. (Max): ${formatNum(max)}`;
-      result += `\nСреднее (Avg): ${formatNum(avg)}`;
-      result += `\nМедиана (Median): ${formatNum(median)}`;
+      result += `\n\n${t("Сумма (Sum)")}: ${formatNum(sum)}`;
+      result += `\n${t("Мин. (Min)")}: ${formatNum(min)}`;
+      result += `\n${t("Макс. (Max)")}: ${formatNum(max)}`;
+      result += `\n${t("Среднее (Avg)")}: ${formatNum(avg)}`;
+      result += `\n${t("Медиана (Median)")}: ${formatNum(median)}`;
     }
 
     return result;
@@ -1033,7 +1034,7 @@ export default function App() {
   useEffect(() => {
     if (selectedResultCell && selectedResultCell.rowIndex === -1 && selectedResultCell.colKey) {
       setDuckDbSelectedCell({
-        title: `Столбец: ${selectedResultCell.colKey}`,
+        title: `${t("Столбец:")} ${selectedResultCell.colKey}`,
         content: computeColumnStats(selectedResultCell.colKey, displayedResults),
       });
     }
@@ -1101,7 +1102,7 @@ export default function App() {
     if (savedSession?.tabs && savedSession.tabs.length > 0) {
       return savedSession.tabs;
     }
-    return [{ id: '1', title: 'Вкладка 1', sql: sqlPresets[0].sql }];
+    return [{ id: '1', title: t('Вкладка 1'), sql: sqlPresets[0].sql }];
   });
   const activeTabIdRef = useRef<string>("");
   const lastActiveSqlTabIdRef = useRef<string>('1');
@@ -1303,7 +1304,7 @@ export default function App() {
         handleExecuteCurrentEngineQuery(newSql, 1);
       } else {
         const newTabId = `tab_${Date.now()}`;
-        const newTabTitle = `${activeTab?.title || 'Запрос'} (Filter)`;
+        const newTabTitle = `${activeTab?.title || t('Запрос')} (Filter)`;
         const newTab: EditorTab = {
           id: newTabId,
           title: newTabTitle,
@@ -1343,7 +1344,7 @@ export default function App() {
         handleExecuteCurrentEngineQuery(newSql, 1);
       } else {
         const newTabId = `tab_${Date.now()}`;
-        const newTabTitle = `${activeTab?.title || 'Запрос'} (Filter)`;
+        const newTabTitle = `${activeTab?.title || t('Запрос')} (Filter)`;
         const newTab: EditorTab = {
           id: newTabId,
           title: newTabTitle,
@@ -1378,7 +1379,7 @@ export default function App() {
       handleExecuteCurrentEngineQuery(newSql, 1);
     } else {
       const newTabId = `tab_${Date.now()}`;
-      const newTabTitle = `${activeTab?.title || 'Запрос'} (Group)`;
+      const newTabTitle = `${activeTab?.title || t('Запрос')} (Group)`;
       const newTab: EditorTab = {
         id: newTabId,
         title: newTabTitle,
@@ -1660,7 +1661,7 @@ export default function App() {
         setShowDuckDbSchemaPanel(true);
         setDuckDbError(null);
       } catch (err: any) {
-        setDuckDbError("Ошибка подключения к DuckDB: " + (err.message || String(err)));
+        setDuckDbError(t("Ошибка подключения к DuckDB: ") + (err.message || String(err)));
         setIsDuckDbResultVisible(true);
       } finally {
         setIsDuckDbRunning(false);
@@ -1700,7 +1701,7 @@ export default function App() {
             setShowDuckDbSchemaPanel(true);
             setDuckDbError(null);
           } catch (err: any) {
-            setDuckDbError("Ошибка подключения к DuckDB: " + (err.message || String(err)));
+            setDuckDbError(t("Ошибка подключения к DuckDB: ") + (err.message || String(err)));
             setIsDuckDbResultVisible(true);
           } finally {
             setIsDuckDbRunning(false);
@@ -1768,7 +1769,7 @@ export default function App() {
         setShowDuckDbSchemaPanel(true);
         setDuckDbError(null);
       } catch (err: any) {
-        setDuckDbError("Ошибка in-memory подключения DuckDB: " + (err.message || String(err)));
+        setDuckDbError(t("Ошибка in-memory подключения DuckDB: ") + (err.message || String(err)));
         setIsDuckDbResultVisible(true);
       }
     }
@@ -1808,7 +1809,7 @@ export default function App() {
             setShowDuckDbSchemaPanel(true);
             setDuckDbError(null);
           } catch (err: any) {
-            setDuckDbError("Ошибка создания файл базы данных DuckDB: " + (err.message || String(err)));
+            setDuckDbError(t("Ошибка создания файл базы данных DuckDB: ") + (err.message || String(err)));
             setIsDuckDbResultVisible(true);
           } finally {
             setIsDuckDbRunning(false);
@@ -1818,7 +1819,7 @@ export default function App() {
         console.warn("Tauri save dialog error:", dialogErr);
       }
     } else {
-      alert("Создание локального .duckdb файла на диске доступно в десктопном приложении.");
+      alert(t("Создание локального .duckdb файла на диске доступно в десктопном приложении."));
     }
   };
 
@@ -1865,7 +1866,7 @@ export default function App() {
 
     throw new Error(
       lastError?.message ||
-        "Бэкенд-сервер недоступен. Запустите локальный сервер (node server.ts)."
+        t("Бэкенд-сервер недоступен. Запустите локальный сервер (node server.ts).")
     );
   };
 
@@ -1889,12 +1890,14 @@ export default function App() {
     tempDirectory: uiVisibility.duckDbTempDirectory || './tmp',
     extensionDirectory: uiVisibility.duckDbExtensionDirectory || './extensions',
     threads: uiVisibility.duckDbThreads ?? 0,
+    initSql: uiVisibility.duckDbInitSql ?? '',
   }), [
     uiVisibility.duckDbAllowUnsignedExtensions,
     uiVisibility.duckDbMemoryLimit,
     uiVisibility.duckDbTempDirectory,
     uiVisibility.duckDbExtensionDirectory,
     uiVisibility.duckDbThreads,
+    uiVisibility.duckDbInitSql,
   ]);
 
   const handleDuckDbFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1956,7 +1959,7 @@ export default function App() {
           setDuckDbError(null);
         }
       } catch (err: any) {
-        setDuckDbError("Ошибка подключения к DB: " + (err.message || String(err)));
+        setDuckDbError(t("Ошибка подключения к DB: ") + (err.message || String(err)));
         setIsDuckDbResultVisible(true);
       } finally {
         setIsDuckDbRunning(false);
@@ -2300,7 +2303,7 @@ export default function App() {
     }
     
     setIsDuckDbRunning(false);
-    setDuckDbError("Запрос отменен пользователем");
+    setDuckDbError(t("Запрос отменен пользователем"));
   };
 
   const handleExecuteDuckDb = async () => {
@@ -2346,7 +2349,7 @@ export default function App() {
             }
           }
           setDuckDbSelectedCell({
-            title: 'Значение',
+            title: t('Значение'),
             content: contentStr,
           });
           setIsCellZoomed(true);
@@ -2465,7 +2468,7 @@ export default function App() {
           const setupStatements = statements.slice(0, -1);
           finalQuery = statements[statements.length - 1];
           for (const stmt of setupStatements) {
-            if (controller.signal.aborted) throw new Error("Запрос отменен пользователем");
+            if (controller.signal.aborted) throw new Error(t("Запрос отменен пользователем"));
             if (isTauriEnv && !isWasmMode) {
               await tauriInvoke('execute_query', { sql: stmt });
             } else if (isWasmMode) {
@@ -2545,7 +2548,7 @@ export default function App() {
           const res = await tauriInvoke<{ columns: string[]; column_types?: string[]; rows: any[][] }>('execute_query', {
             sql: queryWithLimit
           });
-          if (controller.signal.aborted) throw new Error("Запрос отменен пользователем");
+          if (controller.signal.aborted) throw new Error(t("Запрос отменен пользователем"));
           const parsed = (res?.rows || []).map(row => {
             const obj: Record<string, any> = {};
             (res.columns || []).forEach((col, idx) => {
@@ -2569,16 +2572,16 @@ export default function App() {
             fetchDuckDbSchema(true);
           }
         } catch (tauriErr: any) {
-          if (controller.signal.aborted) throw new Error("Запрос отменен пользователем");
+          if (controller.signal.aborted) throw new Error(t("Запрос отменен пользователем"));
           let errMsg = typeof tauriErr === 'string' ? tauriErr : (tauriErr?.message || String(tauriErr));
           if (errMsg.includes("invalid escaped character") || errMsg.includes("trailing escape")) {
-            errMsg += "\n\n💡 Подсказка: В строках SQL пути Windows содержат обратные слэши '\\', которые считаются спецсимволами. Замените '\\' на прямые слэши '/' (напр. 'C:/Users/...') или удвойте их '\\\\'.";
+            errMsg += t("Подсказка пути");
           }
           updateEngineState(originTabId, queryToExec, page, { error: errMsg });
         }
       } else if (isWasmMode) {
         const rows = await queryDuckDbWasm(queryWithLimit);
-        if (controller.signal.aborted) throw new Error("Запрос отменен пользователем");
+        if (controller.signal.aborted) throw new Error(t("Запрос отменен пользователем"));
         const finalColTypes = (rows as any).__columnTypes ? (rows as any).__columnTypes : {};
         updateEngineState(originTabId, queryToExec, page, { results: rows, duration: ((performance.now() - queryStartTime) / 1000).toFixed(2), colTypes: finalColTypes });
                 if ((uiVisibility.autoUpdateSchema ?? true) && /^\s*(CREATE|DROP|ATTACH|DETACH|RENAME)\b/i.test(cleanSqlHead)) {
@@ -2617,11 +2620,11 @@ export default function App() {
       }
     } catch (err: any) {
       if (err.name === 'AbortError' || controller.signal.aborted) {
-        updateEngineState(originTabId, queryToExec, page, { error: "Запрос отменен пользователем" });
+        updateEngineState(originTabId, queryToExec, page, { error: t("Запрос отменен пользователем") });
       } else {
-        let errMsg = err.message || "Ошибка выполнения запроса";
+        let errMsg = err.message || t("Ошибка выполнения запроса");
         if (errMsg.includes("invalid escaped character") || errMsg.includes("trailing escape")) {
-          errMsg += "\n\n💡 Подсказка: В строках SQL пути Windows содержат обратные слэши '\\', которые считаются спецсимволами. Замените '\\' на прямые слэши '/' (напр. 'C:/Users/...') или удвойте их '\\\\'.";
+          errMsg += t("Подсказка пути");
         }
         updateEngineState(originTabId, queryToExec, page, { error: errMsg });
       }
@@ -2675,7 +2678,7 @@ export default function App() {
           const setupStatements = statements.slice(0, -1);
           finalQuery = statements[statements.length - 1];
           for (const stmt of setupStatements) {
-            if (controller.signal.aborted) throw new Error("Запрос отменен пользователем");
+            if (controller.signal.aborted) throw new Error(t("Запрос отменен пользователем"));
             if (isTauriEnvironment()) {
               await executeClickhouseQueryTauri(clickhouseConfig, stmt);
             } else {
@@ -2915,9 +2918,9 @@ export default function App() {
       }
     } catch (err: any) {
       if (err.name === 'AbortError' || controller.signal?.aborted) {
-        updateEngineState(originTabId, queryToExec, page, { error: 'Запрос отменен пользователем' });
+        updateEngineState(originTabId, queryToExec, page, { error: t('Запрос отменен пользователем') });
       } else {
-        updateEngineState(originTabId, queryToExec, page, { error: err.message || 'Ошибка выполнения ClickHouse запроса' });
+        updateEngineState(originTabId, queryToExec, page, { error: err.message || t('Ошибка выполнения ClickHouse запроса') });
       }
     } finally {
       setIsDuckDbRunning(false);
@@ -2927,6 +2930,20 @@ export default function App() {
 
   const handleExecuteCurrentEngineQuery = (queryToExec: string, page: number = 1, pageSizeToUse?: number, isQuickAction?: boolean, executionMode?: 'sequential' | 'parallel', targetTabId?: string) => {
     if (isAnyQueryRunning) return;
+    
+    // Create a version history checkpoint (fire-and-forget, non-blocking)
+    (async () => {
+      if (page !== 1 || activeTabIdRef.current === ACTION_MENU_TAB_ID) return;
+      const currentSql = sqlRef.current;
+      if (!currentSql.trim()) return;
+      const latestVersion = await getLatestVersion();
+      if (!latestVersion || latestVersion.sql !== currentSql) {
+        await saveVersion(currentSql, activeTabTitleRef.current, true);
+      }
+    })().catch(err => {
+      console.warn("Failed to save version checkpoint on execute:", err);
+    });
+
     setResultsViewMode('table');
     setSelectedResultCell(null);
     setDuckDbSelectedCell(null);
@@ -3006,7 +3023,7 @@ export default function App() {
       try {
         if (isTauriEnvironment()) {
           const res = await executeClickhouseQueryTauri(clickhouseConfig, queryWithFormat);
-          if (controller.signal.aborted) throw new Error("Запрос отменен пользователем");
+          if (controller.signal.aborted) throw new Error(t("Запрос отменен пользователем"));
           return res?.data || [];
         } else {
           const data = await fetchApiJson('/api/clickhouse/query', {
@@ -3018,7 +3035,7 @@ export default function App() {
             }),
             signal: controller.signal
           });
-          if (controller.signal.aborted) throw new Error("Запрос отменен пользователем");
+          if (controller.signal.aborted) throw new Error(t("Запрос отменен пользователем"));
           if (data?.error) {
             const errVal = typeof data.error === 'object' ? (data.error.message || JSON.stringify(data.error)) : data.error;
             throw new Error(errVal);
@@ -3027,7 +3044,7 @@ export default function App() {
         }
       } catch (err: any) {
         if (controller.signal.aborted || err.name === 'AbortError') {
-          throw new Error("Запрос отменен пользователем");
+          throw new Error(t("Запрос отменен пользователем"));
         }
         throw err;
       } finally {
@@ -3092,7 +3109,7 @@ export default function App() {
     const nextNum = tabs.length + 1;
     const newTab: EditorTab = {
       id: newId,
-      title: `Вкладка ${nextNum}`,
+      title: `${t('Вкладка')} ${nextNum}`,
       sql: ''
     };
 
@@ -3184,28 +3201,33 @@ export default function App() {
     }, 200);
   }, [activeTabId]);
 
-  // Auto-save version into IndexedDB every 10 minutes if current tab SQL differs from the existing latest snapshot (ignores action menu tab)
+  const activeTabTitleRef = useRef<string>(t('Вкладка'));
   useEffect(() => {
-    const INTERVAL_10_MIN = 10 * 60 * 1000;
+    activeTabTitleRef.current = tabs.find(t => t.id === activeTabId)?.title || t('Вкладка');
+  }, [tabs, activeTabId]);
+
+  
+
+  // Auto-save version into IndexedDB every 5 minutes if current tab SQL differs from the existing latest snapshot (ignores action menu tab)
+  useEffect(() => {
+    const INTERVAL_5_MIN = 5 * 60 * 1000;
     const intervalId = setInterval(async () => {
-      if (activeTabId === ACTION_MENU_TAB_ID) return;
+      if (activeTabIdRef.current === ACTION_MENU_TAB_ID) return;
       const currentSql = sqlRef.current;
       if (!currentSql.trim()) return;
-
       try {
         const latestVersion = await getLatestVersion();
         const latestSql = latestVersion ? latestVersion.sql : null;
-
         if (latestSql !== currentSql) {
-          await saveVersion(currentSql, 'Автосохранение', true);
+          await saveVersion(currentSql, activeTabTitleRef.current, true);
         }
       } catch (err) {
         console.warn('Auto-save interval error:', err);
       }
-    }, INTERVAL_10_MIN);
+    }, INTERVAL_5_MIN);
 
     return () => clearInterval(intervalId);
-  }, [activeEngine, activeTabId]);
+  }, []);
 
   const openWithTauriAndDelegate = async (delegateFn: (e: any) => void) => {
     try {
@@ -3239,7 +3261,7 @@ export default function App() {
     const file = e.target.files?.[0];
     if (file) {
       if (tabs.length >= 9) {
-        alert('Достигнуто максимальное количество вкладок (9). Закройте одну из вкладок, чтобы открыть новый файл.');
+        alert(t('Достигнуто максимальное количество вкладок (9). Закройте одну из вкладок, чтобы открыть новый файл.'));
         e.target.value = '';
         return;
       }
@@ -3277,7 +3299,7 @@ export default function App() {
     const file = e.target.files?.[0];
     if (file) {
       if (tabs.length >= 9) {
-        alert('Достигнуто максимальное количество вкладок (9). Закройте одну из вкладок, чтобы открыть новый файл.');
+        alert(t('Достигнуто максимальное количество вкладок (9). Закройте одну из вкладок, чтобы открыть новый файл.'));
         e.target.value = '';
         return;
       }
@@ -3312,10 +3334,12 @@ export default function App() {
   };
 
   const handleSaveSqlFile = async () => {
+    saveSessionToStorage();
     await handleSaveFileLogic(false);
   };
 
   const handleSaveAsSqlFile = async () => {
+    saveSessionToStorage();
     await handleSaveFileLogic(true);
   };
 
@@ -3466,7 +3490,7 @@ export default function App() {
         const newId = `tab_${Date.now()}`;
         const newTab: EditorTab = {
           id: newId,
-          title: 'Запрос 1',
+          title: t('Запрос 1'),
           sql: snippetSql,
           isModified: false,
         };
@@ -4762,7 +4786,7 @@ export default function App() {
     if (rowsToCopy && rowsToCopy.length > 0) {
       let csv = '';
       if (isTransposed) {
-        const headers = ['Поле \\ №', ...rowsToCopy.map((_, i) => `#${(duckDbPage - 1) * effectiveMaxRows + i + 1}`)];
+        const headers = [t('Поле \\ №'), ...rowsToCopy.map((_, i) => `#${(duckDbPage - 1) * effectiveMaxRows + i + 1}`)];
         const rows = Object.keys(rowsToCopy[0]).map(colKey => [
           colKey,
           ...rowsToCopy.map(r => r[colKey] === null ? 'null' : String(r[colKey]))
@@ -4842,7 +4866,7 @@ export default function App() {
       });
     } catch (err: any) {
       console.error('Failed to export to Excel:', err);
-      setDuckDbError('Ошибка экспорта в Excel: ' + (err.message || String(err)));
+      setDuckDbError(t('Ошибка экспорта в Excel: ') + (err.message || String(err)));
     } finally {
       setIsExportingExcel(false);
     }
@@ -4852,7 +4876,7 @@ export default function App() {
     const settings = getSavedExcelSettings();
     await handleExportExcelWithPreset({
       id: 'current',
-      name: 'По умолчанию',
+      name: t('По умолчанию'),
       isBuiltIn: false,
       settings,
     });
@@ -5311,7 +5335,7 @@ export default function App() {
         // Ignore syntax errors, try next dialect
       }
     }
-    throw new Error('Не удалось отформатировать (ошибка синтаксиса)');
+    throw new Error(t('Не удалось отформатировать (ошибка синтаксиса)'));
   };
 
   const handleFormatSql = () => {
@@ -5446,7 +5470,7 @@ export default function App() {
                       ? 'text-slate-300 hover:text-slate-100' 
                       : 'text-slate-700 hover:text-slate-900'
                   }`}
-                  title="Открыть SQL файл с диска (UTF-8)"
+                  title={t('Открыть SQL файл с диска (UTF-8)')}
                 >
                   <FolderOpen className="w-3.5 h-3.5 text-amber-500" />
                 </button>
@@ -5461,7 +5485,7 @@ export default function App() {
                       ? 'text-slate-300 hover:text-slate-100' 
                       : 'text-slate-700 hover:text-slate-900'
                   }`}
-                  title="Сохранить SQL в .sql файл"
+                  title={t('Сохранить SQL в .sql файл')}
                 >
                   <FileDown className="w-3.5 h-3.5 text-emerald-500" />
                 </button>
@@ -5475,7 +5499,7 @@ export default function App() {
                       ? 'bg-slate-700 border border-slate-600 text-slate-200 hover:bg-slate-600' 
                       : 'bg-white border border-slate-300 text-slate-800 hover:bg-slate-50 shadow-2xs'
                   }`}
-                  title="Библиотека шаблонов"
+                  title={t('Библиотека шаблонов')}
                 >
                   <Layers className="w-3.5 h-3.5 text-blue-500" />
                 </button>
@@ -5489,7 +5513,7 @@ export default function App() {
                       ? 'bg-slate-700 border border-slate-600 text-slate-200 hover:bg-slate-600' 
                       : 'bg-white border border-slate-300 text-slate-800 hover:bg-slate-50 shadow-2xs'
                   }`}
-                  title="Открыть SQL Query редактор"
+                  title={t('Открыть SQL Query редактор')}
                 >
                   <Maximize2 className="w-3.5 h-3.5" />
                   <span>Editor</span>
@@ -5503,11 +5527,11 @@ export default function App() {
             {/* CODE EDITOR WORKSPACE */}
             <div className="flex-1 flex flex-col min-h-0 relative">
               {/* SYNTAX HIGHLIGHTED SQL EDITOR OR ACTION MENU */}
-              <ErrorBoundary title="Ошибка редактора SQL" theme={theme}>
+              <ErrorBoundary title={t("Ошибка редактора SQL")} theme={theme}>
                 {!isTabsLoaded ? (
                   <div className="flex-1 flex flex-col items-center justify-center p-8 space-y-3">
                     <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
-                    <span className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>Загрузка сессии...</span>
+                    <span className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>{t('Загрузка сессии...')}</span>
                   </div>
                 ) : activeTabId === ACTION_MENU_TAB_ID ? (
                   <ActionMenuTabContent
@@ -5553,7 +5577,7 @@ export default function App() {
                   ? 'bg-slate-800/60 hover:bg-slate-700/60 border-slate-700/80 text-slate-300 hover:text-slate-100' 
                   : 'bg-slate-200/50 hover:bg-slate-200 border-slate-300/80 text-slate-700 hover:text-slate-900'
               }`}
-              title="Настройки и масштаб интерфейса"
+              title={t('Настройки и масштаб интерфейса')}
             >
               <Settings className="w-3.5 h-3.5" />
             </button>
@@ -5570,9 +5594,9 @@ export default function App() {
                         ? 'bg-slate-800/60 hover:bg-slate-700/60 border-slate-700/80 text-slate-400 hover:text-slate-300' 
                         : 'bg-slate-200/50 hover:bg-slate-200 border-slate-300/80 text-slate-500 hover:text-slate-700')
                 }`}
-                title="Готовые шаблоны и примеры SQL"
+                title={t('Готовые шаблоны и примеры SQL')}
               >
-                Пресеты
+                {t('Пресеты')}
               </button>
 
               {/* PRESETS DROPDOWN POPOVER */}
@@ -5586,7 +5610,7 @@ export default function App() {
                     theme === 'dark' ? 'bg-slate-800 border-slate-600 text-slate-200' : 'bg-white border-slate-300 text-slate-800'
                   }`}>
                     <div className="flex items-center justify-between pb-1.5 border-b border-slate-600/40 mb-1.5">
-                      <span className="text-[10px] uppercase font-bold text-slate-400">Готовые SQL пресеты</span>
+                      <span className="text-[10px] uppercase font-bold text-slate-400">{t('Готовые SQL пресеты')}</span>
                       <button 
                         onClick={() => setShowPresetsDropdown(false)}
                         className="p-0.5 rounded hover:bg-slate-700/50 text-slate-400 hover:text-slate-200"
@@ -5636,10 +5660,10 @@ export default function App() {
                   ? 'bg-blue-600 text-white font-bold'
                   : theme === 'dark' ? 'text-slate-300 hover:text-slate-100' : 'text-slate-700 hover:text-slate-900'
               }`}
-              title="Перенос строки"
+              title={t('Перенос строки')}
             >
               <WrapText className="w-3 h-3" />
-              <span>Перенос</span>
+              <span>{t('Перенос')}</span>
             </button>
 
             {/* FORMAT SQL BUTTON */}
@@ -5649,14 +5673,14 @@ export default function App() {
               className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md font-mono transition-all shrink-0 ${
                 theme === 'dark' ? 'text-slate-300 hover:text-slate-100' : 'text-slate-700 hover:text-slate-900'
               }`}
-              title="Форматировать SQL (Ctrl+Shift+F)"
+              title={t('Форматировать SQL (Ctrl+Shift+F)')}
             >
               {isFormatted ? (
                 <Check className="w-3 h-3 text-emerald-500" />
               ) : (
                 <AlignLeft className="w-3 h-3" />
               )}
-              <span>Формат</span>
+              <span>{t('Формат')}</span>
             </button>
             )}
 
@@ -5667,7 +5691,7 @@ export default function App() {
               className={`p-1.5 rounded-md transition-all shrink-0 ${
                 theme === 'dark' ? 'text-slate-300 hover:text-slate-100 hover:bg-slate-700/50' : 'text-slate-700 hover:text-slate-900 hover:bg-slate-200/50'
               }`}
-              title="Формат в одну строку"
+              title={t('Формат в одну строку')}
             >
               {isCompacted ? (
                 <Check className="w-3.5 h-3.5 text-emerald-500" />
@@ -5799,7 +5823,7 @@ export default function App() {
                         ? 'bg-purple-600 text-white font-bold shadow-xs' 
                         : theme === 'dark' ? 'text-slate-300 hover:text-slate-100 font-normal' : 'text-slate-700 hover:text-slate-900 font-normal'
                     }`}
-                    title="Подсветка взаимосвязей (Data Lineage) выделенного узла"
+                    title={t('Подсветка взаимосвязей (Data Lineage) выделенного узла')}
                   >
                     <Workflow className="w-3 h-3" />
                     <span>Focus</span>
@@ -5868,7 +5892,7 @@ export default function App() {
                   ) : (
                     <Download className="w-3.5 h-3.5" />
                   )}
-                  <span>Экспорт</span>
+                  <span>{t('Экспорт')}</span>
                   <ChevronDown className="w-3 h-3 opacity-80" />
                 </button>
 
@@ -6078,7 +6102,7 @@ export default function App() {
 
           {/* REACT FLOW CANVAS CONTAINER */}
           <div className={`flex-1 w-full relative min-h-0 ${theme === 'dark' ? 'bg-slate-850' : 'bg-slate-200'}`} style={{ willChange: 'transform', transform: 'translateZ(0)', zoom: 1 / ((uiVisibility.uiScale ?? 100) / 100) }}>
-            <ErrorBoundary title="Ошибка отображения графа" theme={theme}>
+            <ErrorBoundary title={t("Ошибка отображения графа")} theme={theme}>
             {/* Grid Pattern Background styled specifically to match the design style */}
             <div className={`absolute inset-0 pointer-events-none opacity-[0.07] dark:opacity-10`} style={{ backgroundImage: 'radial-gradient(#64748b 1px, transparent 1px)', backgroundSize: '24px 24px' }}></div>
             
@@ -6138,10 +6162,10 @@ export default function App() {
                   <Database className="w-6 h-6" />
                 </div>
                 <div className={`text-xs max-w-xs leading-normal ${theme === 'dark' ? 'text-slate-300' : 'text-slate-600'}`}>
-                  Введите SQL-запрос в редактор слева и нажмите <strong className={theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}>Visualize</strong> для построения логического графа.
+                  {t('Введите SQL-запрос в редактор слева и нажмите ')} <strong className={theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}>Visualize</strong> {t(' для построения логического графа.')}
                 </div>
                 <div className={`text-xs max-w-xs leading-normal italic ${theme === 'dark' ? 'text-slate-300' : 'text-slate-600'}`}>
-                  Поддерживается построение произвольных диаграмм (<strong className={theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}>Mermaid</strong> синтаксис).
+                  {t('Поддерживается построение произвольных диаграмм (')}<strong className={theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}>Mermaid</strong> {t(' синтаксис).')}
                 </div>
               </div>
             )}
@@ -6398,7 +6422,7 @@ export default function App() {
                       ? 'text-slate-300 hover:text-slate-100' 
                       : 'text-slate-700 hover:text-slate-900'
                   }`}
-                  title="Открыть SQL файл с диска (UTF-8)"
+                  title={t('Открыть SQL файл с диска (UTF-8)')}
                 >
                   <FolderOpen className="w-3.5 h-3.5 text-amber-500" />
                 </button>
@@ -6412,7 +6436,7 @@ export default function App() {
                       ? 'text-slate-300 hover:text-slate-100' 
                       : 'text-slate-700 hover:text-slate-900'
                   }`}
-                  title="Сохранить SQL в .sql файл"
+                  title={t('Сохранить SQL в .sql файл')}
                 >
                   <FileDown className="w-3.5 h-3.5 text-emerald-500" />
                 </button>
@@ -6426,7 +6450,7 @@ export default function App() {
                       ? 'text-blue-300 shadow-2xs' 
                       : 'text-blue-700 shadow-2xs'
                   }`}
-                  title="Виртуальная файловая система (WASM VFS)"
+                  title={t('Виртуальная файловая система (WASM VFS)')}
                 >
                   <FolderOpen className="w-3.5 h-3.5 text-blue-500" />
                   <span>WASM</span>
@@ -6441,7 +6465,7 @@ export default function App() {
                       ? 'bg-transparent border border-slate-600 text-slate-200 hover:bg-slate-700/60' 
                       : 'bg-white border border-slate-300 text-slate-800 hover:bg-slate-50 shadow-2xs'
                   }`}
-                  title="Библиотека шаблонов"
+                  title={t('Библиотека шаблонов')}
                 >
                   <Layers className="w-3.5 h-3.5 text-blue-500" />
                 </button>
@@ -6455,7 +6479,7 @@ export default function App() {
                       ? 'bg-transparent border border-slate-600 text-slate-200 hover:bg-slate-700/60' 
                       : 'bg-white border border-slate-300 text-slate-800 hover:bg-slate-50 shadow-2xs'
                   }`}
-                  title="История версий SQL"
+                  title={t('История версий SQL')}
                 >
                   <History className="w-3.5 h-3.5 text-purple-500" />
                 </button>
@@ -6489,7 +6513,7 @@ export default function App() {
                           ? 'text-teal-300 hover:text-teal-100 bg-teal-950/40 hover:bg-teal-900/60 border border-teal-500/30' 
                           : 'text-teal-800 hover:text-teal-950 bg-teal-100 hover:bg-teal-200 border border-teal-300 shadow-2xs'
                     }`}
-                    title="Настроить подключение DB"
+                    title={t('Настроить подключение DB')}
                   >
                     {duckDbConnectedPath === ':memory:' ? (
                       <Cpu className={`w-3.5 h-3.5 ${clickhouseConfig ? 'text-amber-500' : duckDbConnectedPath ? 'text-teal-500' : 'text-slate-400'}`} />
@@ -6523,7 +6547,7 @@ export default function App() {
                               }`}
                             >
                               <FolderOpen className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                              <span>Открыть файл DuckDB</span>
+                              <span>{t('Открыть файл DuckDB')}</span>
                             </button>
                             <button
                               onClick={() => {
@@ -6537,7 +6561,7 @@ export default function App() {
                               }`}
                             >
                               <Plus className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                              <span>Создать новую БД (.duckdb)</span>
+                              <span>{t('Создать новую БД (.duckdb)')}</span>
                             </button>
                             <button
                               onClick={() => {
@@ -6551,7 +6575,7 @@ export default function App() {
                               }`}
                             >
                               <Cpu className="w-3.5 h-3.5 text-purple-500 shrink-0 opacity-80" />
-                              <span>In-Memory БД (:memory:)</span>
+                              <span>{t('In-Memory БД (:memory:)')}</span>
                             </button>
                             {recentDuckDbPath && recentDuckDbPath !== duckDbConnectedPath && (
                               <>
@@ -6591,7 +6615,7 @@ export default function App() {
                               }`}
                             >
                               <Database className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                              <span>Подключить Clickhouse</span>
+                              <span>{t('Подключить Clickhouse')}</span>
                             </button>
                             {(() => {
                               const validRecentCfgs = recentClickhouseConfigs.filter(cfg => 
@@ -6635,7 +6659,7 @@ export default function App() {
                               ? 'text-blue-400 hover:bg-blue-950/40 border border-blue-500/30' 
                               : 'text-blue-600 hover:bg-blue-100 border border-blue-300 shadow-2xs'
                           }`}
-                          title="Показать схему DuckDB"
+                          title={t('Показать схему DuckDB')}
                         >
                           <Database className="w-3.5 h-3.5" />
                         </button>
@@ -6647,7 +6671,7 @@ export default function App() {
                             ? 'text-red-400 hover:bg-red-950/40 border border-red-500/30' 
                             : 'text-red-600 hover:bg-red-100 border border-red-300 shadow-2xs'
                         }`}
-                        title="Отключить DuckDB"
+                        title={t('Отключить DuckDB')}
                       >
                         <X className="w-3.5 h-3.5" />
                       </button>
@@ -6664,7 +6688,7 @@ export default function App() {
                               ? 'text-blue-400 hover:bg-blue-950/40 border border-blue-500/30' 
                               : 'text-blue-600 hover:bg-blue-100 border border-blue-300 shadow-2xs'
                           }`}
-                          title="Показать схему Clickhouse"
+                          title={t('Показать схему Clickhouse')}
                         >
                           <Database className="w-3.5 h-3.5" />
                         </button>
@@ -6684,7 +6708,7 @@ export default function App() {
                             ? 'text-red-400 hover:bg-red-950/40 border border-red-500/30' 
                             : 'text-red-600 hover:bg-red-100 border border-red-300 shadow-2xs'
                         }`}
-                        title="Отключить Clickhouse"
+                        title={t('Отключить Clickhouse')}
                       >
                         <X className="w-3.5 h-3.5" />
                       </button>
@@ -6704,7 +6728,7 @@ export default function App() {
                         ? 'bg-slate-700 border border-slate-600 text-slate-200 hover:bg-slate-600' 
                         : 'bg-white border border-slate-300 text-slate-800 hover:bg-slate-50 shadow-2xs'
                     }`}
-                    title="Вернуться к графу"
+                    title={t('Вернуться к графу')}
                   >
                     <Workflow className="w-3.5 h-3.5" />
                     <span>Graph</span>
@@ -6734,7 +6758,7 @@ export default function App() {
                           ? 'bg-slate-800/40 border-transparent text-slate-400 font-semibold hover:text-slate-200 hover:bg-slate-750'
                           : 'bg-slate-200/40 border-transparent text-slate-600 font-semibold hover:text-slate-900 hover:bg-slate-200/80'
                     }`}
-                    title="Меню действий и no-code пайплайнов"
+                    title={t('Меню действий и no-code пайплайнов')}
                   >
                     <Code 
                       className="w-4 h-4 shrink-0 opacity-80" 
@@ -6759,7 +6783,7 @@ export default function App() {
                         }`}
                       >
                         {tab.isModified && tab.filePath ? (
-                          <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0" title="Файл изменен (не сохранен)" />
+                          <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0" title={t('Файл изменен (не сохранен)')} />
                         ) : (
                           <FileText className="w-3.5 h-3.5 shrink-0 opacity-70" />
                         )}
@@ -6781,7 +6805,7 @@ export default function App() {
                               setEditingTabId(tab.id);
                             }}
                             className="truncate flex-1"
-                            title={tab.filePath ? tab.filePath : "Двойной клик для переименования"}
+                            title={tab.filePath ? tab.filePath : t("Двойной клик для переименования")}
                           >
                             {tab.title}
                           </span>
@@ -6793,7 +6817,7 @@ export default function App() {
                             className={`p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity ${
                               theme === 'dark' ? 'hover:bg-slate-700 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-200 text-slate-500 hover:text-slate-800'
                             }`}
-                            title="Закрыть вкладку"
+                            title={t("Закрыть вкладку")}
                           >
                             <X className="w-3 h-3" />
                           </button>
@@ -6810,7 +6834,7 @@ export default function App() {
                           ? 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-750'
                           : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/80'
                       }`}
-                      title="Новая вкладка"
+                      title={t("Новая вкладка")}
                     >
                       <Plus className="w-4 h-4 opacity-70" />
                     </button>
@@ -6822,7 +6846,7 @@ export default function App() {
                   {!isTabsLoaded ? (
                     <div className="flex-1 flex flex-col items-center justify-center p-8 space-y-3">
                       <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
-                      <span className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>Загрузка SQL сессии...</span>
+                      <span className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>{t('Загрузка SQL сессии...')}</span>
                     </div>
                   ) : activeTabId === ACTION_MENU_TAB_ID ? (
                     <ActionMenuTabContent
@@ -6842,7 +6866,7 @@ export default function App() {
                       }}
                     />
                   ) : (
-                    <ErrorBoundary title="Ошибка редактора SQL" theme={theme}>
+                    <ErrorBoundary title={t("Ошибка редактора SQL")} theme={theme}>
                       <SqlEditor editorRef={sqlEditorRef}
                         value={getActiveTabSql()}
                         onChange={handleSqlChange}
@@ -6878,10 +6902,10 @@ export default function App() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <h3 className={`font-semibold text-sm ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>
-                            Закрыть несохраненную вкладку?
+                            {t('Закрыть несохраненную вкладку?')}
                           </h3>
                           <p className={`text-xs mt-1 leading-relaxed ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>
-                            Вкладка &quot;<span className={`font-medium ${theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}`}>{tabToClosePendingConfirm.title}</span>&quot; содержит несохраненные изменения.
+                            {t('Вкладка')} &quot;<span className={`font-medium ${theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}`}>{tabToClosePendingConfirm.title}</span>&quot; {t('содержит несохраненные изменения')}.
                           </p>
                         </div>
                       </div>
@@ -6895,7 +6919,7 @@ export default function App() {
                               : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
                           }`}
                         >
-                          Отмена
+                          {t('Отмена')}
                         </button>
                         <button
                           type="button"
@@ -6906,7 +6930,7 @@ export default function App() {
                               : 'bg-red-50 hover:bg-red-100 text-red-700 border border-red-200'
                           }`}
                         >
-                          Закрыть
+                          {t('Закрыть')}
                         </button>
                       </div>
                     </div>
@@ -6932,21 +6956,21 @@ export default function App() {
                       <button 
                         onClick={() => fetchDuckDbSchema(true)}
                         className={`p-1 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-200 text-slate-500 hover:text-slate-800'}`}
-                        title="Обновить схему (Ctrl+R)"
+                        title={t("Обновить схему (Ctrl+R)")}
                       >
                         <RefreshCw className={`w-3.5 h-3.5 ${isSchemaLoading ? 'animate-spin text-blue-400' : ''}`} />
                       </button>
                       <button 
                         onClick={() => setIsSchemaZoomed(!isSchemaZoomed)}
                         className={`p-1 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-200 text-slate-500 hover:text-slate-800'}`}
-                        title={isSchemaZoomed ? "Стандартный размер" : "Увеличить в 2 раза"}
+                        title={isSchemaZoomed ? t("Стандартный размер") : t("Увеличить в 2 раза")}
                       >
                         {isSchemaZoomed ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
                       </button>
                       <button 
                         onClick={() => setShowDuckDbSchemaPanel(false)}
                         className={`p-1 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-200 text-slate-500 hover:text-slate-800'}`}
-                        title="Закрыть"
+                        title={t("Закрыть")}
                       >
                         <X className="w-3.5 h-3.5" />
                       </button>
@@ -6960,7 +6984,7 @@ export default function App() {
                           <Search className="w-3.5 h-3.5 absolute left-2 top-1.5 opacity-50 pointer-events-none" />
                           <input 
                             type="text" 
-                            placeholder="Поиск..." 
+                            placeholder={t('Поиск...')} 
                             value={schemaSearchTerm}
                             onChange={(e) => setSchemaSearchTerm(e.target.value)}
                             className={`w-full pl-7 ${schemaSearchTerm ? 'pr-7' : 'pr-2'} py-1 text-xs rounded border transition-colors focus:outline-none focus:ring-1 focus:ring-blue-500 ${theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-300 placeholder-slate-500' : 'bg-slate-50 border-slate-300 text-slate-700 placeholder-slate-400'}`}
@@ -6974,7 +6998,7 @@ export default function App() {
                                   ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-700' 
                                   : 'text-slate-400 hover:text-slate-700 hover:bg-slate-200'
                               }`}
-                              title="Очистить поиск"
+                              title={t('Очистить поиск')}
                             >
                               <X className="w-3 h-3" />
                             </button>
@@ -6984,7 +7008,7 @@ export default function App() {
                           <button 
                             onClick={handleAttachDuckDb}
                             className={`p-1.5 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-200 text-slate-500 hover:text-slate-800'}`}
-                            title="Прикрепить базу данных (ATTACH)"
+                            title={t('Прикрепить базу данных (ATTACH)')}
                           >
                             <Plus className="w-3.5 h-3.5" />
                           </button>
@@ -6992,14 +7016,14 @@ export default function App() {
                         <button 
                           onClick={handleExpandAllSchemaNodes}
                           className={`p-1.5 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-200 text-slate-500 hover:text-slate-800'}`}
-                          title="Развернуть все"
+                          title={t('Развернуть все')}
                         >
                           <ChevronsUpDown className="w-3.5 h-3.5" />
                         </button>
                         <button 
                           onClick={() => setExpandedSchemaNodes({})}
                           className={`p-1.5 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-200 text-slate-500 hover:text-slate-800'}`}
-                          title="Свернуть все"
+                          title={t('Свернуть все')}
                         >
                           <ChevronsDownUp className="w-3.5 h-3.5" />
                         </button>
@@ -7039,7 +7063,7 @@ export default function App() {
                                           e.stopPropagation();
                                           handleSetActiveDatabase(dbName);
                                         }}
-                                        title={isCurrentChDb ? 'Текущая база данных (активна для запросов)' : `Сделать "${dbName}" активной базой`}
+                                        title={isCurrentChDb ? t('Текущая база данных (активна для запросов)') : `${t('Сделать активной базой')} "${dbName}"`}
                                         className={`p-0.5 rounded transition-all cursor-pointer ${
                                           isCurrentChDb
                                             ? 'opacity-100'
@@ -7057,7 +7081,7 @@ export default function App() {
                                         if (isDefaultDuckDb) {
                                           return (
                                             <div
-                                              title="База данных по умолчанию"
+                                              title={t('База данных по умолчанию')}
                                               className="p-0.5 rounded opacity-100"
                                             >
                                               <Check className={`w-3.5 h-3.5 ${
@@ -7075,7 +7099,7 @@ export default function App() {
                                                 e.stopPropagation();
                                                 handleDetachDuckDb(dbName);
                                               }}
-                                              title={`Отключить базу "${dbName}" (DETACH)`}
+                                              title={`${t('Отключить базу (DETACH)')} "${dbName}"`}
                                               className="p-0.5 rounded transition-all cursor-pointer opacity-0 group-hover/db:opacity-60 hover:!opacity-100 hover:bg-slate-500/10"
                                             >
                                               <Unplug className={`w-3.5 h-3.5 ${
@@ -7115,7 +7139,7 @@ export default function App() {
                                                       e.stopPropagation();
                                                       handleSetActiveDuckDbSchema(schemaName);
                                                     }}
-                                                    title={isCurrentDuckSchema ? 'Текущая схема (активна для запросов)' : `Сделать "${schemaName}" активной схемой`}
+                                                    title={isCurrentDuckSchema ? t('Текущая схема (активна для запросов)') : `${t('Сделать активной схемой')} "${schemaName}"`}
                                                     className={`p-0.5 rounded transition-all cursor-pointer ${
                                                       isCurrentDuckSchema
                                                         ? 'opacity-100'
@@ -7193,13 +7217,13 @@ export default function App() {
                                                             columns: cols,
                                                           });
                                                         }}
-                                                        title="Нажмите, чтобы развернуть, или ПКМ для меню"
+                                                        title={t("Нажмите, чтобы развернуть, или ПКМ для меню")}
                                                       >
                                                         <div className={`flex items-center gap-1.5 truncate ${
                                                           theme === 'dark' ? 'text-blue-400' : 'text-blue-700'
                                                         }`}>
                                                           {itemInfo.table_type === 'Macros' ? (
-                                                            <span className="font-serif italic font-bold text-[11px] leading-none shrink-0 opacity-80 select-none pr-0.5" title="Нажмите, чтобы развернуть и скопировать название">
+                                                            <span className="font-serif italic font-bold text-[11px] leading-none shrink-0 opacity-80 select-none pr-0.5" title={t("Нажмите, чтобы развернуть и скопировать название")}>
                                                               fx
                                                             </span>
                                                           ) : itemInfo.table_type === 'Views' || itemInfo.table_type === 'Material Views' ? (
@@ -7230,7 +7254,7 @@ export default function App() {
                                                           {isLoadingCols ? (
                                                             <div className="flex items-center gap-1.5 py-1 text-[10px] text-blue-400 animate-pulse">
                                                               <Loader2 className="w-3 h-3 animate-spin" />
-                                                              <span>Загрузка...</span>
+                                                              <span>{t('Загрузка...')}</span>
                                                             </div>
                                                           ) : cols && cols.length > 0 ? (
                                                             cols.map((col: any, idx: number) => (
@@ -7239,19 +7263,21 @@ export default function App() {
                                                                 draggable={true}
                                                                 onDragStart={(e) => {
                                                                   e.stopPropagation();
-                                                                  e.dataTransfer.setData('text/plain', `"${col.column_name}"`);
+                                                                  const colRef = `${tableName}.${col.column_name}`;
+                                                                  e.dataTransfer.setData('text/plain', colRef);
                                                                   e.dataTransfer.effectAllowed = 'copy';
-                                                                  (window as any).__currentDragText = `"${col.column_name}"`;
+                                                                  (window as any).__currentDragText = colRef;
                                                                 }}
                                                                 style={{ WebkitUserDrag: 'element' } as React.CSSProperties}
                                                                 className={`cursor-pointer text-[10px] flex items-center justify-between gap-2 px-1.5 py-0.5 rounded transition-colors ${theme === 'dark' ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-200'}`}
                                                                 onClick={() => {
                                                                   const colKey = `${dbName}.${schemaName}.${tableName}.${col.column_name}`;
-                                                                  copyToClipboard(col.column_name);
+                                                                  const colRef = `${tableName}.${col.column_name}`;
+                                                                  copyToClipboard(colRef);
                                                                   setCopiedSchemaCol(colKey);
                                                                   setTimeout(() => setCopiedSchemaCol(null), 1500);
                                                                 }}
-                                                                title={`${col.column_name} (${col.data_type})\nНажмите или перетащите для вставки`}
+                                                                title={`${col.column_name} (${col.data_type})\n${t('Нажмите или перетащите для вставки')}`}
                                                               >
                                                                 <span className="font-mono truncate min-w-0 flex-1" title={col.column_name}>{col.column_name}</span>
                                                                 {copiedSchemaCol === `${dbName}.${schemaName}.${tableName}.${col.column_name}` ? (
@@ -7269,7 +7295,7 @@ export default function App() {
                                                             ))
                                                           ) : (
                                                             <div className="text-[10px] opacity-50 px-1 py-0.5 italic">
-                                                              Данные отсутствуют
+                                                              {t('Данные отсутствуют')}
                                                             </div>
                                                           )}
                                                         </div>
@@ -7294,13 +7320,13 @@ export default function App() {
                         ) : (
                           <div className="py-8 text-center opacity-70 flex flex-col items-center justify-center gap-1.5">
                             <Database className="w-5 h-5 opacity-40" />
-                            <span>{schemaSearchTerm ? 'Ничего не найдено по запросу' : 'Таблицы не найдены (БД пуста)'}</span>
+                            <span>{schemaSearchTerm ? t('Ничего не найдено по запросу') : t('Таблицы не найдены (БД пуста)')}</span>
                             {schemaSearchTerm && (
                               <button 
                                 onClick={() => setSchemaSearchTerm('')}
                                 className="text-[11px] text-blue-400 hover:underline mt-1"
                               >
-                                Сбросить фильтр
+                                {t('Сбросить фильтр')}
                               </button>
                             )}
                           </div>
@@ -7310,11 +7336,11 @@ export default function App() {
                   ) : isSchemaLoading ? (
                     <div className="flex-1 flex flex-col items-center justify-center p-6 text-center gap-2">
                       <Loader2 className="w-5 h-5 animate-spin text-blue-400" />
-                      <span className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>Загрузка схемы базы данных...</span>
+                      <span className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>{t('Загрузка схемы базы данных...')}</span>
                     </div>
                   ) : (
                     <div className="flex-1 flex flex-col items-center justify-center p-6 text-center opacity-50">
-                      <span className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>Схема не загружена или пуста</span>
+                      <span className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>{t('Схема не загружена или пуста')}</span>
                     </div>
                   )}
                 </div>
@@ -7345,7 +7371,7 @@ export default function App() {
                     }`}
                   >
                     <Table className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                    <span>Показать</span>
+                    <span>{t('Показать')}</span>
                   </button>
                   <button
                     type="button"
@@ -7355,7 +7381,7 @@ export default function App() {
                     }`}
                   >
                     <Copy className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                    <span>Копировать Select</span>
+                    <span>{t('Копировать Select')}</span>
                   </button>
                   <button
                     type="button"
@@ -7365,7 +7391,7 @@ export default function App() {
                     }`}
                   >
                     <Copy className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                    <span>Копировать Insert</span>
+                    <span>{t('Копировать Insert')}</span>
                   </button>
                   <button
                     type="button"
@@ -7407,10 +7433,10 @@ export default function App() {
                 <div className={`relative z-30 flex flex-wrap items-center justify-between px-3 py-1.5 border-b shrink-0 ${
                   theme === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'
                 }`}>
-                  <div className="flex items-center gap-2 min-w-0 pr-2">
+                      <div className="flex items-center gap-2 min-w-0 pr-2">
                     <span className={`text-xs font-semibold flex items-center gap-2 shrink-0 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>
                       <Database className="w-3.5 h-3.5 text-teal-500" />
-                      Результат запроса
+                      {t('Результат запроса')}
                     </span>
 
                     {duckDbResults && (
@@ -7418,14 +7444,14 @@ export default function App() {
                         <div className={`flex items-center gap-1 px-2.5 py-1 rounded transition-all ${
                           theme === 'dark' ? 'text-slate-300' : 'text-slate-700'
                         }`}>
-                          <span>(записей: {duckDbResults.length})</span>
+                          <span>({t('записей:')} {duckDbResults.length})</span>
                         </div>
 
                         {queryExecutionDuration !== null && (
                           <div className={`flex items-center gap-1 px-2.5 py-1 rounded transition-all ${
                             theme === 'dark' ? 'text-slate-300' : 'text-slate-700'
                           }`}>
-                            <span>{queryExecutionDuration} сек</span>
+                            <span>{queryExecutionDuration} {t('сек')}</span>
                           </div>
                         )}
 
@@ -7436,14 +7462,14 @@ export default function App() {
                             className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded transition-all font-mono disabled:opacity-30 disabled:cursor-not-allowed ${
                               theme === 'dark' ? 'text-slate-300 hover:text-slate-100 hover:bg-slate-700/40' : 'text-slate-700 hover:text-slate-900 hover:bg-slate-400/30'
                             }`}
-                            title="Предыдущая страница"
+                            title={t('Предыдущая страница')}
                           >
                             &lt;
                           </button>
                           <span className={`flex items-center text-xs px-2.5 py-1 rounded transition-all ${
                             theme === 'dark' ? 'text-slate-300' : 'text-slate-700'
                           }`}>
-                            стр {duckDbPage}
+                            {t('стр')} {duckDbPage}
                           </span>
                           <button
                             disabled={isAnyQueryRunning || !duckDbResults || duckDbResults.length < effectiveMaxRows}
@@ -7451,7 +7477,7 @@ export default function App() {
                             className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded transition-all font-mono disabled:opacity-30 disabled:cursor-not-allowed ${
                               theme === 'dark' ? 'text-slate-300 hover:text-slate-100 hover:bg-slate-700/40' : 'text-slate-700 hover:text-slate-900 hover:bg-slate-400/30'
                             }`}
-                            title="Следующая страница"
+                            title={t('Следующая страница')}
                           >
                             &gt;
                           </button>
@@ -7464,7 +7490,7 @@ export default function App() {
                               <Search className="w-3.5 h-3.5 absolute left-2 text-slate-400 pointer-events-none" />
                               <input
                                 type="text"
-                                placeholder="Переход"
+                                placeholder={t('Переход')}
                                 value={columnSearchTerm}
                                 onFocus={() => setShowColumnJumpDropdown(true)}
                                 onChange={(e) => {
@@ -7476,7 +7502,7 @@ export default function App() {
                                     ? 'bg-slate-900 border-slate-700 text-slate-200 placeholder-slate-500 focus:bg-slate-900' 
                                     : 'bg-white border-slate-300 text-slate-800 placeholder-slate-400'
                                 }`}
-                                title="Быстрый поиск и переход к столбцу"
+                                title={t('Быстрый поиск и переход к столбцу')}
                               />
                               {columnSearchTerm && (
                                 <button
@@ -7485,7 +7511,7 @@ export default function App() {
                                     setColumnSearchTerm('');
                                   }}
                                   className="absolute right-1.5 text-slate-400 hover:text-slate-200 text-xs font-bold px-0.5"
-                                  title="Очистить"
+                                  title={t('Очистить')}
                                 >
                                   ×
                                 </button>
@@ -7534,7 +7560,7 @@ export default function App() {
                                       })}
                                     {Object.keys(duckDbResults[0]).filter(col => col.toLowerCase().includes(columnSearchTerm.toLowerCase())).length === 0 && (
                                       <div className="text-[11px] text-slate-400 p-2 text-center italic">
-                                        Столбцы не найдены
+                                        {t('Столбцы не найдены')}
                                       </div>
                                     )}
                                   </div>
@@ -7549,7 +7575,7 @@ export default function App() {
                           <div className="relative flex items-center shrink-0">
                             <input
                               type="text"
-                              placeholder="Поиск"
+                              placeholder={t('Поиск')}
                               value={valueSearchTerm}
                               onChange={(e) => setValueSearchTerm(e.target.value)}
                               className={`w-18 pl-2 pr-5 py-0.5 text-xs rounded border transition-colors focus:outline-none focus:ring-1 focus:ring-blue-500 ${
@@ -7557,14 +7583,14 @@ export default function App() {
                                   ? 'bg-slate-900 border-slate-700 text-slate-200 placeholder-slate-500 focus:bg-slate-900' 
                                   : 'bg-white border-slate-300 text-slate-800 placeholder-slate-400'
                               }`}
-                              title="Быстрый поиск значения в результате"
+                              title={t('Быстрый поиск значения в результате')}
                             />
                             {valueSearchTerm && (
                               <button
                                 type="button"
                                 onClick={() => setValueSearchTerm('')}
                                 className="absolute right-1 text-slate-400 hover:text-slate-200 text-xs font-bold px-0.5"
-                                title="Очистить"
+                                title={t('Очистить')}
                               >
                                 ×
                               </button>
@@ -7581,10 +7607,10 @@ export default function App() {
                       <button
                         onClick={handleCancelDuckDbQuery}
                         className="flex items-center justify-center gap-1 text-xs px-2 h-6 rounded font-semibold bg-red-600 hover:bg-red-700 text-white transition-colors mr-1 shadow-2xs shrink-0"
-                        title="Отменить выполнение текущего запроса"
+                        title={t('Отменить выполнение текущего запроса')}
                       >
                         <Square className="w-3 h-3 fill-white shrink-0" />
-                        <span>Отменить</span>
+                        <span>{t('Отменить')}</span>
                       </button>
                     )}
 
@@ -7598,7 +7624,7 @@ export default function App() {
                             ? 'hover:bg-slate-700 text-slate-400'
                             : 'hover:bg-slate-200 text-slate-500'
                         }`}
-                        title="Быстрые действия над результатами"
+                        title={t('Быстрые действия над результатами')}
                       >
                         <Zap className="w-4 h-4" />
                       </button>
@@ -7623,12 +7649,12 @@ export default function App() {
                                 <button
                                   key={action.id}
                                   onClick={() => handleExecuteQuickAction(action)}
-                                  title={action.name}
+                                  title={t(action.name)}
                                   className={`w-full text-left px-2 py-1 rounded text-xs flex items-center gap-2 transition-colors min-w-0 ${
                                     theme === 'dark' ? 'hover:bg-slate-700 text-slate-200' : 'hover:bg-slate-100 text-slate-800'
                                   }`}
                                 >
-                                  <span className="truncate">{action.name}</span>
+                                  <span className="truncate">{t(action.name)}</span>
                                 </button>
                               ))}
                             </div>
@@ -7722,7 +7748,7 @@ export default function App() {
 
                             let sqlToRun = targetTable ? `SUMMARIZE ${targetTable}` : (strippedSql ? `SUMMARIZE (\n${strippedSql}\n)` : '');
                             if (!sqlToRun) {
-                              throw new Error('Нет таблицы или SQL-запроса для выполнения SUMMARIZE');
+                              throw new Error(t('Нет таблицы или SQL-запроса для выполнения SUMMARIZE'));
                             }
 
                             let rows: any[] | null = null;
@@ -7740,7 +7766,7 @@ export default function App() {
                               setSummarizeResults(rows);
                               setResultsViewMode('summarize');
                             } else {
-                              throw new Error('База данных вернула пустой результат для SUMMARIZE');
+                              throw new Error(t('База данных вернула пустой результат для SUMMARIZE'));
                             }
                           } catch (err: any) {
                             console.error("SUMMARIZE execution error:", err);
@@ -7757,7 +7783,7 @@ export default function App() {
                               ? 'hover:bg-slate-700 text-slate-400'
                               : 'hover:bg-slate-200 text-slate-500'
                         }`}
-                        title={resultsViewMode === 'summarize' ? "Вернуться к таблице" : "Экспресс-статистика по столбцам (SUMMARIZE)"}
+                        title={resultsViewMode === 'summarize' ? t("Вернуться к таблице") : t("Экспресс-статистика по столбцам (SUMMARIZE)")}
                       >
                         <TableProperties className="w-4 h-4" />
                       </button>
@@ -7787,7 +7813,7 @@ export default function App() {
                             ? 'hover:bg-slate-700 text-slate-400'
                             : 'hover:bg-slate-200 text-slate-500'
                       }`}
-                      title={resultsViewMode === 'chart' ? "Вернуться к таблице" : "Визуализировать результаты (Графики)"}
+                      title={resultsViewMode === 'chart' ? t("Вернуться к таблице") : t("Визуализировать результаты (Графики)")}
                     >
                       <BarChart3 className="w-4 h-4" />
                     </button>
@@ -7804,7 +7830,7 @@ export default function App() {
                             ? 'hover:bg-slate-700 text-slate-400'
                             : 'hover:bg-slate-200 text-slate-500'
                       }`}
-                      title={isTransposed ? "Обычный вид таблицы" : "Транспонировать таблицу (строки <-> столбцы)"}
+                      title={isTransposed ? t("Обычный вид таблицы") : t("Транспонировать таблицу (строки <-> столбцы)")}
                     >
                       <ArrowLeftRight className="w-4 h-4" />
                     </button>
@@ -7824,7 +7850,7 @@ export default function App() {
                               ? 'hover:bg-slate-700 text-slate-400'
                               : 'hover:bg-slate-200 text-slate-500'
                           }`}
-                          title="Сформировать Excel отчет (ПКМ: выбор пресета)"
+                          title={t("Сформировать Excel отчет (ПКМ: выбор пресета)")}
                         >
                           {isExportingExcel ? (
                             <Loader2 className="w-4 h-4 animate-spin text-emerald-500" />
@@ -7849,9 +7875,9 @@ export default function App() {
                             }`}>
                               <div className={`px-2 py-1 rounded text-xs flex items-center gap-2 border-b mb-0.5 font-mono min-w-0 ${
                                 theme === 'dark' ? 'border-slate-700/60 text-slate-400' : 'border-slate-200 text-slate-500'
-                              }`} title="Пресеты экспорта Excel">
+                              }`} title={t("Пресеты экспорта Excel")}>
                                 <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                                <span className="truncate">Пресеты Excel</span>
+                                <span className="truncate">{t('Пресеты Excel')}</span>
                               </div>
                               <div className="max-h-60 overflow-y-auto pr-0.5">
                                 {getSavedExcelPresets().map((preset) => (
@@ -7880,7 +7906,7 @@ export default function App() {
                       className={`h-6 w-6 flex items-center justify-center rounded transition-colors ${
                         theme === 'dark' ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'
                       }`}
-                      title={copied === 'tsv' ? "Скопировано!" : "Скопировать результаты (TSV)"}
+                      title={copied === 'tsv' ? t("Скопировано!") : t("Скопировать результаты (TSV)")}
                     >
                       {copied === 'tsv' ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
                     </button>
@@ -7889,7 +7915,7 @@ export default function App() {
                       className={`h-6 w-6 flex items-center justify-center rounded transition-colors ${
                         theme === 'dark' ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'
                       }`}
-                      title={copiedTableImage ? "Скопировано!" : "Скопировать таблицу как картинку"}
+                      title={copiedTableImage ? t("Скопировано!") : t("Скопировать таблицу как картинку")}
                     >
                       {copiedTableImage ? <Check className="w-4 h-4 text-emerald-500" /> : <ImageIcon className="w-4 h-4" />}
                     </button>
@@ -7899,7 +7925,7 @@ export default function App() {
                         className={`h-6 w-6 flex items-center justify-center rounded transition-colors ${
                           theme === 'dark' ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'
                         }`}
-                        title="Увеличить таблицу"
+                        title={t("Увеличить таблицу")}
                       >
                         <ChevronUp className="w-4 h-4" />
                       </button>
@@ -7916,7 +7942,7 @@ export default function App() {
                       className={`h-6 w-6 flex items-center justify-center rounded transition-colors ${
                         theme === 'dark' ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'
                       }`}
-                      title={isDuckDbResultExpanded ? "Уменьшить таблицу" : "Свернуть таблицу"}
+                      title={isDuckDbResultExpanded ? t("Уменьшить таблицу") : t("Свернуть таблицу")}
                     >
                       <ChevronDown className="w-4 h-4" />
                     </button>
@@ -7930,7 +7956,7 @@ export default function App() {
                         className={`h-6 w-6 flex items-center justify-center rounded transition-colors ${
                           theme === 'dark' ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'
                         }`}
-                        title="Закрыть результаты"
+                        title={t("Закрыть результаты")}
                       >
                         <X className="w-4 h-4" />
                       </button>
@@ -7987,7 +8013,7 @@ export default function App() {
                               <th className={`sticky top-0 left-0 z-30 px-3 h-[35px] font-semibold border-b-[1.5px] border-r-[1.5px] whitespace-nowrap min-w-[140px] max-w-[200px] [transform:translateZ(0)] ${
                                 theme === 'dark' ? 'border-b-slate-600 border-r-slate-600 text-slate-200 bg-slate-800' : 'border-b-slate-300 border-r-slate-300 text-slate-800 bg-slate-100'
                               }`}>
-                                Поле \ №
+                                {t('Поле \\ №')}
                               </th>
                               {displayedResults.map((_, i) => {
                                 const rowNum = (duckDbPage - 1) * effectiveMaxRows + i + 1;
@@ -8022,8 +8048,11 @@ export default function App() {
                                     }`}
                                     title={`${colKey}${resultColumnTypes[colKey] ? ` (${formatColumnType(resultColumnTypes[colKey])})` : ''}`}
                                     onClick={() => {
+                                      if (document.activeElement instanceof HTMLElement) {
+                                        document.activeElement.blur();
+                                      }
                                       setSelectedResultCell({ rowIndex: -1, colKey });
-                                      setDuckDbSelectedCell({ title: `Столбец: ${colKey}`, content: computeColumnStats(colKey, displayedResults) });
+                                      setDuckDbSelectedCell({ title: `${t('Столбец:')} ${colKey}`, content: computeColumnStats(colKey, displayedResults) });
                                     }}
                                     onContextMenu={(e) => {
                                       e.preventDefault();
@@ -8070,8 +8099,11 @@ export default function App() {
                                         className={cellClasses}
                                         title={valStr === null ? 'null' : (valStr.length > 200 ? valStr.substring(0, 200) + '...' : valStr)}
                                         onClick={() => {
+                                          if (document.activeElement instanceof HTMLElement) {
+                                            document.activeElement.blur();
+                                          }
                                           setSelectedResultCell({ rowIndex: i, colKey });
-                                          setDuckDbSelectedCell({ title: 'Значение', content: valStr === null ? 'null' : valStr });
+                                          setDuckDbSelectedCell({ title: t(t('Значение')), content: valStr === null ? 'null' : valStr });
                                         }}
                                         onContextMenu={(e) => {
                                           e.preventDefault();
@@ -8125,8 +8157,11 @@ export default function App() {
                                     }`}
                                     title={`${col.length > 200 ? col.substring(0, 200) + '...' : col}${resultColumnTypes[col] ? ` (${formatColumnType(resultColumnTypes[col])})` : ''}`}
                                     onClick={() => {
+                                      if (document.activeElement instanceof HTMLElement) {
+                                        document.activeElement.blur();
+                                      }
                                       setSelectedResultCell({ rowIndex: -1, colKey: col });
-                                      setDuckDbSelectedCell({ title: `Столбец: ${col}`, content: computeColumnStats(col, displayedResults) });
+                                      setDuckDbSelectedCell({ title: `${t('Столбец:')} ${col}`, content: computeColumnStats(col, displayedResults) });
                                     }}
                                     onContextMenu={(e) => {
                                       e.preventDefault();
@@ -8156,7 +8191,7 @@ export default function App() {
                                       onMouseDown={(e) => handleResizeMouseDown(e, col)}
                                       onDoubleClick={(e) => handleResetColWidth(e, col)}
                                       onClick={(e) => e.stopPropagation()}
-                                      title="Потяните для изменения ширины. Двойной клик — сброс (Auto-fit)"
+                                      title={t("Потяните для изменения ширины. Двойной клик — сброс (Auto-fit)")}
                                     >
                                       <div className={`w-[2px] h-full opacity-0 group-hover/resizer:opacity-100 transition-opacity ${theme === 'dark' ? 'bg-blue-400' : 'bg-blue-600'}`} />
                                     </div>
@@ -8218,8 +8253,11 @@ export default function App() {
                                         className={cellClasses}
                                         title={valStr === null ? 'null' : (valStr.length > 200 ? valStr.substring(0, 200) + '...' : valStr)}
                                         onClick={() => {
+                                          if (document.activeElement instanceof HTMLElement) {
+                                            document.activeElement.blur();
+                                          }
                                           setSelectedResultCell({ rowIndex: i, colKey });
-                                          setDuckDbSelectedCell({ title: 'Значение', content: valStr === null ? 'null' : valStr });
+                                          setDuckDbSelectedCell({ title: t(t('Значение')), content: valStr === null ? 'null' : valStr });
                                         }}
                                         onContextMenu={(e) => {
                                           e.preventDefault();
@@ -8251,7 +8289,7 @@ export default function App() {
                       )
                     ) : duckDbResults && duckDbResults.length === 0 ? (
                       <div className={`p-4 text-xs italic ${theme === 'dark' ? 'text-slate-500' : 'text-slate-400'}`}>
-                        Запрос выполнен успешно. Данные отсутствуют.
+                        {t('Запрос выполнен успешно. Данные отсутствуют.')}
                       </div>
                     ) : null}
                   </div>
@@ -8290,14 +8328,14 @@ export default function App() {
                                 ? 'bg-teal-600 text-white hover:bg-teal-500 font-medium'
                                 : theme === 'dark' ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'
                             }`}
-                            title={isCellSqlHighlighted ? "Отключить подсветку SQL" : "Включить подсветку SQL"}
+                            title={isCellSqlHighlighted ? t("Отключить подсветку SQL") : t("Включить подсветку SQL")}
                           >
                             <Code className="w-3.5 h-3.5" />
                           </button>
                           <button 
                             onClick={() => {
-                              if ((selectedResultCell?.rowIndex === -1 && selectedResultCell?.colKey) || duckDbSelectedCell.title.startsWith('Столбец:')) {
-                                const colKey = selectedResultCell?.colKey || duckDbSelectedCell.title.replace(/^Столбец:\s*/, '');
+                              if ((selectedResultCell?.rowIndex === -1 && selectedResultCell?.colKey) || duckDbSelectedCell.title.startsWith(t('Столбец:'))) {
+                                const colKey = selectedResultCell?.colKey || duckDbSelectedCell.title.replace(new RegExp(`^${t('Столбец:')}\\s*`), '');
                                 const rows = (displayedResults || []).map(r => {
                                   const v = r[colKey];
                                   return v === null || v === undefined ? 'null' : String(v);
@@ -8310,14 +8348,14 @@ export default function App() {
                               setTimeout(() => setCopiedCellValue(false), 2000);
                             }}
                             className={`p-1 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'}`}
-                            title={copiedCellValue ? "Скопировано!" : "Скопировать значение"}
+                            title={copiedCellValue ? t("Скопировано!") : t("Скопировать значение")}
                           >
                             {copiedCellValue ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
                           </button>
                           <button 
                             onClick={() => setIsCellZoomed(!isCellZoomed)}
                             className={`p-1 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'}`}
-                            title={isCellZoomed ? "Стандартный размер" : "Увеличить в 2 раза"}
+                            title={isCellZoomed ? t("Стандартный размер") : t("Увеличить в 2 раза")}
                           >
                             {isCellZoomed ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
                           </button>
@@ -8328,7 +8366,7 @@ export default function App() {
                               setIsCellSqlHighlighted(false);
                             }}
                             className={`p-1 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'}`}
-                            title="Закрыть"
+                            title={t("Закрыть")}
                           >
                             <X className="w-3.5 h-3.5" />
                           </button>
@@ -8376,7 +8414,7 @@ export default function App() {
                   }}
                 >
                   <ListTree className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                  <span>Последовательное выполнение</span>
+                  <span>{t('Последовательное выполнение')}</span>
                 </button>
                 <button 
                   type="button"
@@ -8387,7 +8425,7 @@ export default function App() {
                   }}
                 >
                   <Network className="w-3.5 h-3.5 text-teal-500 shrink-0" />
-                  <span>Параллельное выполнение</span>
+                  <span>{t('Параллельное выполнение')}</span>
                 </button>
               </div>
             )}
@@ -8558,7 +8596,7 @@ export default function App() {
                       ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/40' 
                       : 'text-slate-700 hover:text-slate-900 hover:bg-slate-400/30'
                   }`}
-                  title="Настройки и масштаб интерфейса"
+                  title={t('Настройки и масштаб интерфейса')}
                 >
                   <Settings className="w-3.5 h-3.5" />
                 </button>
@@ -8575,9 +8613,9 @@ export default function App() {
                             ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/40 border border-transparent' 
                             : 'text-slate-700 hover:text-slate-900 hover:bg-slate-400/30 border border-transparent')
                     }`}
-                    title="Готовые шаблоны и примеры SQL"
+                    title={t('Готовые шаблоны и примеры SQL')}
                   >
-                    <span>Пресеты</span>
+                    <span>{t('Пресеты')}</span>
                     <ChevronDown className="w-3 h-3 opacity-60" />
                   </button>
 
@@ -8591,7 +8629,7 @@ export default function App() {
                         theme === 'dark' ? 'bg-slate-800 border-slate-600 text-slate-200' : 'bg-white border-slate-300 text-slate-800'
                       }`}>
                         <div className="flex items-center justify-between pb-1.5 border-b border-slate-600/40 mb-1.5">
-                          <span className="text-xs uppercase font-bold text-slate-400">Готовые SQL пресеты</span>
+                          <span className="text-xs uppercase font-bold text-slate-400">{t('Готовые SQL пресеты')}</span>
                           <button 
                             onClick={() => setShowPresetsDropdown(false)}
                             className="p-0.5 rounded hover:bg-slate-700/50 text-slate-400 hover:text-slate-200"
@@ -8646,10 +8684,10 @@ export default function App() {
                   className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded transition-all ${
                     theme === 'dark' ? 'text-slate-300 hover:text-slate-100' : 'text-slate-700 hover:text-slate-900'
                   }`}
-                  title="Поиск и замена текста (Ctrl+F / Ctrl+H)"
+                  title={t('Поиск и замена текста (Ctrl+F / Ctrl+H)')}
                 >
                   <Search className="w-3.5 h-3.5 text-blue-500" />
-                  <span>Поиск</span>
+                  <span>{t('Поиск')}</span>
                 </button>
                 )}
 
@@ -8660,10 +8698,10 @@ export default function App() {
                       ? 'bg-blue-600 text-white font-bold'
                       : theme === 'dark' ? 'text-slate-300 hover:text-slate-100' : 'text-slate-700 hover:text-slate-900'
                   }`}
-                  title="Перенос строки"
+                  title={t('Перенос строки')}
                 >
                   <WrapText className="w-3.5 h-3.5" />
-                  <span>Перенос</span>
+                  <span>{t('Перенос')}</span>
                 </button>
 
                 {uiVisibility.showFormatSql && (
@@ -8672,14 +8710,14 @@ export default function App() {
                   className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded transition-all ${
                     theme === 'dark' ? 'text-slate-300 hover:text-slate-100' : 'text-slate-700 hover:text-slate-900'
                   }`}
-                  title="Форматировать SQL (Ctrl+Shift+F)"
+                  title={t('Форматировать SQL (Ctrl+Shift+F)')}
                 >
                   {isFormatted ? (
                     <Check className="w-3.5 h-3.5 text-emerald-500" />
                   ) : (
                     <AlignLeft className="w-3.5 h-3.5" />
                   )}
-                  <span>Формат</span>
+                  <span>{t('Формат')}</span>
                 </button>
                 )}
 
@@ -8689,7 +8727,7 @@ export default function App() {
                   className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded transition-all ${
                     theme === 'dark' ? 'text-slate-300 hover:text-slate-100' : 'text-slate-700 hover:text-slate-900'
                   }`}
-                  title="Формат в одну строку (Ctrl+Alt+M)"
+                  title={t('Формат в одну строку (Ctrl+Alt+M)')}
                 >
                   {isCompacted ? (
                     <Check className="w-3.5 h-3.5 text-emerald-500" />
@@ -8705,10 +8743,10 @@ export default function App() {
                   className={`flex items-center gap-1 text-xs px-2 py-1 transition-colors ${
                     theme === 'dark' ? 'text-slate-300 hover:text-slate-100' : 'text-slate-800 hover:text-slate-950'
                   }`}
-                  title="Скопировать SQL"
+                  title={t('Скопировать SQL')}
                 >
                   {copied === 'sql' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copied === 'sql' ? 'Copied!' : 'Copy SQL'}</span>
+                  <span>{copied === 'sql' ? t('Скопировано!') : t('Скопировать SQL')}</span>
                 </button>
                 )}
 
@@ -8720,7 +8758,7 @@ export default function App() {
                       ? 'text-slate-300 hover:text-slate-100' 
                       : 'text-slate-700 hover:text-slate-900'
                   }`}
-                  title="Открыть файл в кодировке Windows-1251"
+                  title={t('Открыть файл в кодировке Windows-1251')}
                 >
                   <span>Win-1251</span>
                 </button>
@@ -8736,10 +8774,10 @@ export default function App() {
                         ? 'bg-slate-700 hover:bg-slate-600 text-slate-300'
                         : 'bg-slate-200 hover:bg-slate-300 text-slate-700'
                     }`}
-                    title="Развернуть результат запроса"
+                    title={t('Развернуть результат запроса')}
                   >
                     <ChevronUp className="w-3.5 h-3.5" />
-                    <span>Результат</span>
+                    <span>{t('Результат')}</span>
                   </button>
                 )}
                 {(uiVisibility.showDuckDbConfig || uiVisibility.showClickhouseConfig) && activeTabId !== ACTION_MENU_TAB_ID && (
@@ -8768,10 +8806,10 @@ export default function App() {
                         ? 'bg-teal-600 hover:bg-teal-500 text-white'
                         : 'bg-teal-500 hover:bg-teal-600 text-white'
                   }`}
-                  title="Выполнить запрос в DB"
+                  title={t('Выполнить запрос в DB')}
                 >
                   {isAnyQueryRunning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Terminal className="w-3.5 h-3.5" />}
-                  <span>Execute</span>
+                  <span>{t('Выполнить')}</span>
                 </button>
                 )}
                 {activeTabId !== ACTION_MENU_TAB_ID && (
@@ -8831,6 +8869,7 @@ export default function App() {
         onClose={() => setShowHistoryModal(false)}
         currentSql={getActiveTabSql()}
         currentDialect={dialect}
+        currentTabTitle={activeTabTitleRef.current}
         onRestoreVersion={(restoredSql, restoredDialect) => {
           sqlRef.current = restoredSql; setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: restoredSql } : t));
           if (restoredDialect) {

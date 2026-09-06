@@ -7,6 +7,35 @@ const DB_NAME = 'sql_visualizer_tabs_db';
 const STORE_NAME = 'tabs_session';
 const DB_VERSION = 1;
 
+function saveToIndexedDb(tabs: any[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (typeof window === 'undefined' || !window.indexedDB) return resolve();
+    const request = window.indexedDB.open(DB_NAME, DB_VERSION);
+    request.onupgradeneeded = (event: any) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+      }
+    };
+    request.onsuccess = (event: any) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        resolve();
+        return;
+      }
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      store.clear();
+      tabs.forEach((tab, index) => {
+        store.put({ ...tab, _order: index });
+      });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
 export async function saveSessionTabs(tabs: EditorTab[]): Promise<void> {
   try {
     const sanitizedTabs = tabs.map(tab => ({
@@ -20,8 +49,20 @@ export async function saveSessionTabs(tabs: EditorTab[]): Promise<void> {
       lastExecutedSql: tab.lastExecutedSql
     }));
     
-    // Synchronously save to localStorage
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sanitizedTabs));
+    try {
+      // Synchronously save to localStorage
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sanitizedTabs));
+    } catch (e: any) {
+      if (e.name === 'QuotaExceededError' || e.code === 22 || (e.message && e.message.includes('quota'))) {
+        console.warn('LocalStorage quota exceeded. Falling back to IndexedDB for tabs session.');
+        // Обязательно удаляем ключ из localStorage, чтобы при следующей загрузке 
+        // fallback в getSessionTabs переключился на чтение из IndexedDB.
+        localStorage.removeItem(LOCAL_STORAGE_KEY);
+        await saveToIndexedDb(sanitizedTabs);
+      } else {
+        throw e;
+      }
+    }
   } catch (e) {
     console.error('saveSessionTabs error:', e);
   }

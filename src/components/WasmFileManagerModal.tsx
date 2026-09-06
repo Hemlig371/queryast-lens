@@ -1,3 +1,4 @@
+import { t } from '../utils/i18n';
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Upload, Trash2, HardDrive, FileText, Database, Check, AlertCircle, RefreshCw, Loader2 } from 'lucide-react';
 import { registerWasmFile, dropWasmFile, getRegisteredWasmFiles } from '../lib/duckdbWasm';
@@ -16,7 +17,7 @@ interface VfsFileItem {
 }
 
 function formatBytes(bytes?: number): string {
-  if (bytes === undefined || bytes === null || isNaN(bytes)) return 'Неизвестно';
+  if (bytes === undefined || bytes === null || isNaN(bytes)) return t('Неизвестно');
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -74,7 +75,7 @@ export function WasmFileManagerModal({
       await loadFileList();
       setMessage({
         type: 'success',
-        text: `Успешно загружено файлов в WASM VFS: ${successCount}`,
+        text: `${t('Успешно загружено файлов в WASM VFS: ')}${successCount}`,
       });
 
       if (onSchemaRefresh) {
@@ -83,7 +84,7 @@ export function WasmFileManagerModal({
     } catch (err: any) {
       setMessage({
         type: 'error',
-        text: 'Ошибка при загрузке файла: ' + (err.message || String(err)),
+        text: t('Ошибка при загрузке файла: ') + (err.message || String(err)),
       });
     } finally {
       setIsLoading(false);
@@ -102,7 +103,7 @@ export function WasmFileManagerModal({
         await loadFileList();
         setMessage({
           type: 'success',
-          text: `Файл "${fileName}" удален из виртуальной памяти`,
+          text: `${t('Файл ')}"${fileName}"${t(' удален из виртуальной памяти')}`,
         });
         if (onSchemaRefresh) {
           onSchemaRefresh();
@@ -110,13 +111,13 @@ export function WasmFileManagerModal({
       } else {
         setMessage({
           type: 'error',
-          text: `Не удалось удалить файл "${fileName}"`,
+          text: `${t('Не удалось удалить файл ')}"${fileName}"`,
         });
       }
     } catch (err: any) {
       setMessage({
         type: 'error',
-        text: 'Ошибка при удалении: ' + (err.message || String(err)),
+        text: t('Ошибка при удалении: ') + (err.message || String(err)),
       });
     } finally {
       setIsLoading(false);
@@ -142,10 +143,10 @@ export function WasmFileManagerModal({
             </div>
             <div>
               <h3 className={`font-bold text-sm sm:text-base ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>
-                Виртуальная файловая система (WASM VFS)
+                {t('Виртуальная файловая система (WASM VFS)')}
               </h3>
               <p className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
-                Управление файлами в оперативной памяти мобильного движка DuckDB
+                {t('Управление файлами в оперативной памяти мобильного движка DuckDB')}
               </p>
             </div>
           </div>
@@ -182,7 +183,7 @@ export function WasmFileManagerModal({
           {/* TOP CONTROLS & UPLOAD BUTTON */}
           <div className="flex items-center justify-between gap-3">
             <span className={`text-xs font-semibold ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>
-              Загруженные файлы ({files.length}):
+              {t('Загруженные файлы')} ({files.length}):
             </span>
 
             <input
@@ -203,7 +204,7 @@ export function WasmFileManagerModal({
                     ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700 disabled:opacity-50'
                     : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200 disabled:opacity-50'
                 }`}
-                title="Обновить список файлов VFS"
+                title={t("Обновить список файлов VFS")}
               >
                 <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-blue-500' : ''}`} />
               </button>
@@ -218,7 +219,7 @@ export function WasmFileManagerModal({
                 }`}
               >
                 {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                <span>Загрузить файл</span>
+                <span>{t("Загрузить файл")}</span>
               </button>
             </div>
           </div>
@@ -253,7 +254,7 @@ export function WasmFileManagerModal({
                           {file.name}
                         </div>
                         <div className={`text-[11px] ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
-                          Размер: {formatBytes(file.size)}
+                          {t("Размер:")} {formatBytes(file.size)}
                         </div>
                       </div>
                     </div>
@@ -266,10 +267,10 @@ export function WasmFileManagerModal({
                           ? 'text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20'
                           : 'text-slate-500 hover:text-rose-600 hover:bg-rose-500/10 border border-transparent hover:border-rose-200'
                       }`}
-                      title="Удалить из VFS"
+                      title={t("Удалить из VFS")}
                     >
                       <Trash2 className="w-3.5 h-3.5" />
-                      <span>Удалить</span>
+                      <span>{t("Удалить")}</span>
                     </button>
                   </div>
                 ))}
@@ -282,9 +283,9 @@ export function WasmFileManagerModal({
               }`}
             >
               <HardDrive className="w-8 h-8 text-slate-400 opacity-50" />
-              <div className="text-xs font-medium">Виртуальная файловая система WASM пуста</div>
+              <div className="text-xs font-medium">{t("Виртуальная файловая система WASM пуста")}</div>
               <p className="text-[11px] max-w-sm text-slate-400">
-                Загрузите файлы Parquet, CSV, JSON или DuckDB, чтобы они были доступны для SQL-запросов на мобильном устройстве.
+                {t("Загрузите файлы Parquet, CSV, JSON или DuckDB, чтобы они были доступны для SQL-запросов на мобильном устройстве.")}
               </p>
             </div>
           )}
@@ -304,7 +305,7 @@ export function WasmFileManagerModal({
                 : 'bg-slate-200 hover:bg-slate-300 text-slate-800'
             }`}
           >
-            Закрыть
+            {t("Закрыть")}
           </button>
         </div>
       </div>
