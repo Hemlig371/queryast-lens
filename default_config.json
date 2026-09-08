@@ -533,6 +533,7 @@
         }
       }
     ],
+    "app_lang": "en",
     "sql_visualizer_ui_visibility_v1": {
       "showEditorToggleBtn": true,
       "showPresets": false,
