@@ -11,7 +11,7 @@ Available as a native Desktop Client (Tauri / Rust), Mobile App (Android / Capac
 #### 💻 SQL Query Workbench & Editor
 * **Multi-tab SQL Editor**: Syntax highlighting, Regex find & replace, schema-aware autocomplete, and custom hotkeys.
 * **Engine Support**:
-  * **DuckDB**: Direct disk file querying (`.duckdb`, `.parquet`, `.csv`, `.json`) on Desktop via C++/Rust IPC, or in-memory execution via WebAssembly (VFS) in browser.
+  * **DuckDB**: Direct disk file querying (`.duckdb`, `.parquet`, `.csv`, `.json`) on Desktop via C++/Rust IPC, or in-memory execution via WebAssembly (VFS).
   * **ClickHouse**: HTTP API integration with authentication, `COPY TO / COPY FROM` streaming pipelines, and server-side query cancellation tokens.
 * **DuckDB Init Script (`duckDbInitSql`)**: Custom startup SQL execution for PRAGMAs, timezone setup, and auto-loading extensions upon connecting.
 * **Schema Introspection**: Object explorer for tables, views, and column data types with quick-injection context menus.
