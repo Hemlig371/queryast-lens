@@ -66,8 +66,6 @@ xattr -cr /Applications/"QueryAST Lens.app"
 
 ---
 
-## Описание (RU)
-
 ### Ключевые возможности
 
 #### 💻 SQL Query Workbench & Редактор
