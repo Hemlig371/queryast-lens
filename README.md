@@ -1,4 +1,4 @@
-## Description (EN)
+# QueryAST Lens
 
 QueryAST Lens is a cross-platform SQL Query Workbench and analytical database client (DuckDB, ClickHouse) with an integrated AST (Abstract Syntax Tree) visualizer and Data Lineage engine.
 
@@ -58,7 +58,7 @@ xattr -cr /Applications/"QueryAST Lens.app"
 
 ---
 
-# QueryAST Lens
+## Description (RU)
 
 Локальный кроссплатформенный SQL Workbench и клиент аналитических баз данных (DuckDB, ClickHouse) с встроенным модулем визуализации AST (Abstract Syntax Tree) и Data Lineage.
 
