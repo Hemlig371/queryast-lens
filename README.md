@@ -10,9 +10,10 @@ Available as a native Desktop Client (Tauri / Rust), Mobile App (Android / Capac
 
 #### 💻 SQL Query Workbench & Editor
 * **Multi-tab SQL Editor**: Syntax highlighting, Regex find & replace, schema-aware autocomplete, and custom hotkeys.
+* **SQL Variables & Macros**: Parameterize your queries using local variables directly in SQL comments (e.g., `{{$limit=100}}`).
 * **Engine Support**:
   * **DuckDB**: Direct disk file querying (`.duckdb`, `.parquet`, `.csv`, `.json`) on Desktop via C++/Rust IPC, or in-memory execution via WebAssembly (VFS).
-  * **ClickHouse**: HTTP API integration with authentication, `COPY TO / COPY FROM` streaming pipelines, and server-side query cancellation tokens.
+  * **ClickHouse**: HTTP API integration with authentication, `COPY TO / COPY FROM` streaming pipelines, and server-side query cancellation tokens. Native Capacitor HTTP support for CORS bypass on Android/iOS.
 * **DuckDB Init Script (`duckDbInitSql`)**: Custom startup SQL execution for PRAGMAs, timezone setup, and auto-loading extensions upon connecting.
 * **Schema Introspection**: Object explorer for tables, views, and column data types with quick-injection context menus.
 
@@ -33,7 +34,7 @@ Available as a native Desktop Client (Tauri / Rust), Mobile App (Android / Capac
 * **Diagram Exports**: Export node graphs to PNG, SVG, JPEG, JSON, Mermaid, and Draw.io formats.
 
 #### 🛠️ Productivity, i18n & Security Vault
-* **Snippets & Quick Actions**: Manage reusable SQL snippets with natural string sorting and clipboard copying.
+* **Snippets & Quick Actions**: Manage reusable SQL snippets with natural string sorting and clipboard copying. ZIP exports group snippets into virtual folders.
 * **Encrypted Vault (AES-256 GCM)**: Client-side connection secret encryption using Web Crypto API with pin-code protection and auto-lock timeouts.
 * **Version History & Schema Cache**: Automatic query snapshot tracking and IndexedDB schema caching with automated stale record cleanup.
 * **Localization (i18n)**: Built-in interface language toggling (RU/EN).
@@ -70,9 +71,10 @@ xattr -cr /Applications/"QueryAST Lens.app"
 
 #### 💻 SQL Query Workbench & Редактор
 * **Многовкладочный SQL-редактор**: Подсветка синтаксиса, поиск/замена с поддержкой регулярных выражений, автодополнение на основе кэша схем БД и настраиваемые горячие клавиши.
+* **Локальные SQL-переменные**: Поддержка макросов в комментариях. Подстановка значений вида `{{$limit=100}}` перед выполнением запроса.
 * **Локальный и сетевой движки**:
   * **DuckDB**: Прямое чтение дисковых файлов (`.duckdb`, `.parquet`, `.csv`, `.json`) в десктоп-версии через C++/Rust IPC без ограничений памяти WASM или работа в браузере через WebAssembly (VFS).
-  * **ClickHouse**: Подключение по HTTP API с поддержкой авторизации, потоковых операций `COPY TO / COPY FROM` и сервер-отмены долгих операций.
+  * **ClickHouse**: Подключение по HTTP API с поддержкой авторизации, потоковых операций `COPY TO / COPY FROM` и сервер-отмены долгих операций. Нативная поддержка Capacitor HTTP для обхода CORS на мобильных устройствах.
 * **Скрипт инициализации DuckDB (`duckDbInitSql`)**: Возможность задания стартовых PRAGMA-параметров, часовых поясов и подключения расширений при старте сессии.
 * **Управление схемой БД (Introspection)**: Браузер таблиц, представлений и колонок с типами данных. Включает контекстное меню для быстрой вставки имен объектов в редактор.
 
@@ -93,7 +95,7 @@ xattr -cr /Applications/"QueryAST Lens.app"
 * **Экспорт графов**: Сохранение диаграмм в форматы PNG, SVG, JPEG, а также в структурированный JSON, Mermaid и Draw.io.
 
 #### 🛠️ Инструменты продуктивности и хранилище
-* **Библиотека сниппетов и действий (No-code Action Menu)**: Сохранение часто используемых запросов с поддержкой естественной алфавитной сортировки и быстрой вставкой.
+* **Библиотека сниппетов и действий (No-code Action Menu)**: Сохранение часто используемых запросов с поддержкой естественной алфавитной сортировки. Экспорт в ZIP распределяет сниппеты по папкам ("Избранное", "Jobs").
 * **Защищённый Vault (AES-256 GCM)**: Шифрование параметров подключения и секретов в браузере с защитой пин-кодом и автоблокировкой по таймеру.
 * **История версий и кэш**: Автоматическое сохранение снимков запросов и кэширование схем в IndexedDB с процедурами автоочистки устаревших записей.
 * **Мультиязычный интерфейс (i18n)**: Поддержка переключения языков интерфейса (RU/EN) с динамическим переводом компонентов.
