@@ -216,12 +216,15 @@ export async function downloadFileInBrowser(fileName: string, buffer: Uint8Array
       const { Filesystem, Directory } = await import('@capacitor/filesystem');
       const { Share } = await import('@capacitor/share');
 
-      let binary = '';
-      const len = buffer.byteLength;
-      for (let i = 0; i < len; i++) {
-        binary += String.fromCharCode(buffer[i]);
-      }
-      const base64Data = window.btoa(binary);
+      const base64Data = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const result = reader.result as string;
+          resolve(result.split(',')[1] || result);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
 
       const savedFile = await Filesystem.writeFile({
         path: downloadName,
