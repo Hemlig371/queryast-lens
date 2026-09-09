@@ -13,7 +13,7 @@ Available as a native Desktop Client (Tauri / Rust), Mobile App (Android / Capac
 * **SQL Variables & Macros**: Parameterize your queries using local variables directly in SQL comments (e.g., `{{$limit=100}}`).
 * **Engine Support**:
   * **DuckDB**: Direct disk file querying (`.duckdb`, `.parquet`, `.csv`, `.json`) on Desktop via C++/Rust IPC, or in-memory execution via WebAssembly (VFS).
-  * **ClickHouse**: HTTP API integration with authentication, `COPY TO / COPY FROM` streaming pipelines, and server-side query cancellation tokens. Native Capacitor HTTP support for CORS bypass on Android/iOS.
+  * **ClickHouse**: HTTP API integration with authentication, `COPY TO / COPY FROM` streaming pipelines, and server-side query cancellation tokens. Native Capacitor HTTP support for CORS bypass on Android.
 * **DuckDB Init Script (`duckDbInitSql`)**: Custom startup SQL execution for PRAGMAs, timezone setup, and auto-loading extensions upon connecting.
 * **Schema Introspection**: Object explorer for tables, views, and column data types with quick-injection context menus.
 
