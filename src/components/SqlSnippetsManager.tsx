@@ -1664,7 +1664,7 @@ export function SqlSnippetsManager({
     
     // Set of dialects to separate them into bottom group
     const knownDialectSet = new Set([
-      'General', 'PostgreSQL', 'Oracle', 'Clickhouse', 'ClickHouse', 'DuckDB', 'MySQL', 'SQLite', 'MS SQL', 'Snowflake',
+      'General', 'PostgreSQL', 'Oracle', 'Clickhouse', 'DuckDB', 'MySQL', 'SQLite', 'MS SQL', 'Snowflake',
       ...rawDialects
     ]);
 
@@ -1922,10 +1922,6 @@ export function SqlSnippetsManager({
         if (!safeTitle) safeTitle = `snippet_${s.id.substring(0, 6)}`;
         safeTitle = safeTitle.substring(0, 80); // Prevent extremely long filenames
 
-        // Category as folder (sanitized against invalid OS path characters)
-        const rawFolder = s.category || 'Без_категории';
-        const folderName = rawFolder.replace(/[/\\:*?"<>|]/g, '_').trim() || 'Без_категории';
-        
         let fileContent = '';
         fileContent += `-- ${s.dialect || 'General'}\n`;
         if (s.description) {
@@ -1934,16 +1930,33 @@ export function SqlSnippetsManager({
         }
         fileContent += `\n${s.sql}`;
 
-        // Prevent file collisions within the same category
-        let finalPath = `${folderName}/${safeTitle}.sql`;
-        let counter = 1;
-        while (usedPaths.has(finalPath)) {
-          finalPath = `${folderName}/${safeTitle}_${counter}.sql`;
-          counter++;
-        }
-        usedPaths.add(finalPath);
+        const addFileToFolder = (rawFolder: string) => {
+          // Category as folder (sanitized against invalid OS path characters)
+          const folderName = rawFolder.replace(/[/\\:*?"<>|]/g, '_').trim() || 'Без_категории';
+          
+          // Prevent file collisions within the same category
+          let finalPath = `${folderName}/${safeTitle}.sql`;
+          let counter = 1;
+          while (usedPaths.has(finalPath)) {
+            finalPath = `${folderName}/${safeTitle}_${counter}.sql`;
+            counter++;
+          }
+          usedPaths.add(finalPath);
+          zip.file(finalPath, fileContent);
+        };
 
-        zip.file(finalPath, fileContent);
+        // 1. Regular category
+        addFileToFolder(s.category || 'Без_категории');
+
+        // 2. Favorites pseudo-category
+        if (favoriteIds.includes(s.id)) {
+          addFileToFolder('Избранное');
+        }
+
+        // 3. Jobs pseudo-category
+        if (s.sql.trim().startsWith('-- @job')) {
+          addFileToFolder(JOBS_CATEGORY);
+        }
       });
 
       const blob = await zip.generateAsync({ type: 'blob' });

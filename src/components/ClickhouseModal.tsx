@@ -1,7 +1,7 @@
 import { t } from '../utils/i18n';
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Database, Check, AlertCircle, Loader2, Unplug, Key, ChevronDown } from 'lucide-react';
-import { ClickhouseConfig, getClickhouseUrl, getClickhouseHeaders, isTauriEnvironment, executeClickhouseQueryTauri } from '../lib/clickhouse';
+import { ClickhouseConfig, getClickhouseUrl, getClickhouseHeaders, isTauriEnvironment, isCapacitorEnvironment, executeClickhouseQueryTauri, executeClickhouseQueryCapacitor } from '../lib/clickhouse';
 import { getClickhouseVaultSecrets, parseClickhouseUri, VaultSecret } from '../utils/vaultStorage';
 
 interface ClickhouseModalProps {
@@ -115,6 +115,20 @@ export const ClickhouseModal: React.FC<ClickhouseModalProps> = ({
           setTestResult({
             success: false,
             message: err.message || String(err) || t('Ошибка сети или недоступности хоста ClickHouse (Tauri)'),
+          });
+        }
+      } else if (isCapacitorEnvironment()) {
+        try {
+          const res = await executeClickhouseQueryCapacitor(currentConfig, 'SELECT 1');
+          const textRes = res.text || (typeof res.data === 'string' ? res.data : JSON.stringify(res.data));
+          setTestResult({
+            success: true,
+            message: `${t('Подключение успешно!')} SELECT 1: ${textRes || '1'}`,
+          });
+        } catch (err: any) {
+          setTestResult({
+            success: false,
+            message: err.message || String(err) || t('Ошибка сети или недоступности хоста ClickHouse (Capacitor)'),
           });
         }
       } else {

@@ -93,12 +93,12 @@ import { SettingsModal, getSavedHotkeys, getSavedFormatterSettings, FormatterSet
 import { VersionHistoryModal } from './components/VersionHistoryModal';
 import { saveVersion, getVersions, getLatestVersion } from './utils/versionHistory';
 import { format as formatSql } from 'sql-formatter';
-import { splitBySemicolonIgnoringQuotes, formatColumnType } from './lib/sqlUtils';
+import { splitBySemicolonIgnoringQuotes, formatColumnType, replaceVariablesInSql } from './lib/sqlUtils';
 import { getSessionTabs, saveSessionTabs } from './utils/sessionStorage';
 import { connectDuckDbWasmFile, connectDuckDbWasmMemory, queryDuckDbWasm, disconnectDuckDbWasm, exportDuckDbFile, applyDuckDbConfigWasm, attachDuckDbWasmFile } from './lib/duckdbWasm';
 import { WasmFileManagerModal } from './components/WasmFileManagerModal';
 import { ClickhouseModal } from './components/ClickhouseModal';
-import { ClickhouseConfig, parseClickhouseCopy, getClickhouseUrl, getClickhouseHeaders, isTauriEnvironment, executeClickhouseQueryTauri, executeClickhouseCopyToTauri, executeClickhouseCopyFromTauri, cancelClickhouseQueryTauri } from './lib/clickhouse';
+import { ClickhouseConfig, parseClickhouseCopy, getClickhouseUrl, getClickhouseHeaders, isTauriEnvironment, isCapacitorEnvironment, executeClickhouseQueryTauri, executeClickhouseQueryCapacitor, executeClickhouseCopyToTauri, executeClickhouseCopyToCapacitor, executeClickhouseCopyFromTauri, cancelClickhouseQueryTauri } from './lib/clickhouse';
 import { getSchemaCache, saveSchemaCache } from './utils/schemaDbCache';
 import { replaceSecretsInSql } from './utils/vaultStorage';
 import { exportToExcel } from './utils/excelExporter';
@@ -442,13 +442,23 @@ export default function App() {
   const [duckDbPageSize, setDuckDbPageSize] = useState<number>(50);
   const [showQuickActionsMenu, setShowQuickActionsMenu] = useState<boolean>(false);
   const [quickActions, setQuickActions] = useState<QuickActionTemplate[]>(getQuickActionTemplates);
-  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
+  const tableSizingRef = useRef<HTMLTableElement>(null);
   const resizingColRef = useRef<{ colKey: string; startX: number; startWidth: number } | null>(null);
   const rafResizeIdRef = useRef<number | null>(null);
 
+  const getCssVarSafeName = (key: string) => {
+    try {
+      return btoa(encodeURIComponent(key)).replace(/[^a-zA-Z0-9]/g, '');
+    } catch (e) {
+      return key.replace(/[^a-zA-Z0-9\-_]/g, '_');
+    }
+  };
+
   // Reset column widths on new query results
   useEffect(() => {
-    setColumnWidths({});
+    if (tableSizingRef.current) {
+      tableSizingRef.current.style.cssText = '';
+    }
   }, [duckDbResults]);
 
   const handleResizeMouseDown = (e: React.MouseEvent, colKey: string) => {
@@ -468,10 +478,10 @@ export default function App() {
         cancelAnimationFrame(rafResizeIdRef.current);
       }
       rafResizeIdRef.current = requestAnimationFrame(() => {
-        setColumnWidths((prev) => {
-          if (prev[key] === newWidth) return prev;
-          return { ...prev, [key]: newWidth };
-        });
+        if (tableSizingRef.current) {
+          const safeKey = getCssVarSafeName(key);
+          tableSizingRef.current.style.setProperty(`--cw-${safeKey}`, `${newWidth}px`);
+        }
       });
     };
 
@@ -496,11 +506,10 @@ export default function App() {
   const handleResetColWidth = (e: React.MouseEvent, colKey: string) => {
     e.preventDefault();
     e.stopPropagation();
-    setColumnWidths((prev) => {
-      const next = { ...prev };
-      delete next[colKey];
-      return next;
-    });
+    if (tableSizingRef.current) {
+      const safeKey = getCssVarSafeName(colKey);
+      tableSizingRef.current.style.removeProperty(`--cw-${safeKey}`);
+    }
   };
 
   const [schemaContextMenu, setSchemaContextMenu] = useState<{
@@ -666,6 +675,12 @@ export default function App() {
             data = await executeClickhouseQueryTauri(clickhouseConfig, colQuery);
           } catch (e) {
             console.warn("Tauri CH table cols query failed:", e);
+          }
+        } else if (isCapacitorEnvironment()) {
+          try {
+            data = await executeClickhouseQueryCapacitor(clickhouseConfig, colQuery);
+          } catch (e) {
+            console.warn("Capacitor CH table cols query failed:", e);
           }
         } else {
           try {
@@ -2001,6 +2016,12 @@ export default function App() {
           } catch (e: any) {
             console.warn("Tauri direct Clickhouse schema fetch failed:", e);
           }
+        } else if (isCapacitorEnvironment()) {
+          try {
+            data = await executeClickhouseQueryCapacitor(clickhouseConfig, schemaQuery);
+          } catch (e: any) {
+            console.warn("Capacitor direct Clickhouse schema fetch failed:", e);
+          }
         } else {
           try {
             data = await fetchApiJson('/api/clickhouse/query', {
@@ -2448,6 +2469,8 @@ export default function App() {
       setDuckDbSelectedCell(null);
 
       let finalQuery = queryToExec.trim();
+      const tabContextSql = (originTabId === activeTabId ? sqlRef.current : tabs.find(t => t.id === originTabId)?.sql) || sqlRef.current;
+      finalQuery = replaceVariablesInSql(finalQuery, tabContextSql);
       try {
         finalQuery = replaceSecretsInSql(finalQuery);
       } catch (vaultErr: any) {
@@ -2658,6 +2681,8 @@ export default function App() {
       setDuckDbSelectedCell(null);
       
       let finalQuery = queryToExec.trim();
+      const tabContextSql = (originTabId === activeTabId ? sqlRef.current : tabs.find(t => t.id === originTabId)?.sql) || sqlRef.current;
+      finalQuery = replaceVariablesInSql(finalQuery, tabContextSql);
       try {
         finalQuery = replaceSecretsInSql(finalQuery);
       } catch (vaultErr: any) {
@@ -2681,6 +2706,8 @@ export default function App() {
             if (controller.signal.aborted) throw new Error(t("Запрос отменен пользователем"));
             if (isTauriEnvironment()) {
               await executeClickhouseQueryTauri(clickhouseConfig, stmt);
+            } else if (isCapacitorEnvironment()) {
+              await executeClickhouseQueryCapacitor(clickhouseConfig, stmt);
             } else {
               const res = await fetchApiJson('/api/clickhouse/query', {
                 method: 'POST',
@@ -2696,6 +2723,8 @@ export default function App() {
             try {
               if (isTauriEnvironment()) {
                 await executeClickhouseQueryTauri(clickhouseConfig, stmt);
+              } else if (isCapacitorEnvironment()) {
+                await executeClickhouseQueryCapacitor(clickhouseConfig, stmt);
               } else {
                 const res = await fetchApiJson('/api/clickhouse/query', {
                   method: 'POST',
@@ -2728,6 +2757,21 @@ export default function App() {
           if (isTauriEnvironment()) {
             try {
               const res = await executeClickhouseCopyToTauri(clickhouseConfig, copyCmd.innerSql, copyCmd.filePath);
+              setDuckDbResults([
+                {
+                  Status: 'Success (COPY TO)',
+                  File: copyCmd.filePath,
+                  Message: res.message,
+                  Bytes: `${res.bytes} bytes`,
+                },
+              ]);
+              updateEngineState(originTabId, queryToExec, page, { duration: ((performance.now() - queryStartTime) / 1000).toFixed(2) });
+            } catch (err: any) {
+              updateEngineState(originTabId, queryToExec, page, { error: err.message || String(err) });
+            }
+          } else if (isCapacitorEnvironment()) {
+            try {
+              const res = await executeClickhouseCopyToCapacitor(clickhouseConfig, copyCmd.innerSql, copyCmd.filePath);
               setDuckDbResults([
                 {
                   Status: 'Success (COPY TO)',
@@ -2851,6 +2895,12 @@ export default function App() {
       if (isTauriEnvironment()) {
         try {
           data = await executeClickhouseQueryTauri(clickhouseConfig, queryWithLimit);
+        } catch (err: any) {
+          throw new Error(err.message || String(err));
+        }
+      } else if (isCapacitorEnvironment()) {
+        try {
+          data = await executeClickhouseQueryCapacitor(clickhouseConfig, queryWithLimit);
         } catch (err: any) {
           throw new Error(err.message || String(err));
         }
@@ -3023,6 +3073,10 @@ export default function App() {
       try {
         if (isTauriEnvironment()) {
           const res = await executeClickhouseQueryTauri(clickhouseConfig, queryWithFormat);
+          if (controller.signal.aborted) throw new Error(t("Запрос отменен пользователем"));
+          return res?.data || [];
+        } else if (isCapacitorEnvironment()) {
+          const res = await executeClickhouseQueryCapacitor(clickhouseConfig, queryWithFormat);
           if (controller.signal.aborted) throw new Error(t("Запрос отменен пользователем"));
           return res?.data || [];
         } else {
@@ -3540,7 +3594,7 @@ export default function App() {
 
 
 
-  const [expandedQueries, setExpandedQueries] = useState<Set<string>>(new Set());
+  const [collapsedQueries, setCollapsedQueries] = useState<Set<string>>(new Set());
 
   
   
@@ -3549,13 +3603,13 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [astResult, setAstResult] = useState<any>(null);
 
-  const handleExpandAll = useCallback(() => {
+  const handleCollapseAll = useCallback(() => {
     const getAllIds = (ast: any, prefix = 'main_'): string[] => {
       let ids: string[] = [];
       if (!ast) return ids;
       if (ast.type === 'multi_query') {
         ast.queries.forEach((qAst: any, qIdx: number) => {
-          const queryId = `${prefix}query_block_${qIdx}`;
+          const queryId = `${prefix}q_${qIdx}`;
           ids.push(queryId);
           ids.push(...getAllIds(qAst, `${prefix}q${qIdx}_`));
         });
@@ -3573,12 +3627,16 @@ export default function App() {
     
     if (astResult) {
       const allIds = getAllIds(astResult);
-      setExpandedQueries(new Set(allIds));
+      setCollapsedQueries(new Set(allIds));
     }
   }, [astResult]);
 
+  const handleExpandAll = useCallback(() => {
+    setCollapsedQueries(new Set());
+  }, []);
+
   const handleToggleExpand = useCallback((queryId: string) => {
-    setExpandedQueries(prev => {
+    setCollapsedQueries(prev => {
       const next = new Set(prev);
       if (next.has(queryId)) {
         next.delete(queryId);
@@ -4697,7 +4755,7 @@ export default function App() {
           {
             showSort: showSortNodes,
             showLimit: showLimitNodes,
-            expandedQueries,
+            collapsedQueries,
             onToggleExpand: handleToggleExpand
           }
         );
@@ -4723,7 +4781,7 @@ export default function App() {
         }
       }
     }
-  }, [astResult, dialect, direction, showSortNodes, showLimitNodes, expandedQueries, handleToggleExpand, setNodes, setEdges]);
+  }, [astResult, dialect, direction, showSortNodes, showLimitNodes, collapsedQueries, handleToggleExpand, setNodes, setEdges]);
 
   const handlePresetChange = (presetId: string) => {
     const preset = sqlPresets.find(p => p.id === presetId);
@@ -7699,6 +7757,9 @@ export default function App() {
                               if (isTauriEnvironment()) {
                                 const res = await executeClickhouseQueryTauri(clickhouseConfig, queryWithFormat);
                                 return res?.data || [];
+                              } else if (isCapacitorEnvironment()) {
+                                const res = await executeClickhouseQueryCapacitor(clickhouseConfig, queryWithFormat);
+                                return res?.data || [];
                               } else {
                                 const data = await fetchApiJson('/api/clickhouse/query', {
                                   method: 'POST',
@@ -8127,7 +8188,7 @@ export default function App() {
                           </tbody>
                         </table>
                       ) : (
-                        <table className="w-full text-left border-separate border-spacing-0 text-xs">
+                        <table ref={tableSizingRef} className="w-full text-left border-separate border-spacing-0 text-xs">
                           <thead className="sticky top-0 z-20 [transform:translateZ(0)]">
                             <tr className="h-[35px]">
                               <th className={`sticky top-0 left-0 z-30 px-2 h-[35px] font-semibold border-b-[1.5px] border-r-[1.5px] text-center w-12 shrink-0 select-none [transform:translateZ(0)] ${
@@ -8140,13 +8201,17 @@ export default function App() {
                                 const isColCopied = copiedResultCell?.rowIndex === -1 && copiedResultCell?.colKey === col;
                                 const sortInfo = activeSqlSorts.find(s => s.colKey === col);
                                 const isFiltered = activeSqlFilters.some(f => f.colKey === col);
-                                const customWidth = columnWidths[col];
+                                const safeKey = getCssVarSafeName(col);
                                 return (
                                   <th 
                                     key={col} 
                                     id={`th-col-${col}`}
-                                    style={customWidth ? { width: `${customWidth}px`, minWidth: `${customWidth}px`, maxWidth: `${customWidth}px` } : undefined}
-                                    className={`relative group sticky top-0 z-20 px-3 h-[35px] font-semibold border-b-[1.5px] border-r ${customWidth ? '' : 'max-w-[180px]'} overflow-hidden text-ellipsis whitespace-nowrap cursor-pointer [transform:translateZ(0)] ${
+                                    style={{
+                                      width: `var(--cw-${safeKey}, auto)`,
+                                      minWidth: `var(--cw-${safeKey}, auto)`,
+                                      maxWidth: `var(--cw-${safeKey}, 180px)`
+                                    }}
+                                    className={`relative group sticky top-0 z-20 px-3 h-[35px] font-semibold border-b-[1.5px] border-r overflow-hidden text-ellipsis whitespace-nowrap cursor-pointer [transform:translateZ(0)] ${
                                       isColSelected
                                         ? theme === 'dark'
                                           ? 'border-b-blue-500 border-r-slate-700/80 text-blue-300 bg-blue-950 font-bold'
@@ -8221,9 +8286,9 @@ export default function App() {
                                     const isCellSelected = selectedResultCell?.rowIndex === i && selectedResultCell?.colKey === colKey;
                                     const isCellCopied = copiedResultCell?.rowIndex === i && copiedResultCell?.colKey === colKey;
                                     const isColSelected = selectedResultCell?.colKey === colKey;
-                                    const customWidth = columnWidths[colKey];
+                                    const safeKey = getCssVarSafeName(colKey);
 
-                                    let cellClasses = `px-3 py-1.5 whitespace-nowrap overflow-hidden text-ellipsis ${customWidth ? '' : 'max-w-[288px]'} cursor-pointer border-r border-b `;
+                                    let cellClasses = `px-3 py-1.5 whitespace-nowrap overflow-hidden text-ellipsis cursor-pointer border-r border-b `;
 
                                     if (isCellSelected) {
                                       cellClasses += theme === 'dark'
@@ -8249,7 +8314,11 @@ export default function App() {
                                     return (
                                       <td 
                                         key={j} 
-                                        style={customWidth ? { width: `${customWidth}px`, minWidth: `${customWidth}px`, maxWidth: `${customWidth}px` } : undefined}
+                                        style={{
+                                          width: `var(--cw-${safeKey}, auto)`,
+                                          minWidth: `var(--cw-${safeKey}, auto)`,
+                                          maxWidth: `var(--cw-${safeKey}, 288px)`
+                                        }}
                                         className={cellClasses}
                                         title={valStr === null ? 'null' : (valStr.length > 200 ? valStr.substring(0, 200) + '...' : valStr)}
                                         onClick={() => {

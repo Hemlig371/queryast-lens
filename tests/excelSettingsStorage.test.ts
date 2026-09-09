@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import './setupIndexedDB';
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { getSavedExcelSettings, saveExcelSettings, getSavedExcelPresets, saveOrUpdateExcelPreset, deleteExcelPreset, CLASSIC_PRESET_ID } from '../src/utils/excelSettingsStorage';
 import { DEFAULT_EXCEL_SETTINGS } from '../src/types/excelSettings';

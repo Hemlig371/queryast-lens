@@ -1425,7 +1425,7 @@ export interface GraphContext {
   options: { 
     showSort?: boolean; 
     showLimit?: boolean; 
-    expandedQueries?: Set<string>; 
+    collapsedQueries?: Set<string>; 
     onToggleExpand?: (id: string) => void;
   };
 }
@@ -1739,7 +1739,7 @@ export function astToGraph(
   prefix = 'main_',
   dialect = 'PostgreSQL',
   cteTableNodeIds: Record<string, string> = {},
-  options: { showSort?: boolean; showLimit?: boolean; expandedQueries?: Set<string>; onToggleExpand?: (id: string) => void } = { showSort: true, showLimit: true }
+  options: { showSort?: boolean; showLimit?: boolean; collapsedQueries?: Set<string>; onToggleExpand?: (id: string) => void } = { showSort: true, showLimit: true }
 ): { nodes: GraphNode[]; edges: GraphEdge[]; outputId: string } {
   
   const ctx: GraphContext = { nodes: [], edges: [], cteOutputIds: { ...cteTableNodeIds }, options };
@@ -1750,7 +1750,7 @@ export function astToGraph(
     let lastId = '';
     ast.queries.forEach((qAst: any, qIdx: number) => {
       const qId = `${prefix}q_${qIdx}`;
-      if (!options.expandedQueries?.has(qId)) {
+      if (options.collapsedQueries?.has(qId)) {
         let snippet = qAst.type || 'STATEMENT';
         if (qAst.type === 'select') snippet = 'SELECT ...';
         if (qAst.type === 'update') snippet = 'UPDATE ...';

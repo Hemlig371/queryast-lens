@@ -1,92 +1,99 @@
 bun test v1.4.0 (34cbb9a40)
 
-tests/vaultStorage.test.ts:
-(pass) vaultStorage utils > parseClickhouseUri > should parse basic http URI [0.67ms]
-(pass) vaultStorage utils > parseClickhouseUri > should parse https URI with credentials and database [0.17ms]
-(pass) vaultStorage utils > parseClickhouseUri > should handle special double-escaped characters in password (@@ and ::) [0.11ms]
-(pass) vaultStorage utils > parseClickhouseUri > should handle username only (no password) [0.08ms]
-(pass) vaultStorage utils > parseClickhouseUri > should handle URI without protocol (fallback to http) [0.03ms]
-(pass) vaultStorage utils > parseClickhouseUri > should return null for empty or invalid input [0.04ms]
-
-tests/sessionStorage.test.ts:
-(pass) sessionStorage > should return null if there is no data [0.55ms]
-(pass) sessionStorage > should return null and not crash if JSON is corrupted [0.51ms]
-(pass) sessionStorage > should return null if JSON is not an array [0.14ms]
-(pass) sessionStorage > should return parsed tabs if data is valid [0.20ms]
-
-tests/excelSettingsStorage.test.ts:
-(pass) excelSettingsStorage > getSavedExcelSettings returns default settings when localStorage is empty [0.15ms]
-(pass) excelSettingsStorage > saves and retrieves excel settings correctly [0.28ms]
-(pass) excelSettingsStorage > handles corrupted JSON in localStorage gracefully for settings [0.13ms]
-(pass) excelSettingsStorage > returns default preset when localStorage is empty [0.14ms]
-(pass) excelSettingsStorage > saves and retrieves custom presets correctly [0.80ms]
-(pass) excelSettingsStorage > handles corrupted JSON in localStorage gracefully for presets [0.15ms]
-(pass) excelSettingsStorage > deletes a custom preset correctly [0.66ms]
-(pass) excelSettingsStorage > does not leak sensitive data in logs on JSON parse failure [0.27ms]
-
-tests/excelExporter.test.ts:
-(pass) excelExporter utils > exportToExcel with formatting features > runs exportToExcel without crashing when formatExistingRowAsTotal and formatExistingColumnAsTotal are enabled [432.06ms]
-(pass) excelExporter utils > exportToExcel with formatting features > runs exportToExcel with categoryGroupFormatSubtotals [38.10ms]
-(pass) excelExporter utils > exportToExcel with formatting features > runs exportToExcel with both categoryGroupFormatSubtotals and formatExistingRowAsTotal [17.80ms]
-(pass) excelExporter utils > exportToExcel with formatting features > runs exportToExcel with skipColumnIndex and @skip directive [33.13ms]
-
-tests/astToGraph.test.ts:
-(pass) astToGraph utils > stripCommentsSafely > should remove inline and multiline comments [0.58ms]
-(pass) astToGraph utils > splitQueries > should split multiple statements [0.30ms]
-(pass) astToGraph utils > parseSqlToAst > should parse a simple SELECT query [24.68ms]
-(pass) astToGraph utils > parseSqlToAst > should parse a query with JOIN [4.37ms]
-(pass) astToGraph utils > parseSqlToAst > should not throw on empty query [8.49ms]
-
-tests/mermaidToGraph.test.ts:
-(pass) mermaidToGraph > should parse basic flowchart [22.35ms]
-(pass) mermaidToGraph > should extract node labels and shapes [5.95ms]
-(pass) mermaidToGraph > should return error for empty or invalid input [1.37ms]
-
-tests/sqlUtils.test.ts:
-(pass) sqlUtils > formatColumnType > should format Enum types correctly [0.18ms]
-(pass) sqlUtils > formatColumnType > should return the type as-is for other types [0.05ms]
-(pass) sqlUtils > splitBySemicolonIgnoringQuotes > should split simple queries [0.27ms]
-(pass) sqlUtils > splitBySemicolonIgnoringQuotes > should ignore semicolons inside single quotes [0.07ms]
-(pass) sqlUtils > splitBySemicolonIgnoringQuotes > should handle empty queries gracefully [0.05ms]
+tests/snippetsStorage.test.ts:
+(pass) snippetsStorage (IndexedDB storage) > should add a snippet and load it back [8.95ms]
+(pass) snippetsStorage (IndexedDB storage) > should update an existing snippet [3.03ms]
+(pass) snippetsStorage (IndexedDB storage) > should delete snippet by id [2.77ms]
+(pass) snippetsStorage (IndexedDB storage) > should bulk save snippets to DB [1.10ms]
 
 tests/clickhouse.test.ts:
-(pass) clickhouse utils > parseClickhouseCopy > should parse COPY TO with parentheses [0.26ms]
-(pass) clickhouse utils > parseClickhouseCopy > should parse COPY FROM without parentheses [0.11ms]
+(pass) clickhouse utils > parseClickhouseCopy > should parse COPY TO with parentheses [0.35ms]
+(pass) clickhouse utils > parseClickhouseCopy > should parse COPY FROM without parentheses [0.07ms]
 (pass) clickhouse utils > parseClickhouseCopy > should return null for normal SELECT queries [0.04ms]
-(pass) clickhouse utils > getClickhouseUrl > should format URL with protocol and host [0.21ms]
+(pass) clickhouse utils > getClickhouseUrl > should format URL with protocol and host [0.26ms]
 (pass) clickhouse utils > getClickhouseUrl > should strip http:// from host if mistakenly provided [0.08ms]
 (pass) clickhouse utils > getClickhouseUrl > should append database and default_format to query string [0.04ms]
-(pass) clickhouse utils > getClickhouseUrl > should append custom query params [0.07ms]
-(pass) clickhouse utils > getClickhouseHeaders > should include user and key if provided [0.07ms]
-(pass) clickhouse utils > getClickhouseHeaders > should not include user and key if empty [0.03ms]
+(pass) clickhouse utils > getClickhouseUrl > should append custom query params [0.17ms]
+(pass) clickhouse utils > getClickhouseHeaders > should include user and key if provided [0.06ms]
+(pass) clickhouse utils > getClickhouseHeaders > should not include user and key if empty [0.04ms]
 (pass) clickhouse utils > getClickhouseHeaders > should allow overriding Content-Type [0.02ms]
 
-tests/versionHistory.test.ts:
-(pass) versionHistory (IndexedDB storage) > should save a version and retrieve it [12.26ms]
-(pass) versionHistory (IndexedDB storage) > should retrieve latest version [15.60ms]
-(pass) versionHistory (IndexedDB storage) > should delete a version by id [2.63ms]
-(pass) versionHistory (IndexedDB storage) > should get version by id [1.40ms]
-(pass) versionHistory (IndexedDB storage) > should import multiple versions [1.23ms]
-(pass) versionHistory (IndexedDB storage) > should throw error when saving empty query [0.46ms]
-
-tests/snippetsStorage.test.ts:
-(pass) snippetsStorage (IndexedDB storage) > should add a snippet and load it back [2.68ms]
-(pass) snippetsStorage (IndexedDB storage) > should update an existing snippet [1.39ms]
-(pass) snippetsStorage (IndexedDB storage) > should delete snippet by id [2.09ms]
-(pass) snippetsStorage (IndexedDB storage) > should bulk save snippets to DB [1.19ms]
+tests/excelExporter.test.ts:
+(pass) excelExporter utils > exportToExcel with formatting features > runs exportToExcel without crashing when formatExistingRowAsTotal and formatExistingColumnAsTotal are enabled [376.13ms]
+(pass) excelExporter utils > exportToExcel with formatting features > runs exportToExcel with categoryGroupFormatSubtotals [41.63ms]
+(pass) excelExporter utils > exportToExcel with formatting features > runs exportToExcel with both categoryGroupFormatSubtotals and formatExistingRowAsTotal [21.46ms]
+(pass) excelExporter utils > exportToExcel with formatting features > runs exportToExcel with skipColumnIndex and @skip directive [48.00ms]
 
 tests/resultStorage.test.ts:
 (pass) resultStorage (IndexedDB query results cache) > should save tab result and retrieve it from cache or DB [1.58ms]
-(pass) resultStorage (IndexedDB query results cache) > should remove tab result by id [1.30ms]
-(pass) resultStorage (IndexedDB query results cache) > should cleanup orphaned tab results [2.44ms]
+(pass) resultStorage (IndexedDB query results cache) > should remove tab result by id [1.17ms]
+(pass) resultStorage (IndexedDB query results cache) > should cleanup orphaned tab results [1.57ms]
+
+tests/excelSettingsStorage.test.ts:
+(pass) excelSettingsStorage > getSavedExcelSettings returns default settings when localStorage is empty [0.28ms]
+(pass) excelSettingsStorage > saves and retrieves excel settings correctly [0.35ms]
+(pass) excelSettingsStorage > handles corrupted JSON in localStorage gracefully for settings [0.18ms]
+(pass) excelSettingsStorage > returns default preset when localStorage is empty [0.11ms]
+(pass) excelSettingsStorage > saves and retrieves custom presets correctly [0.53ms]
+(pass) excelSettingsStorage > handles corrupted JSON in localStorage gracefully for presets [0.23ms]
+(pass) excelSettingsStorage > deletes a custom preset correctly [0.34ms]
+(pass) excelSettingsStorage > does not leak sensitive data in logs on JSON parse failure [0.15ms]
+
+tests/versionHistory.test.ts:
+(pass) versionHistory (IndexedDB storage) > should save a version and retrieve it [2.72ms]
+(pass) versionHistory (IndexedDB storage) > should retrieve latest version [14.80ms]
+(pass) versionHistory (IndexedDB storage) > should delete a version by id [3.40ms]
+(pass) versionHistory (IndexedDB storage) > should get version by id [0.96ms]
+(pass) versionHistory (IndexedDB storage) > should import multiple versions [0.84ms]
+(pass) versionHistory (IndexedDB storage) > should throw error when saving empty query [0.37ms]
+
+tests/mermaidToGraph.test.ts:
+(pass) mermaidToGraph > should parse basic flowchart [23.55ms]
+(pass) mermaidToGraph > should extract node labels and shapes [7.67ms]
+(pass) mermaidToGraph > should return error for empty or invalid input [1.12ms]
 
 tests/schemaDbCache.test.ts:
-(pass) schemaDbCache (IndexedDB database schema cache) > should save and get schema cache entry [2.56ms]
-(pass) schemaDbCache (IndexedDB database schema cache) > should get all schema cache entries [1.69ms]
-(pass) schemaDbCache (IndexedDB database schema cache) > should import schema cache entries [1.20ms]
-(pass) schemaDbCache (IndexedDB database schema cache) > should cleanup stale schema cache entries older than threshold [2.73ms]
+(pass) schemaDbCache (IndexedDB database schema cache) > should save and get schema cache entry [2.03ms]
+(pass) schemaDbCache (IndexedDB database schema cache) > should get all schema cache entries [0.80ms]
+(pass) schemaDbCache (IndexedDB database schema cache) > should import schema cache entries [0.57ms]
+(pass) schemaDbCache (IndexedDB database schema cache) > should cleanup stale schema cache entries older than threshold [2.28ms]
 
- 62 pass
+tests/vaultStorage.test.ts:
+(pass) vaultStorage utils > parseClickhouseUri > should parse basic http URI [0.35ms]
+(pass) vaultStorage utils > parseClickhouseUri > should parse https URI with credentials and database [0.06ms]
+(pass) vaultStorage utils > parseClickhouseUri > should handle special double-escaped characters in password (@@ and ::) [0.05ms]
+(pass) vaultStorage utils > parseClickhouseUri > should handle username only (no password) [0.03ms]
+(pass) vaultStorage utils > parseClickhouseUri > should handle URI without protocol (fallback to http) [0.02ms]
+(pass) vaultStorage utils > parseClickhouseUri > should return null for empty or invalid input [0.04ms]
+
+tests/sqlUtils.test.ts:
+(pass) sqlUtils > formatColumnType > should format Enum types correctly [0.23ms]
+(pass) sqlUtils > formatColumnType > should return the type as-is for other types [0.05ms]
+(pass) sqlUtils > splitBySemicolonIgnoringQuotes > should split simple queries [0.18ms]
+(pass) sqlUtils > splitBySemicolonIgnoringQuotes > should ignore semicolons inside single quotes [0.06ms]
+(pass) sqlUtils > splitBySemicolonIgnoringQuotes > should handle empty queries gracefully [0.03ms]
+(pass) sqlUtils > replaceVariablesInSql > should return original sql if no {{$ is present [0.18ms]
+(pass) sqlUtils > replaceVariablesInSql > should replace variables defined in SQL comments [0.17ms]
+(pass) sqlUtils > replaceVariablesInSql > should support block comments /* ... */ [0.03ms]
+(pass) sqlUtils > replaceVariablesInSql > should resolve variables defined in contextSql when executing a selected snippet [0.04ms]
+(pass) sqlUtils > replaceVariablesInSql > should replace inline definitions {{$var=value}} seamlessly [0.03ms]
+(pass) sqlUtils > replaceVariablesInSql > should not interfere with vault secrets {{secret_name}} [0.02ms]
+(pass) sqlUtils > replaceVariablesInSql > should replace repeated occurrences of the same variable [0.12ms]
+
+tests/astToGraph.test.ts:
+(pass) astToGraph utils > stripCommentsSafely > should remove inline and multiline comments [0.48ms]
+(pass) astToGraph utils > splitQueries > should split multiple statements [0.22ms]
+(pass) astToGraph utils > parseSqlToAst > should parse a simple SELECT query [18.65ms]
+(pass) astToGraph utils > parseSqlToAst > should parse a query with JOIN [3.56ms]
+(pass) astToGraph utils > parseSqlToAst > should not throw on empty query [6.30ms]
+
+tests/sessionStorage.test.ts:
+(pass) sessionStorage > should return null if there is no data [0.32ms]
+(pass) sessionStorage > should return null and not crash if JSON is corrupted [0.32ms]
+(pass) sessionStorage > should return null if JSON is not an array [0.14ms]
+(pass) sessionStorage > should return parsed tabs if data is valid [0.14ms]
+
+ 69 pass
  0 fail
- 136 expect() calls
-Ran 62 tests across 12 files. [934.00ms]
+ 143 expect() calls
+Ran 69 tests across 12 files. [858.00ms]

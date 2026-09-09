@@ -20,6 +20,13 @@ export function isTauriEnvironment(): boolean {
 }
 
 /**
+ * Checks if the application is running in Capacitor native mobile environment (Android / iOS).
+ */
+export function isCapacitorEnvironment(): boolean {
+  return typeof window !== 'undefined' && !!(window as any).Capacitor?.isNativePlatform?.();
+}
+
+/**
  * Parses COPY (...) TO 'path' and COPY (...) FROM 'path' commands.
  * Handles both parentheses COPY (SELECT ...) and raw COPY SELECT ...
  */
@@ -210,3 +217,124 @@ export async function executeClickhouseCopyFromTauri(config: ClickhouseConfig, i
     response: `Загружено байт: ${res.bytes}`
   };
 }
+
+/**
+ * Executes a Clickhouse query natively in Capacitor using native HTTP (bypassing CORS and Mixed Content).
+ */
+export async function executeClickhouseQueryCapacitor(config: ClickhouseConfig, query: string): Promise<any> {
+  const { CapacitorHttp } = await import('@capacitor/core');
+  const url = getClickhouseUrl(config);
+  const originalHeaders = getClickhouseHeaders(config, 'text/plain;charset=utf-8');
+
+  try {
+    const response = await CapacitorHttp.request({
+      url,
+      method: 'POST',
+      headers: originalHeaders,
+      data: query,
+      responseType: 'text',
+    });
+
+    if (response.status < 200 || response.status >= 300) {
+      const errMsg = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
+      throw new Error(errMsg || `HTTP ${response.status}`);
+    }
+
+    const responseText = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
+    try {
+      const parsed = JSON.parse(responseText);
+      return { success: true, data: parsed.data || parsed, meta: parsed.meta };
+    } catch {
+      return { success: true, text: responseText.trim() };
+    }
+  } catch (err: any) {
+    throw new Error(err?.message || String(err) || 'Query failed');
+  }
+}
+
+/**
+ * Executes Clickhouse COPY TO query in Capacitor, saving output to cache and offering share dialog.
+ */
+export async function executeClickhouseCopyToCapacitor(
+  config: ClickhouseConfig,
+  innerSql: string,
+  filePath: string
+): Promise<{ success: boolean; message: string; bytes: number }> {
+  const { CapacitorHttp } = await import('@capacitor/core');
+  const { Filesystem, Directory } = await import('@capacitor/filesystem');
+  const { Share } = await import('@capacitor/share');
+
+  let sqlToExec = innerSql.trim().replace(/;+$/, '');
+  if (!/\bFORMAT\b/i.test(sqlToExec)) {
+    const ext = filePath.split('.').pop()?.toLowerCase();
+    if (ext === 'csv') {
+      sqlToExec += ' FORMAT CSVWithNames';
+    } else if (ext === 'tsv' || ext === 'tab') {
+      sqlToExec += ' FORMAT TSVWithNames';
+    } else if (ext === 'json') {
+      sqlToExec += ' FORMAT JSONEachRow';
+    } else {
+      sqlToExec += ' FORMAT Parquet';
+    }
+  }
+
+  const url = getClickhouseUrl(config);
+  const originalHeaders = getClickhouseHeaders(config, 'text/plain;charset=utf-8');
+
+  const response = await CapacitorHttp.request({
+    url,
+    method: 'POST',
+    headers: originalHeaders,
+    data: sqlToExec,
+    responseType: 'blob',
+  });
+
+  if (response.status < 200 || response.status >= 300) {
+    const errMsg = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
+    throw new Error(errMsg || `HTTP ${response.status}`);
+  }
+
+  let base64Data = '';
+  if (response.data instanceof Blob) {
+    base64Data = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const result = reader.result as string;
+        resolve(result.split(',')[1] || result);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(response.data);
+    });
+  } else if (typeof response.data === 'string') {
+    // CapacitorHttp native returns base64 string for 'blob'
+    base64Data = response.data;
+  } else {
+    throw new Error('Unexpected response format from CapacitorHttp');
+  }
+
+  const cleanFileName = filePath.split('/').pop()?.split('\\').pop() || 'export.csv';
+
+  const writeResult = await Filesystem.writeFile({
+    path: cleanFileName,
+    data: base64Data,
+    directory: Directory.Cache,
+  });
+
+  try {
+    await Share.share({
+      title: 'ClickHouse Export',
+      text: `ClickHouse export: ${cleanFileName}`,
+      url: writeResult.uri,
+      dialogTitle: 'Share ClickHouse Export',
+    });
+  } catch {
+    // Sharing might be cancelled or unavailable on device
+  }
+
+  return {
+    success: true,
+    message: `File saved to cache and shared: ${cleanFileName}`,
+    bytes: Math.floor(base64Data.length * 0.75), // rough estimation from base64
+  };
+}
+

@@ -296,7 +296,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
                 title={t("Экспорт снимков в JSON файл")}
               >
                 <Download className="w-3.5 h-3.5 text-blue-500" />
-                <span className="hidden sm:inline">{t("Экспорт JSON")}</span>
+                <span className="hidden sm:inline">{t("Экспорт")}</span>
               </button>
             </>
             )}

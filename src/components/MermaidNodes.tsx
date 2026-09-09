@@ -1,6 +1,7 @@
 // @ts-nocheck
 import React, { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
+import DOMPurify from 'dompurify';
 
 interface MermaidNodeProps {
   data: {
@@ -39,12 +40,12 @@ function renderLabel(text: string) {
   if (!text) return '';
   const lines = text.split(/<br\s*\/?>|\n/gi);
   if (lines.length === 1) {
-    return <span dangerouslySetInnerHTML={{ __html: lines[0] }} />;
+    return <span dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(lines[0]) }} />;
   }
   return (
     <div className="flex flex-col items-center justify-center gap-0.5 leading-tight">
       {lines.map((line, idx) => (
-        <span key={idx} className="whitespace-normal break-words text-center" dangerouslySetInnerHTML={{ __html: line }} />
+        <span key={idx} className="whitespace-normal break-words text-center" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(line) }} />
       ))}
     </div>
   );
