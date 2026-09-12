@@ -25,7 +25,7 @@ Available as a native Desktop Client (Tauri / Rust), Mobile App (Android / Capac
 
 #### 📑 Excel Report Engine & Export
 * **Excel (`.xlsx`) Exporter**: Auto-column width calculation, header styling, zebra striping, freeze panes, and native formula totals (`SUM`, `AVERAGE`, `COUNT`).
-* **SQL-Driven Report Directives**: Configure Excel formatting directly inside SQL code comments using directives (`@preset`, `@sheet`, `@totals`, `@split`, `@group`, `@skip`, `@protect`).
+* **SQL-Driven Report Directives**: Configure Excel formatting directly inside SQL code comments using directives (`@preset`, `@sheet`, `@totals`, `@split`, `@group`, `@skip`, `@hide`, `@protect`).
 * **Archive Exports**: Batch export packaging using JSZip.
 
 #### 🌳 AST Visualization & Data Lineage
@@ -36,6 +36,7 @@ Available as a native Desktop Client (Tauri / Rust), Mobile App (Android / Capac
 #### 🛠️ Productivity, i18n & Security Vault
 * **Snippets & Quick Actions**: Manage reusable SQL snippets with natural string sorting and clipboard copying. ZIP exports group snippets into virtual folders.
 * **Encrypted Vault (AES-256 GCM)**: Client-side connection secret encryption using Web Crypto API with pin-code protection and auto-lock timeouts.
+* **Workspace Synchronization**: Automatic background import/export of workspace sessions and tabs via a shared directory or cloud storage path (Dropbox, local NAS) in Desktop mode.
 * **Version History & Schema Cache**: Automatic query snapshot tracking and IndexedDB schema caching with automated stale record cleanup.
 * **Localization (i18n)**: Built-in interface language toggling (RU/EN).
 
@@ -86,7 +87,7 @@ xattr -cr /Applications/"QueryAST Lens.app"
 
 #### 📑 Движок отчётов Excel & Экспорт
 * **Экспорт в Excel (`.xlsx`)**: Поддержка автоматического подбора ширины колонок, закрепления областей, стилизации заголовков и нативных формул итогов (`SUM`, `AVERAGE`, `COUNT`).
-* **Управление отчётами через SQL-директивы**: Конфигурация выгрузки прямо в SQL-комментариях с помощью спец-тегов (`@preset`, `@sheet`, `@totals`, `@split`, `@group`, `@skip`, `@protect`).
+* **Управление отчётами через SQL-директивы**: Конфигурация выгрузки прямо в SQL-комментариях с помощью спец-тегов (`@preset`, `@sheet`, `@totals`, `@split`, `@group`, `@skip`, `@hide`, `@protect`).
 * **Пакетная архивация**: Поддержка группового экспорта и формирования ZIP-архивов с отчетами (`jszip`).
 
 #### 🌳 AST-Визуализация & Data Lineage
@@ -97,6 +98,7 @@ xattr -cr /Applications/"QueryAST Lens.app"
 #### 🛠️ Инструменты продуктивности и хранилище
 * **Библиотека сниппетов и действий (No-code Action Menu)**: Сохранение часто используемых запросов с поддержкой естественной алфавитной сортировки. Экспорт в ZIP распределяет сниппеты по папкам ("Избранное", "Jobs").
 * **Защищённый Vault (AES-256 GCM)**: Шифрование параметров подключения и секретов в браузере с защитой пин-кодом и автоблокировкой по таймеру.
+* **Синхронизация рабочего пространства**: Фоновый автоматический обмен сессиями, вкладками и настройками через общий файл/папку (Dropbox, сетевой диск) в десктоп-версии (Tauri).
 * **История версий и кэш**: Автоматическое сохранение снимков запросов и кэширование схем в IndexedDB с процедурами автоочистки устаревших записей.
 * **Мультиязычный интерфейс (i18n)**: Поддержка переключения языков интерфейса (RU/EN) с динамическим переводом компонентов.
 
