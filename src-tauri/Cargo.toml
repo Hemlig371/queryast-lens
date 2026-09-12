@@ -1,5 +1,5 @@
 [package]
-name = "QueryAST Lens"
+name = "queryast-lens"
 version = "7.7.0"
 description = "cross-platform SQL Query Workbench and analytical database client"
 authors = ["Hemlig371"]
