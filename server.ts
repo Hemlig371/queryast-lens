@@ -167,9 +167,14 @@ app.post("/api/duckdb/query", (req, res) => {
           }));
         }
         
+        let dataToReturn = resData;
+        if (Array.isArray(dataToReturn) && dataToReturn.length > 500000) {
+          dataToReturn = dataToReturn.slice(0, 500000);
+        }
+
         const responsePayload = {
           success: true,
-          data: resData,
+          data: dataToReturn,
           meta: meta
         };
         

@@ -129,6 +129,38 @@ describe('excelExporter utils', () => {
         sqlQuery: 'SELECT * FROM products -- @skip: hidden_group @group: 1'
       });
     });
+
+    it('runs exportToExcel with hideColumnIndex and @hide directive', async () => {
+      const { exportToExcel } = await import('../src/utils/excelExporter');
+      const { DEFAULT_EXCEL_SETTINGS } = await import('../src/types/excelSettings');
+
+      const dataSample = [
+        { id: 1, name: 'Product 1', secret_code: 'X100', price: 100 },
+        { id: 2, name: 'Product 2', secret_code: 'X200', price: 200 }
+      ];
+      const cols = ['id', 'name', 'secret_code', 'price'];
+      const colTypes = { id: 'Int32', name: 'String', secret_code: 'String', price: 'Int32' };
+
+      await exportToExcel({
+        data: dataSample,
+        columns: cols,
+        columnTypes: colTypes,
+        settings: {
+          ...DEFAULT_EXCEL_SETTINGS,
+          hideColumnIndex: 3
+        }
+      });
+
+      await exportToExcel({
+        data: dataSample,
+        columns: cols,
+        columnTypes: colTypes,
+        settings: {
+          ...DEFAULT_EXCEL_SETTINGS
+        },
+        sqlQuery: 'SELECT * FROM products -- @hide: secret_code'
+      });
+    });
   });
 });
 

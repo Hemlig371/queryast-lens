@@ -2,6 +2,7 @@ import { t } from "../utils/i18n";
 import React, { useRef, useState, useLayoutEffect, useEffect, useCallback, useMemo } from 'react';
 import { Search, Replace, ChevronUp, ChevronDown, X, CaseSensitive, Zap, Table } from 'lucide-react';
 import { getSavedHotkeys, getSavedUiVisibilitySettings, getQuickActionTemplates, QuickActionTemplate } from './SettingsModal';
+import { SchemaTableItem } from '../utils/schemaDbCache';
 
 export interface AutocompleteTemplate {
   id: string;
@@ -35,14 +36,12 @@ export const getCustomAutocompleteTemplates = (): AutocompleteTemplate[] => {
 
 // Common SQL Keywords and Functions for Autocomplete
 const SQL_KEYWORDS = [
-  'SELECT', 'FROM', 'WHERE', 'GROUP BY', 'ORDER BY', 'HAVING', 'LIMIT', 'OFFSET',
-  'JOIN', 'LEFT JOIN', 'RIGHT JOIN', 'INNER JOIN', 'FULL OUTER JOIN', 'CROSS JOIN',
-  'IS NULL', 'IS NOT NULL', 'LIKE', 'ILIKE', 'QUALIFY', 'RETURNING', 'ASC', 'DESC',
-  'BETWEEN', 'EXISTS', 'CASE', 'WHEN', 'THEN', 'ELSE', 'RECURSIVE',
-  'UNION ALL', 'INSERT INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE FROM',
-  'CREATE TABLE', 'ALTER TABLE', 'DROP TABLE', 'TRUNCATE TABLE', 'PARTITION BY',
-  'OVER', 'ROW_NUMBER()', 'DENSE_RANK()', 'RANK()', 'COUNT(*)', 'SUM()', 'AVG()',
-  'MIN()', 'MAX()', 'COALESCE()', 'DATE_TRUNC()', 'DISTINCT',
+  'FROM', 'WHERE', 'HAVING', 'LIMIT', 'OFFSET', 'JOIN', 'LEFT JOIN', 'RIGHT JOIN',
+  'INNER JOIN', 'FULL OUTER JOIN', 'CROSS JOIN', 'LIKE', 'ILIKE', 'QUALIFY',
+  'RETURNING', 'BETWEEN', 'EXISTS', 'RECURSIVE', 'UNION ALL', 'INSERT INTO',
+  'VALUES', 'UPDATE', 'DELETE FROM', 'CREATE TABLE', 'ALTER TABLE', 'DROP TABLE',
+  'TRUNCATE TABLE', 'PARTITION BY', 'DENSE_RANK()', 'RANK()', 'COUNT(*)', 'SUM()',
+  'AVG()', 'MIN()', 'MAX()', 'COALESCE()', 'DATE_TRUNC()', 'DISTINCT',
   'ENGINE', 'SETTINGS', 'BEGIN TRANSACTION', 'COMMIT', 'ROLLBACK', 'ABORT'
 ];
 
@@ -65,17 +64,30 @@ export const getBaseHighlight = (sqlText: string, theme: 'dark' | 'light') => {
   const engineColor = isDark ? 'text-amber-300' : 'text-amber-500'; 
   const commentColor = isDark ? 'text-slate-500' : 'text-slate-500';
 
-  const tokenRegex = /(--.*$|\/\*[\s\S]*?\*\/)|('(?:''|[^'])*')|("(?:""|[^"])*"|`(?:``|[^`])*`)|(\b\d+(?:\.\d+)?\b)|(\b(?:ENGINE|SETTINGS|DEFAULT)\b)|(\b(?:COUNT|SUM|AVG|MIN|MAX|ROUND|COALESCE|NOW|CONCAT|DATE_TRUNC|DATE|INT|INTEGER|DOUBLE|VARCHAR|TEXT|DECIMAL|TIME|TIMESTAMP|BOOLEAN|BLOB|INTERVAL|UUID|Float(?:64|32|16|8)|Int(?:64|32|16|8)|UInt(?:64|32|16|8)|STRING|LOWER|UPPER|CAST|ROW_NUMBER|DENSE_RANK|RANK|LEAD|LAG|FIRST_VALUE|LAST_VALUE|LISTAGG|TO_CHAR|TO_DATE|NVL|DECODE|UNIQEXACT|UNIQCOMBINED|ARGMAX|ARGMIN|TOSTARTOFHOUR|TOSTARTOFDAY|QUANTILESEXACT|DICTGET|READ_CSV_AUTO|READ_PARQUET|READ_CSV|LIST_TRANSFORM|FILTER|JSON_EXTRACT|ARRAY_JOIN|ARRAYMAP|ARRAYFILTER)\b)|(\b(?:SELECT|FROM|WHERE|JOIN|LEFT|RIGHT|INNER|OUTER|FULL|CROSS|ON|GROUP|BY|ORDER|HAVING|LIMIT|OFFSET|UNION|ALL|INSERT|INTO|UPDATE|SET|DELETE|CREATE|TABLE|AS|WITH|RECURSIVE|AND|OR|NOT|IN|IS|NULL|LIKE|ILIKE|BETWEEN|EXISTS|CASE|WHEN|THEN|ELSE|END|ASC|DESC|OVER|PARTITION|WINDOW|DISTINCT|VALUES|QUALIFY|PIVOT|UNPIVOT|COLUMNS|EXCLUDE|REPLACE|ATTACH|COPY|MERGE|MATCHED|USING|RETURNING|LATERAL|CONNECT|PRIOR|START|FINAL|UPSERT|CONFLICT|DO|RETURNING|BEGIN|TRANSACTION|COMMIT|ROLLBACK|ABORT)\b)/gim;
+  const highlightVariables = (text: string): string => {
+    return text.replace(/(\{\{\$[a-zA-Z0-9_]+(?:=(?:'[^'\n]*'|"[^"\n]*"|[^}\n]+|}(?!}))*)?\}\}|\{\{[a-zA-Z0-9_]+\}\})/g, (match) => {
+      const isParam = match.startsWith('{{$');
+      const color = isParam
+        ? (isDark ? 'text-red-400' : 'text-red-700')
+        : (isDark ? 'text-purple-400' : 'text-purple-700');
+      return `<span class="${color}">${match}</span>`;
+    });
+  };
 
-  html = html.replace(tokenRegex, (match, comment, str, ident, num, engineKw, fn, kw) => {
+  const tokenRegex = /(--.*$|\/\*[\s\S]*?\*\/)|('(?:''|[^'])*')|("(?:""|[^"])*"|`(?:``|[^`])*`)|(\{\{\$[a-zA-Z0-9_]+(?:=(?:'[^'\n]*'|"[^"\n]*"|[^}\n]+|}(?!}))*)?\}\}|\{\{[a-zA-Z0-9_]+\}\})|(\b\d+(?:\.\d+)?\b)|(\b(?:ENGINE|SETTINGS|DEFAULT)\b)|(\b(?:COUNT|SUM|AVG|MIN|MAX|ROUND|COALESCE|NOW|CONCAT|DATE_TRUNC|DATE|INT|INTEGER|DOUBLE|VARCHAR|TEXT|DECIMAL|TIME|TIMESTAMP|BOOLEAN|BLOB|INTERVAL|UUID|Float(?:64|32|16|8)|Int(?:64|32|16|8)|UInt(?:64|32|16|8)|STRING|LOWER|UPPER|CAST|ROW_NUMBER|DENSE_RANK|RANK|LEAD|LAG|FIRST_VALUE|LAST_VALUE|LISTAGG|TO_CHAR|TO_DATE|NVL|DECODE|UNIQEXACT|UNIQCOMBINED|ARGMAX|ARGMIN|TOSTARTOFHOUR|TOSTARTOFDAY|QUANTILESEXACT|DICTGET|READ_CSV_AUTO|READ_PARQUET|READ_CSV|LIST_TRANSFORM|FILTER|JSON_EXTRACT|ARRAY_JOIN|ARRAYMAP|ARRAYFILTER)\b)|(\b(?:SELECT|FROM|WHERE|JOIN|LEFT|RIGHT|INNER|OUTER|FULL|CROSS|ON|GROUP|BY|ORDER|HAVING|LIMIT|OFFSET|UNION|ALL|INSERT|INTO|UPDATE|SET|DELETE|CREATE|TABLE|AS|WITH|RECURSIVE|AND|OR|NOT|IN|IS|NULL|LIKE|ILIKE|BETWEEN|EXISTS|CASE|WHEN|THEN|ELSE|END|ASC|DESC|OVER|PARTITION|WINDOW|DISTINCT|VALUES|QUALIFY|PIVOT|UNPIVOT|COLUMNS|EXCLUDE|REPLACE|ATTACH|COPY|MERGE|MATCHED|USING|RETURNING|LATERAL|CONNECT|PRIOR|START|FINAL|UPSERT|CONFLICT|DO|RETURNING|BEGIN|TRANSACTION|COMMIT|ROLLBACK|ABORT)\b)/gim;
+
+  html = html.replace(tokenRegex, (match, comment, str, ident, variable, num, engineKw, fn, kw) => {
     if (comment) {
-      return `<span class="${commentColor}">${comment}</span>`;
+      return `<span class="${commentColor}">${highlightVariables(comment)}</span>`;
     }
     if (str) {
-      return `<span class="${strColor}">${str}</span>`;
+      return `<span class="${strColor}">${highlightVariables(str)}</span>`;
     }
     if (ident) {
-      return `<span class="${identColor}">${ident}</span>`;
+      return `<span class="${identColor}">${highlightVariables(ident)}</span>`;
+    }
+    if (variable) {
+      return highlightVariables(variable);
     }
     if (num) {
       return `<span class="${numColor}">${num}</span>`;
@@ -148,6 +160,20 @@ export const getChunkedHighlight = (sqlText: string, theme: 'dark' | 'light') =>
   if (!sqlText) return '';
 
   const rawLines = sqlText.split('\n');
+
+  // Fast plain-text path for large scripts (>= 3000 lines or >= 150 000 chars) to prevent freezing
+  if (rawLines.length >= 3000 || sqlText.length >= 150_000) {
+    let plain = sqlText
+      .replace(/\r/g, '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+    if (sqlText.endsWith('\n')) {
+      plain += ' ';
+    }
+    return plain;
+  }
+
   const chunks: string[] = [];
   let currentChunkLines: string[] = [];
   let state: LineState = { inString: false, stringChar: '', inBlockComment: false };
@@ -506,6 +532,11 @@ const editorStyles: React.CSSProperties = {
   fontVariantLigatures: 'none',
   letterSpacing: 'normal',
   wordSpacing: 'normal',
+  WebkitAppearance: 'none',
+  appearance: 'none',
+  WebkitFontSmoothing: 'antialiased',
+  MozOsxFontSmoothing: 'grayscale',
+  textRendering: 'geometricPrecision',
 };
 
 export const SqlEditor = React.memo(function SqlEditor({ 
@@ -521,7 +552,8 @@ export const SqlEditor = React.memo(function SqlEditor({
   extractedTableName,
   isQuickActionsEnabled = true,
   isFullScreen = false,
-  editorRef
+  editorRef,
+  schemaTables,
 }: {
   value: string;
   onChange?: (val: string) => void;
@@ -536,6 +568,7 @@ export const SqlEditor = React.memo(function SqlEditor({
   isQuickActionsEnabled?: boolean;
   isFullScreen?: boolean;
   editorRef?: React.MutableRefObject<SqlEditorRef | null>;
+  schemaTables?: SchemaTableItem[];
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lastCopiedTextRef = useRef<string>('');
@@ -624,6 +657,7 @@ export const SqlEditor = React.memo(function SqlEditor({
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
   const [showAutocomplete, setShowAutocomplete] = useState<boolean>(false);
+  const autocompleteContainerRef = useRef<HTMLDivElement>(null);
   const showAutocompleteRef = useRef<boolean>(showAutocomplete);
   useLayoutEffect(() => {
     showAutocompleteRef.current = showAutocomplete;
@@ -658,7 +692,7 @@ export const SqlEditor = React.memo(function SqlEditor({
   };
 
   const matchedBracketIndices = useMemo(() => {
-    if (cursorPos < 0 || selectedText) return null;
+    if (cursorPos < 0 || selectedText || value.length >= 150_000) return null;
     return findMatchingBrackets(value, cursorPos);
   }, [value, cursorPos, selectedText]);
 
@@ -1191,17 +1225,23 @@ export const SqlEditor = React.memo(function SqlEditor({
     setSearchQuery('');
     setReplaceQuery('');
     setMatches([]);
+    hasNavigatedSearchRef.current = false;
     if (textareaRef.current) {
       textareaRef.current.focus();
     }
   }, []);
 
   // Compute search matches when query or text changes
+  const lastSearchQueryRef = useRef<string>('');
+  const hasNavigatedSearchRef = useRef<boolean>(false);
+
   useEffect(() => {
     if (!showSearch) return;
     if (!searchQuery) {
       setMatches([]);
       setCurrentMatchIndex(-1);
+      lastSearchQueryRef.current = '';
+      hasNavigatedSearchRef.current = false;
       return;
     }
     const matchIndices: { start: number; length: number }[] = [];
@@ -1234,13 +1274,32 @@ export const SqlEditor = React.memo(function SqlEditor({
       }
     }
 
-    setMatches(matchIndices);
-    if (matchIndices.length > 0) {
-      setCurrentMatchIndex(0);
-      selectMatch(matchIndices[0].start, matchIndices[0].length, false);
-    } else {
-      setCurrentMatchIndex(-1);
+    const isNewSearch = lastSearchQueryRef.current !== searchQuery;
+    lastSearchQueryRef.current = searchQuery;
+    if (isNewSearch) {
+      hasNavigatedSearchRef.current = false;
     }
+
+    setMatches(prevMatches => {
+      if (matchIndices.length > 0) {
+        setCurrentMatchIndex(prevIdx => {
+          let nextIdx = prevIdx;
+          if (isNewSearch || prevIdx < 0) {
+            nextIdx = 0;
+            // Removed automatic selectMatch to preserve user's manual selection and scroll position
+          } else {
+            if (nextIdx >= matchIndices.length) {
+              nextIdx = matchIndices.length - 1;
+            }
+            // Removed automatic selectMatch on text change to prevent jumping scroll
+          }
+          return nextIdx;
+        });
+      } else {
+        setCurrentMatchIndex(-1);
+      }
+      return matchIndices;
+    });
   }, [showSearch, searchQuery, value, matchCase, useRegex]);
 
   const selectMatch = (startPos: number, matchLen: number, shouldFocusTextarea: boolean = false) => {
@@ -1258,16 +1317,26 @@ export const SqlEditor = React.memo(function SqlEditor({
 
   const handleNextMatch = () => {
     if (matches.length === 0) return;
-    const nextIdx = (currentMatchIndex + 1) % matches.length;
-    setCurrentMatchIndex(nextIdx);
-    selectMatch(matches[nextIdx].start, matches[nextIdx].length, false);
+    if (!hasNavigatedSearchRef.current) {
+      hasNavigatedSearchRef.current = true;
+      selectMatch(matches[currentMatchIndex].start, matches[currentMatchIndex].length, false);
+    } else {
+      const nextIdx = (currentMatchIndex + 1) % matches.length;
+      setCurrentMatchIndex(nextIdx);
+      selectMatch(matches[nextIdx].start, matches[nextIdx].length, false);
+    }
   };
 
   const handlePrevMatch = () => {
     if (matches.length === 0) return;
-    const prevIdx = (currentMatchIndex - 1 + matches.length) % matches.length;
-    setCurrentMatchIndex(prevIdx);
-    selectMatch(matches[prevIdx].start, matches[prevIdx].length, false);
+    if (!hasNavigatedSearchRef.current) {
+      hasNavigatedSearchRef.current = true;
+      selectMatch(matches[currentMatchIndex].start, matches[currentMatchIndex].length, false);
+    } else {
+      const prevIdx = (currentMatchIndex - 1 + matches.length) % matches.length;
+      setCurrentMatchIndex(prevIdx);
+      selectMatch(matches[prevIdx].start, matches[prevIdx].length, false);
+    }
   };
 
   const handleReplaceCurrent = () => {
@@ -1326,9 +1395,14 @@ export const SqlEditor = React.memo(function SqlEditor({
         document.execCommand('insertText', false, newSelectedText);
         textarea.setSelectionRange(start, start + newSelectedText.length);
       } else {
+        const originalScrollTop = textarea.scrollTop;
+        const originalScrollLeft = textarea.scrollLeft;
         const newValue = value.replace(reg, effectiveReplace);
         textarea.select();
         document.execCommand('insertText', false, newValue);
+        textarea.scrollTop = originalScrollTop;
+        textarea.scrollLeft = originalScrollLeft;
+        textarea.setSelectionRange(start, start);
       }
     } catch (e) {
       // Invalid regex
@@ -1336,6 +1410,17 @@ export const SqlEditor = React.memo(function SqlEditor({
   };
 
   const [hScrollbarHeight, setHScrollbarHeight] = useState(0);
+
+  // Handle keyboard navigation for autocomplete
+  useEffect(() => {
+    if (showAutocomplete && autocompleteContainerRef.current) {
+      const container = autocompleteContainerRef.current;
+      const activeItem = container.children[selectedIndex] as HTMLElement;
+      if (activeItem) {
+        activeItem.scrollIntoView({ block: 'nearest' });
+      }
+    }
+  }, [selectedIndex, showAutocomplete]);
 
   const checkHScrollbar = useCallback(() => {
     if (isWrapSql || !textareaRef.current) {
@@ -1366,9 +1451,14 @@ export const SqlEditor = React.memo(function SqlEditor({
   };
 
   const recalculateHeights = useCallback(() => {
-    const count = value.split('\n').length || 1;
-    // Fast path: if word wrap is disabled, each line is standard 20px
-    if (!isWrapSql) {
+    // Fast line count without memory allocation
+    let count = 1;
+    for (let i = 0; i < value.length; i++) {
+      if (value[i] === '\n') count++;
+    }
+
+    // Fast path: if word wrap is disabled or file is very large (>= 3000 lines), each line is standard 20px
+    if (!isWrapSql || count >= 3000) {
       setLineHeights(prev => {
         if (prev.length === count && prev.every(h => h === 20)) return prev;
         return new Array(count).fill(20);
@@ -1455,7 +1545,7 @@ export const SqlEditor = React.memo(function SqlEditor({
     }
 
     const textBefore = value.slice(0, cursor);
-    const match = textBefore.match(/([a-zA-Z_][a-zA-Z_0-9]*)$/);
+    const match = textBefore.match(/([a-zA-Z_][a-zA-Z_0-9.]*)$/);
 
     if (match || forceShow) {
       const typed = match ? match[1].toUpperCase() : '';
@@ -1463,9 +1553,21 @@ export const SqlEditor = React.memo(function SqlEditor({
         .filter(t => t && typeof t.keyword === 'string')
         .map(t => t.keyword);
       const allKeywords = Array.from(new Set([...customKeywords, ...SQL_KEYWORDS]));
-      const filtered = allKeywords.filter(kw => 
+      let filtered = allKeywords.filter(kw => 
         kw && typeof kw === 'string' && (typed ? (kw.toUpperCase().startsWith(typed) && kw.toUpperCase() !== typed) : true)
-      ).slice(0, 8);
+      );
+      filtered.sort(); // Sort keywords alphabetically
+      filtered = filtered.slice(0, 8);
+
+      if (schemaTables && schemaTables.length > 0 && filtered.length < 15) {
+        const tableKeywords = schemaTables.map(t => t.schema_name ? `${t.schema_name}.${t.table_name}` : t.table_name);
+        const filteredTables = tableKeywords.filter(kw => 
+            kw && typeof kw === 'string' && (typed ? (kw.toUpperCase().startsWith(typed) && kw.toUpperCase() !== typed) : true)
+        );
+        filteredTables.sort(); // Sort tables alphabetically
+        
+        filtered = [...filtered, ...filteredTables.slice(0, 15 - filtered.length)];
+      }
 
       if (filtered.length > 0) {
         setSuggestions(filtered);
@@ -1532,15 +1634,21 @@ export const SqlEditor = React.memo(function SqlEditor({
     const cursor = textareaRef.current.selectionStart;
     const textBefore = value.slice(0, cursor);
     const textAfter = value.slice(cursor);
-    const match = textBefore.match(/([a-zA-Z_][a-zA-Z_0-9]*)$/);
+    const match = textBefore.match(/([a-zA-Z_][a-zA-Z_0-9.]*)$/);
 
     if (match) {
       const wordStart = cursor - match[1].length;
       // Check if keyword corresponds to a custom template insertion
       const customTpl = customTemplates.find(t => t.keyword === keyword);
+      const tableTpl = schemaTables?.find(t => (t.schema_name ? `${t.schema_name}.${t.table_name}` : t.table_name) === keyword);
+      
       let insertion = keyword + ' ';
       if (customTpl && customTpl.insertion) {
         insertion = customTpl.insertion;
+      } else if (tableTpl) {
+        const isMacro = tableTpl.table_type?.toLowerCase() === 'macros';
+        const suffix = isMacro ? '()' : ' ';
+        insertion = tableTpl.schema_name ? `"${tableTpl.schema_name}"."${tableTpl.table_name}"${suffix}` : `"${tableTpl.table_name}"${suffix}`;
       } else if (keyword.endsWith('()')) {
         insertion = keyword.slice(0, -1);
       }
@@ -2343,9 +2451,19 @@ export const SqlEditor = React.memo(function SqlEditor({
                 theme === 'dark' ? 'bg-slate-800 border-slate-600 text-slate-200' : 'bg-white border-slate-300 text-slate-800 shadow-slate-400/30'
               }`}
             >
-              <div className="max-h-40 overflow-y-auto">
+              <div ref={autocompleteContainerRef} className="max-h-40 overflow-y-auto">
                 {suggestions.map((kw, idx) => {
                   const customMatch = customTemplates.find(t => t.keyword === kw);
+                  const tableMatch = schemaTables?.find(t => (t.schema_name ? `${t.schema_name}.${t.table_name}` : t.table_name) === kw);
+                  let tableBadge = '[tbl]';
+                  if (tableMatch?.table_type) {
+                    const ttype = tableMatch.table_type.toLowerCase();
+                    if (ttype === 'views') tableBadge = '[view]';
+                    else if (ttype === 'material views') tableBadge = '[mat_view]';
+                    else if (ttype === 'macros') tableBadge = '[macro]';
+                    else if (ttype === 'dictionaries') tableBadge = '[dict]';
+                  }
+
                   return (
                     <button
                       key={kw}
@@ -2366,8 +2484,8 @@ export const SqlEditor = React.memo(function SqlEditor({
                       }`}
                     >
                       <span className="truncate pr-1">{kw}</span>
-                      <span className={`text-[9px] shrink-0 ${idx === selectedIndex ? 'text-blue-200' : 'text-slate-400'}`}>
-                        {customMatch ? t('шаблон') : t('ключевое слово')}
+                      <span className={`text-[10px] shrink-0 font-medium ${idx === selectedIndex ? 'text-blue-200' : 'text-slate-400'}`}>
+                        {tableMatch ? tableBadge : (customMatch ? t('шаблон') : t('ключевое слово'))}
                       </span>
                     </button>
                   );

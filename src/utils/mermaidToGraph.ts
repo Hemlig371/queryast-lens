@@ -1,4 +1,3 @@
-// @ts-nocheck
 import dagre from 'dagre';
 
 export interface MermaidParsedResult {

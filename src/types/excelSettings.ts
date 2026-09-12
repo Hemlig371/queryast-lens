@@ -91,6 +91,7 @@ export interface ExcelSettings {
   reportTitleItalic: boolean;
   splitByColumnIndex?: number | null;
   skipColumnIndex?: number | null;
+  hideColumnIndex?: number | null;
 }
 
 export const DEFAULT_EXCEL_SETTINGS: ExcelSettings = {
@@ -185,7 +186,8 @@ export const DEFAULT_EXCEL_SETTINGS: ExcelSettings = {
   reportTitleBold: true,
   reportTitleItalic: false,
   splitByColumnIndex: null,
-  skipColumnIndex: null
+  skipColumnIndex: null,
+  hideColumnIndex: null
 };
 
 export interface ExcelPreset {

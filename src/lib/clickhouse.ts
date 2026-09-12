@@ -131,7 +131,11 @@ export async function executeClickhouseQueryTauri(config: ClickhouseConfig, quer
     
     try {
       const parsed = JSON.parse(responseText);
-      return { success: true, data: parsed.data || parsed, meta: parsed.meta };
+      let data = parsed.data || parsed;
+      if (Array.isArray(data) && data.length > 500000) {
+        data = data.slice(0, 500000);
+      }
+      return { success: true, data, meta: parsed.meta };
     } catch {
       return { success: true, text: responseText.trim() };
     }
@@ -243,7 +247,11 @@ export async function executeClickhouseQueryCapacitor(config: ClickhouseConfig, 
     const responseText = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
     try {
       const parsed = JSON.parse(responseText);
-      return { success: true, data: parsed.data || parsed, meta: parsed.meta };
+      let data = parsed.data || parsed;
+      if (Array.isArray(data) && data.length > 500000) {
+        data = data.slice(0, 500000);
+      }
+      return { success: true, data, meta: parsed.meta };
     } catch {
       return { success: true, text: responseText.trim() };
     }

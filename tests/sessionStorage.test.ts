@@ -1,24 +1,6 @@
+import './setupIndexedDB';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { getSessionTabs } from '../src/utils/sessionStorage';
-
-// Mock localStorage and window
-const localStorageMock = (() => {
-  let store: Record<string, string> = {};
-  return {
-    getItem: (key: string) => store[key] || null,
-    setItem: (key: string, value: string) => {
-      store[key] = value.toString();
-    },
-    clear: () => {
-      store = {};
-    },
-    removeItem: (key: string) => {
-      delete store[key];
-    }
-  };
-})();
-Object.defineProperty(global, 'localStorage', { value: localStorageMock });
-Object.defineProperty(global, 'window', { value: { localStorage: localStorageMock } });
 
 describe('sessionStorage', () => {
   beforeEach(() => {

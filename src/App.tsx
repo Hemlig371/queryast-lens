@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } from 'react';
 import { 
   ReactFlow, 
@@ -65,7 +64,6 @@ import {
   ChevronsDownUp,
   Square,
   Table,
-  Zap,
   Shrink,
   ArrowLeftRight,
   BarChart3,
@@ -89,13 +87,13 @@ import { SqlSnippetsManager, ACTION_MENU_CATEGORY } from './components/SqlSnippe
 import { ActionMenuTabContent, ACTION_MENU_TAB_ID } from './components/ActionMenuTabContent';
 import { SqlEditor, SqlEditorRef, highlightSqlHtml, getBaseHighlight } from './components/SqlEditor';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { SettingsModal, getSavedHotkeys, getSavedFormatterSettings, FormatterSettings, getSavedUiVisibilitySettings, UiVisibilitySettings, QuickActionTemplate, getQuickActionTemplates, exportWorkspaceSettings, importWorkspaceSettings } from './components/SettingsModal';
+import { SettingsModal, getSavedHotkeys, getSavedFormatterSettings, FormatterSettings, getSavedUiVisibilitySettings, UiVisibilitySettings, QuickActionTemplate, getQuickActionTemplates, exportWorkspaceSettings, importWorkspaceSettings, generateWorkspaceBundleObject, applyWorkspaceBundleSilently, resolveWorkspaceSyncFilePath } from './components/SettingsModal';
 import { VersionHistoryModal } from './components/VersionHistoryModal';
 import { saveVersion, getVersions, getLatestVersion } from './utils/versionHistory';
 import { format as formatSql } from 'sql-formatter';
 import { splitBySemicolonIgnoringQuotes, formatColumnType, replaceVariablesInSql } from './lib/sqlUtils';
 import { getSessionTabs, saveSessionTabs } from './utils/sessionStorage';
-import { connectDuckDbWasmFile, connectDuckDbWasmMemory, queryDuckDbWasm, disconnectDuckDbWasm, exportDuckDbFile, applyDuckDbConfigWasm, attachDuckDbWasmFile } from './lib/duckdbWasm';
+import { connectDuckDbWasmFile, connectDuckDbWasmMemory, queryDuckDbWasm, disconnectDuckDbWasm, applyDuckDbConfigWasm, attachDuckDbWasmFile } from './lib/duckdbWasm';
 import { WasmFileManagerModal } from './components/WasmFileManagerModal';
 import { ClickhouseModal } from './components/ClickhouseModal';
 import { ClickhouseConfig, parseClickhouseCopy, getClickhouseUrl, getClickhouseHeaders, isTauriEnvironment, isCapacitorEnvironment, executeClickhouseQueryTauri, executeClickhouseQueryCapacitor, executeClickhouseCopyToTauri, executeClickhouseCopyToCapacitor, executeClickhouseCopyFromTauri, cancelClickhouseQueryTauri } from './lib/clickhouse';
@@ -144,7 +142,7 @@ interface SavedSession {
   tabs?: EditorTab[];
   activeTabId?: string;
   sql?: string;
-  dialect?: 'PostgreSQL' | 'Oracle' | 'Clickhouse';
+  dialect?: 'PostgreSQL' | 'Oracle' | 'Clickhouse' | 'DuckDB' | '';
   direction?: 'LR' | 'TB';
   theme?: 'dark' | 'light';
   isWrapSql?: boolean;
@@ -220,7 +218,7 @@ export default function App() {
   const savedSession = useMemo(() => getSavedSession(), []);
 
   const [theme, setTheme] = useState<'dark' | 'light'>(() => savedSession?.theme || 'dark');
-  const [dialect, setDialect] = useState<'PostgreSQL' | 'Oracle' | 'Clickhouse'>(() => savedSession?.dialect || 'PostgreSQL');
+  const [dialect, setDialect] = useState<'PostgreSQL' | 'Oracle' | 'Clickhouse' | 'DuckDB' | ''>(() => (savedSession?.dialect as any) || 'PostgreSQL');
   const [direction, setDirection] = useState<'LR' | 'TB'>(() => savedSession?.direction || 'LR');
   const [activePresetId, setActivePresetId] = useState<string>(sqlPresets[0].id);
   const [showSortNodes, setShowSortNodes] = useState<boolean>(false);
@@ -960,9 +958,8 @@ export default function App() {
 
   const pagedResults = useMemo(() => {
     if (!duckDbResults) return [];
-    const maxRows = uiVisibility.clickhouseMaxRows ?? uiVisibility.duckDbMaxRows ?? 100;
-    return maxRows > 0 ? duckDbResults.slice(0, maxRows) : duckDbResults;
-  }, [duckDbResults, uiVisibility.clickhouseMaxRows, uiVisibility.duckDbMaxRows]);
+    return effectiveMaxRows > 0 ? duckDbResults.slice(0, effectiveMaxRows) : duckDbResults;
+  }, [duckDbResults, effectiveMaxRows]);
 
   const displayedResults = useMemo(() => {
     if (!pagedResults || pagedResults.length === 0) return [];
@@ -1252,8 +1249,23 @@ export default function App() {
     filters: Array<{ colKey: string; op: '=' | 'IS' | 'LIKE' | '!=' | '<>' | 'IS NULL' | 'IS NOT NULL'; val: any }>,
     sorts: Array<{ colKey: string; dir: 'ASC' | 'DESC' }>
   ) => {
-    const cleanSql = baseSql.trim().replace(/;+$/, '');
+    let cleanSql = baseSql.trim().replace(/;+$/, '');
     if (!cleanSql) return '';
+
+    // --- LAZY UNBOXING ---
+    // If the query was already wrapped by a previous filter action, unwrap it to prevent nesting (matryoshka)
+    const prefix = 'SELECT * FROM (\n';
+    const suffixMarker = '\n) AS _filtered_query';
+    if (cleanSql.toUpperCase().startsWith(prefix)) {
+      const suffixIndex = cleanSql.lastIndexOf(suffixMarker);
+      if (suffixIndex !== -1) {
+        // Extract the inner original query. We can safely discard the old WHERE/ORDER BY 
+        // because the 'filters' and 'sorts' arrays contain the complete updated state.
+        cleanSql = cleanSql.substring(prefix.length, suffixIndex);
+      }
+    }
+    // ----------------------
+
     if (filters.length === 0 && sorts.length === 0) return cleanSql;
 
     const whereClauses = filters.map(f => {
@@ -1282,7 +1294,7 @@ export default function App() {
         return `LOWER(CAST("${safeCol}" AS ${activeEngine === 'clickhouse' ? 'String' : 'VARCHAR'})) LIKE LOWER('%${escapedVal}%')`;
       }
       if (f.val === null || f.val === undefined) {
-        return f.op === '!=' || f.op === '<>' ? `"${safeCol}" IS NOT NULL` : `"${safeCol}" IS NULL`;
+        return f.op === '!=' ? `"${safeCol}" IS NOT NULL` : `"${safeCol}" IS NULL`;
       }
       if (typeof f.val === 'number' || typeof f.val === 'boolean') {
         return `"${safeCol}" ${f.op} ${f.val}`;
@@ -1411,12 +1423,46 @@ export default function App() {
 
   useEffect(() => {
     const loadTabs = async () => {
+      // Workspace Synchronization Auto-Import
+      if (isTauriEnvironment()) {
+        try {
+          const rawVis = localStorage.getItem('sql_visualizer_ui_visibility');
+          const syncPath = rawVis ? JSON.parse(rawVis).workspaceSyncPath : null;
+          
+          if (syncPath) {
+            const filePath = resolveWorkspaceSyncFilePath(syncPath);
+            try {
+              const fileContent = await tauriInvoke<string>('read_text_file', { path: filePath });
+              if (fileContent) {
+                const parsed = JSON.parse(fileContent);
+                if (parsed?.data && parsed?.exportedAt) {
+                  const lastSync = localStorage.getItem('sql_last_workspace_sync_time') || '';
+                  // If the file is newer than our last sync time, import it
+                  if (!lastSync || Date.parse(parsed.exportedAt) > Date.parse(lastSync)) {
+                    await applyWorkspaceBundleSilently(parsed.data);
+                    localStorage.setItem('sql_last_workspace_sync_time', parsed.exportedAt);
+
+                    const updatedVis = getSavedUiVisibilitySettings();
+                    setUiVisibility(updatedVis);
+                  }
+                }
+              }
+            } catch (err) {
+              // File might not exist yet or is inaccessible, just continue with local session
+            }
+          }
+        } catch (e) {
+          console.warn('Auto-import synchronization failed:', e);
+        }
+      }
+
       try {
         const storedTabs = await getSessionTabs();
         if (storedTabs && storedTabs.length > 0) {
           setTabs(storedTabs);
           
-          let nextActiveTabId = savedSession?.activeTabId || storedTabs[0].id;
+          const freshSession = getSavedSession();
+          let nextActiveTabId = freshSession?.activeTabId || savedSession?.activeTabId || storedTabs[0].id;
           if (nextActiveTabId !== ACTION_MENU_TAB_ID && !storedTabs.some(t => t.id === nextActiveTabId)) {
             nextActiveTabId = storedTabs[0].id;
           }
@@ -1431,6 +1477,15 @@ export default function App() {
             } else {
               setLastExecutedSql('');
             }
+          }
+          if (freshSession?.theme && freshSession.theme !== theme) {
+            setTheme(freshSession.theme);
+          }
+          if (freshSession?.dialect && freshSession.dialect !== dialect) {
+            setDialect(freshSession.dialect);
+          }
+          if (freshSession?.direction && freshSession.direction !== direction) {
+            setDirection(freshSession.direction);
           }
         }
       } catch (e) {
@@ -1600,6 +1655,42 @@ export default function App() {
           t.id === latestSessionRef.current.activeTabId ? { ...t, sql: sqlRef.current } : t
         );
       await saveSessionTabs(tabsToSave);
+
+      // Workspace Synchronization Auto-Export
+      if (isTauriEnvironment()) {
+        const rawVis = localStorage.getItem('sql_visualizer_ui_visibility');
+        const syncPath = rawVis ? JSON.parse(rawVis).workspaceSyncPath : null;
+        if (syncPath) {
+          const filePath = resolveWorkspaceSyncFilePath(syncPath);
+          try {
+            let shouldWrite = true;
+            try {
+              const existingContent = await tauriInvoke<string>('read_text_file', { path: filePath });
+              if (existingContent) {
+                const existingParsed = JSON.parse(existingContent);
+                const lastSync = localStorage.getItem('sql_last_workspace_sync_time') || '';
+                // Check if another instance has updated the file since our last sync
+                if (lastSync && existingParsed?.exportedAt && Date.parse(existingParsed.exportedAt) > Date.parse(lastSync)) {
+                  shouldWrite = false;
+                }
+              }
+            } catch (_) {
+              // File might not exist yet, safe to write
+            }
+
+            if (shouldWrite) {
+              const bundle = await generateWorkspaceBundleObject();
+              await tauriInvoke('write_text_file', {
+                path: filePath,
+                contents: JSON.stringify(bundle, null, 2)
+              });
+              localStorage.setItem('sql_last_workspace_sync_time', bundle.exportedAt);
+            }
+          } catch (err) {
+            console.warn('Failed to auto-export workspace bundle:', err);
+          }
+        }
+      }
     } catch (e) {
       console.error('Failed to save session to localStorage', e);
     }
@@ -4102,7 +4193,7 @@ export default function App() {
 
       let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
       xml += `<sqlGraph dialect="${escapeXml(dialect)}" exportedAt="${new Date().toISOString()}">\n`;
-      xml += `  <query><![CDATA[${sql}]]></query>\n`;
+      xml += `  <query><![CDATA[${getActiveTabSql()}]]></query>\n`;
       xml += `  <nodes count="${nodes.length}">\n`;
       nodes.forEach((n: any) => {
         const title = n.data?.title || n.data?.label || n.id;
@@ -5106,9 +5197,9 @@ export default function App() {
   const doFormat = (text: string): string => {
     const cfg = formatterSettingsRef.current || formatterSettings;
     const primaryLang =
-      dialect === 'PostgreSQL' || dialect === 'Oracle' || dialect === 'Clickhouse' ? 'postgresql' :
-      dialect === 'MySQL' ? 'mysql' :
-      dialect === 'SQLite' ? 'sqlite' : 'postgresql';
+      dialect === 'PostgreSQL' || dialect === 'Oracle' || dialect === 'Clickhouse' || dialect === 'DuckDB' ? 'postgresql' :
+      (dialect as string) === 'MySQL' ? 'mysql' :
+      (dialect as string) === 'SQLite' ? 'sqlite' : 'postgresql';
 
     const fallbackLangs = [primaryLang, 'postgresql', 'mysql', 'sqlite', 'sql'].filter(
       (lang, index, self) => self.indexOf(lang) === index
@@ -5618,6 +5709,7 @@ export default function App() {
                     onExecuteQuickAction={handleExecuteQuickAction}
                     extractedTableName={extractedTableName}
                     isQuickActionsEnabled={uiVisibility.showDuckDbConfig || uiVisibility.showClickhouseConfig}
+                    schemaTables={duckDbSchema || undefined}
                   />
                 ) : (
                   <div className="flex-1" />
@@ -6935,6 +7027,7 @@ export default function App() {
                         extractedTableName={extractedTableName}
                         isQuickActionsEnabled={uiVisibility.showDuckDbConfig || uiVisibility.showClickhouseConfig}
                         isFullScreen={true}
+                        schemaTables={duckDbSchema || undefined}
                       />
                     </ErrorBoundary>
                   )}
@@ -7748,7 +7841,7 @@ export default function App() {
                           setDuckDbError(null);
 
                           const handleExecuteRawQueryForStats = async (sqlToRun: string): Promise<any[]> => {
-                            const isClickhouse = activeEngine === 'clickhouse' || (!duckDbConnectedPath && !!clickhouseConfig);
+                            const isClickhouse = (activeEngine as string) === 'clickhouse' || (!duckDbConnectedPath && !!clickhouseConfig);
                             if (isClickhouse && clickhouseConfig) {
                               let queryWithFormat = sqlToRun.trim();
                               if (!/\bFORMAT\b/i.test(queryWithFormat) && /^\s*(SELECT|SHOW|DESCRIBE|DESC|EXPLAIN|WITH)\b/i.test(queryWithFormat)) {
@@ -8942,7 +9035,7 @@ export default function App() {
         onRestoreVersion={(restoredSql, restoredDialect) => {
           sqlRef.current = restoredSql; setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: restoredSql } : t));
           if (restoredDialect) {
-            setDialect(restoredDialect as 'PostgreSQL' | 'Oracle' | 'Clickhouse');
+            setDialect(restoredDialect as any);
           }
         }}
         theme={theme}

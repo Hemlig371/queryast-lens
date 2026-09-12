@@ -202,6 +202,21 @@ export async function exportToExcel({
         }
       }
 
+      // @hide: column index (1-based) or column name to visually hide column in sheet
+      const hideMatch = combinedComments.match(/@hide:\s*([^@\n*]+)/i);
+      if (hideMatch) {
+        const val = hideMatch[1].trim();
+        const num = parseInt(val, 10);
+        if (!isNaN(num)) {
+          settings.hideColumnIndex = num > 0 ? num : null;
+        } else {
+          const colIdx = rawColumns.findIndex(c => c.toLowerCase() === val.toLowerCase());
+          if (colIdx !== -1) {
+            settings.hideColumnIndex = colIdx + 1;
+          }
+        }
+      }
+
       // @group: column index (1-based) or column name
       const groupMatch = combinedComments.match(/@group:\s*([^@\n*]+)/i);
       if (groupMatch) {
@@ -302,6 +317,13 @@ export async function exportToExcel({
   if (skipIndex !== null && skipIndex !== undefined && skipIndex > 0 && skipIndex <= rawColumns.length) {
     const skipColKey = rawColumns[skipIndex - 1];
     activeColumns = activeColumns.filter(c => c !== skipColKey);
+  }
+
+  // Hide column visually in worksheet (without excluding data/formulas) if specified
+  const hideIndex = settings.hideColumnIndex;
+  let hideColKey: string | null = null;
+  if (hideIndex !== null && hideIndex !== undefined && hideIndex > 0 && hideIndex <= rawColumns.length) {
+    hideColKey = rawColumns[hideIndex - 1];
   }
 
   // Pre-calculate base colsMeta once
@@ -603,6 +625,11 @@ export async function exportToExcel({
   // Instead of assigning these properties to 500,000 individual cells, we assign them to the 20 columns
   colsMeta.forEach((col, colIdx) => {
     const sheetCol = mainSheet.getColumn(colIdx + 1);
+
+    // Hide column if requested
+    if (hideColKey && col.key === hideColKey) {
+      sheetCol.hidden = true;
+    }
 
     // Formats
     if (col.isRowIndexCol) {

@@ -203,9 +203,13 @@ async fn execute_query(
                 (0, Vec::new(), Vec::new())
             };
 
+            const MAX_UI_ROWS: usize = 500_000;
             let mut rows = Vec::new();
 
             while let Ok(Some(row)) = rows_iter.next() {
+                if rows.len() >= MAX_UI_ROWS {
+                    break;
+                }
                 let mut row_vals = Vec::with_capacity(col_count);
                 for col_idx in 0..col_count {
                     let v = match row.get_ref(col_idx) {

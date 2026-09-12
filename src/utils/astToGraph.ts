@@ -1,4 +1,3 @@
-// @ts-nocheck
 import pkg from 'node-sql-parser';
 const { Parser } = pkg;
 import dagre from 'dagre';
@@ -17,6 +16,7 @@ export interface GraphEdge {
   animated?: boolean;
   label?: string;
   style?: any;
+  type?: string;
 }
 
 const parser = new Parser();

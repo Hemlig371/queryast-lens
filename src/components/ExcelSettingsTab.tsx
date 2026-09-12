@@ -29,8 +29,8 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
   const [copiedTemplate, setCopiedTemplate] = useState<boolean>(false);
 
   const sampleSqlComment = currentLang === 'en'
-    ? '/* #Title ##Subtitle @preset:PresetName @file:FileName @sheet:SheetName @totals:SUM @split:No/Name @group:No/Name @group_cols:No @group_hide:true @skip:No/Name @protect:12345 */'
-    : '/* #Заголовок ##Подзаголовок @preset:ИмяПресета @file:ИмяФайла @sheet:ИмяЛиста @totals:SUM @split:№/Имя @group:№/Имя @group_cols:№ @group_hide:true @skip:№/Имя @protect:12345 */';
+    ? '/* #Title ##Subtitle @preset:PresetName @file:FileName @sheet:SheetName @totals:SUM @split:No/Name @group:No/Name @group_cols:No @group_hide:true @skip:No/Name @hide:No/Name @protect:12345 */'
+    : '/* #Заголовок ##Подзаголовок @preset:ИмяПресета @file:ИмяФайла @sheet:ИмяЛиста @totals:SUM @split:№/Имя @group:№/Имя @group_cols:№ @group_hide:true @skip:№/Имя @hide:№/Имя @protect:12345 */';
 
   const handleCopySqlCommentTemplate = () => {
     navigator.clipboard.writeText(sampleSqlComment);
@@ -901,22 +901,43 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
               <span className="font-medium">{t('Отображать нулевые значения (0)')}</span>
             </label>
 
-            <div className={`sm:col-span-2 ${dividerClass} pt-3 flex flex-wrap items-center gap-3`}>
-              <span className={`text-xs shrink-0 ${theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}`}>{t('Исключить столбец из отчета:')}</span>
-              <input
-                type="number"
-                min={0}
-                max={50}
-                value={excelSettings.skipColumnIndex ?? 0}
-                onChange={(e) => {
-                  const val = Math.max(0, parseInt(e.target.value) || 0);
-                  updateExcel({ skipColumnIndex: val > 0 ? val : null });
-                }}
-                className={`w-20 ${inputClass}`}
-              />
-              <span className={hintClass}>
-                {t('(0 — не исключать, 1 — первый столбец, 2 — второй и т.д.)')}
-              </span>
+            <div className={`sm:col-span-2 ${dividerClass} pt-3 grid grid-cols-1 sm:grid-cols-2 gap-4`}>
+              <div>
+                <label className={labelClass}>{t('Исключить столбец из отчета:')}</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={0}
+                    max={50}
+                    value={excelSettings.skipColumnIndex ?? 0}
+                    onChange={(e) => {
+                      const val = Math.max(0, parseInt(e.target.value) || 0);
+                      updateExcel({ skipColumnIndex: val > 0 ? val : null });
+                    }}
+                    className={`w-20 ${inputClass}`}
+                  />
+                  <span className={hintClass}>
+                    {t('(0 — не исключать, 1, 2...)')}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className={labelClass}>{t('Скрыть столбец в отчете:')}</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={0}
+                    max={50}
+                    value={excelSettings.hideColumnIndex ?? 0}
+                    onChange={(e) => {
+                      const val = Math.max(0, parseInt(e.target.value) || 0);
+                      updateExcel({ hideColumnIndex: val > 0 ? val : null });
+                    }}
+                    className={`w-20 ${inputClass}`}
+                  />
+                </div>
+              </div>
             </div>
           </div>
         </div>

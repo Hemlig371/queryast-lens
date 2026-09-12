@@ -1095,6 +1095,13 @@ export const EN_DICT: Record<string, string> = {
   "Использование тега <span> для раскрашивания отдельных слов или букв.": "Uses <span> tags with style attributes for custom word colors",
   "Mermaid: Иконки и Эмодзи": "Mermaid: Icons and Emojis",
   "Вставка Юникод-эмодзи и кастомных иконок прямо в текст узлов.": "Inserts Unicode emojis and icon badges directly into node labels",
+  "Синхронизация рабочего пространства": "Workspace Synchronization",
+  "Синхронизация рабочего пространства (файл/папка)": "Workspace Synchronization (file/folder)",
+  "Например: D:\\Dropbox\\workspace.json или /Users/Dropbox": "e.g. D:\\Dropbox\\workspace.json or /Users/Dropbox",
+  "Например: D:\\Dropbox\\QueryAST\\workspace.json или /Users/user/Dropbox": "e.g. D:\\Dropbox\\QueryAST\\workspace.json or /Users/user/Dropbox",
+  "Скрыть столбец в отчете:": "Hide column in report:",
+  "(0 — не исключать, 1, 2...)": "(0 — do not exclude, 1, 2...)",
+  "(0 — не скрывать, 1, 2...)": "(0 — do not hide, 1, 2...)",
 };
 
 export function t(text: string): string {

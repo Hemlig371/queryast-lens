@@ -303,7 +303,11 @@ export async function queryDuckDbWasm(sqlQuery: string) {
     }
   }
 
-  const rows = result.toArray().map((row: any) => {
+  const rawRows = result.toArray();
+  const maxRows = Math.min(rawRows.length, 500000);
+  const rows = [];
+  for (let i = 0; i < maxRows; i++) {
+    const row = rawRows[i];
     const obj: Record<string, any> = row.toJSON();
     for (const key in obj) {
       if (typeof obj[key] === 'bigint') {
@@ -312,8 +316,8 @@ export async function queryDuckDbWasm(sqlQuery: string) {
         obj[key] = obj[key].toISOString().replace('T', ' ').replace('Z', '');
       }
     }
-    return obj;
-  });
+    rows.push(obj);
+  }
 
   const typesDict: Record<string, string> = {};
   if (result?.schema?.fields) {

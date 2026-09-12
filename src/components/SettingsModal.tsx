@@ -3,7 +3,7 @@ import { X, Keyboard, RotateCcw, Settings, AlignLeft, Eye, Download, Upload, Plu
 import { downloadFileWithFallback } from '../utils/exportUtils';
 import { AutocompleteTemplate, DEFAULT_AUTOCOMPLETE_TEMPLATES, getCustomAutocompleteTemplates } from './SqlEditor';
 import { getVersions, importVersions, SqlVersionItem, cleanupOldVersions } from '../utils/versionHistory';
-import { getAllSchemaCacheEntries, importSchemaCacheEntries, SchemaCacheEntry, cleanupOldSchemaCaches } from '../utils/schemaDbCache';
+import { importSchemaCacheEntries, SchemaCacheEntry } from '../utils/schemaDbCache';
 import { loadSnippetsFromDB, saveSnippetsToDB } from '../utils/snippetsStorage';
 import { Snippet } from './SqlSnippetsManager';
 import { getSessionTabs, saveSessionTabs } from '../utils/sessionStorage';
@@ -118,6 +118,7 @@ export interface UiVisibilitySettings {
   showExportDrawio: boolean;
   autocompleteOnType?: boolean;
   uiScale?: number;
+  workspaceSyncPath?: string;
 }
 
 export const DEFAULT_FORMATTER_SETTINGS: FormatterSettings = {
@@ -469,6 +470,164 @@ export function getSavedHotkeys(): Record<string, string> {
   return defaults;
 }
 
+export function resolveWorkspaceSyncFilePath(inputPath: string): string {
+  const trimmed = inputPath.trim();
+  if (!trimmed) return '';
+  if (trimmed.toLowerCase().endsWith('.json')) {
+    return trimmed;
+  }
+  const separator = trimmed.includes('\\') ? '\\' : '/';
+  const cleanBase = trimmed.replace(/[\\/]+$/, '');
+  return `${cleanBase}${separator}sql_visualizer_workspace_sync.json`;
+}
+
+export async function generateWorkspaceBundleObject(): Promise<{version: number, app: string, exportedAt: string, data: Record<string, unknown>}> {
+  const backupData: Record<string, unknown> = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (
+      key &&
+      !key.toLowerCase().includes('vault') &&
+      !key.toLowerCase().includes('secret') &&
+      key !== 'sql_last_workspace_sync_time' &&
+      key !== 'sql_is_importing_session'
+    ) {
+      const value = localStorage.getItem(key);
+      if (value !== null) {
+        try {
+          backupData[key] = JSON.parse(value);
+        } catch (_) {
+          backupData[key] = value;
+        }
+      }
+    }
+  }
+
+  try {
+    await cleanupOldVersions();
+    const versions = await getVersions();
+    const limitedVersions = versions.slice(0, 500);
+    backupData['sql_visualizer_version_history'] = limitedVersions;
+  } catch (err) {
+    console.warn('Failed to get IndexedDB versions for export:', err);
+  }
+
+  try {
+    const snippets = await loadSnippetsFromDB();
+    backupData['sql_visualizer_snippets'] = snippets;
+  } catch (err) {
+    console.warn('Failed to get IndexedDB snippets for export:', err);
+  }
+
+  try {
+    const sessionTabs = await getSessionTabs();
+    if (sessionTabs) {
+      backupData['sql_visualizer_tabs_session'] = sessionTabs;
+    }
+  } catch (err) {
+    console.warn('Failed to get IndexedDB session tabs for export:', err);
+  }
+
+  return {
+    version: 1,
+    app: 'QueryAST Lens Workspace Bundle',
+    exportedAt: new Date().toISOString(),
+    data: backupData
+  };
+}
+
+export async function applyWorkspaceBundleSilently(
+  dataObj: Record<string, unknown>,
+  preservedOverrides?: Partial<UiVisibilitySettings>
+): Promise<void> {
+  // Ensure session key compatibility (if old key exists without _v2)
+  if (dataObj['sql_visualizer_session'] && !dataObj['sql_visualizer_session_v2']) {
+    dataObj['sql_visualizer_session_v2'] = dataObj['sql_visualizer_session'];
+  }
+
+  // Determine host settings to preserve (explicitly passed or read from current localStorage)
+  const existingPreservedSettings: Partial<UiVisibilitySettings> = preservedOverrides ? { ...preservedOverrides } : {};
+  if (!preservedOverrides) {
+    try {
+      const rawUiVisibility = localStorage.getItem(UI_VISIBILITY_STORAGE_KEY) || localStorage.getItem('sql_visualizer_ui_visibility');
+      if (rawUiVisibility) {
+        const currentVis = JSON.parse(rawUiVisibility) as Partial<UiVisibilitySettings>;
+        if (currentVis.duckDbMemoryLimit && currentVis.duckDbMemoryLimit !== '8GB') {
+          existingPreservedSettings.duckDbMemoryLimit = currentVis.duckDbMemoryLimit;
+        }
+        if (currentVis.duckDbTempDirectory && currentVis.duckDbTempDirectory !== './tmp') {
+          existingPreservedSettings.duckDbTempDirectory = currentVis.duckDbTempDirectory;
+        }
+        if (currentVis.duckDbExtensionDirectory && currentVis.duckDbExtensionDirectory !== './extensions') {
+          existingPreservedSettings.duckDbExtensionDirectory = currentVis.duckDbExtensionDirectory;
+        }
+        if (currentVis.duckDbThreads !== undefined && Number(currentVis.duckDbThreads) !== 0) {
+          existingPreservedSettings.duckDbThreads = Number(currentVis.duckDbThreads);
+        }
+        if (currentVis.duckDbInitSql && currentVis.duckDbInitSql.trim() !== '') {
+          existingPreservedSettings.duckDbInitSql = currentVis.duckDbInitSql;
+        }
+        if (currentVis.workspaceSyncPath && currentVis.workspaceSyncPath.trim() !== '') {
+          existingPreservedSettings.workspaceSyncPath = currentVis.workspaceSyncPath;
+        }
+        if (currentVis.uiScale !== undefined) {
+          existingPreservedSettings.uiScale = currentVis.uiScale;
+        }
+      }
+    } catch {
+      // Ignore parse errors on pre-existing localStorage
+    }
+  }
+
+  // Merge preserved host settings into imported ui_visibility
+  if (Object.keys(existingPreservedSettings).length > 0) {
+    const importedVisKey = dataObj[UI_VISIBILITY_STORAGE_KEY] ? UI_VISIBILITY_STORAGE_KEY : (dataObj['sql_visualizer_ui_visibility'] ? 'sql_visualizer_ui_visibility' : UI_VISIBILITY_STORAGE_KEY);
+    let importedVisObj: Partial<UiVisibilitySettings> = {};
+    if (dataObj[importedVisKey]) {
+      try {
+        importedVisObj = typeof dataObj[importedVisKey] === 'string'
+          ? JSON.parse(dataObj[importedVisKey] as string)
+          : (dataObj[importedVisKey] as Partial<UiVisibilitySettings>);
+      } catch {
+        importedVisObj = {};
+      }
+    }
+    dataObj[importedVisKey] = {
+      ...importedVisObj,
+      ...existingPreservedSettings,
+    };
+  }
+
+  for (const [key, value] of Object.entries(dataObj)) {
+    if (key === 'sql_last_workspace_sync_time' || key === 'sql_is_importing_session') {
+      continue;
+    }
+    if (key === 'sql_visualizer_version_history' || key === 'versionHistory') {
+      if (Array.isArray(value)) {
+        await importVersions(value as SqlVersionItem[]);
+      }
+    } else if (key === 'sql_visualizer_schema_cache_data' || key === 'schemaCache' || key === 'schemaCacheData') {
+      if (Array.isArray(value)) {
+        await importSchemaCacheEntries(value as SchemaCacheEntry[]);
+      }
+    } else if (key === 'sql_visualizer_snippets' || key === 'snippets') {
+      if (Array.isArray(value)) {
+        await saveSnippetsToDB(value as Snippet[]);
+      }
+    } else if (key === 'sql_visualizer_tabs_session' || key === 'tabsSession') {
+      if (Array.isArray(value)) {
+        await saveSessionTabs(value as EditorTab[]);
+      }
+    } else if (typeof value === 'string') {
+      localStorage.setItem(key, value);
+    } else if (value !== null && typeof value === 'object') {
+      localStorage.setItem(key, JSON.stringify(value));
+    } else if (typeof value === 'boolean' || typeof value === 'number') {
+      localStorage.setItem(key, JSON.stringify(value));
+    }
+  }
+}
+
 export async function exportWorkspaceSettings(): Promise<void> {
   try {
     // First, trigger immediate session save so current in-memory tabs and state are saved
@@ -476,64 +635,7 @@ export async function exportWorkspaceSettings(): Promise<void> {
       window.dispatchEvent(new CustomEvent('sql_save_session_now', { detail: { onComplete: resolve } }));
     });
 
-    const backupData: Record<string, unknown> = {};
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && !key.toLowerCase().includes('vault') && !key.toLowerCase().includes('secret')) {
-        const value = localStorage.getItem(key);
-        if (value !== null) {
-          try {
-            backupData[key] = JSON.parse(value);
-          } catch (_) {
-            backupData[key] = value;
-          }
-        }
-      }
-    }
-
-    // Add IndexedDB version history (limited to latest 500 records to prevent massive JSON files)
-    try {
-      await cleanupOldVersions();
-      const versions = await getVersions();
-      const limitedVersions = versions.slice(0, 500);
-      backupData['sql_visualizer_version_history'] = limitedVersions;
-    } catch (err) {
-      console.warn('Failed to get IndexedDB versions for export:', err);
-    }
-
-    // Add IndexedDB schema cache at the very end of the JSON file
-    try {
-      await cleanupOldSchemaCaches(7); // Clean up caches older than 7 days
-      const schemaCaches = await getAllSchemaCacheEntries();
-      backupData['sql_visualizer_schema_cache_data'] = schemaCaches;
-    } catch (err) {
-      console.warn('Failed to get IndexedDB schema caches for export:', err);
-    }
-
-    // Add IndexedDB custom snippets
-    try {
-      const snippets = await loadSnippetsFromDB();
-      backupData['sql_visualizer_snippets'] = snippets;
-    } catch (err) {
-      console.warn('Failed to get IndexedDB snippets for export:', err);
-    }
-
-    // Add IndexedDB session tabs
-    try {
-      const sessionTabs = await getSessionTabs();
-      if (sessionTabs) {
-        backupData['sql_visualizer_tabs_session'] = sessionTabs;
-      }
-    } catch (err) {
-      console.warn('Failed to get IndexedDB session tabs for export:', err);
-    }
-
-    const workspaceBundle = {
-      version: 1,
-      app: 'QueryAST Lens Workspace Bundle',
-      exportedAt: new Date().toISOString(),
-      data: backupData
-    };
+    const workspaceBundle = await generateWorkspaceBundleObject();
 
     const blob = new Blob([JSON.stringify(workspaceBundle, null, 2)], { type: 'application/json' });
     const dateStr = new Date().toISOString().slice(0, 10);
@@ -578,6 +680,12 @@ export async function importWorkspaceSettings(file: File, onBeforeImport?: () =>
           if (currentVis.duckDbInitSql && currentVis.duckDbInitSql.trim() !== '') {
             existingDuckDbSettings.duckDbInitSql = currentVis.duckDbInitSql;
           }
+          if (currentVis.workspaceSyncPath) {
+            existingDuckDbSettings.workspaceSyncPath = currentVis.workspaceSyncPath;
+          }
+          if (currentVis.uiScale !== undefined) {
+            existingDuckDbSettings.uiScale = currentVis.uiScale;
+          }
         }
       } catch {
         // Ignore parse errors on pre-existing localStorage
@@ -588,25 +696,6 @@ export async function importWorkspaceSettings(file: File, onBeforeImport?: () =>
         dataObj['sql_visualizer_session_v2'] = dataObj['sql_visualizer_session'];
       }
 
-      // Merge existing explicit DuckDB settings into imported ui_visibility if present
-      if (Object.keys(existingDuckDbSettings).length > 0) {
-        const importedVisKey = dataObj[UI_VISIBILITY_STORAGE_KEY] ? UI_VISIBILITY_STORAGE_KEY : (dataObj['sql_visualizer_ui_visibility'] ? 'sql_visualizer_ui_visibility' : UI_VISIBILITY_STORAGE_KEY);
-        let importedVisObj: Partial<UiVisibilitySettings> = {};
-        if (dataObj[importedVisKey]) {
-          try {
-            importedVisObj = typeof dataObj[importedVisKey] === 'string'
-              ? JSON.parse(dataObj[importedVisKey] as string)
-              : (dataObj[importedVisKey] as Partial<UiVisibilitySettings>);
-          } catch {
-            importedVisObj = {};
-          }
-        }
-        dataObj[UI_VISIBILITY_STORAGE_KEY] = {
-          ...importedVisObj,
-          ...existingDuckDbSettings,
-        };
-      }
-
       // Disconnect from database to free locks in backend before replacing settings
       if (onBeforeImport) {
         await onBeforeImport();
@@ -615,35 +704,7 @@ export async function importWorkspaceSettings(file: File, onBeforeImport?: () =>
       // Clear existing local storage so obsolete keys from before the import are removed
       localStorage.clear();
 
-      let importedCount = 0;
-      for (const [key, value] of Object.entries(dataObj)) {
-        if (key === 'sql_visualizer_version_history' || key === 'versionHistory') {
-          if (Array.isArray(value)) {
-            await importVersions(value as SqlVersionItem[]);
-          }
-        } else if (key === 'sql_visualizer_schema_cache_data' || key === 'schemaCache' || key === 'schemaCacheData') {
-          if (Array.isArray(value)) {
-            await importSchemaCacheEntries(value as SchemaCacheEntry[]);
-          }
-        } else if (key === 'sql_visualizer_snippets' || key === 'snippets') {
-          if (Array.isArray(value)) {
-            await saveSnippetsToDB(value as Snippet[]);
-          }
-        } else if (key === 'sql_visualizer_tabs_session' || key === 'tabsSession') {
-          if (Array.isArray(value)) {
-            await saveSessionTabs(value as EditorTab[]);
-          }
-        } else if (typeof value === 'string') {
-          localStorage.setItem(key, value);
-          importedCount++;
-        } else if (value !== null && typeof value === 'object') {
-          localStorage.setItem(key, JSON.stringify(value));
-          importedCount++;
-        } else if (typeof value === 'boolean' || typeof value === 'number') {
-          localStorage.setItem(key, JSON.stringify(value));
-          importedCount++;
-        }
-      }
+      await applyWorkspaceBundleSilently(dataObj, existingDuckDbSettings);
 
       // Mark session import flag so App.tsx unload listener doesn't overwrite imported session on page reload
       sessionStorage.setItem('sql_is_importing_session', 'true');
@@ -948,6 +1009,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const updateUiScale = (val: number) => {
     const updated = { ...uiVisibility, uiScale: val };
+    onUpdateUiVisibility(updated);
+    localStorage.setItem(UI_VISIBILITY_STORAGE_KEY, JSON.stringify(updated));
+  };
+
+  const updateWorkspaceSyncPath = (val: string) => {
+    const updated = { ...uiVisibility, workspaceSyncPath: val };
     onUpdateUiVisibility(updated);
     localStorage.setItem(UI_VISIBILITY_STORAGE_KEY, JSON.stringify(updated));
   };
@@ -1513,6 +1580,32 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
               {/* SECRETS VAULT SECTION */}
               <VaultSettingsSection theme={theme} />
+
+              {/* WORKSPACE SYNCHRONIZATION SETTING */}
+              <div
+                className={`p-4 rounded-xl border space-y-3.5 ${
+                  theme === 'dark' ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <h4 className={`font-bold text-xs ${theme === 'dark' ? 'text-slate-200' : 'text-slate-900'}`}>
+                    {t('Синхронизация рабочего пространства')}
+                  </h4>
+                </div>
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    value={uiVisibility.workspaceSyncPath || ''}
+                    onChange={(e) => updateWorkspaceSyncPath(e.target.value)}
+                    placeholder={t('Например: D:\\Dropbox\\workspace.json или /Users/Dropbox')}
+                    className={`w-full px-3 py-1.5 rounded-lg border text-xs outline-none ${
+                      theme === 'dark'
+                        ? 'bg-slate-900 border-slate-700 text-slate-200 focus:border-blue-500'
+                        : 'bg-white border-slate-300 text-slate-800 focus:border-blue-500'
+                    }`}
+                  />
+                </div>
+              </div>
             </div>
           ) : activeTab === 'formatter' ? (
             <div className="space-y-5">

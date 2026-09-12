@@ -21,7 +21,8 @@ import {
   getVersions, 
   saveVersion, 
   deleteVersion, 
-  clearAllVersions 
+  clearAllVersions,
+  cleanupOldVersions
 } from '../utils/versionHistory';
 
 import { UiVisibilitySettings } from './SettingsModal';
@@ -116,6 +117,11 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
   }, [searchQuery]);
 
   const loadHistory = async () => {
+    try {
+      await cleanupOldVersions();
+    } catch (e) {
+      console.error('Failed to cleanup old versions:', e);
+    }
     const list = await getVersions();
     setVersions(list);
     if (list.length > 0 && !selectedVersion) {
