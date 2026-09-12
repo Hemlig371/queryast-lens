@@ -1134,6 +1134,7 @@ export default function App() {
   const [loadedTabId, setLoadedTabId] = useState<string | null>(null);
   useLayoutEffect(() => { activeTabIdRef.current = activeTabId; }, [activeTabId]);
 
+  const [isInitializing, setIsInitializing] = useState<boolean>(true);
   const [isTabsLoaded, setIsTabsLoaded] = useState<boolean>(false);
   const isTabsLoadedRef = useRef<boolean>(false);
 
@@ -1449,6 +1450,9 @@ export default function App() {
 
                     const updatedVis = getSavedUiVisibilitySettings();
                     setUiVisibility(updatedVis);
+                    setFormatterSettings(getSavedFormatterSettings());
+                    setHotkeys(getSavedHotkeys());
+                    setQuickActions(getQuickActionTemplates());
                   }
                 }
               }
@@ -1492,12 +1496,28 @@ export default function App() {
           if (freshSession?.direction && freshSession.direction !== direction) {
             setDirection(freshSession.direction);
           }
+          if (freshSession?.isWrapSql !== undefined && freshSession.isWrapSql !== isWrapSql) {
+            setIsWrapSql(freshSession.isWrapSql);
+          }
+          if (freshSession?.isMaximizedSql !== undefined && freshSession.isMaximizedSql !== isMaximizedSql) {
+            setIsMaximizedSql(freshSession.isMaximizedSql);
+          }
+          if (freshSession?.schemaSearchTerm !== undefined && freshSession.schemaSearchTerm !== schemaSearchTerm) {
+            setSchemaSearchTerm(freshSession.schemaSearchTerm);
+          }
+          if (freshSession?.showDuckDbSchemaPanel !== undefined && freshSession.showDuckDbSchemaPanel !== showDuckDbSchemaPanel) {
+            setShowDuckDbSchemaPanel(freshSession.showDuckDbSchemaPanel);
+          }
+          if (freshSession?.expandedSchemaNodes) {
+            setExpandedSchemaNodes(freshSession.expandedSchemaNodes);
+          }
         }
       } catch (e) {
         console.error("Failed to load tabs from IDB", e);
       } finally {
         setIsTabsLoaded(true);
         isTabsLoadedRef.current = true;
+        setIsInitializing(false);
       }
     };
     loadTabs();
@@ -5565,6 +5585,16 @@ export default function App() {
   const handleNodeClick = (_event: any, node: any) => {
     setSelectedNode(node);
   };
+
+  if (isInitializing) {
+    return (
+      <div className={`flex items-center justify-center min-h-screen ${theme === 'dark' ? 'bg-slate-850 text-slate-200' : 'bg-slate-200 text-slate-800'}`}>
+        <div className="flex flex-col items-center space-y-4">
+          <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
