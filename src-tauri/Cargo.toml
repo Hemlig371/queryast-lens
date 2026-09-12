@@ -1,6 +1,6 @@
 [package]
 name = "queryast-lens"
-version = "7.7.0"
+version = "7.7.1"
 description = "cross-platform SQL Query Workbench and analytical database client"
 authors = ["Hemlig371"]
 license = "MIT"

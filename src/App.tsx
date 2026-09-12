@@ -1426,8 +1426,13 @@ export default function App() {
       // Workspace Synchronization Auto-Import
       if (isTauriEnvironment()) {
         try {
-          const rawVis = localStorage.getItem('sql_visualizer_ui_visibility');
-          const syncPath = rawVis ? JSON.parse(rawVis).workspaceSyncPath : null;
+          const rawVis = localStorage.getItem('sql_visualizer_ui_visibility_v1') || localStorage.getItem('sql_visualizer_ui_visibility');
+          let syncPath: string | null = null;
+          if (rawVis) {
+            try {
+              syncPath = JSON.parse(rawVis).workspaceSyncPath || null;
+            } catch (_) {}
+          }
           
           if (syncPath) {
             const filePath = resolveWorkspaceSyncFilePath(syncPath);
@@ -1658,8 +1663,13 @@ export default function App() {
 
       // Workspace Synchronization Auto-Export
       if (isTauriEnvironment()) {
-        const rawVis = localStorage.getItem('sql_visualizer_ui_visibility');
-        const syncPath = rawVis ? JSON.parse(rawVis).workspaceSyncPath : null;
+        const rawVis = localStorage.getItem('sql_visualizer_ui_visibility_v1') || localStorage.getItem('sql_visualizer_ui_visibility');
+        let syncPath: string | null = null;
+        if (rawVis) {
+          try {
+            syncPath = JSON.parse(rawVis).workspaceSyncPath || null;
+          } catch (_) {}
+        }
         if (syncPath) {
           const filePath = resolveWorkspaceSyncFilePath(syncPath);
           try {

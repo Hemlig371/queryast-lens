@@ -201,7 +201,7 @@ export function getSavedFormatterSettings(): FormatterSettings {
 
 export function getSavedUiVisibilitySettings(): UiVisibilitySettings {
   try {
-    const saved = localStorage.getItem(UI_VISIBILITY_STORAGE_KEY);
+    const saved = localStorage.getItem(UI_VISIBILITY_STORAGE_KEY) || localStorage.getItem('sql_visualizer_ui_visibility');
     if (saved) {
       return { ...DEFAULT_UI_VISIBILITY, ...JSON.parse(saved) };
     }
@@ -544,6 +544,10 @@ export async function applyWorkspaceBundleSilently(
   if (dataObj['sql_visualizer_session'] && !dataObj['sql_visualizer_session_v2']) {
     dataObj['sql_visualizer_session_v2'] = dataObj['sql_visualizer_session'];
   }
+  // Ensure UI visibility key compatibility (if old key exists without _v1)
+  if (dataObj['sql_visualizer_ui_visibility'] && !dataObj[UI_VISIBILITY_STORAGE_KEY]) {
+    dataObj[UI_VISIBILITY_STORAGE_KEY] = dataObj['sql_visualizer_ui_visibility'];
+  }
 
   // Determine host settings to preserve (explicitly passed or read from current localStorage)
   const existingPreservedSettings: Partial<UiVisibilitySettings> = preservedOverrides ? { ...preservedOverrides } : {};
@@ -705,6 +709,9 @@ export async function importWorkspaceSettings(file: File, onBeforeImport?: () =>
       localStorage.clear();
 
       await applyWorkspaceBundleSilently(dataObj, existingDuckDbSettings);
+
+      // Set the sync time to now so that auto-import doesn't immediately overwrite the manual import
+      localStorage.setItem('sql_last_workspace_sync_time', new Date().toISOString());
 
       // Mark session import flag so App.tsx unload listener doesn't overwrite imported session on page reload
       sessionStorage.setItem('sql_is_importing_session', 'true');
