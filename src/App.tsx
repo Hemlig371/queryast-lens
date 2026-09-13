@@ -1443,8 +1443,8 @@ export default function App() {
                 const parsed = JSON.parse(fileContent);
                 if (parsed?.data && parsed?.exportedAt) {
                   const lastSync = localStorage.getItem('sql_last_workspace_sync_time') || '';
-                  // If the file is newer than our last sync time, import it
-                  if (!lastSync || Date.parse(parsed.exportedAt) > Date.parse(lastSync)) {
+                  // If the file is newer than or equal to our last sync time, import it
+                  if (!lastSync || isNaN(Date.parse(lastSync)) || Date.parse(parsed.exportedAt) >= Date.parse(lastSync)) {
                     await applyWorkspaceBundleSilently(parsed.data);
                     localStorage.setItem('sql_last_workspace_sync_time', parsed.exportedAt);
 
