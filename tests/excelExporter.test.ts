@@ -126,7 +126,7 @@ describe('excelExporter utils', () => {
         settings: {
           ...DEFAULT_EXCEL_SETTINGS
         },
-        sqlQuery: 'SELECT * FROM products -- @skip: hidden_group @group: 1'
+        sqlQuery: 'SELECT * FROM products /* @skip: hidden_group @group: 1 */'
       });
     });
 
@@ -158,7 +158,58 @@ describe('excelExporter utils', () => {
         settings: {
           ...DEFAULT_EXCEL_SETTINGS
         },
-        sqlQuery: 'SELECT * FROM products -- @hide: secret_code'
+        sqlQuery: 'SELECT * FROM products /* @hide: secret_code */'
+      });
+    });
+
+    it('parses @preset directive from comments and applies preset settings', async () => {
+      const { exportToExcel } = await import('../src/utils/excelExporter');
+      const { DEFAULT_EXCEL_SETTINGS } = await import('../src/types/excelSettings');
+      const { saveUserExcelPresets, getSavedExcelPresets } = await import('../src/utils/excelSettingsStorage');
+
+      const existingPresets = getSavedExcelPresets();
+      saveUserExcelPresets([
+        ...existingPresets,
+        {
+          id: 'test_financial',
+          name: 'Financial',
+          settings: {
+            ...DEFAULT_EXCEL_SETTINGS,
+            reportTitle: 'Financial Report',
+            enableReportTitle: true,
+            headerBgColor: '1E3A8A'
+          }
+        }
+      ]);
+
+      const dataSample = [{ id: 1, amount: 500 }];
+      const cols = ['id', 'amount'];
+      const colTypes = { id: 'Int32', amount: 'Int32' };
+
+      // Should run without errors and apply the preset
+      await exportToExcel({
+        data: dataSample,
+        columns: cols,
+        columnTypes: colTypes,
+        settings: { ...DEFAULT_EXCEL_SETTINGS, reportTitle: 'Initial Title' },
+        sqlQuery: '/* @preset: Financial */\nSELECT * FROM reports'
+      });
+    });
+
+    it('parses @excel_save along with other tags without error', async () => {
+      const { exportToExcel } = await import('../src/utils/excelExporter');
+      const { DEFAULT_EXCEL_SETTINGS } = await import('../src/types/excelSettings');
+
+      const dataSample = [{ id: 1, amount: 500 }];
+      const cols = ['id', 'amount'];
+      const colTypes = { id: 'Int32', amount: 'Int32' };
+
+      await exportToExcel({
+        data: dataSample,
+        columns: cols,
+        columnTypes: colTypes,
+        settings: { ...DEFAULT_EXCEL_SETTINGS },
+        sqlQuery: '/* @excel_save: /tmp/test_report.xlsx @sheet: MySheet @totals: SUM */ SELECT * FROM t'
       });
     });
   });

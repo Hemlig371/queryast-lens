@@ -29,8 +29,8 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
   const [copiedTemplate, setCopiedTemplate] = useState<boolean>(false);
 
   const sampleSqlComment = currentLang === 'en'
-    ? '/* #Title ##Subtitle @preset:PresetName @file:FileName @sheet:SheetName @totals:SUM @split:No/Name @group:No/Name @group_cols:No @group_hide:true @skip:No/Name @hide:No/Name @protect:12345 */'
-    : '/* #Заголовок ##Подзаголовок @preset:ИмяПресета @file:ИмяФайла @sheet:ИмяЛиста @totals:SUM @split:№/Имя @group:№/Имя @group_cols:№ @group_hide:true @skip:№/Имя @hide:№/Имя @protect:12345 */';
+    ? '/* #Title ##Subtitle @preset:PresetName @file:FileName @sheet:SheetName @totals:SUM @split:No/Name @group:No/Name @group_cols:No @group_hide:true @skip:No/Name @hide:No/Name @protect:12345 @excel_save:Path */'
+    : '/* #Заголовок ##Подзаголовок @preset:ИмяПресета @file:ИмяФайла @sheet:ИмяЛиста @totals:SUM @split:№/Имя @group:№/Имя @group_cols:№ @group_hide:true @skip:№/Имя @hide:№/Имя @protect:12345 @excel_save:Путь */';
 
   const handleCopySqlCommentTemplate = () => {
     navigator.clipboard.writeText(sampleSqlComment);

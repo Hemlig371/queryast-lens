@@ -20,7 +20,7 @@ import {
   Workflow,
   PlaySquare
 } from 'lucide-react';
-import { loadSnippetsFromDB, saveSnippetsToDB, addSnippetToDB, updateSnippetInDB, deleteSnippetFromDB, cachedSnippets } from '../utils/snippetsStorage';
+import { loadSnippetsFromDB, saveSnippetsToDB, addSnippetToDB, updateSnippetInDB, deleteSnippetFromDB, cachedSnippets, getSnippetExportFilename } from '../utils/snippetsStorage';
 import { SqlEditor, highlightSqlHtml } from './SqlEditor';
 import { t } from '../utils/i18n';
 
@@ -1905,11 +1905,12 @@ export function SqlSnippetsManager({
     downloadFileWithFallback(blob, `sql_snippets_${new Date().toISOString().slice(0,10)}.json`);
   };
   
-  // Export to CSV
+  // Export to ZIP
   const handleExportZip = async () => {
     // Export all snippets that the user currently sees (custom + popular, minus deleted)
     const listToExport = allSnippets.length > 0 ? allSnippets : POPULAR_SNIPPETS;
-    
+    if (listToExport.length === 0) return;
+
     try {
       const JSZip = (await import('jszip')).default;
       const zip = new JSZip();
@@ -1917,28 +1918,42 @@ export function SqlSnippetsManager({
       const usedPaths = new Set<string>();
 
       listToExport.forEach(s => {
-        // Create a safe filename (allow words, numbers, dashes, underscores, spaces)
-        let safeTitle = s.title.replace(/[^a-zа-я0-9\s-_]/gi, '').trim().replace(/\s+/g, '_');
-        if (!safeTitle) safeTitle = `snippet_${s.id.substring(0, 6)}`;
-        safeTitle = safeTitle.substring(0, 80); // Prevent extremely long filenames
+        if (!s) return;
+        // Compute filename: if title ends with .md, .py, .json etc., keep that extension, otherwise default to .sql
+        const { baseName, extension } = getSnippetExportFilename(s.title || '', s.id || '');
+        const snippetSql = s.sql != null ? String(s.sql) : '';
 
         let fileContent = '';
-        fileContent += `-- ${s.dialect || 'General'}\n`;
-        if (s.description) {
-          // Replace newlines in description with newline + comment to maintain valid SQL
-          fileContent += `-- ${s.description.replace(/\n/g, '\n-- ')}\n`;
+        if (extension === 'sql') {
+          fileContent += `-- ${s.dialect || 'General'}\n`;
+          if (s.description) {
+            // Replace newlines in description with newline + comment to maintain valid SQL
+            fileContent += `-- ${String(s.description).replace(/\n/g, '\n-- ')}\n`;
+          }
+          fileContent += `\n${snippetSql}`;
+        } else if (extension === 'py' || extension === 'sh' || extension === 'bash' || extension === 'zsh' || extension === 'r' || extension === 'yaml' || extension === 'yml') {
+          if (s.description) {
+            fileContent += `# ${String(s.description).replace(/\n/g, '\n# ')}\n\n`;
+          }
+          fileContent += snippetSql;
+        } else if (extension === 'md') {
+          if (s.description) {
+            fileContent += `> ${String(s.description).replace(/\n/g, '\n> ')}\n\n`;
+          }
+          fileContent += snippetSql;
+        } else {
+          fileContent = snippetSql;
         }
-        fileContent += `\n${s.sql}`;
 
         const addFileToFolder = (rawFolder: string) => {
           // Category as folder (sanitized against invalid OS path characters)
-          const folderName = rawFolder.replace(/[/\\:*?"<>|]/g, '_').trim() || 'Без_категории';
+          const folderName = (rawFolder || '').replace(/[/\\:*?"<>|]/g, '_').trim() || 'Без_категории';
           
           // Prevent file collisions within the same category
-          let finalPath = `${folderName}/${safeTitle}.sql`;
+          let finalPath = `${folderName}/${baseName}.${extension}`;
           let counter = 1;
           while (usedPaths.has(finalPath)) {
-            finalPath = `${folderName}/${safeTitle}_${counter}.sql`;
+            finalPath = `${folderName}/${baseName}_${counter}.${extension}`;
             counter++;
           }
           usedPaths.add(finalPath);
@@ -1949,18 +1964,18 @@ export function SqlSnippetsManager({
         addFileToFolder(s.category || 'Без_категории');
 
         // 2. Favorites pseudo-category
-        if (favoriteIds.includes(s.id)) {
+        if (s.id && favoriteIds.includes(s.id)) {
           addFileToFolder('Избранное');
         }
 
         // 3. Jobs pseudo-category
-        if (s.sql.trim().startsWith('-- @job')) {
+        if (snippetSql.trim().startsWith('-- @job')) {
           addFileToFolder(JOBS_CATEGORY);
         }
       });
 
       const blob = await zip.generateAsync({ type: 'blob' });
-      downloadFileWithFallback(blob, `sql_snippets_${new Date().toISOString().slice(0,10)}.zip`);
+      await downloadFileWithFallback(blob, `sql_snippets_${new Date().toISOString().slice(0,10)}.zip`);
     } catch (err) {
       console.error('Failed to generate ZIP archive', err);
     }

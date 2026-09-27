@@ -16,26 +16,31 @@ export async function copyToClipboard(text: string) {
   }
 }
 
-export async function downloadFileWithFallback(blob: Blob, filename: string) {
+export async function downloadFileWithFallback(blob: Blob, filename: string, targetPath?: string | null) {
   const isTauri = typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_IPC__' in window);
   if (isTauri) {
     try {
-      let savePath: string | null = null;
-      const extMatch = filename.match(/\.([^.]+)$/);
-      const ext = extMatch ? extMatch[1] : '*';
-      const nameWithoutExt = filename.replace(/\.[^.]+$/, '');
-      
-      if ((window as any).__TAURI__?.dialog?.save) {
-        savePath = await (window as any).__TAURI__.dialog.save({
-          defaultPath: filename,
-          filters: [{ name: 'Export', extensions: [ext] }],
-        });
-      } else {
-        const { save } = await import('@tauri-apps/api/dialog');
-        savePath = await save({
-          defaultPath: filename,
-          filters: [{ name: 'Export', extensions: [ext] }],
-        });
+      let savePath: string | null = targetPath || null;
+      if (savePath && (savePath.endsWith('/') || savePath.endsWith('\\'))) {
+        savePath = `${savePath}${filename}`;
+      }
+      if (!savePath) {
+        const extMatch = filename.match(/\.([^.]+)$/);
+        const ext = extMatch ? extMatch[1] : '*';
+        const nameWithoutExt = filename.replace(/\.[^.]+$/, '');
+        
+        if ((window as any).__TAURI__?.dialog?.save) {
+          savePath = await (window as any).__TAURI__.dialog.save({
+            defaultPath: filename,
+            filters: [{ name: 'Export', extensions: [ext] }],
+          });
+        } else {
+          const { save } = await import('@tauri-apps/api/dialog');
+          savePath = await save({
+            defaultPath: filename,
+            filters: [{ name: 'Export', extensions: [ext] }],
+          });
+        }
       }
       if (!savePath) return;
 

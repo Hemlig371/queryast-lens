@@ -1,6 +1,7 @@
 import ExcelJS from 'exceljs';
 import { ExcelSettings } from '../types/excelSettings';
 import { downloadFileWithFallback } from './exportUtils';
+import { getSavedExcelPresets } from './excelSettingsStorage';
 
 export interface ExportExcelOptions {
   data: any[];
@@ -130,6 +131,7 @@ export async function exportToExcel({
   let settings = { ...initialSettings };
   
   let parsedFilename = settings.defaultFileName || '';
+  let resolvedAutoSavePath: string | undefined;
 
   const rawColumns = Object.keys(data[0] || {});
   if (rawColumns.length === 0) {
@@ -138,10 +140,21 @@ export async function exportToExcel({
 
   // Parse SQL query for title/subtitle overrides and metadata tags
   if (sqlQuery) {
-    const commentBlocks = sqlQuery.match(/\/\*[\s\S]*?\*\//g) || [];
-    const combinedComments = commentBlocks.join('\n');
+    const blockComments = sqlQuery.match(/\/\*[\s\S]*?\*\//g) || [];
+    const combinedComments = blockComments.join('\n');
 
     if (combinedComments) {
+      // @preset: preset name
+      const presetMatch = combinedComments.match(/@preset:\s*([^@\n*]+)/i);
+      if (presetMatch) {
+        const targetPresetName = presetMatch[1].trim().toLowerCase();
+        const allPresets = getSavedExcelPresets();
+        const foundPreset = allPresets.find(p => p.name.trim().toLowerCase() === targetPresetName);
+        if (foundPreset) {
+          settings = { ...foundPreset.settings };
+        }
+      }
+
       const titleMatch = combinedComments.match(/#\s*([^#\n@]+)/);
       if (titleMatch) {
         settings.reportTitle = titleMatch[1].trim();
@@ -254,6 +267,15 @@ export async function exportToExcel({
         const pwd = protectMatch[1].trim();
         settings.protectSheet = true;
         settings.sheetPassword = pwd;
+      }
+
+      // @excel_save: save directly to disk without dialog (Tauri desktop only)
+      const isTauriEnv = typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_IPC__' in window);
+      if (isTauriEnv && !resolvedAutoSavePath && combinedComments.includes('@excel_save')) {
+        const saveMatch = combinedComments.match(/@excel_save:\s*([^@\r\n*]+)/i);
+        if (saveMatch && saveMatch[1].trim()) {
+          resolvedAutoSavePath = saveMatch[1].trim();
+        }
       }
     }
   }
@@ -1301,5 +1323,5 @@ export async function exportToExcel({
 
   // Download File (Web Blob or Tauri API)
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  await downloadFileWithFallback(blob, exportFileName);
+  await downloadFileWithFallback(blob, exportFileName, resolvedAutoSavePath);
 }

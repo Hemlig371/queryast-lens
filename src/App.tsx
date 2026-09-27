@@ -2518,6 +2518,22 @@ export default function App() {
         setDuckDbResults(updates.results);
         if (updates.results && Array.isArray(updates.results) && updates.results.length > 0) {
           maybeAutoSelectFirstCell(updates.results, queryToExec);
+
+          // Autonomous Excel export (only in Tauri, only if @excel_save: is present in SQL)
+          if (isTauriEnv && queryToExec.includes('@excel_save')) {
+            (async () => {
+              try {
+                await exportToExcel({
+                  data: updates.results!,
+                  columnTypes: updates.colTypes || {},
+                  sqlQuery: queryToExec,
+                  settings: getSavedExcelSettings(),
+                });
+              } catch (autoErr) {
+                console.warn("Autonomous Excel export failed:", autoErr);
+              }
+            })();
+          }
         }
       }
       if (updates.error !== undefined) setDuckDbError(updates.error);
@@ -5022,26 +5038,11 @@ export default function App() {
     setIsExportingExcel(true);
     try {
       const activeSql = lastExecutedSql || getActiveTabSql();
-      let settings = preset.settings;
-
-      // Check for @preset directive in SQL comments
-      const combinedComments = (activeSql.match(/\/\*[\s\S]*?\*\//g) || []).join(' ') + ' ' + (activeSql.match(/--.*$/gm) || []).join(' ');
-      const presetMatch = combinedComments.match(/@preset:\s*([^@\n*]+)/i);
-      
-      if (presetMatch) {
-        const targetPresetName = presetMatch[1].trim().toLowerCase();
-        const allPresets = getSavedExcelPresets();
-        const foundPreset = allPresets.find(p => p.name.trim().toLowerCase() === targetPresetName);
-        if (foundPreset) {
-          settings = { ...foundPreset.settings };
-        }
-      }
-
       await exportToExcel({
         data: duckDbResults,
         columnTypes: resultColumnTypes,
         sqlQuery: activeSql,
-        settings,
+        settings: preset.settings,
       });
     } catch (err: any) {
       console.error('Failed to export to Excel:', err);

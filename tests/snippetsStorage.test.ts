@@ -5,7 +5,8 @@ import {
   updateSnippetInDB,
   deleteSnippetFromDB,
   saveSnippetsToDB,
-  loadSnippetsFromDB
+  loadSnippetsFromDB,
+  getSnippetExportFilename
 } from '../src/utils/snippetsStorage';
 import { Snippet } from '../src/components/SqlSnippetsManager';
 
@@ -78,5 +79,45 @@ describe('snippetsStorage (IndexedDB storage)', () => {
     const loaded = await loadSnippetsFromDB();
     expect(loaded.length).toBe(2);
     expect(loaded.map(s => s.title)).toEqual(['Template A', 'Template B']);
+  });
+
+  describe('getSnippetExportFilename', () => {
+    it('defaults to .sql when title has no extension', () => {
+      const res = getSnippetExportFilename('Daily Sales Report', 'snip123');
+      expect(res.extension).toBe('sql');
+      expect(res.baseName).toBe('Daily_Sales_Report');
+      expect(res.fileName).toBe('Daily_Sales_Report.sql');
+    });
+
+    it('preserves .md extension when title ends with .md', () => {
+      const res = getSnippetExportFilename('README.md', 'snip123');
+      expect(res.extension).toBe('md');
+      expect(res.baseName).toBe('README');
+      expect(res.fileName).toBe('README.md');
+    });
+
+    it('preserves .py extension when title ends with .py', () => {
+      const res = getSnippetExportFilename('etl_transform.py', 'snip123');
+      expect(res.extension).toBe('py');
+      expect(res.baseName).toBe('etl_transform');
+      expect(res.fileName).toBe('etl_transform.py');
+    });
+
+    it('preserves other explicit extensions like .json, .sh, .txt, .yaml', () => {
+      const resJson = getSnippetExportFilename('config.json', 'snip123');
+      expect(resJson.extension).toBe('json');
+      expect(resJson.fileName).toBe('config.json');
+
+      const resSh = getSnippetExportFilename('run_pipeline.sh', 'snip123');
+      expect(resSh.extension).toBe('sh');
+      expect(resSh.fileName).toBe('run_pipeline.sh');
+    });
+
+    it('handles fallback id when title base becomes empty', () => {
+      const res = getSnippetExportFilename('???!!!.py', 'abcdef123456');
+      expect(res.extension).toBe('py');
+      expect(res.baseName).toBe('snippet_abcdef');
+      expect(res.fileName).toBe('snippet_abcdef.py');
+    });
   });
 });

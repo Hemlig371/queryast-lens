@@ -130,3 +130,35 @@ export async function loadSnippetsFromDB(): Promise<Snippet[]> {
     return [];
   }
 }
+
+/**
+ * Returns safe filename and extension for exporting a snippet.
+ * If title ends with a known extension like .md, .py, .sql, .json, .sh, etc.,
+ * that extension is preserved and .sql is NOT appended.
+ */
+export function getSnippetExportFilename(title: string, fallbackId: string = ''): { baseName: string; extension: string; fileName: string } {
+  const trimmed = title.trim();
+  // Check if title has an explicit extension (1 to 10 alphanumeric chars after last dot)
+  const extMatch = trimmed.match(/\.([a-z0-9]{1,10})$/i);
+  
+  let rawBase = trimmed;
+  let ext = 'sql';
+  
+  if (extMatch) {
+    ext = extMatch[1].toLowerCase();
+    rawBase = trimmed.slice(0, extMatch.index);
+  }
+
+  let safeBase = rawBase.replace(/[^a-zа-я0-9\s-_]/gi, '').trim().replace(/\s+/g, '_');
+  if (!safeBase) {
+    safeBase = fallbackId ? `snippet_${fallbackId.substring(0, 6)}` : 'snippet';
+  }
+  safeBase = safeBase.substring(0, 80);
+
+  return {
+    baseName: safeBase,
+    extension: ext,
+    fileName: `${safeBase}.${ext}`
+  };
+}
+
