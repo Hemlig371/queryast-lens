@@ -16,8 +16,7 @@ Cross-platform SQL Query Workbench and analytical database client (DuckDB, Click
 </p>
 
 📖 **Documentation:**
-* [User Guide (English)](docs/USER_GUIDE_EN.md)
-* [Руководство пользователя (Russian)](docs/USER_GUIDE.md)
+* [User Guide](docs/USER_GUIDE_EN.md)
 * [Development & Build Guide](docs/CONTRIBUTING.md)
 * [Tested DuckDB Extensions](docs/extension_list.md)
 * [License (MIT)](docs/LICENSE)
@@ -112,8 +111,7 @@ rm -f squashfs-root/usr/lib/libwayland-*.so*
 Приложение доступно в виде десктоп-клиента (Tauri / Rust), мобильного приложения (Android / Capacitor - WASM).
 
 📖 **Документация:**
-* [Руководство пользователя (Russian)](docs/USER_GUIDE.md)
-* [User Guide (English)](docs/USER_GUIDE_EN.md)
+* [Руководство пользователя](docs/USER_GUIDE.md)
 * [Руководство по разработке и сборке](docs/CONTRIBUTING.md)
 * [Справочник расширений DuckDB](docs/extension_list.md)
 * [Лицензия (MIT)](docs/LICENSE)
