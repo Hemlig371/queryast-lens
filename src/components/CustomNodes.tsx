@@ -36,7 +36,7 @@ export const TableNode = memo(({ data, selected, targetPosition, sourcePosition 
       <div className="bg-blue-100/90 dark:bg-blue-950/70 px-3 py-1.5 flex items-center border-b border-blue-300 dark:border-blue-800/60">
         <div className="w-2 h-2 rounded-full bg-blue-600 dark:bg-blue-400 mr-2 animate-pulse"></div>
         <span className="text-[10px] font-bold whitespace-nowrap uppercase text-blue-900 dark:text-blue-300 tracking-wider">
-          {data.title || 'TableNode'}
+          {data.title || 'TABLE'}
         </span>
         {data.isSubquery && (
           <span className="ml-auto text-[9px] bg-blue-200 dark:bg-blue-900/60 text-blue-900 dark:text-blue-200 px-1.5 py-0.2 rounded font-mono border border-blue-400/50 dark:border-blue-700/60 font-bold">
@@ -45,7 +45,7 @@ export const TableNode = memo(({ data, selected, targetPosition, sourcePosition 
         )}
       </div>
       <div className="p-3 bg-slate-100/90 dark:bg-slate-900/90">
-        <div className="text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
+        <div className="text-sm font-bold text-slate-900 dark:text-slate-100 truncate" title={typeof data.label === 'string' ? data.label : undefined}>
           {data.label}
         </div>
         {data.alias && (
@@ -95,7 +95,7 @@ export const JoinNode = memo(({ data, selected, targetPosition, sourcePosition }
     <div className={`w-64 rounded-lg bg-slate-200 dark:bg-slate-800 border-2 ${selected ? 'border-purple-600 dark:border-purple-500 shadow-2xl scale-102 ring-2 ring-purple-400/50' : 'border-purple-400/80 dark:border-purple-500/50'} transition-all duration-200 shadow-xl overflow-hidden`}>
       <div className="bg-purple-100/90 dark:bg-purple-950/70 px-3 py-1.5 flex items-center border-b border-purple-300 dark:border-purple-800/60">
         <div className="w-2 h-2 rounded-full bg-purple-600 dark:bg-purple-400 mr-2"></div>
-        <span className="text-[10px] font-bold uppercase text-purple-900 dark:text-purple-300 tracking-wider">JoinNode</span>
+        <span className="text-[10px] font-bold uppercase text-purple-900 dark:text-purple-300 tracking-wider">{data.title || 'JOIN'}</span>
       </div>
       <div className="p-3 bg-slate-100/90 dark:bg-slate-900/90 space-y-2">
         <div className="text-xs font-bold whitespace-nowrap text-purple-950 dark:text-purple-200 bg-purple-200/90 dark:bg-purple-900/60 border border-purple-300 dark:border-purple-700/60 px-2 py-0.5 rounded inline-block">
@@ -120,7 +120,7 @@ export const FilterNode = memo(({ data, selected, targetPosition, sourcePosition
       <div className="bg-orange-100/90 dark:bg-orange-950/70 px-3 py-1.5 flex items-center border-b border-orange-300 dark:border-orange-800/60">
         <div className="w-2 h-2 rounded-full bg-orange-600 dark:bg-orange-400 mr-2"></div>
         <span className="text-[10px] font-bold whitespace-nowrap uppercase text-orange-900 dark:text-orange-300 tracking-wider">
-          {data.title || 'FilterNode'}
+          {data.title || 'FILTER'}
         </span>
       </div>
       <div className="p-3 bg-slate-100/90 dark:bg-slate-900/90">
@@ -162,7 +162,7 @@ export const GroupByNode = memo(({ data, selected, targetPosition, sourcePositio
     <div className={`w-64 rounded-lg bg-slate-200 dark:bg-slate-800 border-2 ${selected ? 'border-pink-600 dark:border-pink-500 shadow-2xl scale-102 ring-2 ring-pink-400/50' : 'border-pink-400/80 dark:border-pink-500/50'} transition-all duration-200 shadow-xl overflow-hidden`}>
       <div className="bg-pink-100/90 dark:bg-pink-950/70 px-3 py-1.5 flex items-center border-b border-pink-300 dark:border-pink-800/60">
         <div className="w-2 h-2 rounded-full bg-pink-600 dark:bg-pink-400 mr-2"></div>
-        <span className="text-[10px] font-bold uppercase text-pink-900 dark:text-pink-300 tracking-wider">GroupByNode</span>
+        <span className="text-[10px] font-bold uppercase text-pink-900 dark:text-pink-300 tracking-wider">{data.title || 'GROUP BY'}</span>
       </div>
       <div className="p-3 bg-slate-100/90 dark:bg-slate-900/90">
         <div className="text-[10px] font-mono text-slate-900 dark:text-slate-100 bg-slate-200/90 dark:bg-slate-800/90 p-2 rounded border border-slate-300/80 dark:border-slate-700/70 break-words">
@@ -183,7 +183,7 @@ export const HavingNode = memo(({ data, selected, targetPosition, sourcePosition
     <div className={`w-64 rounded-lg bg-slate-200 dark:bg-slate-800 border-2 ${selected ? 'border-rose-600 dark:border-rose-500 shadow-2xl scale-102 ring-2 ring-rose-400/50' : 'border-rose-400/80 dark:border-rose-500/50'} transition-all duration-200 shadow-xl overflow-hidden`}>
       <div className="bg-rose-100/90 dark:bg-rose-950/70 px-3 py-1.5 flex items-center border-b border-rose-300 dark:border-rose-800/60">
         <div className="w-2 h-2 rounded-full bg-rose-600 dark:bg-rose-400 mr-2"></div>
-        <span className="text-[10px] font-bold uppercase text-rose-900 dark:text-rose-300 tracking-wider">HavingNode</span>
+        <span className="text-[10px] font-bold uppercase text-rose-900 dark:text-rose-300 tracking-wider">{data.title || 'HAVING'}</span>
       </div>
       <div className="p-3 bg-slate-100/90 dark:bg-slate-900/90">
         <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
@@ -224,7 +224,7 @@ export const SortNode = memo(({ data, selected, targetPosition, sourcePosition }
     <div className={`w-64 rounded-lg bg-slate-200 dark:bg-slate-800 border-2 ${selected ? 'border-teal-600 dark:border-teal-500 shadow-2xl scale-102 ring-2 ring-teal-400/50' : 'border-teal-400/80 dark:border-teal-500/50'} transition-all duration-200 shadow-xl overflow-hidden`}>
       <div className="bg-teal-100/90 dark:bg-teal-950/70 px-3 py-1.5 flex items-center border-b border-teal-300 dark:border-teal-800/60">
         <div className="w-2 h-2 rounded-full bg-teal-600 dark:bg-teal-400 mr-2"></div>
-        <span className="text-[10px] font-bold uppercase text-teal-900 dark:text-teal-300 tracking-wider">SortNode</span>
+        <span className="text-[10px] font-bold uppercase text-teal-900 dark:text-teal-300 tracking-wider">{data.title || 'ORDER BY'}</span>
       </div>
       <div className="p-3 bg-slate-100/90 dark:bg-slate-900/90">
         <div className="text-[10px] font-mono text-slate-900 dark:text-slate-100 bg-slate-200/90 dark:bg-slate-800/90 p-2 rounded border border-slate-300/80 dark:border-slate-700/70 break-words">
@@ -245,7 +245,7 @@ export const LimitNode = memo(({ data, selected, targetPosition, sourcePosition 
     <div className={`w-64 rounded-lg bg-slate-200 dark:bg-slate-800 border-2 ${selected ? 'border-cyan-600 dark:border-cyan-500 shadow-2xl scale-102 ring-2 ring-cyan-400/50' : 'border-cyan-400/80 dark:border-cyan-500/50'} transition-all duration-200 shadow-xl overflow-hidden`}>
       <div className="bg-cyan-100/90 dark:bg-cyan-950/70 px-3 py-1.5 flex items-center border-b border-cyan-300 dark:border-cyan-800/60">
         <div className="w-2 h-2 rounded-full bg-cyan-600 dark:bg-cyan-400 mr-2"></div>
-        <span className="text-[10px] font-bold uppercase text-cyan-900 dark:text-cyan-300 tracking-wider">LimitNode</span>
+        <span className="text-[10px] font-bold uppercase text-cyan-900 dark:text-cyan-300 tracking-wider">{data.title || 'LIMIT'}</span>
       </div>
       <div className="p-3 bg-slate-100/90 dark:bg-slate-900/90">
         <div className="text-[10px] font-mono text-slate-900 dark:text-slate-100 bg-slate-200/90 dark:bg-slate-800/90 p-2 rounded border border-slate-300/80 dark:border-slate-700/70 break-words">
@@ -267,7 +267,7 @@ export const ConstantNode = memo(({ data, selected, targetPosition, sourcePositi
       <div className="bg-slate-300/90 dark:bg-slate-800/90 px-3 py-1.5 flex items-center border-b border-slate-400 dark:border-slate-700">
         <div className="w-2 h-2 rounded-full bg-slate-600 dark:bg-slate-400 mr-2"></div>
         <span className="text-[10px] font-bold whitespace-nowrap uppercase text-slate-900 dark:text-slate-200 tracking-wider">
-          {data.title || 'ConstantNode'}
+          {data.title || 'CONSTANT'}
         </span>
       </div>
       <div className="p-3 bg-slate-100/90 dark:bg-slate-900/90">
@@ -289,7 +289,7 @@ export const ResultNode = memo(({ data, selected, targetPosition, sourcePosition
     <div className={`w-64 rounded-lg bg-slate-200 dark:bg-slate-800 border-2 ${selected ? 'border-emerald-600 dark:border-emerald-500 shadow-2xl scale-102 ring-2 ring-emerald-400/50' : 'border-emerald-400/80 dark:border-emerald-500/50'} transition-all duration-200 shadow-2xl overflow-hidden`}>
       <div className="bg-emerald-100/90 dark:bg-emerald-950/70 px-3 py-1.5 flex items-center border-b border-emerald-300 dark:border-emerald-800/60">
         <div className="w-2 h-2 rounded-full bg-emerald-600 dark:bg-emerald-400 mr-2"></div>
-        <span className="text-[10px] font-bold uppercase text-emerald-900 dark:text-emerald-300 tracking-wider">ResultNode</span>
+        <span className="text-[10px] font-bold uppercase text-emerald-900 dark:text-emerald-300 tracking-wider">{data.title || 'RESULT'}</span>
       </div>
       <div className="p-3 bg-slate-100/90 dark:bg-slate-900/90">
         <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
@@ -351,31 +351,26 @@ export const QueryGroupNode = memo(({ data, selected, targetPosition, sourcePosi
 QueryGroupNode.displayName = 'QueryGroupNode';
 
 // COLLAPSE NODE
-export const CollapseNode = memo(({ data, selected, targetPosition, sourcePosition }: CustomNodeProps) => {
+export const CollapseNode = memo(({ data, selected }: CustomNodeProps) => {
+  // Компактный заголовок запроса: подпись и кнопка в одну строку. Не часть графа данных — без точек подключения.
   return (
-    <>
-      <Handle type="target" position={targetPosition || Position.Left} className="w-2 h-2 bg-slate-400 dark:bg-slate-500" />
-      <div className={`bg-slate-200 dark:bg-slate-800 border-2 ${selected ? 'border-amber-500' : 'border-slate-400 dark:border-slate-600'} rounded-lg shadow-md overflow-hidden min-w-[200px] transition-all`}>
-        <div className="p-2 flex flex-col items-center justify-center gap-2">
-          <span className="font-mono text-xs font-bold whitespace-nowrap text-slate-900 dark:text-slate-100 uppercase tracking-wider">
-            {data.title || 'Expanded Query'}
-          </span>
-          <button 
-            onClick={() => data.onToggle?.(data.queryId)}
-            className="w-full bg-slate-300 dark:bg-slate-700 hover:bg-slate-400 dark:hover:bg-slate-600 text-slate-900 dark:text-slate-200 border border-slate-400 dark:border-slate-600 rounded py-1 px-2 text-xs font-bold transition-colors flex items-center justify-center gap-1"
-          >
-            Collapse <ChevronDown className="w-3 h-3 rotate-180" />
-          </button>
-        </div>
-      </div>
-      <Handle type="source" position={sourcePosition || Position.Right} className="w-2 h-2 bg-slate-400 dark:bg-slate-500" />
-    </>
+    <div className={`flex items-center justify-between gap-3 h-8 px-2.5 rounded-md border ${selected ? 'border-amber-500' : 'border-slate-400 dark:border-slate-600'} bg-slate-200 dark:bg-slate-800 shadow-sm min-w-[200px] transition-all`}>
+      <span className="font-mono text-[11px] font-bold whitespace-nowrap text-slate-900 dark:text-slate-100 uppercase tracking-wider">
+        {data.title || 'Query'}
+      </span>
+      <button
+        onClick={() => data.onToggle?.(data.queryId)}
+        className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-bold bg-slate-300 dark:bg-slate-700 hover:bg-slate-400 dark:hover:bg-slate-600 text-slate-900 dark:text-slate-200 border border-slate-400 dark:border-slate-600 transition-colors"
+      >
+        Collapse <ChevronDown className="w-3 h-3 rotate-180" />
+      </button>
+    </div>
   );
 }, isNodePropsEqual);
 
 CollapseNode.displayName = 'CollapseNode';
 
-import { MermaidNode, MermaidGroupNode } from './MermaidNodes';
+import { MermaidNode, MermaidGroupNode, MermaidEdge } from './MermaidNodes';
 
 export const nodeTypes = {
   collapseNode: CollapseNode,
@@ -391,4 +386,9 @@ export const nodeTypes = {
   resultNode: ResultNode,
   mermaidNode: MermaidNode,
   mermaidGroupNode: MermaidGroupNode,
+};
+
+// Типы рёбер (объект создаётся один раз: React Flow не должен получать новый на каждый рендер)
+export const edgeTypes = {
+  mermaidEdge: MermaidEdge,
 };

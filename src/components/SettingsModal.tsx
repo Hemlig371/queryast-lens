@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { X, Keyboard, RotateCcw, Settings, AlignLeft, Eye, Download, Upload, Plus, Trash2, Edit3, Check, Code, Zap, FileSpreadsheet, Palette, Columns, Calculator, Printer } from 'lucide-react';
 import { downloadFileWithFallback } from '../utils/exportUtils';
-import { AutocompleteTemplate, DEFAULT_AUTOCOMPLETE_TEMPLATES, getCustomAutocompleteTemplates } from './SqlEditor';
+import { AutocompleteTemplate, DEFAULT_AUTOCOMPLETE_TEMPLATES, getCustomAutocompleteTemplates } from '../editor/templates';
 import { getVersions, importVersions, SqlVersionItem, cleanupOldVersions } from '../utils/versionHistory';
 import { importSchemaCacheEntries, SchemaCacheEntry } from '../utils/schemaDbCache';
 import { loadSnippetsFromDB, saveSnippetsToDB } from '../utils/snippetsStorage';
 import { Snippet } from './SqlSnippetsManager';
 import { getSessionTabs, saveSessionTabs } from '../utils/sessionStorage';
-import { EditorTab } from '../App';
+import type { EditorTab } from '../types/editorTab';
 import { VaultSettingsSection } from './VaultSettingsSection';
 import { ExcelSettings } from '../types/excelSettings';
 import { getSavedExcelSettings, saveExcelSettings, resetExcelSettings } from '../utils/excelSettingsStorage';
@@ -1156,7 +1156,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     { key: 'showDuckDbConfig', label: 'Интеграция DuckDB', desc: 'Кнопки подключения и выполнения кода' },
                     { key: 'showClickhouseConfig', label: 'Интеграция Clickhouse (http/https)', desc: 'Кнопки подключения и выполнения Clickhouse HTTP(S) запросов' },
                     { key: 'showExcelExport', label: 'Генерация Excel отчетов', desc: 'Экспорт результатов в Excel (.xlsx) и настройки форматирования' },
-                    { key: 'showMermaidIntegration', label: 'Интеграция Mermaid', desc: 'Визуализация Mermaid диаграмм и палитра цветов в редакторе' },
+                    { key: 'showMermaidIntegration', label: 'Интеграция Markdown и Mermaid', desc: 'Предпросмотр Markdown, визуализация Mermaid диаграмм и палитра цветов в редакторе' },
                     { key: 'autoUpdateSchema', label: 'Автообновление схемы базы', desc: 'Обновлять дерево схемы при изменении структуры БД (не применяется последовательно и параллельно)' },
                     { key: 'autocompleteOnType', label: 'Автокомплит при наборе текста', desc: 'Автоматически показывать подсказки при вводе каждого символа' },
                     { key: 'showEditorToggleBtn', label: 'Кнопка «Скрыть редактор»', desc: 'Кнопка скрытия левой панели' },

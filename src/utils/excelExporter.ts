@@ -1,3 +1,4 @@
+import { parseExcelDate, extractExcelComments } from './excelParse';
 import ExcelJS from 'exceljs';
 import { ExcelSettings } from '../types/excelSettings';
 import { downloadFileWithFallback } from './exportUtils';
@@ -140,8 +141,7 @@ export async function exportToExcel({
 
   // Parse SQL query for title/subtitle overrides and metadata tags
   if (sqlQuery) {
-    const blockComments = sqlQuery.match(/\/\*[\s\S]*?\*\//g) || [];
-    const combinedComments = blockComments.join('\n');
+    const combinedComments = extractExcelComments(sqlQuery);
 
     if (combinedComments) {
       // @preset: preset name
@@ -869,11 +869,7 @@ export async function exportToExcel({
           if (rawVal instanceof Date) {
             cell.value = rawVal;
           } else {
-            let dtStr = rawVal as string | number;
-            if (typeof dtStr === 'string' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(dtStr)) {
-              dtStr = dtStr.replace(' ', 'T');
-            }
-            const parsedDt = new Date(dtStr);
+            const parsedDt = parseExcelDate(rawVal as string | number);
             if (!isNaN(parsedDt.getTime())) {
               cell.value = parsedDt;
             } else {

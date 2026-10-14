@@ -1,4 +1,4 @@
-import { EditorTab } from '../App';
+import type { EditorTab } from '../types/editorTab';
 
 const LOCAL_STORAGE_KEY = 'sql_visualizer_tabs_session';
 

@@ -1,6 +1,6 @@
 # User Guide
 
-QueryAST Lens is a cross-platform SQL Workbench for local and cloud analytics (DuckDB, ClickHouse) with a built-in AST data lineage visualization engine and an advanced Excel report generator.
+QueryAST Lens is a cross-platform SQL Workbench for local and cloud analytics (DuckDB, ClickHouse) with an AST graph, dependency highlighting (Data Lineage) and an Excel report generator.
 
 ---
 
@@ -9,11 +9,11 @@ QueryAST Lens is a cross-platform SQL Workbench for local and cloud analytics (D
    * [DuckDB (WASM & VFS File Manager)](#duckdb-wasm--vfs-file-manager)
    * [ClickHouse (Connection, FORMAT JSON & Notes)](#clickhouse-connection-format-json--notes)
    * [Row Count Limit (Core LIMIT)](#row-count-limit-core-limit)
-   * [Pre-configured Workspace Bundle (default_config.json)](#pre-configured-workspace-bundle-default_configjson)
+   * [Pre-configured Workspace Bundle (default_config.json)](#pre-configured-workspace-bundle-default_config_enjson)
 2. [SQL Editor & Macros](#2-sql-editor--macros)
    * [Local Variables & Macros](#local-variables--macros)
    * [SQL Compression & Encodings](#sql-compression--encodings)
-   * [Keyboard Shortcuts](#keyboard-shortcuts)
+   * [Keyboard Shortcuts](#keyboard-shortcuts--advanced-editor-actions)
 3. [Excel Report Engine & SQL Directives](#3-excel-report-engine--sql-directives)
    * [Block Comments Rule](#3-excel-report-engine--sql-directives)
    * [Directives Reference](#directives-reference)
@@ -21,12 +21,13 @@ QueryAST Lens is a cross-platform SQL Workbench for local and cloud analytics (D
 4. [AST Graph & Data Lineage](#4-ast-graph--data-lineage)
    * [Dependency Lineage Analysis](#dependency-lineage-analysis)
    * [Bidirectional Mermaid](#bidirectional-mermaid)
+   * [Markdown preview](#markdown-preview)
    * [Graph Export](#graph-export)
 5. [Secure Vault & Secret Substitution](#5-secure-vault--secret-substitution)
 6. [Action Menu, Snippets & Background Pipelines (@job)](#6-action-menu-snippets--background-pipelines-job)
-7. [Data Inspection & Clipboard Export](#7-data-inspection--clipboard-export)
+7. [Data Inspection, Analytics & Export](#7-data-inspection-analytics--export)
 8. [Settings, UI Customization & Synchronization](#8-settings-ui-customization--synchronization)
-   * [DuckDB Engine Settings (Memory, Threads, Init SQL)](#duckdb-engine-settings-memory-threads-init-sql)
+   * [DuckDB Engine Settings (Memory, Threads, Init SQL)](#duckdb-engine-settings-memory-threads-init-sql-extensions)
    * [Custom Autocomplete & Quick Actions](#custom-autocomplete--quick-actions)
    * [Custom Keyboard Shortcuts (Hotkeys)](#custom-keyboard-shortcuts-hotkeys)
    * [Workspace Auto-Synchronization (Workspace Sync Path)](#workspace-auto-synchronization-workspace-sync-path)
@@ -54,14 +55,16 @@ Switching between engines is done via the top control panel (selector **DuckDB**
   > **Tip:** If your password contains special characters like `@` or `:`, use double escaping: `@@` and `::`.
 * **Automatic `FORMAT JSON`**: For select queries (`SELECT`, `SHOW`, `DESCRIBE`, `EXPLAIN`), the client automatically appends `FORMAT JSON` if no format is explicitly provided. This is required for correct column type parsing and grid rendering.
 * **Custom FORMAT**: If you explicitly specify another format in your query (e.g., `FORMAT Pretty` or `FORMAT CSV`), the client will not overwrite it and will output the raw text response.
-* The application supports streaming queries `COPY TO / COPY FROM`, as well as canceling hanging queries on the ClickHouse server side using cancellation tokens.
+* The application supports streaming queries `COPY TO / COPY FROM`, (`COPY FROM` is not available in the Android version), as well as canceling a running query (the HTTP request is aborted and ClickHouse stops the execution).
+* **The password is not saved**: host, user and database are remembered, but the password has to be entered again after a restart. To avoid typing it, store the connection string (URI with password) in the Vault (see section 5) under a name with the `ch_` prefix: the connection form then shows a list of such secrets, and choosing one fills in all fields.
 
 ### Row Count Limit (Core LIMIT)
 * **Built-in Result Limit**: To protect the browser and system from memory overflow during accidental `SELECT *` without filters, the application caps the page size by default (typically **100 rows**).
 * **Overriding the Limit**:
-  1. **Via SQL Query**: If you explicitly provide your own `LIMIT` in the query (e.g., `LIMIT 500`), the engine respects your limit and does not append the default `LIMIT 100` on the first page.
+  1. **Via SQL Query**: If the query text contains `LIMIT` followed by a number (e.g., `LIMIT 500`), the engine assumes the limit is yours and does not append `LIMIT 100` on the first page. The check is simple: `LIMIT <number>` is searched anywhere in the query, including inside a CTE, subquery or comment. If `LIMIT` appears only inside a CTE, the outer query stays unrestricted. The table still shows one page of the configured size (100 rows by default).
   2. **Via UI Settings**: In **Settings**, you can change the global page size / max rows separately for DuckDB and ClickHouse, or set `0` to disable auto-capping.
   3. When navigating pagination pages (`> 1`), the engine automatically wraps the query into a safe subquery with `OFFSET` to prevent syntax conflicts.
+  4. At most 500,000 rows per query are passed to the interface (desktop DuckDB, WASM, ClickHouse); the rest is dropped without a notice.
 
 ### Pre-configured Workspace Bundle (default_config_en.json)
 For a quick jump-start with tuned SQL formatting, rich Excel report presets, and analytical templates, reference bundles are provided:
@@ -95,14 +98,15 @@ FROM orders
 WHERE status = {{$status}}
 LIMIT {{$limit}};
 ```
-Before execution, the editor automatically performs safe variable substitution.
+Before execution, the editor automatically performs safe variable substitution. The system variable `{{$timestamp}}` inserts the current time in Unix milliseconds. If a variable is not defined, the text `{{$name}}` stays in the query as is and the database returns a syntax error. A variable value cannot contain the `}` character.
 
 ### SQL Compression & Encodings
 * **Single-line Compression**: The SQL compacting feature in the editor automatically converts single-line comments `--` into block comments `/* */` so your code doesn't break when merged into a single line.
 * **Windows-1251 (ANSI) Encoding**: If you need to open an old corporate script file or a 1C export encoded in `cp1251`, use the dedicated Windows-1251 import button on the editor toolbar.
 
 ### Keyboard Shortcuts & Advanced Editor Actions
-* `Ctrl + Enter` (or `Cmd + Enter`) — Execute current SQL query / update AST graph.
+* `Ctrl + Enter` (or `Cmd + Enter`) — Build the AST graph (unless the editor is maximized) and execute the query (if the DuckDB or ClickHouse panel is enabled). A selected fragment is executed instead of the whole text.
+* `Ctrl + Shift + C` — Copy the SQL text to the clipboard.
 * `Ctrl + Space` — Manually trigger autocomplete dropdown (tables, schema columns, keywords).
 * `Ctrl + F` / `Ctrl + H` — Open in-editor search / search & replace panel.
 * `Ctrl + Shift + F` — Format SQL code (respecting keyword casing and expression wrapping rules).
@@ -150,8 +154,8 @@ When exporting query results to `.xlsx` (via the **Export to Excel** button), yo
 | `## Subtitle` | Subtitle with metadata or date range | `## Period: 2024 Q1-Q3` |
 | `@file: name` | Overrides the generated filename | `@file: revenue_report_2024` |
 | `@sheet: name` | Sets the Excel worksheet name | `@sheet: Sales Summary` |
-| `@preset: name` | Applies a color styling preset (e.g., `classic` or custom preset name from Settings) | `@preset: classic` |
-| `@totals: function` | Enables native totals row (`SUM`, `AVERAGE`/`AVG`, `COUNT`) | `@totals: SUM` |
+| `@preset: name` | Applies a styling preset by name (case-insensitive): the built-in "По умолчанию" (Default) or your own preset from Settings. If no preset has that name, the directive is silently ignored | `@preset: По умолчанию` |
+| `@totals: function` | Sets the function of the native totals (`SUM`, `AVERAGE`/`AVG`, `COUNT`). The totals row is enabled in Settings by default, the totals column is not; the directive does not enable them | `@totals: SUM` |
 | `@split: column` | Splits results into separate worksheets by column name or index (1-based) | `@split: department` |
 | `@group: N` | Groups rows by column name or index | `@group: 1` |
 | `@group_cols: N` | Number of category columns on the left | `@group_cols: 2` |
@@ -161,6 +165,13 @@ When exporting query results to `.xlsx` (via the **Export to Excel** button), yo
 | `@protect: password` | Protects the worksheet from accidental editing | `@protect: readonly2024` |
 | `@excel_save: path` | *(Desktop)* Direct report save to disk without dialog prompt | `@excel_save: /reports/out.xlsx` |
 
+**Notes and limitations:**
+* `@split`, `@skip`, `@hide` accept a single column (name or 1-based number). A name made only of digits (e.g. `2024`) is treated as a number.
+* The title is taken from the first `#` in block comments, so do not use `#` in comment text for other purposes.
+* No report is created if the result has more than 1.5 million cells (rows × columns): reduce the selection first.
+* Detailed reference: [`EXCEL_DIRECTIVES_EN.md`](./EXCEL_DIRECTIVES_EN.md).
+* **`@excel_save` (desktop)**: the file is created automatically when the result arrives and contains exactly the rows the query returned, i.e. one page (100 rows by default) or as many as your own `LIMIT` allows. Moving to another page or changing sorting or filters overwrites the file with the new data. To export everything, set the page size to `0` in Settings or use an explicit large `LIMIT`.
+
 ### Comprehensive SQL Report Example
 
 ```sql
@@ -169,7 +180,7 @@ When exporting query results to `.xlsx` (via the **Export to Excel** button), yo
 ## Export generated automatically
 @file: monthly_sales
 @sheet: Sales
-@preset: classic
+@preset: По умолчанию
 @totals: SUM
 @group: 1
 @group_hide: true
@@ -203,12 +214,14 @@ In addition to built-in presets, the **Settings $\to$ Excel** tab provides a com
 To build the graph, click the **Visualize** button on the panel below the editor or press `Ctrl + Enter`:
 1. All tables, views, subqueries, and CTEs (`WITH cte AS (...)`) are parsed out.
 2. An oriented dependency graph is built.
-3. Clicking a node or clicking **Focus** highlights all incoming and outgoing data flows (Data Lineage), helping you understand complex multi-page queries with dozens of `JOIN`s.
+3. Clicking a node or clicking **Focus** highlights all nodes and edges upstream and downstream of the selected node (Data Lineage). Highlighting works on graph nodes (tables, CTEs, subqueries, `JOIN`s) within one query; there is no column-level lineage and no tracking between separate queries.
 4. The graph controls panel allows toggling layout orientation (`LR` / `TB`) and showing/hiding `Sort` (ORDER BY) and `Limit` (LIMIT/OFFSET) nodes.
+5. **Several queries separated by `;`**: each query is built as a separate block with a "Query N" header and a "Collapse" button (collapse/expand). With `LR` the blocks go one under another, with `TB` they go one after another from left to right. No links are drawn between queries, and lineage highlighting is limited to the query itself. A query that cannot be parsed is skipped without a message.
+6. **SQL parsing**: the PostgreSQL grammar (`node-sql-parser`) is used, plus heuristic parsing for constructs it does not understand. DuckDB, ClickHouse and Oracle use the same parsing, so dialect-specific constructs may be shown in a simplified way.
 
 ### Bidirectional Mermaid
 * You can export the query graph to a Mermaid diagram format via the export menu.
-* **Reverse import & visualization is also supported**: paste Mermaid diagram syntax into the editor and click the Mermaid icon button next to **Visualize**:
+* **Reverse import & visualization is also supported**: paste Mermaid diagram syntax into the editor and click the **Markdown** button next to **Visualize** (pure Mermaid text opens as an interactive graph):
   ```mermaid
   graph TD
     A[Raw Events] --> B(Kafka Consumer)
@@ -216,6 +229,17 @@ To build the graph, click the **Visualize** button on the panel below the editor
     C --> D[Data Mart]
   ```
   The app will automatically parse it and render an interactive node graph.
+* Supported: `flowchart` / `graph` — all node shapes (including `A@{ shape: cyl, label: "DB" }`), arrows `-->`, `---`, `-.->`, `==>`, `<-->`, `--x`, `--o`, `~~~`, labels `-->|text|` and `-- text -->`, `&`, `;`, `%%` comments, quoted labels, Unicode identifiers, `subgraph` (nested, and links to a subgraph), `classDef` / `class` / `style` / `linkStyle`.
+* Other diagram types (`sequenceDiagram`, `erDiagram`, `gantt`, ...) are not supported — the app tells you so.
+* Statements that cannot be parsed are skipped; the list with **line numbers** is shown above the graph while the rest of the diagram is built.
+
+### Markdown preview
+Select a fragment (or leave the whole text) in the editor and click **Markdown** — the rendered document opens in the graph area. The graph is hidden meanwhile; use **Visualize** to return to it.
+* Supported: headings, lists (nested, numbered, task lists), tables, quotes, code, links, images (`https:` and `data:image`), `**bold**`, `*italic*`, `~~strikethrough~~`. Raw HTML is never executed — it is shown as text (only simple tags such as `<br>`, `<kbd>`, `<sub>`, `<sup>`, `<mark>` are allowed).
+* ` ```sql ` blocks are highlighted; ` ```mermaid ` blocks are drawn as diagrams (flowchart/graph). Each diagram has an **Open as graph** button in its corner that builds an interactive graph from that block.
+* The document text can be selected with the mouse and copied. The clipboard receives HTML suitable for Word: headings, lists, tables with borders, monospaced code and diagrams as images (light palette). Buttons and language labels are not copied.
+* **Export**: the "Export" menu offers `PNG Image` and `JPEG Image` — the whole document is saved as one picture (900 px wide, colors of the current theme) regardless of the window size. The other menu items are disabled in document mode. A document that is too long (hundreds of screens) is not exported as a whole — select part of the text.
+* If the selected text is a pure Mermaid diagram, the button still builds the interactive graph as before.
 
 ### Graph Export
 Graphs can be saved in the following formats:
@@ -234,8 +258,9 @@ The application includes an encrypted secrets vault (**Encrypted Vault**) using 
    SELECT * 
    FROM read_parquet('https://my-bucket.s3.amazonaws.com/data.parquet?token={{PROD_TOKEN}}');
    ```
-4. Upon execution, the secret is dynamically substituted into runtime memory without exposing your script when saved or shared.
-5. You can configure an auto-lock timer to seal the vault after inactivity.
+4. Upon execution, `{{NAME}}` is replaced with the secret value right before the query is sent; the tab text, version history and snippets keep `{{NAME}}`.
+5. After the PIN is entered, the vault stays unlocked for 8 hours and then locks automatically (an inactivity timer and a configurable period are not provided). You can lock it earlier with the "Lock" button in the Vault section. Unlocking only lasts for the current run of the application.
+6. If the query text contains `{{` (including an unresolved `{{$variable}}`) while the vault is locked, the query is not executed and a message about the locked vault appears.
 
 ---
 
@@ -244,14 +269,14 @@ The application includes an encrypted secrets vault (**Encrypted Vault**) using 
 The **Action Menu** tab is an interactive dashboard of action cards and no-code pipelines for frequently used analytical workflows.
 
 ### How to open the Action Menu:
-1. **Via Keyboard Shortcut**: Press `Ctrl + \`` (or `Cmd + \`` on macOS) to instantly switch to the Action Menu tab from anywhere in the application. Pressing it again toggles back to your previous active SQL editor tab.
+1. **Via Keyboard Shortcut**: Press `Ctrl + \`` (or `Cmd + \`` on macOS) to switch to the Action Menu tab from anywhere in the application. Pressing it again toggles back to your previous active SQL editor tab.
 2. **Via Tab Bar**: In maximized editor mode, the first static tab on the far left of the tab bar with the `<>` code icon (to the left of Tab 1) opens the **Action Menu**.
 3. **Snippets Library (Template Manager)**: Press `Ctrl + K` or click the layers icon on the editor toolbar. In the snippets library modal, the full "Action Menu" category is also accessible for editing and adding templates.
 
 ### Action Menu Capabilities:
 * **Quick Double-Click Card Editing**: Double-clicking any card in the Action Menu immediately opens the Snippets Constructor modal to edit that template's title, SQL code, category, or dialect.
 * **Interactive Parameters on Cards**: When a query uses variables like `{{$Name=value}}`, the card renders interactive input fields before launch without needing to edit raw SQL.
-* **One-click Execution (`Play`)**: Run any action directly against the active engine (DuckDB / ClickHouse) with a single click.
+* **Execution (`Play`)**: Run an action against the active engine (DuckDB / ClickHouse) with a click.
 * Add frequently used queries to **Favorites** (star icon).
 * **Multi-command pipelines (`-- @job`)**:
   If your snippet contains multiple commands separated by semicolons, add the `-- @job` directive at the top:
@@ -262,7 +287,8 @@ The **Action Menu** tab is an interactive dashboard of action cards and no-code 
 
   OPTIMIZE TABLE daily_summary FINAL;
   ```
-  The app will execute the entire script chain step by step with progress indicators for each stage.
+  The app runs the commands one by one: all except the last as preparatory ones (their result is not shown), and the result of the last one is displayed in the table. On an error the execution stops. Any snippet with several commands is run sequentially; the `-- @job` directive serves as a label and for the "Jobs" filter.
+* **Running a selected fragment**: right-clicking the run button (under the editor) opens a menu with "Sequential execution" (as above) and "Parallel execution" (commands are started simultaneously; instead of a result, a table of statuses `Query` / `Status` for each command is shown).
 
 ### Exporting Templates Library & Code History:
 1. **Templates Library Export (Snippets Manager — `Ctrl + K`)**:
@@ -279,15 +305,15 @@ The **Action Menu** tab is an interactive dashboard of action cards and no-code 
 The results table (**DataStatsViewer**) is designed for datasets of any size:
 * **Transposing (`Row ↔ Col`)**: Quick pivot of tabular results to inspect wide records with dozens of attributes.
 * **Cell Zoom**: Detailed modal inspection of lengthy text, formatted JSON structures, and arrays.
-* **Smart Context Filters**:
+* **Context Filters**:
   * Right-click or click on any cell value to immediately apply a filter (`=`, `!=`, `LIKE`, `IS NULL`, `IS NOT NULL`).
-  * To preserve your initial complex query, the filtered result opens seamlessly in a **new linked tab** while keeping the original SQL intact.
+  * To preserve your initial complex query, the filtered result opens in a **new linked tab** while keeping the original SQL intact.
 * **Column Sorting**: Click headers to sort datasets at the query level (`ASC` / `DESC`) with safe wrapper execution.
 * **Analytics Panel & Embedded Charts (`Alt + Q`)**:
-  * Interactive switching between bar charts, line graphs, area charts, and pie charts.
-  * **Bar Chart Layouts**: Full support for both vertical and horizontal column orientations (clicking Bar toggles orientation).
-  * **Copy Chart as Image**: Click the copy icon above the chart container to copy a high-resolution transparent Retina 2x PNG directly to your clipboard.
-  * **Deep Column Statistics (Columns Stats / Aggregation)**: Computes essential metrics across the entire dataset without page limits (up to 100M rows): `total_count`, `null_count`, `null_percent`, `unique_count`, `min`, `max`, `avg`, `sum`.
+  * Interactive switching between the statistics list, bar chart, line graph, and pie chart.
+  * **Bar Chart Layouts**: Vertical and horizontal column orientations (clicking Bar toggles orientation).
+  * **Copy Chart as Image**: Click the copy icon above the chart container to copy the chart to your clipboard as a PNG (2x pixel ratio).
+  * **Deep Column Statistics (Columns Stats / Aggregation)**: Computes essential metrics across the entire dataset without page limits (the row limit for the calculation is chosen in the panel: 1M by default, 10M, 50M, 100M or ALL): `total_count`, `null_count`, `null_percent`, `unique_count`, `min`, `max`, `avg`, `sum`.
 * **Clipboard Exports**:
   * **Copy as Image**: Copy visible table cells as a clean Retina PNG image for messengers or documentation.
   * `Ctrl + Shift + E` — Copy the active result page formatted as Tab-Separated Values (TSV) for pasting into Google Sheets or Excel.
@@ -299,13 +325,14 @@ The results table (**DataStatsViewer**) is designed for datasets of any size:
 Open the Settings modal via `Ctrl + ,` or the gear icon in the top header.
 
 ### DuckDB Engine Settings (Memory, Threads, Init SQL, Extensions)
-When DuckDB options are enabled in **UI Elements**, advanced connection parameters are available:
+When DuckDB options are enabled in **UI Elements**, additional connection parameters are available:
 * **Memory Limit**: Memory allocation ceiling for DuckDB (defaults to `8GB`).
 * **Temp Directory**: Working directory for disk spillover when querying large datasets (defaults to `./tmp`).
 * **Extensions Dir**: Directory for storing and auto-loading local extensions (defaults to `./extensions`).
 * **Threads**: CPU worker threads (`0` = automatic detection of all available cores).
 * **Init SQL Script (`duckDbInitSql`)**: Startup SQL executed automatically on every connection (e.g. `LOAD 'spatial';` or timezone setup `SET TimeZone='UTC';`).
 * **allow_unsigned_extensions**: Toggle allowing installation and execution of community extensions.
+* The default paths (`./tmp`, `./extensions`) are relative to the application's working directory; if the application is installed in a protected folder, set absolute paths. The application does not show errors in these parameters or in Init SQL: if an extension did not load, run the script manually in the editor to see the error.
 
 #### Loading Custom DuckDB Extensions:
 * Download or compile binary `.duckdb_extension` files for your platform.
@@ -325,5 +352,6 @@ The **Hotkeys** tab enables remapping all editor, tab, and graph shortcuts to ma
 The Desktop version (Tauri) provides background auto-synchronization across multiple machines:
 1. In Settings, configure the sync path to a shared cloud folder (e.g. `D:\Dropbox\workspace.json` or `/Users/name/Cloud/lens_workspace.json`).
 2. When launching the app, it reads the updated bundle if it is newer than the local state, while preserving machine-specific local hardware configurations.
-3. Manual workspace backup and restoration are always accessible via the **Export** and **Import** buttons in the settings modal footer.
+3. The newer file wins: if the synchronized file was updated from another computer after your last synchronization, local changes are not written to it and are replaced with the file contents at the next launch. Vault secrets and the ClickHouse password are not included in the file.
+4. Manual workspace backup and restoration are always accessible via the **Export** and **Import** buttons in the settings modal footer.
 

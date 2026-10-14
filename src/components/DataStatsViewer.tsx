@@ -1,6 +1,5 @@
 import { t } from "../utils/i18n";
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { toBlob } from 'html-to-image';
 import {
   BarChart,
   Bar,
@@ -265,7 +264,7 @@ export const DataStatsViewer: React.FC<DataStatsViewerProps> = React.memo(({
       chartContainerRef.current;
 
     try {
-      const blobPromise = toBlob(chartEl, {
+      const blobPromise = import('html-to-image').then(({ toBlob }) => toBlob(chartEl, {
         pixelRatio: 2,
         backgroundColor: undefined, // transparent background
         filter: (node) => {
@@ -276,7 +275,7 @@ export const DataStatsViewer: React.FC<DataStatsViewerProps> = React.memo(({
           }
           return true;
         },
-      }).then(blob => {
+      })).then(blob => {
         if (!blob) throw new Error('Failed to generate blob');
         return blob;
       });
@@ -613,7 +612,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
       if (!isSummarizeMode && (chartType !== 'list' || listSubMode !== 'columns')) return;
       if ((e.ctrlKey || e.metaKey) && e.code === 'KeyC') {
         const activeTag = document.activeElement?.tagName.toLowerCase();
-        if (activeTag === 'input' || activeTag === 'textarea') return;
+        if (activeTag === 'input' || activeTag === 'textarea' || (document.activeElement as HTMLElement | null)?.isContentEditable) return;
         if (selectedColumns.length > 0) {
           e.preventDefault();
           e.stopPropagation();

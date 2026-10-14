@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
 import { 
   ReactFlow, 
   Background, 
@@ -6,11 +6,11 @@ import {
   MiniMap,
   useNodesState, 
   useEdgesState, 
-  BackgroundVariant,
-  getNodesBounds,
-  getViewportForBounds
+  BackgroundVariant
 } from '@xyflow/react';
-import { toPng, toSvg, toJpeg, toBlob } from 'html-to-image';
+import { exportGraphImage, buildGraphTextExport, waitForGraphRendered } from './utils/graphExport';
+import { computeColumnStats as computeColumnStatsPure } from './utils/columnStats';
+import { generateFilteredSortedSql as generateFilteredSortedSqlPure } from './utils/filteredSql';
 import { downloadFileWithFallback, copyToClipboard } from "./utils/exportUtils";
 import { t } from './utils/i18n';
 
@@ -81,7 +81,11 @@ import { DataStatsViewer } from './components/DataStatsViewer';
 
 import { parseSqlToAst, astToGraph, getLayoutedElements } from './utils/astToGraph';
 import { parseMermaidToGraph } from './utils/mermaidToGraph';
-import { nodeTypes } from './components/CustomNodes';
+import { looksLikeMermaid, formatMermaidIssue } from './utils/mermaidParse';
+// Предпросмотр Markdown грузится при первом открытии (парсер, SVG-рендер диаграмм, санитайзер)
+import type { MarkdownPreviewHandle } from './components/MarkdownPreview';
+const MarkdownPreview = lazy(() => import('./components/MarkdownPreview'));
+import { nodeTypes, edgeTypes } from './components/CustomNodes';
 import { sqlPresets, SQLPreset } from './components/SQLPresets';
 import { SqlSnippetsManager, ACTION_MENU_CATEGORY } from './components/SqlSnippetsManager';
 import { ActionMenuTabContent, ACTION_MENU_TAB_ID } from './components/ActionMenuTabContent';
@@ -90,8 +94,13 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { SettingsModal, getSavedHotkeys, getSavedFormatterSettings, FormatterSettings, getSavedUiVisibilitySettings, UiVisibilitySettings, QuickActionTemplate, getQuickActionTemplates, exportWorkspaceSettings, importWorkspaceSettings, generateWorkspaceBundleObject, applyWorkspaceBundleSilently, resolveWorkspaceSyncFilePath } from './components/SettingsModal';
 import { VersionHistoryModal } from './components/VersionHistoryModal';
 import { saveVersion, getVersions, getLatestVersion } from './utils/versionHistory';
-import { format as formatSql } from 'sql-formatter';
 import { splitBySemicolonIgnoringQuotes, formatColumnType, replaceVariablesInSql } from './lib/sqlUtils';
+import { formatSqlText, compactSql } from './utils/sqlFormat';
+import { buildComboString } from './editor/hotkeysMatch';
+import { getTableSizeBadge } from './utils/tableSize';
+import { getSavedSession, SESSION_STORAGE_KEY } from './utils/appSession';
+import type { EditorTab } from './types/editorTab';
+import { MermaidActionGroup } from './components/MermaidActionGroup';
 import { getSessionTabs, saveSessionTabs } from './utils/sessionStorage';
 import { connectDuckDbWasmFile, connectDuckDbWasmMemory, queryDuckDbWasm, disconnectDuckDbWasm, applyDuckDbConfigWasm, attachDuckDbWasmFile } from './lib/duckdbWasm';
 import { WasmFileManagerModal } from './components/WasmFileManagerModal';
@@ -104,115 +113,7 @@ import { getSavedExcelSettings, getSavedExcelPresets } from './utils/excelSettin
 import { ExcelPreset } from './types/excelSettings';
 import { saveTabResult, getTabResult, removeTabResult, cleanupOrphanedTabResults, getTabResultSync } from './utils/resultStorage';
 
-export interface EditorTab {
-  id: string;
-  title: string;
-  sql: string;
-  originalSql?: string;
-  filePath?: string;
-  savedContent?: string;
-  isModified?: boolean;
-  lastExecutedSql?: string;
-}
-
-function getTableSizeBadge(columns: any[]): string | null {
-  const firstCol = columns?.[0];
-  if (firstCol?.table_bytes !== undefined && firstCol?.table_bytes !== null) {
-    const b = Number(firstCol.table_bytes);
-    if (!isNaN(b) && b > 0) {
-      if (b < 1024) return `${b} B`;
-      if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
-      if (b < 1024 * 1024 * 1024) return `${(b / (1024 * 1024)).toFixed(1)} MB`;
-      return `${(b / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-    }
-  } else if (firstCol?.estimated_rows !== undefined && firstCol?.estimated_rows !== null) {
-    const r = Number(firstCol.estimated_rows);
-    if (!isNaN(r) && r >= 0) {
-      if (r < 1000) return `~${r}${t(" стр.")}`;
-      if (r < 1000000) return `~${(r / 1000).toFixed(1)}k${t(" стр.")}`;
-      return `~${(r / 1000000).toFixed(1)}M${t(" стр.")}`;
-    }
-  }
-  return null;
-}
-
-const SESSION_STORAGE_KEY = 'sql_visualizer_session_v2';
-
-interface SavedSession {
-  tabs?: EditorTab[];
-  activeTabId?: string;
-  sql?: string;
-  dialect?: 'PostgreSQL' | 'Oracle' | 'Clickhouse' | 'DuckDB' | '';
-  direction?: 'LR' | 'TB';
-  theme?: 'dark' | 'light';
-  isWrapSql?: boolean;
-  isMaximizedSql?: boolean;
-  duckDbConnectedPath?: string | null;
-  schemaSearchTerm?: string;
-  expandedSchemaNodes?: Record<string, boolean>;
-  showDuckDbSchemaPanel?: boolean;
-  clickhouseConfig?: ClickhouseConfig | null;
-  activeEngine?: 'duckdb' | 'clickhouse' | null;
-}
-
-const getSavedSession = (): SavedSession | null => {
-  try {
-    const raw = localStorage.getItem(SESSION_STORAGE_KEY);
-    if (raw) {
-      return JSON.parse(raw);
-    }
-  } catch (e) {
-    console.error('Failed to parse session from localStorage', e);
-  }
-  return null;
-};
-
-const MermaidActionGroup = ({ theme, onVisualize }: { theme: 'dark'|'light', onVisualize: () => void }) => {
-  const [color, setColor] = useState('#14b8a6');
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = () => {
-    copyToClipboard(color);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  return (
-    <div className={`flex items-stretch text-xs font-semibold rounded-md shadow-md shrink-0 transition-colors ${
-        theme === 'dark'
-          ? 'bg-teal-600 text-white shadow-teal-900/20'
-          : 'bg-teal-500 text-white shadow-teal-700/20'
-      }`}>
-      <div 
-        className={`flex items-center justify-center px-1.5 border-r ${theme === 'dark' ? 'border-teal-700 hover:bg-teal-500' : 'border-teal-600 hover:bg-teal-600'} rounded-l-md transition-colors`}
-        title={t("Выбрать цвет")}
-      >
-        <input 
-           type="color" 
-           value={color} 
-           onChange={(e) => setColor(e.target.value)}
-           className="w-4 h-5 p-0 border-0 bg-transparent cursor-pointer"
-        />
-      </div>
-      
-      <button
-         onClick={handleCopy}
-         className={`px-2 border-r flex items-center justify-center transition-colors ${theme === 'dark' ? 'border-teal-700 hover:bg-teal-500' : 'border-teal-600 hover:bg-teal-600'}`}
-         title={t("Скопировать HEX")}
-      >
-         {copied ? <Check className="w-2.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5 opacity-70 hover:opacity-100" />}
-      </button>
-
-      <button
-        onClick={onVisualize}
-        className={`px-3 py-1.5 active:bg-teal-700 transition-colors rounded-r-md ${theme === 'dark' ? 'hover:bg-teal-500' : 'hover:bg-teal-600'}`}
-        title={t("Визуализировать Mermaid диаграмму")}
-      >
-        <span>Mermaid</span>
-      </button>
-    </div>
-  );
-};
+export type { EditorTab } from './types/editorTab';
 
 export default function App() {
   const savedSession = useMemo(() => getSavedSession(), []);
@@ -974,74 +875,7 @@ export default function App() {
     });
   }, [pagedResults, valueSearchTerm]);
 
-  const computeColumnStats = useCallback((colKey: string, rows: any[]) => {
-    if (!rows || rows.length === 0) return `${t("Количество (Count)")}: 0\n${t("Уникальных (Distinct)")}: 0\n${t("Пустых (Null/Empty)")}: 0`;
-
-    const totalCount = rows.length;
-    let nullOrEmptyCount = 0;
-    const uniqueValues = new Set<string>();
-    const numericValues: number[] = [];
-
-    for (const row of rows) {
-      const val = row[colKey];
-      if (val === null || val === undefined || val === '') {
-        nullOrEmptyCount++;
-      } else {
-        uniqueValues.add(String(val));
-        if (typeof val === 'number' && !isNaN(val)) {
-          numericValues.push(val);
-        } else if (typeof val === 'string' && val.trim() !== '') {
-          const num = Number(val);
-          if (!isNaN(num)) {
-            numericValues.push(num);
-          }
-        }
-      }
-    }
-
-    const distinctCount = uniqueValues.size;
-
-    const formatInt = (n: number) => {
-      return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-    };
-
-    let result = `${t("Количество (Count)")}: ${formatInt(totalCount)}\n`;
-    result += `${t("Уникальных (Distinct)")}: ${formatInt(distinctCount)}\n`;
-    result += `${t("Пустых (Null/Empty)")}: ${formatInt(nullOrEmptyCount)}`;
-
-    const nonNullCount = totalCount - nullOrEmptyCount;
-    const isNumericCol = nonNullCount > 0 && numericValues.length >= Math.ceil(nonNullCount * 0.5);
-
-    if (isNumericCol && numericValues.length > 0) {
-      const sum = numericValues.reduce((acc, v) => acc + v, 0);
-      const min = Math.min(...numericValues);
-      const max = Math.max(...numericValues);
-      const avg = sum / numericValues.length;
-
-      const formatNum = (n: number) => {
-        const isNeg = n < 0;
-        const absN = Math.abs(n);
-        const str = Number.isInteger(absN) ? absN.toString() : parseFloat(absN.toFixed(6)).toString();
-        const parts = str.split('.');
-        parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-        return (isNeg ? '-' : '') + parts.join('.');
-      };
-
-      const sortedNum = [...numericValues].sort((a, b) => a - b);
-      const mid = Math.floor(sortedNum.length / 2);
-      const median = sortedNum.length % 2 !== 0 
-        ? sortedNum[mid] 
-        : (sortedNum[mid - 1] + sortedNum[mid]) / 2;
-
-      result += `\n\n${t("Сумма (Sum)")}: ${formatNum(sum)}`;
-      result += `\n${t("Мин. (Min)")}: ${formatNum(min)}`;
-      result += `\n${t("Макс. (Max)")}: ${formatNum(max)}`;
-      result += `\n${t("Среднее (Avg)")}: ${formatNum(avg)}`;
-      result += `\n${t("Медиана (Median)")}: ${formatNum(median)}`;
-    }
-
-    return result;
-  }, [activeEngine]);
+  const computeColumnStats = useCallback((colKey: string, rows: any[]) => computeColumnStatsPure(colKey, rows), [activeEngine]);
 
   useEffect(() => {
     if (selectedResultCell && selectedResultCell.rowIndex === -1 && selectedResultCell.colKey) {
@@ -1056,7 +890,7 @@ export default function App() {
     const handleCopyKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.code === 'KeyC') {
         const activeTag = document.activeElement?.tagName?.toLowerCase();
-        if (activeTag === 'input' || activeTag === 'textarea') return;
+        if (activeTag === 'input' || activeTag === 'textarea' || (document.activeElement as HTMLElement | null)?.isContentEditable) return;
 
         const selection = window.getSelection();
         if (selection && selection.toString().length > 0) return;
@@ -1249,73 +1083,7 @@ export default function App() {
     baseSql: string,
     filters: Array<{ colKey: string; op: '=' | 'IS' | 'LIKE' | '!=' | '<>' | 'IS NULL' | 'IS NOT NULL'; val: any }>,
     sorts: Array<{ colKey: string; dir: 'ASC' | 'DESC' }>
-  ) => {
-    let cleanSql = baseSql.trim().replace(/;+$/, '');
-    if (!cleanSql) return '';
-
-    // --- LAZY UNBOXING ---
-    // If the query was already wrapped by a previous filter action, unwrap it to prevent nesting (matryoshka)
-    const prefix = 'SELECT * FROM (\n';
-    const suffixMarker = '\n) AS _filtered_query';
-    if (cleanSql.toUpperCase().startsWith(prefix)) {
-      const suffixIndex = cleanSql.lastIndexOf(suffixMarker);
-      if (suffixIndex !== -1) {
-        // Extract the inner original query. We can safely discard the old WHERE/ORDER BY 
-        // because the 'filters' and 'sorts' arrays contain the complete updated state.
-        cleanSql = cleanSql.substring(prefix.length, suffixIndex);
-      }
-    }
-    // ----------------------
-
-    if (filters.length === 0 && sorts.length === 0) return cleanSql;
-
-    const whereClauses = filters.map(f => {
-      const safeCol = f.colKey.replace(/"/g, '""');
-      if (f.op === 'IS NULL') {
-        return `("${safeCol}" IS NULL OR CAST("${safeCol}" AS ${activeEngine === 'clickhouse' ? 'String' : 'VARCHAR'}) = '')`;
-      }
-      if (f.op === 'IS NOT NULL') {
-        return `("${safeCol}" IS NOT NULL AND CAST("${safeCol}" AS ${activeEngine === 'clickhouse' ? 'String' : 'VARCHAR'}) <> '')`;
-      }
-      if (f.op === '<>') {
-        if (f.val === null || f.val === undefined) {
-          return `"${safeCol}" IS NOT NULL`;
-        }
-        if (typeof f.val === 'number' || typeof f.val === 'boolean') {
-          return `"${safeCol}" <> ${f.val}`;
-        }
-        const escapedVal = String(f.val).replace(/'/g, "''");
-        return `"${safeCol}" <> '${escapedVal}'`;
-      }
-      if (f.op === 'LIKE') {
-        if (f.val === null || f.val === undefined) {
-          return `"${safeCol}" IS NOT NULL`;
-        }
-        const escapedVal = String(f.val).replace(/'/g, "''");
-        return `LOWER(CAST("${safeCol}" AS ${activeEngine === 'clickhouse' ? 'String' : 'VARCHAR'})) LIKE LOWER('%${escapedVal}%')`;
-      }
-      if (f.val === null || f.val === undefined) {
-        return f.op === '!=' ? `"${safeCol}" IS NOT NULL` : `"${safeCol}" IS NULL`;
-      }
-      if (typeof f.val === 'number' || typeof f.val === 'boolean') {
-        return `"${safeCol}" ${f.op} ${f.val}`;
-      }
-      const escapedVal = String(f.val).replace(/'/g, "''");
-      return `"${safeCol}" ${f.op} '${escapedVal}'`;
-    });
-
-    const orderClauses = sorts.map(s => `"${s.colKey.replace(/"/g, '""')}" ${s.dir}`);
-
-    let wrappedSql = `SELECT * FROM (\n${cleanSql}\n) AS _filtered_query`;
-    if (whereClauses.length > 0) {
-      wrappedSql += `\nWHERE ${whereClauses.join(' AND ')}`;
-    }
-    if (orderClauses.length > 0) {
-      wrappedSql += `\nORDER BY ${orderClauses.join(', ')}`;
-    }
-
-    return wrappedSql;
-  }, [activeEngine]);
+  ) => generateFilteredSortedSqlPure(activeEngine, baseSql, filters, sorts), [activeEngine]);
 
   const handleApplyTableSort = (colKey: string, dir: 'ASC' | 'DESC') => {
     const updatedSorts = [{ colKey, dir }, ...activeSqlSorts.filter(s => s.colKey !== colKey)];
@@ -2466,7 +2234,7 @@ export default function App() {
     handleExecuteDuckDbQuery();
   };
 
-  const maybeAutoSelectFirstCell = (results: any[], query: string) => {
+  const maybeAutoSelectFirstCell = async (results: any[], query: string) => {
     if (results && results.length > 0 && /^\s*(SHOW\b|SELECT\s+[\s\S]+?\bFROM\s+duckdb_(tables|views|functions)\b)/i.test(query.trim())) {
       const firstRow = results[0];
       if (firstRow && typeof firstRow === 'object') {
@@ -2478,6 +2246,7 @@ export default function App() {
           if (contentStr !== 'null' && !contentStr.includes('\n')) {
             try {
               const fmtSettings = getSavedFormatterSettings();
+              const { format: formatSql } = await import('sql-formatter');
               contentStr = formatSql(contentStr, {
                 language: 'sql',
                 keywordCase: fmtSettings.keywordCase,
@@ -2962,6 +2731,10 @@ export default function App() {
             } catch (err: any) {
               updateEngineState(originTabId, queryToExec, page, { error: err.message || String(err) });
             }
+          } else if (isCapacitorEnvironment()) {
+            updateEngineState(originTabId, queryToExec, page, {
+              error: t('COPY FROM недоступен на Android: загрузка файла с диска в ClickHouse поддерживается только в десктопной версии'),
+            });
           } else {
             const data = await fetchApiJson('/api/clickhouse/copy-from', {
               method: 'POST',
@@ -3151,12 +2924,9 @@ export default function App() {
 
   const handleExecuteDuckDbQuery = async () => {
     let queryToExecute = sqlRef.current;
-    const textareas = document.querySelectorAll('textarea');
-    for (const textarea of Array.from(textareas)) {
-      if (textarea.offsetWidth > 0 && textarea.offsetHeight > 0 && textarea.selectionStart !== textarea.selectionEnd) {
-        queryToExecute = textarea.value.substring(textarea.selectionStart, textarea.selectionEnd);
-        break;
-      }
+    const editorSelection = sqlEditorRef.current?.getSelection();
+    if (editorSelection && editorSelection.start !== editorSelection.end) {
+      queryToExecute = editorSelection.text;
     }
 
     if (!queryToExecute.trim()) return;
@@ -3738,6 +3508,9 @@ export default function App() {
   const [nodes, setNodes, onNodesChange] = useNodesState<any>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<any>([]);
   const [error, setError] = useState<string | null>(null);
+  // Предпросмотр Markdown в панели графа (null — закрыт) и сообщение о проблемах разбора Mermaid
+  const [markdownSource, setMarkdownSource] = useState<string | null>(null);
+  const [mermaidNotice, setMermaidNotice] = useState<{ kind: 'error' | 'warning'; text: string } | null>(null);
   const [astResult, setAstResult] = useState<any>(null);
 
   const handleCollapseAll = useCallback(() => {
@@ -3837,7 +3610,8 @@ export default function App() {
   const processedNodes = React.useMemo(() => {
     if (!lineageHighlightMode || !lineageNodeIds) return nodes;
     return nodes.map((n) => {
-      const isLineage = lineageNodeIds.has(n.id);
+      // заголовок запроса («Query N» с кнопкой) не часть графа данных: не гасим его при подсветке lineage
+      const isLineage = lineageNodeIds.has(n.id) || n.type === 'collapseNode';
       return {
         ...n,
         style: {
@@ -3874,316 +3648,37 @@ export default function App() {
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [showExportMenu, setShowExportMenu] = useState<boolean>(false);
 
+  // Режим документа: в панели графа открыт Markdown. Экспорт тогда относится к документу, а не к графу.
+  const docMode = markdownSource !== null;
+  const markdownPreviewRef = useRef<MarkdownPreviewHandle>(null);
+  // Свежие узлы для экспорта: после включения полной отрисовки React Flow успевает измерить их
+  const nodesRef = useRef(nodes);
+  nodesRef.current = nodes;
+
   const exportGraph = async (format: 'png' | 'svg' | 'jpeg', transparent: boolean = false) => {
+    if (docMode) {
+      // Документ экспортируется только как PNG/JPEG с фоном
+      if (transparent || format === 'svg') return;
+      setIsExporting(true);
+      setShowExportMenu(false);
+      try {
+        await markdownPreviewRef.current?.exportImage(format);
+      } catch (err: any) {
+        console.error('Export document failed:', err);
+        setError(`Failed to export document: ${err.message || String(err)}`);
+      } finally {
+        setIsExporting(false);
+      }
+      return;
+    }
     if (!nodes || nodes.length === 0) return;
     setIsExporting(true);
     setShowExportMenu(false);
 
     try {
-      const viewportElement = document.querySelector('.react-flow__viewport') as HTMLElement;
-      if (!viewportElement) {
-        throw new Error('Graph canvas element not found');
-      }
-
-      const nodesBounds = getNodesBounds(nodes);
-      const padding = 80;
-      const width = Math.max(1200, Math.ceil(nodesBounds.width + padding * 2));
-      const height = Math.max(800, Math.ceil(nodesBounds.height + padding * 2));
-
-      const viewport = getViewportForBounds(
-        nodesBounds,
-        width,
-        height,
-        0.1,
-        4,
-        0.1
-      );
-
-      const defaultBgColor = theme === 'dark' ? '#172033' : '#e2e8f0';
-      const bgColor = transparent ? undefined : defaultBgColor;
-
-      const options: any = {
-        width: width,
-        height: height,
-        style: {
-          width: `${width}px`,
-          height: `${height}px`,
-          transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
-        },
-        pixelRatio: 2,
-        filter: (node: Element) => {
-          if (!node) return true;
-          const className = typeof node.className === 'string'
-            ? node.className
-            : (node.className && typeof (node.className as any).baseVal === 'string' ? (node.className as any).baseVal : '');
-
-          if (className) {
-            if (
-              className.includes('react-flow__handle') ||
-              className.includes('react-flow__controls') ||
-              className.includes('react-flow__minimap') ||
-              className.includes('react-flow__attribution') ||
-              className.includes('react-flow__panel')
-            ) {
-              return false;
-            }
-          }
-          return true;
-        }
-      };
-
-      if (bgColor) {
-        options.backgroundColor = bgColor;
-      }
-
-      // Inline styles & attributes for SVG element export rendering
-      const cleanupTasks: Array<() => void> = [];
-
-      // 1. Hide scrollbars and arrows in nodes during capture
-      const styleEl = document.createElement('style');
-      styleEl.id = 'export-hide-scrollbars-style';
-      styleEl.innerHTML = `
-        ::-webkit-scrollbar {
-          display: none !important;
-          width: 0 !important;
-          height: 0 !important;
-          opacity: 0 !important;
-        }
-        ::-webkit-scrollbar-button {
-          display: none !important;
-          width: 0 !important;
-          height: 0 !important;
-          opacity: 0 !important;
-        }
-        ::-webkit-scrollbar-thumb {
-          display: none !important;
-        }
-        ::-webkit-scrollbar-track {
-          display: none !important;
-        }
-        * {
-          scrollbar-width: none !important;
-          -ms-overflow-style: none !important;
-        }
-      `;
-      document.head.appendChild(styleEl);
-      cleanupTasks.push(() => styleEl.remove());
-
-      // 2. Prepare edge paths (<path class="react-flow__edge-path">)
-      const edgePaths = viewportElement.querySelectorAll('.react-flow__edges path, .react-flow__edge-path, .react-flow__edge path');
-      edgePaths.forEach((path) => {
-        const pathEl = path as HTMLElement;
-        const computed = window.getComputedStyle(pathEl);
-        const origStroke = path.getAttribute('stroke');
-        const origStrokeWidth = path.getAttribute('stroke-width');
-        const origStrokeDasharray = path.getAttribute('stroke-dasharray');
-        const origFill = path.getAttribute('fill');
-        
-        const origInlineStroke = pathEl.style.getPropertyValue('stroke');
-        const origInlineStrokePriority = pathEl.style.getPropertyPriority('stroke');
-        const origInlineStrokeWidth = pathEl.style.getPropertyValue('stroke-width');
-        const origInlineStrokeWidthPriority = pathEl.style.getPropertyPriority('stroke-width');
-
-        let stroke = computed.stroke;
-        if (!stroke || stroke === 'none' || stroke === 'rgba(0, 0, 0, 0)') {
-          stroke = '#94a3b8';
-        }
-
-        if (transparent && theme === 'dark') {
-          // In dark mode, lines are very light (e.g. #f8fafc). On a transparent export, 
-          // they disappear against typical light viewers. Force them to a neutral visible gray.
-          if (stroke !== '#3b82f6' && stroke !== 'rgb(59, 130, 246)') {
-            stroke = '#64748b'; 
-          }
-        }
-
-        let strokeWidth = computed.strokeWidth;
-        if (!strokeWidth || strokeWidth === '0px') {
-          strokeWidth = '1.5px';
-        }
-
-        path.setAttribute('stroke', stroke);
-        path.setAttribute('stroke-width', strokeWidth.replace('px', ''));
-        path.setAttribute('fill', 'none');
-        pathEl.style.setProperty('stroke', stroke, 'important');
-        pathEl.style.setProperty('stroke-width', strokeWidth, 'important');
-
-        const dashArray = pathEl.style.strokeDasharray || computed.strokeDasharray;
-        if (dashArray && dashArray !== 'none') {
-          path.setAttribute('stroke-dasharray', dashArray);
-        }
-
-        cleanupTasks.push(() => {
-          if (origStroke !== null) path.setAttribute('stroke', origStroke); else path.removeAttribute('stroke');
-          if (origStrokeWidth !== null) path.setAttribute('stroke-width', origStrokeWidth); else path.removeAttribute('stroke-width');
-          if (origStrokeDasharray !== null) path.setAttribute('stroke-dasharray', origStrokeDasharray); else path.removeAttribute('stroke-dasharray');
-          if (origFill !== null) path.setAttribute('fill', origFill); else path.removeAttribute('fill');
-          
-          if (origInlineStroke) {
-             pathEl.style.setProperty('stroke', origInlineStroke, origInlineStrokePriority);
-          } else {
-             pathEl.style.removeProperty('stroke');
-          }
-          if (origInlineStrokeWidth) {
-             pathEl.style.setProperty('stroke-width', origInlineStrokeWidth, origInlineStrokeWidthPriority);
-          } else {
-             pathEl.style.removeProperty('stroke-width');
-          }
-        });
-      });
-
-      // 2.5 Prepare marker colors (arrow heads)
-      if (transparent && theme === 'dark') {
-        const flowContainer = viewportElement.closest('.react-flow');
-        if (flowContainer) {
-          const markerPaths = flowContainer.querySelectorAll('marker path, marker polyline, marker polygon');
-          markerPaths.forEach((marker) => {
-            const m = marker as HTMLElement;
-            const origFill = m.getAttribute('fill');
-            const origStroke = m.getAttribute('stroke');
-            
-            const origInlineFill = m.style.getPropertyValue('fill');
-            const origInlineFillPriority = m.style.getPropertyPriority('fill');
-            const origInlineStroke = m.style.getPropertyValue('stroke');
-            const origInlineStrokePriority = m.style.getPropertyPriority('stroke');
-            
-            // Only modify markers that aren't the blue highlight ones
-            const currentFill = window.getComputedStyle(m).fill;
-            if (currentFill !== '#3b82f6' && currentFill !== 'rgb(59, 130, 246)') {
-              m.setAttribute('fill', '#64748b');
-              m.style.setProperty('fill', '#64748b', 'important');
-              if (origStroke || window.getComputedStyle(m).stroke !== 'none') {
-                 m.setAttribute('stroke', '#64748b');
-                 m.style.setProperty('stroke', '#64748b', 'important');
-              }
-            }
-            
-            cleanupTasks.push(() => {
-              if (origFill !== null) m.setAttribute('fill', origFill); else m.removeAttribute('fill');
-              if (origStroke !== null) m.setAttribute('stroke', origStroke); else m.removeAttribute('stroke');
-              
-              if (origInlineFill) {
-                m.style.setProperty('fill', origInlineFill, origInlineFillPriority);
-              } else {
-                m.style.removeProperty('fill');
-              }
-              if (origInlineStroke) {
-                m.style.setProperty('stroke', origInlineStroke, origInlineStrokePriority);
-              } else {
-                m.style.removeProperty('stroke');
-              }
-            });
-          });
-        }
-      }
-
-      // 3. Prepare edge label background rects (<rect class="react-flow__edge-textbg">)
-      const edgeRects = viewportElement.querySelectorAll('.react-flow__edge-textbg, .react-flow__edge rect');
-      edgeRects.forEach((rect) => {
-        const origFill = rect.getAttribute('fill');
-        const origFillOpacity = rect.getAttribute('fill-opacity');
-        const origStroke = rect.getAttribute('stroke');
-        const origStrokeWidth = rect.getAttribute('stroke-width');
-        const origRx = rect.getAttribute('rx');
-        const origRy = rect.getAttribute('ry');
-
-        rect.setAttribute('fill', (transparent && theme === 'dark') ? '#1e293b' : '#ffffff');
-        rect.setAttribute('fill-opacity', '1');
-        rect.setAttribute('stroke', (transparent && theme === 'dark') ? '#94a3b8' : '#cbd5e1');
-        rect.setAttribute('stroke-width', '1');
-        rect.setAttribute('rx', '4');
-        rect.setAttribute('ry', '4');
-
-        cleanupTasks.push(() => {
-          if (origFill !== null) rect.setAttribute('fill', origFill); else rect.removeAttribute('fill');
-          if (origFillOpacity !== null) rect.setAttribute('fill-opacity', origFillOpacity); else rect.removeAttribute('fill-opacity');
-          if (origStroke !== null) rect.setAttribute('stroke', origStroke); else rect.removeAttribute('stroke');
-          if (origStrokeWidth !== null) rect.setAttribute('stroke-width', origStrokeWidth); else rect.removeAttribute('stroke-width');
-          if (origRx !== null) rect.setAttribute('rx', origRx); else rect.removeAttribute('rx');
-          if (origRy !== null) rect.setAttribute('ry', origRy); else rect.removeAttribute('ry');
-        });
-      });
-
-      // 4. Prepare edge label text (<text class="react-flow__edge-text">)
-      const edgeTexts = viewportElement.querySelectorAll('.react-flow__edge-text, .react-flow__edge text');
-      edgeTexts.forEach((text) => {
-        const origFill = text.getAttribute('fill');
-        const origFontSize = text.getAttribute('font-size');
-        const origFontWeight = text.getAttribute('font-weight');
-        const origFontFamily = text.getAttribute('font-family');
-
-        text.setAttribute('fill', (transparent && theme === 'dark') ? '#f8fafc' : '#0f172a');
-        text.setAttribute('font-size', '10px');
-        text.setAttribute('font-family', 'ui-sans-serif, system-ui, sans-serif');
-        text.setAttribute('font-weight', '600');
-
-        cleanupTasks.push(() => {
-          if (origFill !== null) text.setAttribute('fill', origFill); else text.removeAttribute('fill');
-          if (origFontSize !== null) text.setAttribute('font-size', origFontSize); else text.removeAttribute('font-size');
-          if (origFontWeight !== null) text.setAttribute('font-weight', origFontWeight); else text.removeAttribute('font-weight');
-          if (origFontFamily !== null) text.setAttribute('font-family', origFontFamily); else text.removeAttribute('font-family');
-        });
-      });
-
-      // 5. HTML edge labels if present
-      const htmlEdgeLabels = viewportElement.querySelectorAll('.react-flow__edge-label, .react-flow__edge-text-wrapper');
-      htmlEdgeLabels.forEach((el) => {
-        const htmlEl = el as HTMLElement;
-        const origBg = htmlEl.style.backgroundColor;
-        const origColor = htmlEl.style.color;
-
-        htmlEl.style.backgroundColor = (transparent && theme === 'dark') ? '#1e293b' : '#ffffff';
-        htmlEl.style.color = (transparent && theme === 'dark') ? '#f8fafc' : '#0f172a';
-
-        cleanupTasks.push(() => {
-          htmlEl.style.backgroundColor = origBg;
-          htmlEl.style.color = origColor;
-        });
-      });
-
-      // 6. Inlining computed SVG polygon / path styles for Mermaid nodes to ensure accurate colors on export
-      const nodeSvgElements = viewportElement.querySelectorAll('.react-flow__node svg polygon, .react-flow__node svg path');
-      nodeSvgElements.forEach((el) => {
-        const svgEl = el as HTMLElement;
-        const computed = window.getComputedStyle(svgEl);
-        const origFill = el.getAttribute('fill');
-        const origStroke = el.getAttribute('stroke');
-
-        if (computed.fill && computed.fill !== 'none' && computed.fill !== 'rgba(0, 0, 0, 0)') {
-          el.setAttribute('fill', computed.fill);
-        }
-        if (computed.stroke && computed.stroke !== 'none' && computed.stroke !== 'rgba(0, 0, 0, 0)') {
-          el.setAttribute('stroke', computed.stroke);
-        }
-
-        cleanupTasks.push(() => {
-          if (origFill !== null) el.setAttribute('fill', origFill); else el.removeAttribute('fill');
-          if (origStroke !== null) el.setAttribute('stroke', origStroke); else el.removeAttribute('stroke');
-        });
-      });
-
-      let dataUrl = '';
-      try {
-        if (format === 'png') {
-          dataUrl = await toPng(viewportElement, options);
-        } else if (format === 'svg') {
-          dataUrl = await toSvg(viewportElement, options);
-        } else if (format === 'jpeg') {
-          dataUrl = await toJpeg(viewportElement, { ...options, quality: 0.95 });
-        }
-      } finally {
-        cleanupTasks.forEach(cb => cb());
-      }
-      if (dataUrl) {
-        try {
-          const res = await fetch(dataUrl);
-          const blob = await res.blob();
-          const suffix = transparent ? "-transparent" : "";
-          await downloadFileWithFallback(blob, `sql-graph-export${suffix}.${format}`);
-        } catch (e) {
-          console.error("Data URL to blob conversion failed", e);
-        }
-      }
+      // onlyRenderVisibleElements выключается на время экспорта (см. ReactFlow ниже): ждём, пока отрисуются все узлы
+      await waitForGraphRendered(nodes.length);
+      await exportGraphImage(nodesRef.current, theme, format, transparent);
     } catch (err: any) {
       console.error('Export graph failed:', err);
       setError(`Failed to export graph: ${err.message || String(err)}`);
@@ -4193,205 +3688,16 @@ export default function App() {
   };
 
   const exportGraphText = (format: 'json' | 'xml' | 'mermaid' | 'drawio', toClipboard: boolean = false) => {
-    if (nodes.length === 0) return;
+    if (markdownSource !== null || nodes.length === 0) return;
     setShowExportMenu(false);
 
-    let content = '';
-    let filename = '';
-    let mimeType = 'text/plain;charset=utf-8';
-
-    if (format === 'json') {
-      const exportData = {
-        metadata: {
-          exportedAt: new Date().toISOString(),
-          dialect,
-          nodeCount: nodes.length,
-          edgeCount: edges.length,
-        },
-    // sql not in deps
-        nodes: nodes.map((n: any) => ({
-          id: n.id,
-          type: n.type,
-          label: n.data?.label || n.data?.title || '',
-          data: n.data,
-          position: n.position
-        })),
-        edges: edges.map((e: any) => ({
-          id: e.id,
-          source: e.source,
-          target: e.target,
-          label: e.label || '',
-          type: e.type
-        }))
-      };
-      content = JSON.stringify(exportData, null, 2);
-      filename = 'sql-graph-export.json';
-      mimeType = 'application/json;charset=utf-8';
-    } else if (format === 'xml') {
-      const escapeXml = (str: any) => {
-        return String(str || '')
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;')
-          .replace(/'/g, '&apos;');
-      };
-
-      let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
-      xml += `<sqlGraph dialect="${escapeXml(dialect)}" exportedAt="${new Date().toISOString()}">\n`;
-      xml += `  <query><![CDATA[${getActiveTabSql()}]]></query>\n`;
-      xml += `  <nodes count="${nodes.length}">\n`;
-      nodes.forEach((n: any) => {
-        const title = n.data?.title || n.data?.label || n.id;
-        const nodeType = n.data?.type || n.type || 'node';
-        xml += `    <node id="${escapeXml(n.id)}" type="${escapeXml(nodeType)}">\n`;
-        xml += `      <title>${escapeXml(title)}</title>\n`;
-        if (n.data?.tableName) xml += `      <tableName>${escapeXml(n.data.tableName)}</tableName>\n`;
-        if (n.data?.condition) xml += `      <condition>${escapeXml(n.data.condition)}</condition>\n`;
-        if (n.data?.columns && Array.isArray(n.data.columns)) {
-          xml += `      <columns>\n`;
-          n.data.columns.forEach((col: any) => {
-            const colName = typeof col === 'string' ? col : col.name || String(col);
-            xml += `        <column>${escapeXml(colName)}</column>\n`;
-          });
-          xml += `      </columns>\n`;
-        }
-        xml += `    </node>\n`;
-      });
-      xml += `  </nodes>\n`;
-      xml += `  <edges count="${edges.length}">\n`;
-      edges.forEach((e: any) => {
-        xml += `    <edge id="${escapeXml(e.id)}" source="${escapeXml(e.source)}" target="${escapeXml(e.target)}">\n`;
-        if (e.label) xml += `      <label>${escapeXml(String(e.label))}</label>\n`;
-        xml += `    </edge>\n`;
-      });
-      xml += `  </edges>\n`;
-      xml += `</sqlGraph>`;
-      content = xml;
-      filename = 'sql-graph-export.xml';
-      mimeType = 'application/xml;charset=utf-8';
-    } else if (format === 'drawio') {
-      const escapeXml = (str: any) => {
-        return String(str || '')
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;')
-          .replace(/'/g, '&apos;');
-      };
-
-      const escapeHtmlText = (str: any) => {
-        return String(str || '')
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;');
-      };
-
-      let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
-      xml += `<mxfile host="QueryAST Lens" modified="${new Date().toISOString()}" agent="QueryAST Lens" version="21.0.0" type="device">\n`;
-      xml += `  <diagram id="sql-data-flow" name="SQL Data Flow">\n`;
-      xml += `    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">\n`;
-      xml += `      <root>\n`;
-      xml += `        <mxCell id="0" />\n`;
-      xml += `        <mxCell id="1" parent="0" />\n`;
-
-      nodes.forEach((n: any, idx: number) => {
-        const title = n.data?.title || n.data?.label || n.id;
-        const nodeType = n.data?.type || n.type || 'table';
-        const posX = Math.round(n.position?.x ?? (idx * 220));
-        const posY = Math.round(n.position?.y ?? 100);
-
-        let labelHtml = `<b>${escapeHtmlText(title)}</b>`;
-        if (n.data?.tableName) {
-          labelHtml += `<br/><font color="#64748b">Table: ${escapeHtmlText(n.data.tableName)}</font>`;
-        }
-        if (n.data?.condition) {
-          labelHtml += `<br/><font color="#3b82f6">ON: ${escapeHtmlText(n.data.condition)}</font>`;
-        }
-        if (n.data?.columns && Array.isArray(n.data.columns) && n.data.columns.length > 0) {
-          const colList = n.data.columns.map((col: any) => typeof col === 'string' ? col : col.name || String(col)).join(', ');
-          labelHtml += `<br/><font color="#10b981">Cols: ${escapeHtmlText(colList)}</font>`;
-        }
-
-        let fillColor = '#f8fafc';
-        let strokeColor = '#94a3b8';
-        if (nodeType === 'source' || nodeType === 'table') {
-          fillColor = '#eff6ff';
-          strokeColor = '#3b82f6';
-        } else if (nodeType === 'cte') {
-          fillColor = '#faf5ff';
-          strokeColor = '#a855f7';
-        } else if (nodeType === 'join') {
-          fillColor = '#fff7ed';
-          strokeColor = '#f97316';
-        } else if (nodeType === 'select' || nodeType === 'output') {
-          fillColor = '#ecfdf5';
-          strokeColor = '#10b981';
-        }
-
-        const style = `rounded=1;whiteSpace=wrap;html=1;fillColor=${fillColor};strokeColor=${strokeColor};strokeWidth=2;shadow=1;fontFamily=Helvetica;fontSize=12;align=center;verticalAlign=middle;`;
-        const width = 200;
-        const height = 90;
-
-        xml += `        <mxCell id="${escapeXml(n.id)}" value="${escapeXml(labelHtml)}" style="${style}" vertex="1" parent="1">\n`;
-        xml += `          <mxGeometry x="${posX}" y="${posY}" width="${width}" height="${height}" as="geometry" />\n`;
-        xml += `        </mxCell>\n`;
-      });
-
-      edges.forEach((e: any) => {
-        const edgeLabel = e.label ? escapeXml(String(e.label)) : '';
-        const style = `edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;strokeWidth=2;endArrow=classic;endSize=6;`;
-
-        xml += `        <mxCell id="${escapeXml(e.id)}" value="${edgeLabel}" style="${style}" edge="1" parent="1" source="${escapeXml(e.source)}" target="${escapeXml(e.target)}">\n`;
-        xml += `          <mxGeometry relative="1" as="geometry" />\n`;
-        xml += `        </mxCell>\n`;
-      });
-
-      xml += `      </root>\n`;
-      xml += `    </mxGraphModel>\n`;
-      xml += `  </diagram>\n`;
-      xml += `</mxfile>`;
-
-      content = xml;
-      filename = 'sql-graph-export.drawio.xml';
-      mimeType = 'application/xml;charset=utf-8';
-    } else if (format === 'mermaid') {
-      const dir = direction === 'LR' ? 'LR' : 'TD';
-      const lines: string[] = [`graph ${dir}`];
-
-      const sanitize = (text: any) => {
-        return String(text || '')
-          .replace(/"/g, "'")
-          .replace(/[\r\n]+/g, ' ')
-          .replace(/[<>]/g, '');
-      };
-
-      nodes.forEach((node: any) => {
-        const data = node.data || {};
-        const label = data.label || node.id;
-        const title = data.title || label;
-        
-        let detail = '';
-        if (data.tableName) detail = `Table: ${data.tableName}`;
-        else if (data.alias) detail = `Alias: ${data.alias}`;
-        else if (data.condition) detail = `Cond: ${data.condition}`;
-
-        const display = detail ? `${title} [${detail}]` : title;
-        const cleanId = node.id.replace(/[^a-zA-Z0-9_]/g, '_');
-        lines.push(`  ${cleanId}["${sanitize(display)}"]`);
-      });
-
-      edges.forEach((edge: any) => {
-        const source = edge.source.replace(/[^a-zA-Z0-9_]/g, '_');
-        const target = edge.target.replace(/[^a-zA-Z0-9_]/g, '_');
-        const label = edge.label ? `|"${sanitize(String(edge.label))}"|` : '';
-        lines.push(`  ${source} -->${label} ${target}`);
-      });
-
-      content = lines.join('\n');
-      filename = 'sql-graph-export.mmd';
-      mimeType = 'text/plain;charset=utf-8';
-    }
+    const { content, filename, mimeType } = buildGraphTextExport(format, {
+      nodes,
+      edges,
+      dialect,
+      direction,
+      sql: getActiveTabSql(),
+    });
 
     if (content) {
       if (toClipboard) {
@@ -4523,47 +3829,7 @@ export default function App() {
         isResultTableHoveredRef: currentIsResultTableHoveredRef,
       } = hotkeysStateRef.current;
 
-      const parts: string[] = [];
-      if (e.ctrlKey || e.metaKey) parts.push('Ctrl');
-      if (e.altKey) parts.push('Alt');
-      if (e.shiftKey) parts.push('Shift');
-
-      let keyName = e.key ? e.key.toUpperCase() : '';
-      if (e.code && e.code.startsWith('Key')) {
-        keyName = e.code.slice(3).toUpperCase();
-      } else if (e.code && e.code.startsWith('Digit')) {
-        keyName = e.code.slice(5);
-      } else if (e.code === 'Space' || e.key === ' ') {
-        keyName = 'Space';
-      } else if (e.code === 'Enter' || e.key === 'Enter') {
-        keyName = 'Enter';
-      } else if (e.code === 'Escape' || e.key === 'Escape') {
-        keyName = 'Esc';
-      } else if (e.code === 'Slash') {
-        keyName = '/';
-      } else if (e.code === 'Backslash') {
-        keyName = '\\';
-      } else if (e.code === 'Period') {
-        keyName = '.';
-      } else if (e.code === 'Comma') {
-        keyName = ',';
-      } else if (e.code === 'Semicolon') {
-        keyName = ';';
-      } else if (e.code === 'Quote') {
-        keyName = "'";
-      } else if (e.code === 'BracketLeft') {
-        keyName = '[';
-      } else if (e.code === 'BracketRight') {
-        keyName = ']';
-      } else if (e.code === 'Minus') {
-        keyName = '-';
-      } else if (e.code === 'Equal') {
-        keyName = '=';
-      } else if (e.code === 'Backquote' || e.key === '`' || e.key === '~' || e.key === 'ё' || e.key === 'Ё') {
-        keyName = '`';
-      }
-
-      const combo = parts.length > 0 ? `${parts.join('+')}+${keyName}` : keyName;
+      const combo = buildComboString(e);
 
       // Tab switching hotkey (Modifier + 1..9)
       const tabModifier = currentHotkeys.tabSwitchModifier || 'Ctrl';
@@ -4803,13 +4069,12 @@ export default function App() {
     currentDialect = dialect,
     currentDir = direction
   ) => {
+    setMarkdownSource(null);
+    setMermaidNotice(null);
     if (queryText === sqlRef.current) {
-      const textareas = document.querySelectorAll('textarea');
-      for (const textarea of Array.from(textareas)) {
-        if (textarea.offsetWidth > 0 && textarea.offsetHeight > 0 && textarea.selectionStart !== textarea.selectionEnd) {
-          queryText = textarea.value.substring(textarea.selectionStart, textarea.selectionEnd);
-          break;
-        }
+      const editorSelection = sqlEditorRef.current?.getSelection();
+      if (editorSelection && editorSelection.start !== editorSelection.end) {
+        queryText = editorSelection.text;
       }
     }
 
@@ -4837,18 +4102,17 @@ export default function App() {
     queryText = sqlRef.current,
     currentDir = direction
   ) => {
+    setMarkdownSource(null);
     if (queryText === sqlRef.current) {
-      const textareas = document.querySelectorAll('textarea');
-      for (const textarea of Array.from(textareas)) {
-        if (textarea.offsetWidth > 0 && textarea.offsetHeight > 0 && textarea.selectionStart !== textarea.selectionEnd) {
-          queryText = textarea.value.substring(textarea.selectionStart, textarea.selectionEnd);
-          break;
-        }
+      const editorSelection = sqlEditorRef.current?.getSelection();
+      if (editorSelection && editorSelection.start !== editorSelection.end) {
+        queryText = editorSelection.text;
       }
     }
 
     if (!queryText.trim()) {
       setError(null);
+      setMermaidNotice(null);
       setAstResult(null);
       setNodes([]);
       setEdges([]);
@@ -4860,7 +4124,15 @@ export default function App() {
       const result = parseMermaidToGraph(queryText, currentDir);
       if (result.error) {
         setError(result.error);
+        setMermaidNotice({ kind: 'error', text: result.error });
         return;
+      }
+      if (result.warnings && result.warnings.length > 0) {
+        const shown = result.warnings.slice(0, 3).map(formatMermaidIssue).join('\n');
+        const more = result.warnings.length > 3 ? `\n… +${result.warnings.length - 3}` : '';
+        setMermaidNotice({ kind: 'warning', text: shown + more });
+      } else {
+        setMermaidNotice(null);
       }
 
       if (result.direction && (result.direction === 'LR' || result.direction === 'TB')) {
@@ -4878,7 +4150,24 @@ export default function App() {
       }
     } catch (err: any) {
       setError(`Mermaid parse error: ${err?.message || String(err)}`);
+      setMermaidNotice({ kind: 'error', text: `Mermaid parse error: ${err?.message || String(err)}` });
     }
+  };
+
+  // Кнопка «Markdown»: чистый Mermaid (flowchart/graph...) строится как граф, остальное — предпросмотр Markdown
+  // (mermaid-блоки внутри Markdown рисуются статичным SVG и открываются как граф кнопкой на блоке).
+  const handleVisualizeMarkdown = () => {
+    let text = sqlRef.current;
+    const editorSelection = sqlEditorRef.current?.getSelection();
+    if (editorSelection && editorSelection.start !== editorSelection.end) {
+      text = editorSelection.text;
+    }
+    if (!text.trim() || looksLikeMermaid(text)) {
+      handleVisualizeMermaid(text);
+      return;
+    }
+    setMermaidNotice(null);
+    setMarkdownSource(text);
   };
 
     useEffect(() => {
@@ -4942,7 +4231,8 @@ export default function App() {
     if (nodes.length > 0) {
       const isMermaid = nodes.some(n => n.type === 'mermaidNode' || n.type === 'mermaidGroupNode');
       if (isMermaid) {
-        handleVisualizeMermaid(undefined, newDir);
+        // пока открыт предпросмотр Markdown, в редакторе не Mermaid — граф не пересобираем
+        if (markdownSource === null) handleVisualizeMermaid(undefined, newDir);
       } else {
         const layouted = getLayoutedElements(nodes, edges, newDir);
         setNodes(layouted.nodes);
@@ -5077,7 +4367,7 @@ export default function App() {
       const width = tableEl.scrollWidth;
       const height = tableEl.scrollHeight;
 
-      const blobPromise = toBlob(tableEl, {
+      const blobPromise = import('html-to-image').then(({ toBlob }) => toBlob(tableEl, {
         pixelRatio: 2,
         width,
         height,
@@ -5096,7 +4386,7 @@ export default function App() {
           }
           return true;
         },
-      }).then(blob => {
+      })).then(blob => {
         if (!blob) throw new Error('Failed to generate blob');
         return blob;
       });
@@ -5137,388 +4427,10 @@ export default function App() {
     }
   };
 
-  const convertInlineDashComments = (sql: string): string => {
-    const lines = sql.split('\n');
-    return lines
-      .map((line) => {
-        let inString: string | null = null;
-        let inBlockComment = false;
-        let codeFoundBeforeDash = false;
-        let dashIndex = -1;
+  const doFormat = (text: string): Promise<string> =>
+    formatSqlText(text, dialect, formatterSettingsRef.current || formatterSettings);
 
-        for (let i = 0; i < line.length; i++) {
-          const char = line[i];
-          const nextChar = line[i + 1];
-
-          if (inString) {
-            if (char === inString && line[i - 1] !== '\\') {
-              inString = null;
-            }
-          } else if (inBlockComment) {
-            if (char === '*' && nextChar === '/') {
-              inBlockComment = false;
-              i++;
-            }
-          } else if (char === "'" || char === '"' || char === '`') {
-            inString = char;
-            codeFoundBeforeDash = true;
-          } else if (char === '/' && nextChar === '*') {
-            inBlockComment = true;
-            i++;
-          } else if (char === '-' && nextChar === '-') {
-            dashIndex = i;
-            break;
-          } else if (char !== ' ' && char !== '\t' && char !== '\r') {
-            codeFoundBeforeDash = true;
-          }
-        }
-
-        if (dashIndex !== -1 && codeFoundBeforeDash) {
-          const before = line.slice(0, dashIndex);
-          const commentText = line.slice(dashIndex + 2);
-          const safeCommentText = commentText.replace(/\*\//g, '* /');
-          return `${before}/* ${safeCommentText.trim()} */`;
-        }
-
-        return line;
-      })
-      .join('\n');
-  };
-
-  const compactSql = (text: string): string => {
-    if (!text) return text;
-
-    const preprocessed = convertInlineDashComments(text);
-    const lines = preprocessed.split('\n');
-
-    const chunks: Array<{ type: 'comment' | 'code'; lines: string[] }> = [];
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      const isStandaloneComment = trimmed.startsWith('--');
-
-      if (isStandaloneComment) {
-        chunks.push({ type: 'comment', lines: [trimmed] });
-      } else {
-        if (chunks.length > 0 && chunks[chunks.length - 1].type === 'code') {
-          chunks[chunks.length - 1].lines.push(line);
-        } else {
-          chunks.push({ type: 'code', lines: [line] });
-        }
-      }
-    }
-
-    const resultLines: string[] = [];
-
-    for (const chunk of chunks) {
-      if (chunk.type === 'comment') {
-        resultLines.push(chunk.lines[0]);
-      } else {
-        const codeBlock = chunk.lines.join('\n').trim();
-        if (codeBlock) {
-          const compacted = codeBlock.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ');
-          resultLines.push(compacted);
-        }
-      }
-    }
-
-    return resultLines.join('\n');
-  };
-
-  const doFormat = (text: string): string => {
-    const cfg = formatterSettingsRef.current || formatterSettings;
-    const primaryLang =
-      dialect === 'PostgreSQL' || dialect === 'Oracle' || dialect === 'Clickhouse' || dialect === 'DuckDB' ? 'postgresql' :
-      (dialect as string) === 'MySQL' ? 'mysql' :
-      (dialect as string) === 'SQLite' ? 'sqlite' : 'postgresql';
-
-    const fallbackLangs = [primaryLang, 'postgresql', 'mysql', 'sqlite', 'sql'].filter(
-      (lang, index, self) => self.indexOf(lang) === index
-    );
-
-    const smartSplitByComma = (str: string): string[] => {
-      const result: string[] = [];
-      let current = '';
-      let parenDepth = 0;
-      let inString: string | null = null;
-      let inBlockComment = false;
-
-      for (let i = 0; i < str.length; i++) {
-        const char = str[i];
-        const nextChar = str[i + 1];
-
-        if (inString) {
-          current += char;
-          if (char === inString && str[i - 1] !== '\\') {
-            inString = null;
-          }
-        } else if (inBlockComment) {
-          current += char;
-          if (char === '*' && nextChar === '/') {
-            current += '/';
-            inBlockComment = false;
-            i++;
-          }
-        } else if (char === '/' && nextChar === '*') {
-          inBlockComment = true;
-          current += '/*';
-          i++;
-        } else if (char === "'" || char === '"' || char === '`') {
-          inString = char;
-          current += char;
-        } else if (char === '(' || char === '[' || char === '{') {
-          parenDepth++;
-          current += char;
-        } else if (char === ')' || char === ']' || char === '}') {
-          if (parenDepth > 0) parenDepth--;
-          current += char;
-        } else if (char === ',' && parenDepth === 0) {
-          result.push(current.trim());
-          current = '';
-        } else {
-          current += char;
-        }
-      }
-      if (current.trim().length > 0 || result.length > 0) {
-        result.push(current.trim());
-      }
-      return result.filter(Boolean);
-    };
-
-    const cleanFormattedSql = (sql: string): string => {
-      const statements = splitBySemicolonIgnoringQuotes(sql);
-      const cleanedStatements = statements.map(stmt => {
-        const trimmed = stmt.trim();
-        if (!trimmed) return '';
-        return trimmed.replace(/\n\s*\n/g, '\n');
-      }).filter(Boolean);
-
-      const hasSemicolon = sql.trim().endsWith(';');
-      if (cleanedStatements.length === 0) return sql;
-      return cleanedStatements.join(';\n\n') + (hasSemicolon ? ';' : '');
-    };
-
-    let preprocessedText = convertInlineDashComments(text);
-    
-    // sql-formatter doesn't support queries starting with FROM properly.
-    // Hack: if query starts with FROM, prepend 'SELECT * ' and strip it after formatting.
-    let isFromFirst = false;
-    if (/^\s*FROM\b/i.test(preprocessedText)) {
-      isFromFirst = true;
-      preprocessedText = 'SELECT * \n' + preprocessedText;
-    }
-
-    for (const lang of fallbackLangs) {
-      try {
-        let formatted = formatSql(preprocessedText, {
-          language: lang as any,
-          keywordCase: cfg.keywordCase,
-          tabWidth: cfg.tabWidth,
-          useTabs: cfg.useTabs,
-          expressionWidth: cfg.expressionWidth,
-          denseOperators: cfg.denseOperators,
-        });
-
-        if (isFromFirst) {
-          formatted = formatted.replace(/^SELECT\s+\*\s+/i, '');
-        }
-
-        // Apply custom clause line wrapping if expressionWidth >= 0
-        if (cfg.expressionWidth >= 0) {
-          const maxWidth = cfg.expressionWidth;
-          const indent = cfg.useTabs ? '\t' : ' '.repeat(cfg.tabWidth || 2);
-
-          // 1. Clean up WITH clause line breaks and align CTE definitions
-          formatted = formatted.replace(
-            /(^|\n)(\s*)WITH\s+([\s\S]+?)(?=\n\s*(?:SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|;|$))/gi,
-            (match, prefix, baseIndent, body) => {
-              const singleLineWith = `${baseIndent}WITH ${body.replace(/\s+/g, ' ')}`;
-              if (singleLineWith.length <= maxWidth) {
-                return prefix + singleLineWith;
-              }
-              const cleanedBody = body.replace(
-                /^(\s*)([a-zA-Z0-9_"]+)\s+AS\s*\(/gim,
-                (_, __, cteName) => `${baseIndent}${indent}${cteName} AS (`
-              );
-              return `${prefix}${baseIndent}WITH ${cleanedBody.trim()}`;
-            }
-          );
-
-          // 1.5 Target parenthesized column and value lists in INSERT INTO and VALUES clauses
-          formatted = formatted.replace(
-            /((?:INSERT\s+INTO\s+[^(]+|\bVALUES\b[\s\S]*?|,\s*))\(([\s\S]+?)\)/gi,
-            (match, prefix, inner) => {
-              if (!/\b(INSERT|VALUES)\b/i.test(prefix) && !/^\s*,\s*$/.test(prefix)) {
-                return match;
-              }
-              if (/\bSELECT\b/i.test(inner) || inner.includes('--')) {
-                return match;
-              }
-
-              const prefixLines = prefix.split('\n');
-              const lastPrefixLine = prefixLines[prefixLines.length - 1];
-              const matchIndent = lastPrefixLine.match(/^(\s*)/)?.[1] || '';
-
-              const items = smartSplitByComma(inner).map((s) => s.trim()).filter(Boolean);
-              if (items.length === 0) return match;
-
-              const singleLine = `(${items.join(', ')})`;
-              if ((lastPrefixLine + singleLine).length <= maxWidth) {
-                return `${prefix}${singleLine}`;
-              }
-
-              const useLeading = Boolean(cfg.leadingCommas);
-              const packedLines: string[] = [];
-              let current = '';
-              const itemIndent = matchIndent + indent;
-
-              for (let i = 0; i < items.length; i++) {
-                const item = items[i];
-                if (useLeading) {
-                  if (i === 0) {
-                    current = item;
-                  } else {
-                    const candidateSameLine = current + ', ' + item;
-                    if ((itemIndent + candidateSameLine).length <= maxWidth) {
-                      current = candidateSameLine;
-                    } else {
-                      packedLines.push(current);
-                      current = ', ' + item;
-                    }
-                  }
-                } else {
-                  const isLast = i === items.length - 1;
-                  const itemWithComma = item + (isLast ? '' : ',');
-
-                  if (!current) {
-                    current = itemWithComma;
-                  } else if ((itemIndent + current + ' ' + itemWithComma).length <= maxWidth) {
-                    current += ' ' + itemWithComma;
-                  } else {
-                    packedLines.push(current);
-                    current = itemWithComma;
-                  }
-                }
-              }
-              if (current) packedLines.push(current);
-
-              return `${prefix}(\n${packedLines.map((l) => itemIndent + l).join('\n')}\n${matchIndent})`;
-            }
-          );
-
-          // 2. Custom clause line wrapping with baseIndent preservation, smartSplitByComma, and window function handling
-          const clauseRegex =
-            /(^|\n)(\s*)(SELECT|FROM|WHERE|GROUP BY|ORDER BY|HAVING|LIMIT|OFFSET|JOIN|LEFT JOIN|RIGHT JOIN|INNER JOIN|OUTER JOIN|CROSS JOIN|FULL JOIN|LEFT OUTER JOIN|RIGHT OUTER JOIN|FULL OUTER JOIN|ON|SET|VALUES|INSERT INTO|UPDATE|DELETE FROM|ARRAY JOIN|LEFT ARRAY JOIN|SETTINGS|FORMAT)\b([\s\S]+?)(?=\n\s*(?:SELECT|FROM|WHERE|GROUP BY|ORDER BY|HAVING|LIMIT|OFFSET|JOIN|LEFT JOIN|RIGHT JOIN|INNER JOIN|OUTER JOIN|CROSS JOIN|FULL JOIN|LEFT OUTER JOIN|RIGHT OUTER JOIN|FULL OUTER JOIN|ON|SET|VALUES|INSERT INTO|UPDATE|DELETE FROM|ARRAY JOIN|LEFT ARRAY JOIN|SETTINGS|FORMAT|WITH)|;|$)/gi;
-
-          formatted = formatted.replace(
-            clauseRegex,
-            (match, prefix, baseIndent, keyword, items) => {
-              if (/\bSELECT\b/i.test(items)) {
-                return match;
-              }
-
-              const lines = items.split('\n').filter((l) => l.trim() !== '');
-              const chunks: Array<{ type: 'code' | 'comment'; text: string }> = [];
-              let currentCodeLines: string[] = [];
-
-              for (const line of lines) {
-                const trimmed = line.trim();
-                if (trimmed.startsWith('--')) {
-                  if (currentCodeLines.length > 0) {
-                    chunks.push({ type: 'code', text: currentCodeLines.join('\n') });
-                    currentCodeLines = [];
-                  }
-                  chunks.push({ type: 'comment', text: trimmed });
-                } else {
-                  currentCodeLines.push(line);
-                }
-              }
-              if (currentCodeLines.length > 0) {
-                chunks.push({ type: 'code', text: currentCodeLines.join('\n') });
-              }
-
-              const hasCommentChunks = chunks.some((c) => c.type === 'comment');
-              const formattedLines: string[] = [];
-              const allProcessedItems: string[] = [];
-
-              for (const chunk of chunks) {
-                if (chunk.type === 'comment') {
-                  formattedLines.push(`${baseIndent}${indent}${chunk.text}`);
-                } else {
-                  const rawItems = smartSplitByComma(chunk.text);
-                  if (rawItems.length === 0) continue;
-
-                  const processedItems = rawItems.map((item) => {
-                    const collapsed = item.replace(/\s+/g, ' ').trim();
-                    if (collapsed.length <= maxWidth && /\bOVER\s*\(/i.test(item)) {
-                      return collapsed;
-                    }
-                    return item.trim();
-                  });
-                  allProcessedItems.push(...processedItems);
-
-                  const useLeading = Boolean(cfg.leadingCommas);
-                  let currentLine = `${baseIndent}${indent}`;
-                  let firstInChunk = true;
-
-                  for (let i = 0; i < processedItems.length; i++) {
-                    const item = processedItems[i];
-                    if (useLeading) {
-                      if (firstInChunk) {
-                        currentLine += item;
-                        firstInChunk = false;
-                      } else {
-                        const candidateSameLine = currentLine + ', ' + item;
-                        if (candidateSameLine.length <= maxWidth) {
-                          currentLine = candidateSameLine;
-                        } else {
-                          formattedLines.push(currentLine);
-                          currentLine = `${baseIndent}${indent}, ${item}`;
-                        }
-                      }
-                    } else {
-                      const isLast = i === processedItems.length - 1;
-                      const itemWithComma = item + (isLast ? '' : ',');
-
-                      if (firstInChunk) {
-                        currentLine += itemWithComma;
-                        firstInChunk = false;
-                      } else if ((currentLine + ' ' + itemWithComma).length <= maxWidth) {
-                        currentLine += ' ' + itemWithComma;
-                      } else {
-                        formattedLines.push(currentLine);
-                        currentLine = `${baseIndent}${indent}${itemWithComma}`;
-                      }
-                    }
-                  }
-                  if (currentLine.trim()) {
-                    formattedLines.push(currentLine);
-                  }
-                }
-              }
-
-              if (formattedLines.length === 0) return match;
-
-              if (!hasCommentChunks && allProcessedItems.length > 0) {
-                const singleLine = `${baseIndent}${keyword} ${allProcessedItems.join(', ')}`;
-                if (singleLine.length <= maxWidth) {
-                  return prefix + singleLine;
-                }
-              }
-
-              return prefix + `${baseIndent}${keyword}\n${formattedLines.join('\n')}`;
-            }
-          );
-        }
-        return cleanFormattedSql(formatted);
-      } catch (e) {
-        // Ignore syntax errors, try next dialect
-      }
-    }
-    throw new Error(t('Не удалось отформатировать (ошибка синтаксиса)'));
-  };
-
-  const handleFormatSql = () => {
+  const handleFormatSql = async () => {
     setIsFormatted(true);
     setTimeout(() => setIsFormatted(false), 1500);
 
@@ -5526,7 +4438,7 @@ export default function App() {
 
     if (sel && sel.text.trim()) {
       try {
-        const formatted = doFormat(sel.text);
+        const formatted = await doFormat(sel.text);
         sqlEditorRef.current?.replaceSelection(formatted);
       } catch (e) {
         console.warn('Format error', e);
@@ -5538,7 +4450,7 @@ export default function App() {
     if (!currentSqlText.trim()) return;
 
     try {
-      const formatted = doFormat(currentSqlText);
+      const formatted = await doFormat(currentSqlText);
       sqlRef.current = formatted;
       setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: formatted } : t));
     } catch (e) {
@@ -5546,7 +4458,7 @@ export default function App() {
     }
   };
 
-  const handleInsertGeneratedSqlFromStats = (cols: string[]) => {
+  const handleInsertGeneratedSqlFromStats = async (cols: string[]) => {
     const colList = cols && cols.length > 0
       ? cols.map(c => `"${c.replace(/"/g, '""')}"`).join(', ')
       : '*';
@@ -5554,7 +4466,7 @@ export default function App() {
     const rawSql = `SELECT ${colList} FROM ${targetTable};`;
     let sqlToInsert = rawSql;
     try {
-      sqlToInsert = doFormat(rawSql);
+      sqlToInsert = await doFormat(rawSql);
     } catch (e) {
       console.warn('Format generated SQL error', e);
     }
@@ -5742,6 +4654,7 @@ export default function App() {
                   />
                 ) : !isMaximizedSql ? (
                   <SqlEditor editorRef={sqlEditorRef}
+                    docId={activeTabId}
                     value={getActiveTabSql()}
                     onChange={handleSqlChange}
                     isWrapSql={isWrapSql}
@@ -5915,7 +4828,7 @@ export default function App() {
 
             <div className="ml-auto flex items-center gap-1.5 shrink-0">
               {uiVisibility.showMermaidIntegration !== false && (
-                <MermaidActionGroup theme={theme} onVisualize={() => handleVisualizeMermaid()} />
+                <MermaidActionGroup theme={theme} onVisualize={() => handleVisualizeMarkdown()} />
               )}
 
               <button
@@ -6074,7 +4987,7 @@ export default function App() {
               <div className="relative">
                 <button
                   onClick={() => setShowExportMenu(!showExportMenu)}
-                  disabled={isExporting || nodes.length === 0}
+                  disabled={isExporting || (nodes.length === 0 && !docMode)}
                   className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-medium transition-all bg-blue-600 hover:bg-blue-500 border-blue-500 text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   title="Export entire graph as image/vector scheme"
                 >
@@ -6113,8 +5026,9 @@ export default function App() {
 
                       {uiVisibility.showExportPngTransparent !== false && (
                       <button
+                        disabled={docMode}
                         onClick={() => exportGraph('png', true)}
-                        className={`w-full px-3 py-2 text-left flex items-center justify-between transition-colors border-t ${
+                        className={`w-full px-3 py-2 text-left flex items-center justify-between transition-colors border-t${docMode ? ' opacity-40 pointer-events-none' : ''} ${
                           theme === 'dark' ? 'hover:bg-blue-600/30 border-slate-600/30' : 'hover:bg-blue-50 border-slate-200'
                         }`}
                       >
@@ -6128,8 +5042,9 @@ export default function App() {
                       
                       {uiVisibility.showExportSvgBg !== false && (
                       <button
+                        disabled={docMode}
                         onClick={() => exportGraph('svg', false)}
-                        className={`w-full px-3 py-2 text-left flex items-center justify-between transition-colors border-t ${
+                        className={`w-full px-3 py-2 text-left flex items-center justify-between transition-colors border-t${docMode ? ' opacity-40 pointer-events-none' : ''} ${
                           theme === 'dark' ? 'hover:bg-blue-600/30 border-slate-600/50' : 'hover:bg-blue-50 border-slate-200'
                         }`}
                       >
@@ -6143,8 +5058,9 @@ export default function App() {
 
                       {uiVisibility.showExportSvgTransparent !== false && (
                       <button
+                        disabled={docMode}
                         onClick={() => exportGraph('svg', true)}
-                        className={`w-full px-3 py-2 text-left flex items-center justify-between transition-colors border-t ${
+                        className={`w-full px-3 py-2 text-left flex items-center justify-between transition-colors border-t${docMode ? ' opacity-40 pointer-events-none' : ''} ${
                           theme === 'dark' ? 'hover:bg-blue-600/30 border-slate-600/30' : 'hover:bg-blue-50 border-slate-200'
                         }`}
                       >
@@ -6177,7 +5093,7 @@ export default function App() {
                       <div
                         className={`w-full px-3 py-1.5 text-left flex items-center justify-between transition-colors ${
                           theme === 'dark' ? 'hover:bg-blue-600/30' : 'hover:bg-blue-50'
-                        }`}
+                        }${docMode ? ' opacity-40 pointer-events-none' : ''}`}
                       >
                         <div className="flex items-center gap-2">
                           <FileJson className="w-3.5 h-3.5 text-amber-400" />
@@ -6185,6 +5101,7 @@ export default function App() {
                         </div>
                         <div className="flex items-center gap-1">
                           <button
+                            disabled={docMode}
                             onClick={() => exportGraphText('json', true)}
                             className={`p-1.5 rounded transition-colors flex items-center gap-1 ${copied === 'json' ? 'text-emerald-500' : theme === 'dark' ? 'hover:bg-slate-600 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-300 text-slate-500 hover:text-slate-800'}`}
                             title="Copy JSON to clipboard"
@@ -6192,6 +5109,7 @@ export default function App() {
                             {copied === 'json' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                           </button>
                           <button
+                            disabled={docMode}
                             onClick={() => exportGraphText('json')}
                             className={`p-1.5 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-600 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-300 text-slate-500 hover:text-slate-800'}`}
                             title="Download JSON file"
@@ -6206,7 +5124,7 @@ export default function App() {
                       <div
                         className={`w-full px-3 py-1.5 text-left flex items-center justify-between transition-colors border-t ${
                           theme === 'dark' ? 'hover:bg-blue-600/30 border-slate-600/30' : 'hover:bg-blue-50 border-slate-200'
-                        }`}
+                        }${docMode ? ' opacity-40 pointer-events-none' : ''}`}
                       >
                         <div className="flex items-center gap-2">
                           <FileCode className="w-3.5 h-3.5 text-purple-400" />
@@ -6214,6 +5132,7 @@ export default function App() {
                         </div>
                         <div className="flex items-center gap-1">
                           <button
+                            disabled={docMode}
                             onClick={() => exportGraphText('xml', true)}
                             className={`p-1.5 rounded transition-colors flex items-center gap-1 ${copied === 'xml' ? 'text-emerald-500' : theme === 'dark' ? 'hover:bg-slate-600 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-300 text-slate-500 hover:text-slate-800'}`}
                             title="Copy XML to clipboard"
@@ -6221,6 +5140,7 @@ export default function App() {
                             {copied === 'xml' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                           </button>
                           <button
+                            disabled={docMode}
                             onClick={() => exportGraphText('xml')}
                             className={`p-1.5 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-600 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-300 text-slate-500 hover:text-slate-800'}`}
                             title="Download XML file"
@@ -6235,7 +5155,7 @@ export default function App() {
                       <div
                         className={`w-full px-3 py-1.5 text-left flex items-center justify-between transition-colors border-t ${
                           theme === 'dark' ? 'hover:bg-blue-600/30 border-slate-600/30' : 'hover:bg-blue-50 border-slate-200'
-                        }`}
+                        }${docMode ? ' opacity-40 pointer-events-none' : ''}`}
                       >
                         <div className="flex items-center gap-2">
                           <Workflow className="w-3.5 h-3.5 text-emerald-400" />
@@ -6243,6 +5163,7 @@ export default function App() {
                         </div>
                         <div className="flex items-center gap-1">
                           <button
+                            disabled={docMode}
                             onClick={() => exportGraphText('mermaid', true)}
                             className={`p-1.5 rounded transition-colors flex items-center gap-1 ${copied === 'mermaid' ? 'text-emerald-500' : theme === 'dark' ? 'hover:bg-slate-600 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-300 text-slate-500 hover:text-slate-800'}`}
                             title="Copy Mermaid to clipboard"
@@ -6250,6 +5171,7 @@ export default function App() {
                             {copied === 'mermaid' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                           </button>
                           <button
+                            disabled={docMode}
                             onClick={() => exportGraphText('mermaid')}
                             className={`p-1.5 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-600 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-300 text-slate-500 hover:text-slate-800'}`}
                             title="Download Mermaid file"
@@ -6264,7 +5186,7 @@ export default function App() {
                       <div
                         className={`w-full px-3 py-1.5 text-left flex items-center justify-between transition-colors border-t ${
                           theme === 'dark' ? 'hover:bg-blue-600/30 border-slate-600/30' : 'hover:bg-blue-50 border-slate-200'
-                        }`}
+                        }${docMode ? ' opacity-40 pointer-events-none' : ''}`}
                       >
                         <div className="flex items-center gap-2">
                           <Workflow className="w-3.5 h-3.5 text-cyan-400" />
@@ -6272,6 +5194,7 @@ export default function App() {
                         </div>
                         <div className="flex items-center gap-1">
                           <button
+                            disabled={docMode}
                             onClick={() => exportGraphText('drawio')}
                             className={`p-1.5 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-600 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-300 text-slate-500 hover:text-slate-800'}`}
                             title="Download Draw.io file"
@@ -6292,12 +5215,21 @@ export default function App() {
           </div>
 
           {/* REACT FLOW CANVAS CONTAINER */}
-          <div className={`flex-1 w-full relative min-h-0 ${theme === 'dark' ? 'bg-slate-850' : 'bg-slate-200'}`} style={{ willChange: 'transform', transform: 'translateZ(0)', zoom: 1 / ((uiVisibility.uiScale ?? 100) / 100) }}>
+          <div className={`flex-1 w-full relative min-h-0 ${theme === 'dark' ? 'bg-slate-850' : 'bg-slate-200'} ${isMaximizedSql ? 'graph-paused' : ''}`} style={{ willChange: 'transform', transform: 'translateZ(0)', zoom: 1 / ((uiVisibility.uiScale ?? 100) / 100) }}>
             <ErrorBoundary title={t("Ошибка отображения графа")} theme={theme}>
             {/* Grid Pattern Background styled specifically to match the design style */}
             <div className={`absolute inset-0 pointer-events-none opacity-[0.07] dark:opacity-10`} style={{ backgroundImage: 'radial-gradient(#64748b 1px, transparent 1px)', backgroundSize: '24px 24px' }}></div>
             
-            {nodes.length > 0 ? (
+            {markdownSource !== null ? (
+              <Suspense fallback={null}>
+                <MarkdownPreview
+                  ref={markdownPreviewRef}
+                  source={markdownSource}
+                  theme={theme}
+                  onOpenMermaid={(code) => handleVisualizeMermaid(code)}
+                />
+              </Suspense>
+            ) : nodes.length > 0 ? (
               <ReactFlow
                 nodes={processedNodes}
                 edges={processedEdges}
@@ -6305,12 +5237,13 @@ export default function App() {
                 onEdgesChange={onEdgesChange}
                 onNodeClick={handleNodeClick}
                 nodeTypes={nodeTypes}
+                edgeTypes={edgeTypes}
                 fitView
                 fitViewOptions={{ padding: 0.2 }}
                 minZoom={0.2}
                 maxZoom={2}
                 className="sql-flow-canvas"
-                onlyRenderVisibleElements={true}
+                onlyRenderVisibleElements={!isExporting}
                 proOptions={{ hideAttribution: true }}
                 defaultEdgeOptions={{
                   type: 'smoothstep',
@@ -6339,7 +5272,7 @@ export default function App() {
                       if (n.type === 'tableNode') return theme === 'dark' ? '#3b82f6' : '#2563eb';
                       if (n.type === 'resultNode') return theme === 'dark' ? '#10b981' : '#059669';
                       if (n.type === 'filterNode') return theme === 'dark' ? '#f59e0b' : '#d97706';
-                      if (n.type === 'mermaidNode') return theme === 'dark' ? '#0d9488' : '#14b8a6';
+                      if (n.type === 'mermaidNode') return theme === 'dark' ? '#64748b' : '#94a3b8';
                       if (n.type === 'mermaidGroupNode') return 'transparent';
                       return theme === 'dark' ? '#475569' : '#94a3b8';
                     }}
@@ -6361,6 +5294,24 @@ export default function App() {
               </div>
             )}
               </ErrorBoundary>
+
+            {/* Проблемы разбора Mermaid: ошибка или пропущенные выражения с номерами строк */}
+            {mermaidNotice && markdownSource === null && (
+              <div
+                className={`absolute left-3 top-3 z-20 max-w-md rounded-md border px-3 py-2 text-xs shadow-md whitespace-pre-wrap flex items-start gap-2 ${
+                  mermaidNotice.kind === 'error'
+                    ? theme === 'dark' ? 'bg-red-950/90 border-red-700 text-red-200' : 'bg-red-50 border-red-300 text-red-800'
+                    : theme === 'dark' ? 'bg-amber-950/90 border-amber-700 text-amber-200' : 'bg-amber-50 border-amber-300 text-amber-800'
+                }`}
+              >
+                <span className="flex-1 min-w-0 break-words">
+                  <strong>{mermaidNotice.kind === 'error' ? 'Mermaid: ' : t('Mermaid: пропущено') + '\n'}</strong>{mermaidNotice.text}
+                </span>
+                <button type="button" onClick={() => setMermaidNotice(null)} className="shrink-0 opacity-70 hover:opacity-100" aria-label="close">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
 
             {/* RAW AST OVERLAY SIDEBAR */}
             {showAstPreview && (
@@ -7059,6 +6010,7 @@ export default function App() {
                   ) : (
                     <ErrorBoundary title={t("Ошибка редактора SQL")} theme={theme}>
                       <SqlEditor editorRef={sqlEditorRef}
+                    docId={activeTabId}
                         value={getActiveTabSql()}
                         onChange={handleSqlChange}
                         isWrapSql={isWrapSql}
@@ -8507,10 +7459,11 @@ export default function App() {
                         <div className="flex items-center gap-1">
                           <button 
                             type="button"
-                            onClick={() => {
+                            onClick={async () => {
                               if (!isCellSqlHighlighted && duckDbSelectedCell?.content && !duckDbSelectedCell.content.includes('\n')) {
                                 try {
                                   const fmtSettings = getSavedFormatterSettings();
+                                  const { format: formatSql } = await import('sql-formatter');
                                   const formatted = formatSql(duckDbSelectedCell.content, {
                                     language: 'sql',
                                     keywordCase: fmtSettings.keywordCase,
@@ -8877,12 +7830,7 @@ export default function App() {
                 {(uiVisibility.showSearchSql ?? true) && (
                 <button
                   onClick={(e) => {
-                    const modal = e.currentTarget.closest('.fixed');
-                    const textarea = modal?.querySelector('textarea') || document.querySelector('textarea');
-                    if (textarea) {
-                      textarea.focus();
-                      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', code: 'KeyF', ctrlKey: true, metaKey: true, bubbles: true }));
-                    }
+                    sqlEditorRef.current?.openSearch?.(false);
                   }}
                   className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded transition-all ${
                     theme === 'dark' ? 'text-slate-300 hover:text-slate-100' : 'text-slate-700 hover:text-slate-900'
@@ -8991,12 +7939,9 @@ export default function App() {
                     if (isAnyQueryRunning) return;
                     
                     let queryToExecute = sqlRef.current;
-                    const textareas = document.querySelectorAll('textarea');
-                    for (const textarea of Array.from(textareas)) {
-                      if (textarea.offsetWidth > 0 && textarea.offsetHeight > 0 && textarea.selectionStart !== textarea.selectionEnd) {
-                        queryToExecute = textarea.value.substring(textarea.selectionStart, textarea.selectionEnd);
-                        break;
-                      }
+                    const editorSelection = sqlEditorRef.current?.getSelection();
+                    if (editorSelection && editorSelection.start !== editorSelection.end) {
+                      queryToExecute = editorSelection.text;
                     }
 
                     setExecuteContextMenu({ x: e.clientX, y: e.clientY, text: queryToExecute });

@@ -1,6 +1,7 @@
 import React, { memo } from 'react';
-import { Handle, Position } from '@xyflow/react';
+import { Handle, Position, BaseEdge, EdgeLabelRenderer, type EdgeProps } from '@xyflow/react';
 import DOMPurify from 'dompurify';
+import { roundedPath, pathMidpoint, type Pt } from '../utils/edgePath';
 
 interface MermaidNodeProps {
   data: {
@@ -153,10 +154,10 @@ export const MermaidNode = memo(({ data, selected, targetPosition = Position.Lef
             className={`min-w-[150px] relative rounded-t-xl rounded-b-xl border-2 flex flex-col items-center justify-center p-3 pt-4 text-center text-xs font-semibold shadow-md transition-all ${
               selected 
                 ? 'ring-2 ring-blue-400/80 border-blue-500 shadow-xl' 
-                : 'border-teal-500/80 dark:border-teal-400/70 bg-teal-50/80 dark:bg-teal-950/40 text-teal-950 dark:text-teal-100'
+                : 'border-slate-400/80 dark:border-slate-600 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
             }`}
           >
-            <div className="absolute top-0 left-0 right-0 h-3.5 border-b border-teal-400/60 dark:border-teal-600/60 rounded-t-[10px] bg-teal-200/50 dark:bg-teal-900/50" />
+            <div className="absolute top-0 left-0 right-0 h-3.5 border-b border-slate-400/60 dark:border-slate-600/60 rounded-t-[10px] bg-slate-200/70 dark:bg-slate-700/50" />
             <div className="mt-1">
               {renderLabel(data.label)}
             </div>
@@ -409,3 +410,31 @@ export const MermaidGroupNode = memo(({ data, selected }: { data: any; selected?
 });
 
 MermaidGroupNode.displayName = 'MermaidGroupNode';
+
+/**
+ * Ребро Mermaid: идёт по маршруту раскладки (точки dagre обходят узлы), а начало и конец привязаны к
+ * реальным точкам подключения. Если маршрута нет — прямая линия. Подпись — маленькая плашка в середине.
+ */
+export const MermaidEdge = memo(({ id, sourceX, sourceY, targetX, targetY, markerEnd, markerStart, style, label, data }: EdgeProps) => {
+  const route = (data as { points?: Pt[] } | undefined)?.points;
+  const inner = route && route.length > 2 ? route.slice(1, -1) : [];
+  const pts: Pt[] = [{ x: sourceX, y: sourceY }, ...inner, { x: targetX, y: targetY }];
+  const mid = pathMidpoint(pts);
+  return (
+    <>
+      <BaseEdge id={id} path={roundedPath(pts)} markerEnd={markerEnd} markerStart={markerStart} style={style} />
+      {label ? (
+        <EdgeLabelRenderer>
+          <div
+            style={{ position: 'absolute', transform: `translate(-50%, -50%) translate(${mid.x}px, ${mid.y}px)`, pointerEvents: 'none' }}
+            className="px-1.5 py-0.5 rounded border text-[10px] font-medium whitespace-nowrap bg-slate-100 border-slate-300 text-slate-700 dark:bg-slate-800 dark:border-slate-600 dark:text-slate-200"
+          >
+            {label}
+          </div>
+        </EdgeLabelRenderer>
+      ) : null}
+    </>
+  );
+});
+
+MermaidEdge.displayName = 'MermaidEdge';

@@ -1435,6 +1435,42 @@ FROM _temp_staging;`
     C -- Нет --> E["❌ Ошибка"]
     
     D --> F["<span style='font-size: 24px'>🏆</span>"]`
+  },
+  {
+    id: 'markdown-report-note',
+    title: 'Markdown: заметка с таблицей, SQL и диаграммой',
+    category: 'Схемы',
+    dialect: 'Mermaid',
+    description: 'Шаблон документа для кнопки Markdown: заголовки, список задач, таблица, блок SQL и диаграмма mermaid.',
+    sql: `# Отчёт по загрузке данных
+
+Источник: **sales.csv**, период — *2026*. Подробности в [разделе](#схема-загрузки).
+
+- [x] Загрузить файл
+- [ ] Проверить дубликаты
+  - сравнить по \`order_id\`
+
+| Регион | Заказы | Сумма |
+|:--|--:|--:|
+| Север | 120 | 4 500 |
+| Юг | 98 | 3 900 |
+
+\`\`\`sql
+SELECT region, count(*) AS orders, sum(amount) AS total
+FROM read_csv_auto('sales.csv')
+GROUP BY region
+ORDER BY total DESC;
+\`\`\`
+
+## Схема загрузки
+
+\`\`\`mermaid
+flowchart LR
+    A[sales.csv] -->|read_csv_auto| B{Проверка}
+    B -- ок --> C[(DuckDB)]
+    B -- ошибка --> D[Лог ошибок]
+\`\`\`
+`
   }
 ];
 

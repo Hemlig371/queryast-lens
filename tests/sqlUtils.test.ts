@@ -91,5 +91,11 @@ SELECT * FROM a WHERE id = 42 UNION ALL SELECT * FROM b WHERE id = 42;`;
       expect(replaceVariablesInSql(sql)).toBe(expected);
     });
   });
-});
 
+  describe('replaceVariablesInSql: кириллические имена', () => {
+    it('подставляет {{$дата}} из определения и из контекста', () => {
+      expect(replaceVariablesInSql("SELECT '{{$дата=2024-01-01}}'")).toBe("SELECT '2024-01-01'");
+      expect(replaceVariablesInSql("SELECT {{$Регион}}", "-- {{$Регион=42}}")).toBe('SELECT 42');
+    });
+  });
+});

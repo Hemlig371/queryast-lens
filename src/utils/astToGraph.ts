@@ -1040,7 +1040,7 @@ function extractCtes(sql: string, dialect: string): { ctes: any[], mainSql: stri
 function parseHeuristicSelect(sql: string, dialect: string): any {
   const ast: any = {
     type: 'select', ctes: [], columns: [], from: [], prewhere: null, where: null,
-    start_with: null, connect_by: null, groupby: null, having: null, orderby: null, limit: null
+    start_with: null, connect_by: null, groupby: null, having: null, qualify: null, distinct: null, orderby: null, limit: null
   };
 
   const { ctes, mainSql } = extractCtes(sql, dialect);
@@ -1056,6 +1056,7 @@ function parseHeuristicSelect(sql: string, dialect: string): any {
   const connectByIdx = findTopLevelKeywordIndex(lowerSql, /^\bCONNECT\s+BY\b/i);
   const groupbyIdx = findTopLevelKeywordIndex(lowerSql, /^\bGROUP\s+BY\b/i);
   const havingIdx = findTopLevelKeywordIndex(lowerSql, /^\bHAVING\b/i);
+  const qualifyIdx = findTopLevelKeywordIndex(lowerSql, /^\bQUALIFY\b/i);
   const orderbyIdx = findTopLevelKeywordIndex(lowerSql, /^\bORDER\s+BY\b/i); 
   const limitIdx = findTopLevelKeywordIndex(lowerSql, /^\bLIMIT\b/i);
 
@@ -1072,7 +1073,7 @@ function parseHeuristicSelect(sql: string, dialect: string): any {
   const indices = [
     { type: 'select', idx: selectIdx }, { type: 'from', idx: fromIdx }, { type: 'prewhere', idx: prewhereIdx },
     { type: 'where', idx: whereIdx }, { type: 'start_with', idx: startWithIdx }, { type: 'connect_by', idx: connectByIdx },
-    { type: 'groupby', idx: groupbyIdx }, { type: 'having', idx: havingIdx }, { type: 'orderby', idx: orderbyIdx },
+    { type: 'groupby', idx: groupbyIdx }, { type: 'having', idx: havingIdx }, { type: 'qualify', idx: qualifyIdx }, { type: 'orderby', idx: orderbyIdx },
     { type: 'limit', idx: limitIdx }
   ].filter(item => item.idx !== -1).sort((a, b) => a.idx - b.idx);
 
@@ -1083,7 +1084,22 @@ function parseHeuristicSelect(sql: string, dialect: string): any {
   };
 
   if (selectIdx !== -1) {
-    const selectBlock = getBlock(selectIdx + 6, getNextIdx('select'));
+    let selectBlock = getBlock(selectIdx + 6, getNextIdx('select'));
+    // SELECT DISTINCT [ON (...)] — убираем из списка столбцов и запоминаем отдельно
+    const distinctMatch = selectBlock.match(/^DISTINCT\b(\s+ON\s*\()?/i);
+    if (distinctMatch) {
+      let consumed = 'DISTINCT'.length;
+      ast.distinct = { type: 'DISTINCT' };
+      if (distinctMatch[1]) {
+        const openIdx = distinctMatch[0].length - 1;
+        const closeIdx = findClosingParenthesis(selectBlock, openIdx);
+        if (closeIdx !== -1) {
+          ast.distinct = { type: 'DISTINCT ON', on: selectBlock.substring(openIdx + 1, closeIdx).trim() };
+          consumed = closeIdx + 1;
+        }
+      }
+      selectBlock = selectBlock.substring(consumed).trim();
+    }
     if (selectBlock.trim() === '*') {
       ast.columns = '*';
     } else {
@@ -1126,6 +1142,11 @@ function parseHeuristicSelect(sql: string, dialect: string): any {
   if (havingIdx !== -1) {
     const havingBlock = getBlock(havingIdx + 6, getNextIdx('having'));
     ast.having = { type: 'column_ref', column: havingBlock };
+  }
+
+  if (qualifyIdx !== -1) {
+    const qualifyBlock = getBlock(qualifyIdx + 7, getNextIdx('qualify'));
+    ast.qualify = { type: 'column_ref', column: qualifyBlock };
   }
 
   if (orderbyIdx !== -1) {
@@ -1315,6 +1336,76 @@ function parseHeuristicProcedure(sql: string, dialect: string): any {
   return ast;
 }
 
+// --- COPY / CREATE ... AS: обёртки вокруг запроса (источник -> файл / таблица) ---
+
+function stripOuterParens(text: string): string {
+  const t = text.trim();
+  if (t.startsWith('(')) {
+    const close = findClosingParenthesis(t, 0);
+    if (close === t.length - 1 || (close !== -1 && t.substring(close + 1).trim().replace(/;+$/, '') === '')) {
+      return t.substring(1, close).trim();
+    }
+  }
+  return t;
+}
+
+function unquoteSqlName(s: string): string {
+  const t = s.trim();
+  if (t.length >= 2 && ((t[0] === "'" && t[t.length - 1] === "'") || (t[0] === '"' && t[t.length - 1] === '"'))) {
+    return t.substring(1, t.length - 1);
+  }
+  return t;
+}
+
+/** COPY (SELECT ...) TO 'file' [(opts)]  |  COPY tbl TO 'file'  |  COPY tbl [(cols)] FROM 'file' [(opts)] */
+function parseCopyStatement(sql: string, dialect: string): any | null {
+  const head = sql.match(/^\s*COPY\s+/i);
+  if (!head) return null;
+  let rest = sql.substring(head[0].length);
+  let query: any = null;
+  let table: string | null = null;
+
+  if (rest.startsWith('(')) {
+    const close = findClosingParenthesis(rest, 0);
+    if (close === -1) return null;
+    const innerSql = rest.substring(1, close).trim();
+    const inner = parseSingleSqlToAst(innerSql, dialect);
+    query = inner.ast || { type: 'statement', text: innerSql };
+    rest = rest.substring(close + 1);
+  } else {
+    const tm = rest.match(/^("(?:[^"]|"")+"(?:\."(?:[^"]|"")+")*|[^\s(]+)(\s*\([^)]*\))?/);
+    if (!tm) return null;
+    table = tm[1];
+    rest = rest.substring(tm[0].length);
+  }
+
+  const dm = rest.match(/^\s*(TO|FROM)\s+('(?:[^']|'')*'|"(?:[^"]|"")*"|[^\s(;]+)\s*([\s\S]*)$/i);
+  if (!dm) return null;
+  const direction = dm[1].toUpperCase() === 'TO' ? 'to' : 'from';
+  if (direction === 'from' && query) return null;
+  const file = unquoteSqlName(dm[2]);
+  const options = dm[3].replace(/;+\s*$/, '').trim();
+  const fmtMatch = options.match(/\bFORMAT\s+['"]?([A-Za-z0-9_]+)/i) || file.match(/\.([A-Za-z0-9]+)$/);
+  const format = fmtMatch ? fmtMatch[1].toUpperCase() : '';
+  return { type: 'copy', direction, query, table, file, options, format };
+}
+
+/** CREATE [OR REPLACE] [TEMP|MATERIALIZED] TABLE|VIEW name [...] AS SELECT|WITH|FROM ... */
+function parseCreateAsStatement(sql: string, dialect: string): any | null {
+  const m = sql.match(/^\s*CREATE\s+(?:OR\s+REPLACE\s+)?((?:(?:GLOBAL\s+|LOCAL\s+)?(?:TEMP|TEMPORARY)\s+)|(?:MATERIALIZED\s+))?(TABLE|VIEW)\s+(?:IF\s+NOT\s+EXISTS\s+)?("(?:[^"]|"")+"(?:\."(?:[^"]|"")+")*|[^\s(]+)([\s\S]*?)\bAS\s+(\(?\s*(?:SELECT|WITH|FROM)\b[\s\S]*)$/i);
+  if (!m) return null;
+  const prefixWord = (m[1] || '').trim().toUpperCase();
+  const kind = prefixWord === 'MATERIALIZED' ? 'MATERIALIZED VIEW' : m[2].toUpperCase();
+  const bodySql = stripOuterParens(m[5].replace(/;+\s*$/, ''));
+  const inner = parseSingleSqlToAst(bodySql, dialect);
+  return {
+    type: 'create_as',
+    kind,
+    name: m[3],
+    query: inner.ast || { type: 'statement', text: bodySql },
+  };
+}
+
 export function parseSingleSqlToAst(sql: string, dialect = 'PostgreSQL'): any {
   const cleanSql = sql.trim(); 
   const upperSql = cleanSql.toUpperCase();
@@ -1337,6 +1428,16 @@ export function parseSingleSqlToAst(sql: string, dialect = 'PostgreSQL'): any {
     return {
       ast: { type: 'refresh_view', table: [{ table: refreshMatch[1].trim() }] }, error: null
     };
+  }
+
+  const copyAst = parseCopyStatement(cleanSql, dialect);
+  if (copyAst) {
+    return { ast: copyAst, error: null };
+  }
+
+  const createAsAst = parseCreateAsStatement(cleanSql, dialect);
+  if (createAsAst) {
+    return { ast: createAsAst, error: null };
   }
 
   const unionResult = splitTopLevelUnion(cleanSql);
@@ -1521,6 +1622,37 @@ function buildDataPipeline(ast: any, prefix: string, dialect: string, ctx: Graph
     return currentUnionOutputId;
   }
 
+  // 2.5 COPY ... TO/FROM и CREATE TABLE|VIEW ... AS
+  if (queryType === 'copy') {
+    const fmtSuffix = ast.format ? ` ${ast.format}` : '';
+    const fileId = `${prefix}copy_file`;
+    if (ast.direction === 'to') {
+      let srcId = '';
+      if (ast.query) {
+        srcId = buildDataPipeline(ast.query, `${prefix}copy_src_`, dialect, ctx);
+      } else {
+        srcId = `${prefix}copy_table`;
+        ctx.nodes.push({ id: srcId, type: 'tableNode', data: { label: ast.table || 'TABLE', title: 'Source table' }, position: { x: 0, y: 0 }});
+      }
+      ctx.nodes.push({ id: fileId, type: 'tableNode', data: { label: ast.file, title: `File (COPY TO${fmtSuffix})` }, position: { x: 0, y: 0 }});
+      addEdge(ctx, srcId, fileId, `COPY TO${fmtSuffix}`);
+      return fileId;
+    }
+    const tblId = `${prefix}copy_target`;
+    ctx.nodes.push({ id: fileId, type: 'tableNode', data: { label: ast.file, title: `File (COPY FROM${fmtSuffix})` }, position: { x: 0, y: 0 }});
+    ctx.nodes.push({ id: tblId, type: 'tableNode', data: { label: ast.table || 'TABLE', title: 'Target (COPY FROM)' }, position: { x: 0, y: 0 }});
+    addEdge(ctx, fileId, tblId, `COPY FROM${fmtSuffix}`);
+    return tblId;
+  }
+
+  if (queryType === 'create_as') {
+    const tgtId = `${prefix}create_target`;
+    const srcId = buildDataPipeline(ast.query, `${prefix}create_src_`, dialect, ctx);
+    ctx.nodes.push({ id: tgtId, type: 'tableNode', data: { label: ast.name, title: `Target (CREATE ${ast.kind})` }, position: { x: 0, y: 0 }});
+    addEdge(ctx, srcId, tgtId, `CREATE ${ast.kind} AS`);
+    return tgtId;
+  }
+
   // 3. DML / Procedures
   if (['insert', 'update', 'delete', 'merge', 'truncate', 'refresh_view'].includes(queryType)) {
     const targetTables = ast.table ? (Array.isArray(ast.table) ? ast.table : [ast.table]) : [{ table: 'TARGET_TABLE' }];
@@ -1702,6 +1834,16 @@ function buildDataPipeline(ast: any, prefix: string, dialect: string, ctx: Graph
     currentOutputId = hId;
   }
 
+  // 4.5.1 QUALIFY (DuckDB / ClickHouse: фильтр по результату оконных функций)
+  if (ast.qualify) {
+    const qId = `${prefix}qualify`;
+    const condText = formatExpr(ast.qualify);
+    ctx.nodes.push({ id: qId, type: 'filterNode', data: { title: 'QUALIFY', condition: condText, columns: splitConditions(condText) }, position: { x: 0, y: 0 }});
+    addEdge(ctx, currentOutputId, qId);
+    processNestedQueries(condText, qId, `${prefix}qualify_`, dialect, ctx);
+    currentOutputId = qId;
+  }
+
   // 4.6 ORDER BY & LIMIT
   if (ast.orderby && ctx.options.showSort !== false) {
     const oId = `${prefix}orderby`;
@@ -1721,7 +1863,12 @@ function buildDataPipeline(ast: any, prefix: string, dialect: string, ctx: Graph
   const resId = `${prefix}projection`;
   const resultCols = ast.columns === '*' ? [{ name: '*' }] : (Array.isArray(ast.columns) ? ast.columns.map((col: any) => ({ name: formatExpr(col.expr), alias: col.as })) : [{ name: '*' }]);
   
-  ctx.nodes.push({ id: resId, type: 'resultNode', data: { title: 'Projection', columns: resultCols }, position: { x: 0, y: 0 }});
+  let projectionTitle = 'Projection';
+  if (ast.distinct) {
+    const dType = typeof ast.distinct === 'string' ? ast.distinct : (ast.distinct.type || 'DISTINCT');
+    projectionTitle = ast.distinct.on ? `Projection (${dType} (${ast.distinct.on}))` : `Projection (${String(dType).toUpperCase()})`;
+  }
+  ctx.nodes.push({ id: resId, type: 'resultNode', data: { title: projectionTitle, columns: resultCols }, position: { x: 0, y: 0 }});
   addEdge(ctx, currentOutputId, resId);
 
   if (Array.isArray(ast.columns)) {
@@ -1754,28 +1901,32 @@ export function astToGraph(
         let snippet = qAst.type || 'STATEMENT';
         if (qAst.type === 'select') snippet = 'SELECT ...';
         if (qAst.type === 'update') snippet = 'UPDATE ...';
+        if (qAst.type === 'copy') snippet = 'COPY ...';
+        if (qAst.type === 'create_as') snippet = 'CREATE ... AS';
         
         ctx.nodes.push({
           id: qId, type: 'queryGroupNode',
           data: { title: `Query ${qIdx + 1}`, queryText: snippet, queryId: qId, onToggle: options.onToggleExpand },
           position: { x: 0, y: 0 }
         });
-        if (lastId) addEdge(ctx, lastId, qId, 'Next', { strokeDasharray: '5 5' });
         lastId = qId;
       } else {
+        // Запросы файла независимы: между ними нет рёбер (раньше «Next» выдумывал связь и тянул подсветку lineage
+        // из одного запроса в другой); раскладка ставит блоки запросов друг под другом (getLayoutedElements).
+        // CTE живёт только внутри своего запроса: не переносим их в следующие запросы файла
+        ctx.cteOutputIds = { ...cteTableNodeIds };
         const outId = buildDataPipeline(qAst, `${prefix}q${qIdx}_`, dialect, ctx);
         
         const collapseId = `${qId}_collapse`;
         ctx.nodes.push({
           id: collapseId, type: 'collapseNode',
-          data: { title: `Hide Query ${qIdx + 1}`, queryId: qId, onToggle: options.onToggleExpand },
+          data: { title: `Query ${qIdx + 1}`, queryId: qId, onToggle: options.onToggleExpand },
           position: { x: 0, y: 0 }
         });
         
-        if (lastId) addEdge(ctx, lastId, collapseId, 'Next', { strokeDasharray: '5 5' });
         
-        const firstNode = ctx.nodes.find(n => n.id.startsWith(`${prefix}q${qIdx}_`));
-        if (firstNode) addEdge(ctx, collapseId, firstNode.id);
+        // Заголовок запроса — подпись с кнопкой «Collapse», а не часть графа данных: рёбер у него нет
+        // (не попадает в подсветку lineage); раскладка ставит его над блоком запроса.
         
         lastId = outId || collapseId;
       }
@@ -1790,6 +1941,7 @@ export function astToGraph(
      
      ast.steps.forEach((step: any, sIdx: number) => {
         if (step.parsedQuery) {
+           ctx.cteOutputIds = { ...cteTableNodeIds };
            const stepOut = buildDataPipeline(step.parsedQuery, `${prefix}pstep_${sIdx}_`, dialect, ctx);
            addEdge(ctx, lastStepId, stepOut, 'executes');
            lastStepId = stepOut;
@@ -1905,6 +2057,9 @@ export function getLayoutedElements(nodes: GraphNode[], edges: GraphEdge[], dire
       height = 70;
     } else if (node.type === 'joinNode') {
       height = 100;
+    } else if (node.type === 'collapseNode') {
+      width = 220; // компактный заголовок запроса
+      height = 32;
     }
     
     return { width, height };
@@ -1923,40 +2078,97 @@ export function getLayoutedElements(nodes: GraphNode[], edges: GraphEdge[], dire
     return { nodes: newNodes, edges };
   }
   
-  const dagreGraph = new dagre.graphlib.Graph();
-  dagreGraph.setDefaultEdgeLabel(() => ({}));
-  
-  dagreGraph.setGraph({ 
-    rankdir: direction, 
-    nodesep: 30,
-    ranksep: 80, 
-    ranker: 'tight-tree' 
-  });
+  // Раскладка одного связного блока: центры узлов по dagre, возвращает левый верхний угол каждого узла
+  const layoutBlock = (blockNodes: GraphNode[], blockEdges: GraphEdge[]) => {
+    const dagreGraph = new dagre.graphlib.Graph();
+    dagreGraph.setDefaultEdgeLabel(() => ({}));
+    dagreGraph.setGraph({
+      rankdir: direction,
+      nodesep: 30,
+      ranksep: 80,
+      ranker: 'tight-tree'
+    });
+    blockNodes.forEach((node) => {
+      const { width, height } = getNodeDimensions(node);
+      dagreGraph.setNode(node.id, { width, height });
+    });
+    blockEdges.forEach((edge) => {
+      dagreGraph.setEdge(edge.source, edge.target);
+    });
+    dagre.layout(dagreGraph);
+    const out: Record<string, { x: number; y: number }> = {};
+    blockNodes.forEach((node) => {
+      const p = dagreGraph.node(node.id);
+      if (!p) return;
+      const { width, height } = getNodeDimensions(node);
+      out[node.id] = { x: p.x - width / 2, y: p.y - height / 2 };
+    });
+    return out;
+  };
 
-  nodes.forEach((node) => {
-    const { width, height } = getNodeDimensions(node);
-    dagreGraph.setNode(node.id, { width, height });
-  });
-
-  edges.forEach((edge) => {
-    dagreGraph.setEdge(edge.source, edge.target);
-  });
-
-  dagre.layout(dagreGraph);
+  // Файл из нескольких запросов (есть узлы-заголовки запросов): каждый запрос раскладывается отдельно,
+  // при LR блоки идут друг под другом (общий левый край), при TB — друг за другом вправо (общий верхний край).
+  const isMultiQuery = nodes.some(n => n.type === 'collapseNode' || n.type === 'queryGroupNode');
+  const queryIndexOf = (id: string): number => {
+    const m = /^(?:[A-Za-z0-9]+_)*?q_?(\d+)(?:_|$)/.exec(id);
+    return m ? Number(m[1]) : -1;
+  };
 
   const newPositions: Record<string, { x: number; y: number }> = {};
+  if (isMultiQuery) {
+    const QUERY_GAP = 60;
+    const blocks = new Map<number, GraphNode[]>();
+    for (const n of nodes) {
+      const k = queryIndexOf(n.id);
+      if (!blocks.has(k)) blocks.set(k, []);
+      blocks.get(k)!.push(n);
+    }
+    // LR: блоки друг под другом (общий левый край). TB: блоки друг за другом вправо (общий верхний край).
+    let cursorY = 0;
+    let cursorX = 0;
+    for (const k of [...blocks.keys()].sort((a, b) => a - b)) {
+      const allBlockNodes = blocks.get(k)!;
+      // заголовок «Query N» без рёбер: в раскладку dagre не входит, ставится над блоком у левого края
+      const headers = allBlockNodes.filter(n => n.type === 'collapseNode');
+      const blockNodes = allBlockNodes.filter(n => n.type !== 'collapseNode');
+      const ids = new Set(blockNodes.map(n => n.id));
+      const pos = layoutBlock(blockNodes, edges.filter(e => ids.has(e.source) && ids.has(e.target)));
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const n of blockNodes) {
+        const p = pos[n.id];
+        if (!p) continue;
+        const d = getNodeDimensions(n);
+        minX = Math.min(minX, p.x);
+        minY = Math.min(minY, p.y);
+        maxX = Math.max(maxX, p.x + d.width);
+        maxY = Math.max(maxY, p.y + d.height);
+      }
+      if (!Number.isFinite(minX)) continue;
+      const HEADER_GAP = 12;
+      let headerH = 0;
+      let headerW = 0;
+      const baseX = isHorizontal ? 0 : cursorX;
+      const baseY = isHorizontal ? cursorY : 0;
+      for (const h of headers) {
+        newPositions[h.id] = { x: baseX, y: baseY + headerH };
+        const hd = getNodeDimensions(h);
+        headerH += hd.height + HEADER_GAP;
+        headerW = Math.max(headerW, hd.width);
+      }
+      for (const n of blockNodes) {
+        const p = pos[n.id];
+        if (p) newPositions[n.id] = { x: p.x - minX + baseX, y: p.y - minY + baseY + headerH };
+      }
+      if (isHorizontal) cursorY += headerH + (maxY - minY) + QUERY_GAP;
+      else cursorX += Math.max(headerW, maxX - minX) + QUERY_GAP;
+    }
+  } else {
+    Object.assign(newPositions, layoutBlock(nodes, edges));
+  }
 
   const newNodes = nodes.map((node) => {
-    const nodeWithPosition = dagreGraph.node(node.id);
-    if (!nodeWithPosition) return node;
-
-    const { width, height } = getNodeDimensions(node);
-    const pos = {
-      x: nodeWithPosition.x - width / 2,
-      y: nodeWithPosition.y - height / 2,
-    };
-    newPositions[node.id] = pos;
-    
+    const pos = newPositions[node.id];
+    if (!pos) return node;
     return {
       ...node,
       targetPosition: isHorizontal ? 'left' as const : 'top' as const,

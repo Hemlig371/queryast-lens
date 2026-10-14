@@ -19,6 +19,7 @@ export default defineConfig(() => {
             'react-vendor': ['react', 'react-dom'],
             'flow-vendor': ['@xyflow/react', '@xyflow/system'],
             'sql-vendor': ['node-sql-parser'],
+            'codemirror-vendor': ['@codemirror/state', '@codemirror/view', '@codemirror/commands', '@codemirror/language', '@lezer/highlight'],
             'lucide': ['lucide-react']
           },
         },

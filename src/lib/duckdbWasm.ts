@@ -2,6 +2,14 @@ let dbInstance: any = null;
 let connInstance: any = null;
 let duckDbInitPromise: Promise<any> | null = null;
 
+/** Dev-сервер (web/server.ts с /api/vfs/*) есть только в веб-режиме; в Tauri и Capacitor его нет. */
+function hasDevVfsServer(): boolean {
+  if (typeof window === 'undefined') return false;
+  if ('__TAURI__' in window || '__TAURI_IPC__' in window) return false;
+  if ((window as any).Capacitor?.isNativePlatform?.()) return false;
+  return true;
+}
+
 export function isTauriEnvironment(): boolean {
   return typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_IPC__' in window);
 }
@@ -500,13 +508,15 @@ export async function dropWasmFile(fileName: string): Promise<boolean> {
   wasmRegisteredSet.delete(cleanFileName);
   wasmRegisteredSet.delete(fileName);
 
-  try {
-    await fetch('/api/vfs/delete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fileName: cleanFileName }),
-    });
-  } catch (_) {}
+  if (hasDevVfsServer()) {
+    try {
+      await fetch('/api/vfs/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileName: cleanFileName }),
+      });
+    } catch (_) {}
+  }
 
   try {
     const dropTask = async () => {
@@ -539,19 +549,22 @@ export async function registerWasmFile(fileName: string, buffer: Uint8Array): Pr
   registeredVfsFiles.set(cleanFileName, { buffer, size: buffer.byteLength, loadedAt: new Date() });
   wasmRegisteredSet.delete(cleanFileName);
 
-  // Sync file with Server VFS so Server DuckDB instance can query it
-  try {
-    const contentBase64 = await uint8ArrayToBase64Async(buffer);
-    const res = await fetch('/api/vfs/upload', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fileName: cleanFileName, contentBase64 }),
-    });
-    if (!res.ok) {
-      console.warn("Server VFS sync failed status:", res.status);
+  // Sync file with Server VFS so Server DuckDB instance can query it.
+  // Только в веб-dev режиме: в Tauri/Capacitor сервера нет, а base64 всего файла впустую съедает память.
+  if (hasDevVfsServer()) {
+    try {
+      const contentBase64 = await uint8ArrayToBase64Async(buffer);
+      const res = await fetch('/api/vfs/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileName: cleanFileName, contentBase64 }),
+      });
+      if (!res.ok) {
+        console.warn("Server VFS sync failed status:", res.status);
+      }
+    } catch (e) {
+      console.warn("Server VFS sync failed:", e);
     }
-  } catch (e) {
-    console.warn("Server VFS sync failed:", e);
   }
 
   // Attempt WASM worker registration with generous timeout

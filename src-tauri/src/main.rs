@@ -77,72 +77,90 @@ fn apply_duckdb_options(conn: &Connection, opts: &DuckDbConfigOptions) {
     }
 }
 
+// Команды работы с подключением объявлены async: в Tauri 1.x синхронные команды выполняются
+// в главном потоке окна, и открытие недоступного файла/сетевого диска или init-SQL с загрузкой
+// расширений вешало бы весь интерфейс. Тяжёлая часть уходит в blocking-пул (как в execute_query).
 #[tauri::command]
-fn connect_db(state: State<'_, DbState>, path: String, options: Option<DuckDbConfigOptions>) -> Result<String, String> {
+async fn connect_db(state: State<'_, DbState>, path: String, options: Option<DuckDbConfigOptions>) -> Result<String, String> {
     let path_buf = path.trim().to_string();
+    let db_arc = state.0.clone();
 
-    let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<Connection, String> {
-        let mut config = Config::default();
-        if options.as_ref().and_then(|o| o.allow_unsigned_extensions).unwrap_or(false) {
-            config = config.allow_unsigned_extensions().map_err(|e| e.to_string())?;
+    tokio::task::spawn_blocking(move || -> Result<String, String> {
+        let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<Connection, String> {
+            let mut config = Config::default();
+            if options.as_ref().and_then(|o| o.allow_unsigned_extensions).unwrap_or(false) {
+                config = config.allow_unsigned_extensions().map_err(|e| e.to_string())?;
+            }
+            let conn = if path_buf.is_empty() {
+                Connection::open_in_memory_with_flags(config).map_err(|e| e.to_string())?
+            } else {
+                Connection::open_with_flags(&path_buf, config).map_err(|e| e.to_string())?
+            };
+
+            // Disable Arrow StringView and ListView to prevent duckdb-rs from panicking
+            // on unsupported Arrow types (introduced in DuckDB 1.0/1.1)
+            let _ = conn.execute_batch("SET produce_arrow_string_view=false;");
+            let _ = conn.execute_batch("SET arrow_output_list_view=false;");
+            let _ = conn.execute_batch("SET arrow_output_version='1.0';");
+            let _ = conn.execute_batch("SET arrow_lossless_conversion=false;");
+
+            if let Some(ref opts) = options {
+                apply_duckdb_options(&conn, opts);
+            }
+
+            Ok(conn)
+        }));
+
+        match res {
+            Ok(Ok(conn)) => {
+                let mut db_guard = db_arc.lock().unwrap_or_else(|e| e.into_inner());
+                *db_guard = Some(conn);
+                Ok(path_buf)
+            }
+            Ok(Err(err_msg)) => Err(err_msg),
+            Err(_) => Err("Не удалось открыть или создать файл базы данных DuckDB.".to_string()),
         }
-        let conn = if path_buf.is_empty() {
-            Connection::open_in_memory_with_flags(config).map_err(|e| e.to_string())?
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn configure_db(state: State<'_, DbState>, options: DuckDbConfigOptions) -> Result<(), String> {
+    let db_arc = state.0.clone();
+    tokio::task::spawn_blocking(move || -> Result<(), String> {
+        let mut db_guard = db_arc.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(conn) = db_guard.as_mut() {
+            apply_duckdb_options(conn, &options);
+            Ok(())
         } else {
-            Connection::open_with_flags(&path_buf, config).map_err(|e| e.to_string())?
-        };
-        
-        // Disable Arrow StringView and ListView to prevent duckdb-rs from panicking
-        // on unsupported Arrow types (introduced in DuckDB 1.0/1.1)
-        let _ = conn.execute_batch("SET produce_arrow_string_view=false;");
-        let _ = conn.execute_batch("SET arrow_output_list_view=false;");
-        let _ = conn.execute_batch("SET arrow_output_version='1.0';");
-        let _ = conn.execute_batch("SET arrow_lossless_conversion=false;");
-        
-        if let Some(ref opts) = options {
-            apply_duckdb_options(&conn, opts);
+            Err("No active database connection".to_string())
         }
-
-        Ok(conn)
-    }));
-
-    match res {
-        Ok(Ok(conn)) => {
-            let mut db_guard = state.0.lock().unwrap_or_else(|e| e.into_inner());
-            *db_guard = Some(conn);
-            Ok(path_buf)
-        }
-        Ok(Err(err_msg)) => Err(err_msg),
-        Err(_) => Err("Не удалось открыть или создать файл базы данных DuckDB.".to_string()),
-    }
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn configure_db(state: State<'_, DbState>, options: DuckDbConfigOptions) -> Result<(), String> {
-    let mut db_guard = state.0.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some(conn) = db_guard.as_mut() {
-        apply_duckdb_options(conn, &options);
+async fn disconnect_db(state: State<'_, DbState>) -> Result<(), String> {
+    let db_arc = state.0.clone();
+    tokio::task::spawn_blocking(move || -> Result<(), String> {
+        let mut db_guard = db_arc.lock().unwrap_or_else(|e| e.into_inner());
+        *db_guard = None;
         Ok(())
-    } else {
-        Err("No active database connection".to_string())
-    }
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn disconnect_db(state: State<'_, DbState>) -> Result<(), String> {
-    let mut db_guard = state.0.lock().unwrap_or_else(|e| e.into_inner());
-    *db_guard = None;
-    Ok(())
+async fn write_text_file(path: String, contents: String) -> Result<(), String> {
+    tokio::fs::write(&path, contents).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn write_text_file(path: String, contents: String) -> Result<(), String> {
-    std::fs::write(&path, contents).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn read_text_file(path: String) -> Result<String, String> {
-    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+async fn read_text_file(path: String) -> Result<String, String> {
+    tokio::fs::read_to_string(&path).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
