@@ -33,3 +33,19 @@ describe('sqlHighlight (HTML-подсветка для статических п
     expect(html).toContain('{{$d=2024-01-01}}');
   });
 });
+
+describe('sqlHighlight: имена переменных с пробелами', () => {
+  it('подсвечивает {{$Период с=2024-01-01}} целиком', () => {
+    const html = getBaseHighlight('SELECT {{$Период с=2024-01-01}}', 'dark');
+    expect(html).toMatch(/<span[^>]*>\{\{\$Период с=2024-01-01\}\}<\/span>/);
+  });
+  it('подсвечивает {{$Период с}} без значения', () => {
+    const html = getBaseHighlight('SELECT {{$Период с}}', 'dark');
+    expect(html).toMatch(/<span[^>]*>\{\{\$Период с\}\}<\/span>/);
+  });
+  it('длинное имя без закрытия не вешает подсветку', () => {
+    const started = Date.now();
+    getBaseHighlight('{{$' + 'слово '.repeat(2000), 'dark');
+    expect(Date.now() - started < 500).toBe(true);
+  });
+});

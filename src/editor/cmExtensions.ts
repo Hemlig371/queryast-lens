@@ -72,8 +72,10 @@ export const buildEditorTheme = (theme: 'dark' | 'light'): Extension => {
           borderRadius: '2px',
           fontWeight: '700',
         },
-        '.lens-var-param': { color: colors.varParam },
-        '.lens-var-secret': { color: colors.varSecret },
+        // Переменные внутри строк и комментариев: цвет токена (строка/комментарий) стоит во вложенном
+        // <span>, поэтому красим и сам маркер, и его вложенные span-ы — иначе цвет строки перебивает цвет переменной.
+        '.lens-var-param, .lens-var-param span': { color: colors.varParam },
+        '.lens-var-secret, .lens-var-secret span': { color: colors.varSecret },
       },
       { dark }
     ),
