@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseSqlToAst, astToGraph, stripCommentsSafely, splitQueries, getLayoutedElements } from '../src/utils/astToGraph';
+import { parseSqlToAst, astToGraph, stripCommentsSafely, splitQueries, getLayoutedElements, distinctLabel } from '../src/utils/astToGraph';
 
 describe('astToGraph utils', () => {
   describe('stripCommentsSafely', () => {
@@ -81,6 +81,28 @@ describe('astToGraph utils', () => {
       expect(titles(g).some(t => t.includes('DISTINCT'))).toBe(true);
       const proj = g.nodes.find(n => String(n.data.title).startsWith('Projection'));
       expect(JSON.stringify(proj?.data.columns)).not.toContain('"DISTINCT"');
+    });
+
+    it('SELECT без DISTINCT не получает подпись DISTINCT в проекции', () => {
+      const g = build('SELECT a FROM t');
+      expect(titles(g).some(t => t.includes('DISTINCT'))).toBe(false);
+      const g2 = build('SELECT id, ROW_NUMBER() OVER (PARTITION BY g ORDER BY ts) rn FROM e');
+      expect(titles(g2).some(t => t.includes('DISTINCT'))).toBe(false);
+    });
+
+    it('distinctLabel: пустые значения парсера не считаются DISTINCT', () => {
+      expect(distinctLabel(null)).toBeNull();
+      expect(distinctLabel(undefined)).toBeNull();
+      expect(distinctLabel({ type: null })).toBeNull();
+      expect(distinctLabel({})).toBeNull();
+      expect(distinctLabel('')).toBeNull();
+      expect(distinctLabel({ type: 'ALL' })).toBeNull();
+    });
+
+    it('distinctLabel: DISTINCT и DISTINCT ON', () => {
+      expect(distinctLabel('DISTINCT')).toBe('DISTINCT');
+      expect(distinctLabel({ type: 'distinct' })).toBe('DISTINCT');
+      expect(distinctLabel({ type: 'DISTINCT ON', on: 'a, b' })).toBe('DISTINCT ON (a, b)');
     });
 
     it('QUALIFY становится отдельным узлом-фильтром', () => {

@@ -1863,11 +1863,8 @@ function buildDataPipeline(ast: any, prefix: string, dialect: string, ctx: Graph
   const resId = `${prefix}projection`;
   const resultCols = ast.columns === '*' ? [{ name: '*' }] : (Array.isArray(ast.columns) ? ast.columns.map((col: any) => ({ name: formatExpr(col.expr), alias: col.as })) : [{ name: '*' }]);
   
-  let projectionTitle = 'Projection';
-  if (ast.distinct) {
-    const dType = typeof ast.distinct === 'string' ? ast.distinct : (ast.distinct.type || 'DISTINCT');
-    projectionTitle = ast.distinct.on ? `Projection (${dType} (${ast.distinct.on}))` : `Projection (${String(dType).toUpperCase()})`;
-  }
+  const distinctText = distinctLabel(ast.distinct);
+  const projectionTitle = distinctText ? `Projection (${distinctText})` : 'Projection';
   ctx.nodes.push({ id: resId, type: 'resultNode', data: { title: projectionTitle, columns: resultCols }, position: { x: 0, y: 0 }});
   addEdge(ctx, currentOutputId, resId);
 
@@ -1879,6 +1876,19 @@ function buildDataPipeline(ast: any, prefix: string, dialect: string, ctx: Graph
   }
 
   return resId;
+}
+
+/**
+ * Текст для заголовка проекции: 'DISTINCT' / 'DISTINCT ON (выражение)' или null.
+ * node-sql-parser для запроса без DISTINCT может вернуть не null, а объект `{ type: null }` —
+ * такой объект DISTINCT не означает (раньше из-за него подпись появлялась у любого SELECT).
+ */
+export function distinctLabel(d: any): string | null {
+  if (!d) return null;
+  const type = typeof d === 'string' ? d : d.type;
+  if (typeof type !== 'string' || !/^DISTINCT/i.test(type.trim())) return null;
+  const t = type.trim().toUpperCase();
+  return d.on ? `${t} (${d.on})` : t;
 }
 
 export function astToGraph(
