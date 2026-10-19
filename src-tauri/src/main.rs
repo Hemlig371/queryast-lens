@@ -652,7 +652,7 @@ fn main() {
             // try_lock: если запрос ещё держит соединение, выход не ждёт его
             if let Ok(mut guard) = state.0.try_lock() {
                 *guard = None;
-            }
+            };
         }
     });
 }
