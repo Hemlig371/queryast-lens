@@ -51,7 +51,7 @@
 ### 6. Full-Text Search & NLP
 * `INSTALL fts;` — Build inverted indices and run ranked full-text searches using BM25 scoring.
 * `INSTALL inflector FROM community;` — Text pluralization, singularization, and naming case conversion (camelCase, snake_case, kebab-case).
-* `INSTALL polyglot FROM community;` — Multi-language text analytics, stemming, and language detection across text columns.
+* `INSTALL polyglot FROM community;` — SQL transpiler between dialects (`polyglot_transpile`, `polyglot_validate`, `polyglot_parse`, `polyglot_optimize`, `polyglot_lineage`, `polyglot_diff`); it is not text analysis.
 
 ### 7. Time Series, Forecasting & Analytics (Anofox Suite)
 * `INSTALL anofox_forecast FROM community;` — Time series forecasting using built-in statistical models directly inside SQL.
@@ -136,7 +136,7 @@
 ### 6. Полнотекстовый поиск и обработка текста (NLP)
 * `INSTALL fts;` — построение инвертированных индексов и ранжированный полнотекстовый поиск по алгоритму BM25.
 * `INSTALL inflector FROM community;` — плюрализация, сингуляризация и преобразование регистра идентификаторов (camelCase, snake_case, Title Case).
-* `INSTALL polyglot FROM community;` — многоязычный анализ текста, лемматизация и определение языков в текстовых колонках.
+* `INSTALL polyglot FROM community;` — транспилятор SQL между диалектами (`polyglot_transpile`, `polyglot_validate`, `polyglot_parse`, `polyglot_optimize`, `polyglot_lineage`, `polyglot_diff`), а не анализ текста.
 
 ### 7. Аналитика, временные ряды и прогнозирование (Anofox Suite)
 * `INSTALL anofox_forecast FROM community;` — прогнозирование временных рядов с использованием статистических моделей прямо в SQL.

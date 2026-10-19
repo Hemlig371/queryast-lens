@@ -1,4 +1,4 @@
-import { t } from "../utils/i18n";
+import { t, currentLocale } from "../utils/i18n";
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   BarChart,
@@ -17,9 +17,14 @@ import {
 } from 'recharts';
 import { BarChart3, PieChart as PieIcon, TrendingUp, Info, List, Copy, Check, TableProperties, RefreshCw, Loader2, Image as ImageIcon, Code } from 'lucide-react';
 import { formatColumnType } from '../lib/sqlUtils';
+import { copyToClipboard } from '../utils/exportUtils';
+import { formatStatVal as formatStatValPure, toChartNumber, selectTopN } from '../utils/statFormat';
+import { getResultColumns } from '../utils/resultRows';
 
 interface DataStatsViewerProps {
   data: Record<string, any>[];
+  /** Порядок столбцов результата (п. 3.2); для других данных (SUMMARIZE) игнорируется. */
+  columns?: string[] | null;
   theme: 'dark' | 'light';
   columnTypes?: Record<string, string>;
   initialChartType?: 'bar' | 'line' | 'pie' | 'list';
@@ -44,6 +49,7 @@ const getNullPctColor = (pct: number, isDark: boolean) => {
 
 export const DataStatsViewer: React.FC<DataStatsViewerProps> = React.memo(({
   data,
+  columns: columnOrder,
   theme,
   columnTypes,
   initialChartType,
@@ -64,7 +70,7 @@ export const DataStatsViewer: React.FC<DataStatsViewerProps> = React.memo(({
     );
   }
 
-  const rawColumns = useMemo(() => Object.keys(data[0] || {}), [data]);
+  const rawColumns = useMemo(() => getResultColumns(data, columnOrder), [data, columnOrder]);
 
   // Classify column types
   const colAnalysis = useMemo(() => {
@@ -587,11 +593,11 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
     });
   };
 
-  const handleCopyColumns = () => {
+  const handleCopyColumns = async () => {
     const allCols = columns && columns.length > 0 ? columns : rawColumns;
     const colsToCopy = selectedColumns.length > 0 ? selectedColumns : allCols;
     if (colsToCopy.length > 0) {
-      navigator.clipboard.writeText(colsToCopy.join(', '));
+      if (!(await copyToClipboard(colsToCopy.join(', ')))) return; // при отказе буфера «скопировано» не отмечаем
       setCopiedCols(true);
       setTimeout(() => setCopiedCols(false), 2000);
     }
@@ -713,26 +719,20 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
       });
     } else {
       // Direct mapping
-      rawItems = data.map((row, i) => ({
-        name: String(row[xAxisCol] ?? `#${i + 1}`),
-        value: Number(row[yAxisCol]) || 0,
-        ...row,
-      }));
+      // нечисловые значения (null, текст) не превращаются в 0: такие точки пропускаются
+      data.forEach((row, i) => {
+        const v = toChartNumber(row[yAxisCol]);
+        if (v === null) return;
+        rawItems.push({
+          name: String(row[xAxisCol] ?? `#${i + 1}`),
+          value: v,
+          ...row,
+        });
+      });
     }
 
-    // Sort items before slicing
-    rawItems.sort((a, b) => {
-      if (sortMode === 'desc') {
-        return b.value - a.value || a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
-      }
-      if (sortMode === 'asc') {
-        return a.value - b.value || a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
-      }
-      // 'alphabet' default
-      return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
-    });
-
-    return rawItems.slice(0, limitNum);
+    // «Топ-N» по значению (в режиме «по алфавиту» берутся крупнейшие N), затем порядок по выбранной сортировке
+    return selectTopN(rawItems, limitNum, sortMode);
   }, [data, xAxisCol, yAxisCol, chartType, colAnalysis, aggMode, categoryLimit, sortMode]);
 
   const maxVal = useMemo(() => {
@@ -743,20 +743,10 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
     return m || 1;
   }, [chartData]);
 
-  const formatStatVal = (val: any) => {
-    if (val === undefined || val === null || val === '') return null;
-    if (typeof val === 'number') {
-      if (isNaN(val)) return null;
-      if (Number.isInteger(val)) return val.toLocaleString('ru-RU');
-      return Number(val.toFixed(2)).toLocaleString('ru-RU');
-    }
-    const num = Number(val);
-    if (!isNaN(num) && typeof val !== 'boolean' && String(val).trim() !== '') {
-      if (Number.isInteger(num)) return num.toLocaleString('ru-RU');
-      return Number(num.toFixed(2)).toLocaleString('ru-RU');
-    }
-    return String(val);
-  };
+  const formatStatVal = (val: any) => formatStatValPure(val, currentLocale);
+
+  // подписи осей, тултипов и секторов: числа с разделителем разрядов, как в карточках
+  const chartNumFmt = (v: any) => formatStatVal(v) ?? String(v ?? '');
 
   const isDark = theme === 'dark';
   const textColor = isDark ? '#94a3b8' : '#64748b';
@@ -805,9 +795,9 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                   <span>{t("Вставить SQL")}</span>
                 </button>
                 <span>•</span>
-                <span>{t("Столбцов:")} <b className="font-semibold text-teal-600 dark:text-teal-400">{(summarizeList.length || 0).toLocaleString('ru-RU')}</b></span>
+                <span>{t("Столбцов:")} <b className="font-semibold text-teal-600 dark:text-teal-400">{(summarizeList.length || 0).toLocaleString(currentLocale)}</b></span>
                 <span>•</span>
-                <span>{t("Строк:")} <b className="font-semibold text-teal-600 dark:text-teal-400">{(summarizeList[0]?.count || 0).toLocaleString('ru-RU')}</b></span>
+                <span>{t("Строк:")} <b className="font-semibold text-teal-600 dark:text-teal-400">{(summarizeList[0]?.count || 0).toLocaleString(currentLocale)}</b></span>
               </div>
             </>
           ) : (
@@ -894,9 +884,9 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                       <span>{t("Вставить SQL")}</span>
                     </button>
                     <span>•</span>
-                    <span>{t("Столбцов:")} <b className="font-semibold text-teal-600 dark:text-teal-400">{(columns.length || 0).toLocaleString('ru-RU')}</b></span>
+                    <span>{t("Столбцов:")} <b className="font-semibold text-teal-600 dark:text-teal-400">{(columns.length || 0).toLocaleString(currentLocale)}</b></span>
                     <span>•</span>
-                    <span>{t("Строк:")} <b className="font-semibold text-teal-600 dark:text-teal-400">{((remoteStatsInfo?.totalCount !== undefined ? remoteStatsInfo.totalCount : data.length) || 0).toLocaleString('ru-RU')}</b></span>
+                    <span>{t("Строк:")} <b className="font-semibold text-teal-600 dark:text-teal-400">{((remoteStatsInfo?.totalCount !== undefined ? remoteStatsInfo.totalCount : data.length) || 0).toLocaleString(currentLocale)}</b></span>
 
                     {onExecuteQuery && (
                       <>
@@ -1333,7 +1323,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                 <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
                 {barLayout === 'vertical' ? (
                   <>
-                    <XAxis type="number" stroke={textColor} tick={{ fontSize: 11 }} />
+                    <XAxis type="number" stroke={textColor} tick={{ fontSize: 11 }} tickFormatter={chartNumFmt} />
                     <YAxis
                       type="category"
                       dataKey="name"
@@ -1351,10 +1341,11 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                       angle={-25}
                       textAnchor="end"
                     />
-                    <YAxis stroke={textColor} tick={{ fontSize: 11 }} />
+                    <YAxis stroke={textColor} tick={{ fontSize: 11 }} tickFormatter={chartNumFmt} />
                   </>
                 )}
                 <Tooltip
+                  formatter={chartNumFmt}
                   cursor={{ fill: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)' }}
                   contentStyle={{
                     backgroundColor: isDark ? '#1e293b' : '#ffffff',
@@ -1376,8 +1367,9 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
               <LineChart data={chartData} margin={{ top: 10, right: 20, left: 10, bottom: 25 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
                 <XAxis dataKey="name" stroke={textColor} tick={{ fontSize: 11 }} angle={-25} textAnchor="end" />
-                <YAxis stroke={textColor} tick={{ fontSize: 11 }} />
+                <YAxis stroke={textColor} tick={{ fontSize: 11 }} tickFormatter={chartNumFmt} />
                 <Tooltip
+                  formatter={chartNumFmt}
                   cursor={{ stroke: isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.15)', strokeDasharray: '3 3' }}
                   contentStyle={{
                     backgroundColor: isDark ? '#1e293b' : '#ffffff',
@@ -1392,6 +1384,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
             ) : (
               <PieChart>
                 <Tooltip
+                  formatter={chartNumFmt}
                   contentStyle={{
                     backgroundColor: isDark ? '#1e293b' : '#ffffff',
                     borderColor: isDark ? '#475569' : '#cbd5e1',
@@ -1400,7 +1393,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                     fontSize: '12px',
                   }}
                 />
-                <Pie data={chartData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label isAnimationActive={false}>
+                <Pie data={chartData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius="70%" label={(entry: any) => chartNumFmt(entry.value)} isAnimationActive={false}>
                   {chartData.map((_, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}

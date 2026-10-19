@@ -1,7 +1,7 @@
 import React, { memo } from 'react';
 import { Handle, Position, BaseEdge, EdgeLabelRenderer, type EdgeProps } from '@xyflow/react';
 import DOMPurify from 'dompurify';
-import { roundedPath, pathMidpoint, type Pt } from '../utils/edgePath';
+import { roundedPath, pathMidpoint, dropNearStraightRoute, type Pt } from '../utils/edgePath';
 
 interface MermaidNodeProps {
   data: {
@@ -64,9 +64,9 @@ export const MermaidNode = memo(({ data, selected, targetPosition = Position.Lef
         return (
           <div 
             style={customStyle}
-            className={`w-28 h-28 rounded-full border-2 flex items-center justify-center p-3 text-center text-xs font-semibold shadow-md transition-all ${
+            className={`w-28 h-28 rounded-full border-2 flex items-center justify-center p-3 text-center text-xs font-semibold transition-all ${
               selected 
-                ? 'ring-2 ring-blue-400/80 border-blue-500 shadow-xl' 
+                ? 'ring-2 ring-blue-400/80 border-blue-500' 
                 : 'border-slate-400/80 dark:border-slate-600 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
             }`}
           >
@@ -79,9 +79,9 @@ export const MermaidNode = memo(({ data, selected, targetPosition = Position.Lef
         return (
           <div 
             style={customStyle}
-            className={`w-32 h-32 rounded-full border-2 p-1.5 flex items-center justify-center shadow-md transition-all ${
+            className={`w-32 h-32 rounded-full border-2 p-1.5 flex items-center justify-center transition-all ${
               selected 
-                ? 'ring-2 ring-blue-400/80 border-blue-500 shadow-xl' 
+                ? 'ring-2 ring-blue-400/80 border-blue-500' 
                 : 'border-slate-400/80 dark:border-slate-600 bg-slate-100 dark:bg-slate-800'
             }`}
           >
@@ -98,9 +98,9 @@ export const MermaidNode = memo(({ data, selected, targetPosition = Position.Lef
           <div className="w-36 h-36 relative flex items-center justify-center">
             <div 
               style={customStyle}
-              className={`absolute inset-3 rotate-45 border-2 rounded-sm shadow-md transition-all ${
+              className={`absolute inset-3 rotate-45 border-2 rounded-sm transition-all ${
                 selected 
-                  ? 'ring-2 ring-blue-400/80 border-blue-500 shadow-xl' 
+                  ? 'ring-2 ring-blue-400/80 border-blue-500' 
                   : 'border-amber-500/80 dark:border-amber-400/70 bg-amber-50 dark:bg-amber-950/40'
               }`}
             />
@@ -117,7 +117,7 @@ export const MermaidNode = memo(({ data, selected, targetPosition = Position.Lef
         const textColor = customStyle?.color;
         return (
           <div className="relative min-w-[160px] min-h-[64px] flex items-center justify-center">
-            <svg className="absolute inset-0 w-full h-full drop-shadow-md overflow-visible" preserveAspectRatio="none" viewBox="0 0 100 100">
+            <svg className="absolute inset-0 w-full h-full overflow-visible" preserveAspectRatio="none" viewBox="0 0 100 100">
                <polygon 
                  points="15,0 85,0 100,50 85,100 15,100 0,50" 
                  vectorEffect="non-scaling-stroke"
@@ -151,9 +151,9 @@ export const MermaidNode = memo(({ data, selected, targetPosition = Position.Lef
         return (
           <div 
             style={customStyle}
-            className={`min-w-[150px] relative rounded-t-xl rounded-b-xl border-2 flex flex-col items-center justify-center p-3 pt-4 text-center text-xs font-semibold shadow-md transition-all ${
+            className={`min-w-[150px] relative rounded-t-xl rounded-b-xl border-2 flex flex-col items-center justify-center p-3 pt-4 text-center text-xs font-semibold transition-all ${
               selected 
-                ? 'ring-2 ring-blue-400/80 border-blue-500 shadow-xl' 
+                ? 'ring-2 ring-blue-400/80 border-blue-500' 
                 : 'border-slate-400/80 dark:border-slate-600 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
             }`}
           >
@@ -170,9 +170,9 @@ export const MermaidNode = memo(({ data, selected, targetPosition = Position.Lef
         return (
           <div 
             style={customStyle}
-            className={`min-w-[140px] max-w-[280px] px-6 py-2.5 rounded-full border-2 flex items-center justify-center text-center text-xs font-semibold shadow-md transition-all ${
+            className={`min-w-[140px] max-w-[280px] px-6 py-2.5 rounded-full border-2 flex items-center justify-center text-center text-xs font-semibold transition-all ${
               selected 
-                ? 'ring-2 ring-blue-400/80 border-blue-500 shadow-xl' 
+                ? 'ring-2 ring-blue-400/80 border-blue-500' 
                 : 'border-blue-400/80 dark:border-blue-500/70 bg-blue-50/80 dark:bg-blue-950/40 text-blue-950 dark:text-blue-100'
             }`}
           >
@@ -185,9 +185,9 @@ export const MermaidNode = memo(({ data, selected, targetPosition = Position.Lef
         return (
           <div 
             style={customStyle}
-            className={`min-w-[150px] max-w-[280px] px-6 py-2.5 rounded-md border-2 border-slate-400/80 dark:border-slate-600 relative flex items-center justify-center text-center text-xs font-semibold shadow-md transition-all ${
+            className={`min-w-[150px] max-w-[280px] px-6 py-2.5 rounded-md border-2 border-slate-400/80 dark:border-slate-600 relative flex items-center justify-center text-center text-xs font-semibold transition-all ${
               selected 
-                ? 'ring-2 ring-blue-400/80 border-blue-500 shadow-xl' 
+                ? 'ring-2 ring-blue-400/80 border-blue-500' 
                 : 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
             }`}
           >
@@ -205,9 +205,9 @@ export const MermaidNode = memo(({ data, selected, targetPosition = Position.Lef
               transform: 'skewX(-15deg)',
               ...customStyle
             }}
-            className={`min-w-[150px] max-w-[280px] px-6 py-2.5 rounded border-2 flex items-center justify-center text-center text-xs font-semibold shadow-md transition-all ${
+            className={`min-w-[150px] max-w-[280px] px-6 py-2.5 rounded border-2 flex items-center justify-center text-center text-xs font-semibold transition-all ${
               selected 
-                ? 'ring-2 ring-blue-400/80 border-blue-500 shadow-xl' 
+                ? 'ring-2 ring-blue-400/80 border-blue-500' 
                 : 'border-purple-400/80 dark:border-purple-500/70 bg-purple-50/80 dark:bg-purple-950/40 text-purple-950 dark:text-purple-100'
             }`}
           >
@@ -225,9 +225,9 @@ export const MermaidNode = memo(({ data, selected, targetPosition = Position.Lef
               transform: 'skewX(15deg)',
               ...customStyle
             }}
-            className={`min-w-[150px] max-w-[280px] px-6 py-2.5 rounded border-2 flex items-center justify-center text-center text-xs font-semibold shadow-md transition-all ${
+            className={`min-w-[150px] max-w-[280px] px-6 py-2.5 rounded border-2 flex items-center justify-center text-center text-xs font-semibold transition-all ${
               selected 
-                ? 'ring-2 ring-blue-400/80 border-blue-500 shadow-xl' 
+                ? 'ring-2 ring-blue-400/80 border-blue-500' 
                 : 'border-purple-400/80 dark:border-purple-500/70 bg-purple-50/80 dark:bg-purple-950/40 text-purple-950 dark:text-purple-100'
             }`}
           >
@@ -244,7 +244,7 @@ export const MermaidNode = memo(({ data, selected, targetPosition = Position.Lef
         const textColor = customStyle?.color;
         return (
           <div className="relative min-w-[150px] min-h-[44px] max-w-[280px] flex items-center justify-center">
-            <svg className="absolute inset-0 w-full h-full drop-shadow-md overflow-visible" preserveAspectRatio="none" viewBox="0 0 100 100">
+            <svg className="absolute inset-0 w-full h-full overflow-visible" preserveAspectRatio="none" viewBox="0 0 100 100">
                <polygon 
                  points="0,0 85,0 100,50 85,100 0,100" 
                  vectorEffect="non-scaling-stroke"
@@ -279,7 +279,7 @@ export const MermaidNode = memo(({ data, selected, targetPosition = Position.Lef
         const textColor = customStyle?.color;
         return (
           <div className="relative min-w-[160px] min-h-[50px] flex items-center justify-center">
-            <svg className="absolute inset-0 w-full h-full drop-shadow-md overflow-visible" preserveAspectRatio="none" viewBox="0 0 100 100">
+            <svg className="absolute inset-0 w-full h-full overflow-visible" preserveAspectRatio="none" viewBox="0 0 100 100">
                <polygon 
                  points="15,0 85,0 100,100 0,100" 
                  vectorEffect="non-scaling-stroke"
@@ -314,7 +314,7 @@ export const MermaidNode = memo(({ data, selected, targetPosition = Position.Lef
         const textColor = customStyle?.color;
         return (
           <div className="relative min-w-[160px] min-h-[50px] flex items-center justify-center">
-            <svg className="absolute inset-0 w-full h-full drop-shadow-md overflow-visible" preserveAspectRatio="none" viewBox="0 0 100 100">
+            <svg className="absolute inset-0 w-full h-full overflow-visible" preserveAspectRatio="none" viewBox="0 0 100 100">
                <polygon 
                  points="0,0 100,0 85,100 15,100" 
                  vectorEffect="non-scaling-stroke"
@@ -347,9 +347,9 @@ export const MermaidNode = memo(({ data, selected, targetPosition = Position.Lef
         return (
           <div 
             style={customStyle}
-            className={`min-w-[140px] max-w-[280px] px-5 py-2.5 rounded-2xl border-2 flex items-center justify-center text-center text-xs font-semibold shadow-md transition-all ${
+            className={`min-w-[140px] max-w-[280px] px-5 py-2.5 rounded-2xl border-2 flex items-center justify-center text-center text-xs font-semibold transition-all ${
               selected 
-                ? 'ring-2 ring-blue-400/80 border-blue-500 shadow-xl' 
+                ? 'ring-2 ring-blue-400/80 border-blue-500' 
                 : 'border-slate-400/80 dark:border-slate-600 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
             }`}
           >
@@ -363,9 +363,9 @@ export const MermaidNode = memo(({ data, selected, targetPosition = Position.Lef
         return (
           <div 
             style={customStyle}
-            className={`min-w-[140px] max-w-[280px] px-4 py-2.5 rounded-none border-2 flex items-center justify-center text-center text-xs font-semibold shadow-md transition-all ${
+            className={`min-w-[140px] max-w-[280px] px-4 py-2.5 rounded-none border-2 flex items-center justify-center text-center text-xs font-semibold transition-all ${
               selected 
-                ? 'ring-2 ring-blue-400/80 border-blue-500 shadow-xl' 
+                ? 'ring-2 ring-blue-400/80 border-blue-500' 
                 : 'border-slate-400/80 dark:border-slate-600 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
             }`}
           >
@@ -377,7 +377,8 @@ export const MermaidNode = memo(({ data, selected, targetPosition = Position.Lef
   };
 
   return (
-    <div className="relative">
+    // Выделенный узел масштабируется целиком (как в CustomNodes), а не только его рамка
+    <div className={`relative transition-transform duration-200 ${selected ? 'scale-102' : ''}`}>
       <Handle type="target" position={targetPosition} className={handleClass} />
       {renderShapeContent()}
       <Handle type="source" position={sourcePosition} className={handleClass} />
@@ -397,7 +398,7 @@ export const MermaidGroupNode = memo(({ data, selected }: { data: any; selected?
       }}
       className={`rounded-xl border-2 border-dashed transition-all p-3 pointer-events-none ${
         selected 
-          ? 'border-blue-500 bg-blue-50/15 dark:bg-blue-950/20 shadow-lg' 
+          ? 'border-blue-500 bg-blue-50/15 dark:bg-blue-950/20' 
           : 'border-slate-400/60 dark:border-slate-600/60 bg-slate-200/20 dark:bg-slate-800/20'
       }`}
     >
@@ -417,8 +418,10 @@ MermaidGroupNode.displayName = 'MermaidGroupNode';
  */
 export const MermaidEdge = memo(({ id, sourceX, sourceY, targetX, targetY, markerEnd, markerStart, style, label, data }: EdgeProps) => {
   const route = (data as { points?: Pt[] } | undefined)?.points;
-  const inner = route && route.length > 2 ? route.slice(1, -1) : [];
-  const pts: Pt[] = [{ x: sourceX, y: sourceY }, ...inner, { x: targetX, y: targetY }];
+  const from: Pt = { x: sourceX, y: sourceY };
+  const to: Pt = { x: targetX, y: targetY };
+  const inner = dropNearStraightRoute(from, route && route.length > 2 ? route.slice(1, -1) : [], to);
+  const pts: Pt[] = [from, ...inner, to];
   const mid = pathMidpoint(pts);
   return (
     <>

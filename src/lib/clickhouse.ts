@@ -1,3 +1,5 @@
+import { appendCopyFormat, isJsonResponseExpected, stripTrailingNoise } from '../utils/clickhouseFormat';
+
 export interface ClickhouseConfig {
   protocol: 'http' | 'https';
   host: string;
@@ -31,7 +33,8 @@ export function isCapacitorEnvironment(): boolean {
  * Handles both parentheses COPY (SELECT ...) and raw COPY SELECT ...
  */
 export function parseClickhouseCopy(sql: string): ClickhouseCopyCommand | null {
-  const cleanSql = sql.replace(/^(\s*(--[^\n]*\n|\/\*[\s\S]*?\*\/))*/g, '').trim();
+  // Хвостовые `;` и комментарии (`COPY … TO 'x.csv'; -- готово`) не мешают разбору
+  const cleanSql = stripTrailingNoise(sql.replace(/^(\s*(--[^\n]*\n|\/\*[\s\S]*?\*\/))*/g, '').trim());
 
   // Match COPY (...) TO 'file_path' or COPY select_query TO 'file_path'
   const copyToRegex = /^\s*COPY\s+(?:\(([\s\S]+)\)|([\s\S]+?))\s+TO\s+['"]([^'"]+)['"]\s*;?$/i;
@@ -102,6 +105,26 @@ export function getClickhouseHeaders(config: ClickhouseConfig, contentType: stri
 }
 
 /**
+ * Разбирает ответ ClickHouse. Если запрос должен был вернуть JSON (SELECT … FORMAT JSON), а пришло другое
+ * (страница сайта, TSV), это ошибка. Для остальных запросов (INSERT, DDL, свой FORMAT) текст — нормальный ответ.
+ */
+export function parseClickhouseResponse(responseText: string, query: string, maxRows: number = 500000): { success: true; data?: any; meta?: any; text?: string } {
+  try {
+    const parsed = JSON.parse(responseText);
+    let data = parsed.data || parsed;
+    if (Array.isArray(data) && data.length > maxRows) {
+      data = data.slice(0, maxRows);
+    }
+    return { success: true, data, meta: parsed.meta };
+  } catch {
+    if (isJsonResponseExpected(query)) {
+      throw new Error(`Ответ ClickHouse не в формате JSON: ${responseText.trim().slice(0, 200)}`);
+    }
+    return { success: true, text: responseText.trim() };
+  }
+}
+
+/**
  * Executes a Clickhouse query natively in Tauri, bypassing browser CORS/Mixed Content.
  */
 export async function executeClickhouseQueryTauri(config: ClickhouseConfig, query: string): Promise<any> {
@@ -129,18 +152,9 @@ export async function executeClickhouseQueryTauri(config: ClickhouseConfig, quer
       responseText = response.text || '';
     }
     
-    try {
-      const parsed = JSON.parse(responseText);
-      let data = parsed.data || parsed;
-      if (Array.isArray(data) && data.length > 500000) {
-        data = data.slice(0, 500000);
-      }
-      return { success: true, data, meta: parsed.meta };
-    } catch {
-      return { success: true, text: responseText.trim() };
-    }
+    return parseClickhouseResponse(responseText, query);
   } catch (err: any) {
-    throw new Error(err || 'Query failed');
+    throw new Error(err?.message || err || 'Query failed');
   }
 }
 
@@ -150,19 +164,7 @@ export async function executeClickhouseQueryTauri(config: ClickhouseConfig, quer
 export async function executeClickhouseCopyToTauri(config: ClickhouseConfig, innerSql: string, filePath: string): Promise<{ success: boolean; message: string; bytes: number }> {
   const { invoke } = await import('@tauri-apps/api/tauri');
 
-  let sqlToExec = innerSql.trim().replace(/;+$/, '');
-  if (!/\bFORMAT\b/i.test(sqlToExec)) {
-    const ext = filePath.split('.').pop()?.toLowerCase();
-    if (ext === 'csv') {
-      sqlToExec += ' FORMAT CSVWithNames';
-    } else if (ext === 'tsv' || ext === 'tab') {
-      sqlToExec += ' FORMAT TSVWithNames';
-    } else if (ext === 'json') {
-      sqlToExec += ' FORMAT JSONEachRow';
-    } else {
-      sqlToExec += ' FORMAT Parquet';
-    }
-  }
+  const sqlToExec = appendCopyFormat(innerSql, filePath);
 
   const url = getClickhouseUrl(config);
   const originalHeaders = getClickhouseHeaders(config, 'text/plain;charset=utf-8');
@@ -189,21 +191,10 @@ export async function executeClickhouseCopyFromTauri(config: ClickhouseConfig, i
   const { invoke } = await import('@tauri-apps/api/tauri');
 
   let target = innerSql.trim();
-  const ext = filePath.split('.').pop()?.toLowerCase();
   if (!/^INSERT INTO/i.test(target)) {
     target = `INSERT INTO ${target}`;
   }
-  if (!/\bFORMAT\b/i.test(target)) {
-    if (ext === 'csv') {
-      target += ' FORMAT CSVWithNames';
-    } else if (ext === 'tsv' || ext === 'tab') {
-      target += ' FORMAT TSVWithNames';
-    } else if (ext === 'json') {
-      target += ' FORMAT JSONEachRow';
-    } else {
-      target += ' FORMAT Parquet';
-    }
-  }
+  target = appendCopyFormat(target, filePath);
 
   const url = getClickhouseUrl(config, { query: target });
   const originalHeaders = getClickhouseHeaders(config, 'application/octet-stream');
@@ -245,16 +236,7 @@ export async function executeClickhouseQueryCapacitor(config: ClickhouseConfig, 
     }
 
     const responseText = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
-    try {
-      const parsed = JSON.parse(responseText);
-      let data = parsed.data || parsed;
-      if (Array.isArray(data) && data.length > 500000) {
-        data = data.slice(0, 500000);
-      }
-      return { success: true, data, meta: parsed.meta };
-    } catch {
-      return { success: true, text: responseText.trim() };
-    }
+    return parseClickhouseResponse(responseText, query);
   } catch (err: any) {
     throw new Error(err?.message || String(err) || 'Query failed');
   }
@@ -272,19 +254,7 @@ export async function executeClickhouseCopyToCapacitor(
   const { Filesystem, Directory } = await import('@capacitor/filesystem');
   const { Share } = await import('@capacitor/share');
 
-  let sqlToExec = innerSql.trim().replace(/;+$/, '');
-  if (!/\bFORMAT\b/i.test(sqlToExec)) {
-    const ext = filePath.split('.').pop()?.toLowerCase();
-    if (ext === 'csv') {
-      sqlToExec += ' FORMAT CSVWithNames';
-    } else if (ext === 'tsv' || ext === 'tab') {
-      sqlToExec += ' FORMAT TSVWithNames';
-    } else if (ext === 'json') {
-      sqlToExec += ' FORMAT JSONEachRow';
-    } else {
-      sqlToExec += ' FORMAT Parquet';
-    }
-  }
+  const sqlToExec = appendCopyFormat(innerSql, filePath);
 
   const url = getClickhouseUrl(config);
   const originalHeaders = getClickhouseHeaders(config, 'text/plain;charset=utf-8');

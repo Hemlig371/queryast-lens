@@ -52,6 +52,7 @@ const VARIABLE_AT_START = new RegExp('^(?:' + VARIABLE_PATTERN + ')');
 
 interface SqlState {
   inBlock: boolean;
+  inDollar: boolean;
   quote: "'" | '"' | '`' | null;
 }
 
@@ -66,10 +67,27 @@ const readBlockComment = (stream: StringStream, state: SqlState): string => {
   return 'lensComment';
 };
 
+/** Строка PostgreSQL в долларовых кавычках: $$ … $$ (может занимать несколько строк). */
+const readDollarString = (stream: StringStream, state: SqlState): string => {
+  while (!stream.eol()) {
+    if (stream.match('$$')) {
+      state.inDollar = false;
+      break;
+    }
+    stream.next();
+  }
+  return 'lensString';
+};
+
 const readQuoted = (stream: StringStream, state: SqlState): string => {
   const q = state.quote as string;
   while (!stream.eol()) {
     const ch = stream.next();
+    // ClickHouse/MySQL: \' и \\ внутри одинарных кавычек; обратная косая перед другим символом — обычный символ
+    if (ch === '\\' && q === "'" && (stream.peek() === "'" || stream.peek() === '\\')) {
+      stream.next();
+      continue;
+    }
     if (ch === q) {
       if (stream.peek() === q) {
         stream.next(); // удвоенная кавычка = экранирование
@@ -84,10 +102,11 @@ const readQuoted = (stream: StringStream, state: SqlState): string => {
 
 const sqlParser = {
   name: 'sql-lens',
-  startState: (): SqlState => ({ inBlock: false, quote: null }),
-  copyState: (s: SqlState): SqlState => ({ inBlock: s.inBlock, quote: s.quote }),
+  startState: (): SqlState => ({ inBlock: false, inDollar: false, quote: null }),
+  copyState: (s: SqlState): SqlState => ({ inBlock: s.inBlock, inDollar: s.inDollar, quote: s.quote }),
   token(stream: StringStream, state: SqlState): string | null {
     if (state.inBlock) return readBlockComment(stream, state);
+    if (state.inDollar) return readDollarString(stream, state);
     if (state.quote) return readQuoted(stream, state);
 
     if (stream.eatSpace()) return null;
@@ -101,6 +120,11 @@ const sqlParser = {
       return readBlockComment(stream, state);
     }
 
+    if (stream.match('$$')) {
+      state.inDollar = true;
+      return readDollarString(stream, state);
+    }
+
     const ch = stream.peek();
     if (ch === "'" || ch === '"' || ch === '`') {
       stream.next();
@@ -112,7 +136,8 @@ const sqlParser = {
       return null; // цвет переменной задаёт декоратор variableDecorations
     }
 
-    if (stream.match(/^\d+(?:\.\d+)?\b/)) return 'lensNumber';
+    // Числа: 0xFF, 42, 3.14, 1e5, 2.5E-3, .5 (слово, начинающееся с цифры, числом не считается)
+    if (stream.match(/^0[xX][0-9a-fA-F]+\b/) || stream.match(/^(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?\b/)) return 'lensNumber';
 
     if (stream.match(/^\w+/)) {
       const kind = classifyWord(stream.current());

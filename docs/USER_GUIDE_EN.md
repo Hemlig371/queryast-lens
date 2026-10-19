@@ -43,6 +43,7 @@ Switching between engines is done via the top control panel (selector **DuckDB**
   ```sql
   SELECT * FROM 'data.parquet' LIMIT 50;
   ```
+  A `.duckdb` database file opened in WASM mode (including on Android) is read into memory as a whole: changes to the database live only in memory and are not written back to the file.
 * **VFS File Manager**: Open the VFS modal via settings or the file panel to drag and drop your Parquet/CSV files into the virtual file system.
 * **In Desktop Version (Tauri)**: Queries access the local file system directly without browser memory limits. You can open local `.duckdb` database files or read absolute paths from disk.
 
@@ -105,7 +106,7 @@ Before execution, the editor automatically performs safe variable substitution. 
 * **Windows-1251 (ANSI) Encoding**: If you need to open an old corporate script file or a 1C export encoded in `cp1251`, use the dedicated Windows-1251 import button on the editor toolbar.
 
 ### Keyboard Shortcuts & Advanced Editor Actions
-* `Ctrl + Enter` (or `Cmd + Enter`) — Build the AST graph (unless the editor is maximized) and execute the query (if the DuckDB or ClickHouse panel is enabled). A selected fragment is executed instead of the whole text.
+* `Ctrl + Enter` (or `Cmd + Enter`) — In graph mode (the editor is not maximized) only builds the AST graph and does not execute the query; in the maximized editor it executes the query (if the DuckDB or ClickHouse panel is enabled). A selected fragment is executed instead of the whole text.
 * `Ctrl + Shift + C` — Copy the SQL text to the clipboard.
 * `Ctrl + Space` — Manually trigger autocomplete dropdown (tables, schema columns, keywords).
 * `Ctrl + F` / `Ctrl + H` — Open in-editor search / search & replace panel.
@@ -332,6 +333,7 @@ When DuckDB options are enabled in **UI Elements**, additional connection parame
 * **Threads**: CPU worker threads (`0` = automatic detection of all available cores).
 * **Init SQL Script (`duckDbInitSql`)**: Startup SQL executed automatically on every connection (e.g. `LOAD 'spatial';` or timezone setup `SET TimeZone='UTC';`).
 * **allow_unsigned_extensions**: Toggle allowing installation and execution of community extensions.
+* Engine parameters are applied when the connection to the database is made: changed values take effect on the next connection, not immediately in the open session.
 * The default paths (`./tmp`, `./extensions`) are relative to the application's working directory; if the application is installed in a protected folder, set absolute paths. The application does not show errors in these parameters or in Init SQL: if an extension did not load, run the script manually in the editor to see the error.
 
 #### Loading Custom DuckDB Extensions:

@@ -9,16 +9,78 @@ export const processEscapeSequences = (str: string): string => {
     .replace(/\0ESC_BS\0/g, '\\');
 };
 
+/** Символ слова: буква (в том числе кириллица), цифра, `_` или `$`. */
+export const isWordChar = (ch: string): boolean => /^[\p{L}\p{N}\p{M}_$]$/u.test(ch);
+
+/** Класс символов слова для регулярных выражений с флагом `u` (см. `isWordChar`). */
+const WORD_CHAR_CLASS = '[\\p{L}\\p{N}\\p{M}_$]';
+
+/** Регулярное выражение вхождений выделенного текста: слово ищется целиком (с Unicode-границами), остальное — как подстрока. */
+export const wordOccurrenceRegExp = (raw: string): RegExp => {
+  const escaped = raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const isWord = raw.length > 0 && Array.from(raw).every(isWordChar);
+  const pattern = isWord ? `(?<!${WORD_CHAR_CLASS})${escaped}(?!${WORD_CHAR_CLASS})` : escaped;
+  return new RegExp(pattern, 'giu');
+};
+
+/** Слово перед курсором для автокомплита (имя может содержать точки; начинается с буквы или `_`). */
+export const AUTOCOMPLETE_WORD_RE = /([\p{L}_][\p{L}\p{N}_.]*)$/u;
+
 const OPEN_BRACKETS: Record<string, string> = { '(': ')', '[': ']', '{': '}' };
 const CLOSE_BRACKETS: Record<string, string> = { ')': '(', ']': '[', '}': '{' };
+
+/** Маска «внутри строки или комментария» (1 — символ пропускается при поиске скобок). Правила те же, что у подсветки (sqlLanguage). */
+const buildSkipMask = (sql: string): Uint8Array => {
+  const mask = new Uint8Array(sql.length);
+  const n = sql.length;
+  let i = 0;
+  while (i < n) {
+    const c = sql[i];
+    if (c === '-' && sql[i + 1] === '-') {
+      let j = sql.indexOf('\n', i);
+      if (j === -1) j = n;
+      mask.fill(1, i, j);
+      i = j;
+    } else if (c === '/' && sql[i + 1] === '*') {
+      const close = sql.indexOf('*/', i + 2);
+      const j = close === -1 ? n : close + 2;
+      mask.fill(1, i, j);
+      i = j;
+    } else if (c === '$' && sql[i + 1] === '$') {
+      const close = sql.indexOf('$$', i + 2);
+      const j = close === -1 ? n : close + 2;
+      mask.fill(1, i, j);
+      i = j;
+    } else if (c === "'" || c === '"' || c === '`') {
+      let j = i + 1;
+      while (j < n) {
+        if (c === "'" && sql[j] === '\\' && (sql[j + 1] === "'" || sql[j + 1] === '\\')) { j += 2; continue; }
+        if (sql[j] === c) {
+          if (sql[j + 1] === c) { j += 2; continue; } // удвоенная кавычка = экранирование
+          j++;
+          break;
+        }
+        j++;
+      }
+      mask.fill(1, i, Math.min(j, n));
+      i = j;
+    } else {
+      i++;
+    }
+  }
+  return mask;
+};
 
 export const findMatchingBrackets = (sql: string, cursorPos: number): [number, number] | null => {
   if (!sql || cursorPos < 0 || cursorPos > sql.length) return null;
 
+  const mask = buildSkipMask(sql);
+  const isBracketAt = (idx: number) => !mask[idx] && !!(OPEN_BRACKETS[sql[idx]] || CLOSE_BRACKETS[sql[idx]]);
+
   let targetIdx = -1;
-  if (cursorPos > 0 && (OPEN_BRACKETS[sql[cursorPos - 1]] || CLOSE_BRACKETS[sql[cursorPos - 1]])) {
+  if (cursorPos > 0 && isBracketAt(cursorPos - 1)) {
     targetIdx = cursorPos - 1;
-  } else if (cursorPos < sql.length && (OPEN_BRACKETS[sql[cursorPos]] || CLOSE_BRACKETS[sql[cursorPos]])) {
+  } else if (cursorPos < sql.length && isBracketAt(cursorPos)) {
     targetIdx = cursorPos;
   } else {
     return null;
@@ -29,6 +91,7 @@ export const findMatchingBrackets = (sql: string, cursorPos: number): [number, n
     const closeChar = OPEN_BRACKETS[char];
     let depth = 1;
     for (let i = targetIdx + 1; i < sql.length; i++) {
+      if (mask[i]) continue;
       const c = sql[i];
       if (c === char) depth++;
       else if (c === closeChar) {
@@ -40,6 +103,7 @@ export const findMatchingBrackets = (sql: string, cursorPos: number): [number, n
     const openChar = CLOSE_BRACKETS[char];
     let depth = 1;
     for (let i = targetIdx - 1; i >= 0; i--) {
+      if (mask[i]) continue;
       const c = sql[i];
       if (c === char) depth++;
       else if (c === openChar) {
@@ -124,8 +188,8 @@ export const computeChangeCase = (text: string, start: number, end: number, targ
   }
   let wordStart = start;
   let wordEnd = start;
-  while (wordStart > 0 && /[\w$]/.test(text[wordStart - 1])) wordStart--;
-  while (wordEnd < text.length && /[\w$]/.test(text[wordEnd])) wordEnd++;
+  while (wordStart > 0 && isWordChar(text[wordStart - 1])) wordStart--;
+  while (wordEnd < text.length && isWordChar(text[wordEnd])) wordEnd++;
   if (wordStart >= wordEnd) return null;
   const converted = conv(text.slice(wordStart, wordEnd));
   return { from: wordStart, to: wordEnd, insert: converted, selStart: start, selEnd: start };
@@ -207,7 +271,8 @@ export const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]
 
 /** Регулярное выражение поиска. Бросает исключение при некорректном regex (если useRegex). */
 export const buildSearchRegex = (query: string, matchCase: boolean, useRegex: boolean, global: boolean = true): RegExp => {
-  const source = useRegex ? processEscapeSequences(query) : escapeRegExp(query);
+  // В regex-режиме запрос передаётся как есть: \n, \t, \r и \\ движок regex понимает сам
+  const source = useRegex ? query : escapeRegExp(query);
   return new RegExp(source, (global ? 'g' : '') + (matchCase ? '' : 'i'));
 };
 
@@ -215,37 +280,48 @@ export const buildSearchRegex = (query: string, matchCase: boolean, useRegex: bo
 export const findAllMatches = (text: string, query: string, matchCase: boolean, useRegex: boolean): TextMatch[] => {
   const result: TextMatch[] = [];
   if (!query) return result;
-  if (useRegex) {
-    try {
-      const reg = buildSearchRegex(query, matchCase, true, true);
-      let m: RegExpExecArray | null;
-      let lastIndex = -1;
-      while ((m = reg.exec(text)) !== null) {
-        result.push({ start: m.index, length: m[0].length });
-        if (reg.lastIndex === lastIndex) reg.lastIndex++;
-        lastIndex = reg.lastIndex;
-      }
-    } catch {
-      // некорректный regex во время набора
+  try {
+    // Один путь для обычного и regex-режима: toLowerCase() менял длину строки (İ) и сдвигал позиции
+    const reg = buildSearchRegex(query, matchCase, useRegex, true);
+    let m: RegExpExecArray | null;
+    let lastIndex = -1;
+    while ((m = reg.exec(text)) !== null) {
+      result.push({ start: m.index, length: m[0].length });
+      if (reg.lastIndex === lastIndex) reg.lastIndex++;
+      lastIndex = reg.lastIndex;
     }
-    return result;
-  }
-  const q = matchCase ? query : query.toLowerCase();
-  const src = matchCase ? text : text.toLowerCase();
-  let pos = 0;
-  while ((pos = src.indexOf(q, pos)) !== -1) {
-    result.push({ start: pos, length: query.length });
-    pos += Math.max(1, q.length);
+  } catch {
+    // некорректный regex во время набора
   }
   return result;
 };
 
-/** Текст замены для одного совпадения (в regex-режиме поддерживаются $1 и \n, \t). */
-export const computeReplacementText = (matched: string, query: string, replaceQuery: string, matchCase: boolean, useRegex: boolean): string => {
+/**
+ * Текст замены для одного совпадения (в regex-режиме поддерживаются $1 и \n, \t).
+ * `context` — весь текст и позиция совпадения: нужен, чтобы lookbehind и якоря работали как при поиске.
+ */
+export const computeReplacementText = (
+  matched: string,
+  query: string,
+  replaceQuery: string,
+  matchCase: boolean,
+  useRegex: boolean,
+  context?: { text: string; start: number },
+): string => {
   if (!useRegex) return replaceQuery;
   const effectiveReplace = processEscapeSequences(replaceQuery);
   try {
-    const reg = new RegExp(processEscapeSequences(query), matchCase ? '' : 'i');
+    if (context) {
+      // Sticky-regex заменяет ровно одно совпадение, начинающееся в позиции start, с учётом окружающего текста
+      const sticky = new RegExp(query, (matchCase ? '' : 'i') + 'y');
+      sticky.lastIndex = context.start;
+      const replaced = context.text.replace(sticky, effectiveReplace);
+      const tail = context.text.length - (context.start + matched.length);
+      if (replaced !== context.text || matched.length === 0) {
+        return replaced.slice(context.start, replaced.length - tail);
+      }
+    }
+    const reg = new RegExp(query, matchCase ? '' : 'i');
     return matched.replace(reg, effectiveReplace);
   } catch {
     return effectiveReplace;
@@ -254,7 +330,8 @@ export const computeReplacementText = (matched: string, query: string, replaceQu
 
 /** Замена всех совпадений в строке. Бросает исключение при некорректном regex. */
 export const replaceAllInText = (text: string, query: string, replaceQuery: string, matchCase: boolean, useRegex: boolean): string => {
-  const effectiveReplace = useRegex ? processEscapeSequences(replaceQuery) : replaceQuery;
   const reg = buildSearchRegex(query, matchCase, useRegex, true);
-  return text.replace(reg, effectiveReplace);
+  // Обычный режим: замена вставляется буквально ($$, $&, $1 без подстановок)
+  if (!useRegex) return text.replace(reg, () => replaceQuery);
+  return text.replace(reg, processEscapeSequences(replaceQuery));
 };

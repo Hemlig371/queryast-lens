@@ -3,6 +3,11 @@
   windows_subsystem = "windows"
 )]
 
+mod chcancel;
+mod sqlscript;
+mod timefmt;
+mod valjson;
+
 use std::sync::Mutex;
 use std::sync::Arc;
 use duckdb::{Config, Connection, Result, types::{Value, ValueRef}};
@@ -20,9 +25,35 @@ pub struct DuckDbCancelState {
     pub interrupt_handle: Arc<Mutex<Option<Arc<duckdb::InterruptHandle>>>>,
 }
 
+/// Отмена запросов ClickHouse: у каждого запроса своя запись (п. 3.13, RS-06), см. chcancel.rs.
 pub struct ClickhouseState {
-    pub cancel_tx: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+    pub cancel: chcancel::CancelRegistry<tokio::sync::oneshot::Sender<()>>,
 }
+
+const CANCELLED_BY_USER: &str = "Запрос отменен пользователем";
+/// Ожидание соединения с сервером ClickHouse (RS-07). Общего тайм-аута нет: долгие запросы законны, их отменяет пользователь.
+const CLICKHOUSE_CONNECT_TIMEOUT_SECS: u64 = 15;
+
+fn clickhouse_client() -> Result<Client, String> {
+    Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(CLICKHOUSE_CONNECT_TIMEOUT_SECS))
+        .build()
+        .map_err(|e| e.to_string())
+}
+
+/// Ждёт ЯВНОЙ отмены. Если отправитель просто уничтожен (запись снята), отмены не было — ждём вечно (RS-06).
+async fn wait_cancel(rx: tokio::sync::oneshot::Receiver<()>) {
+    if rx.await.is_err() {
+        std::future::pending::<()>().await;
+    }
+}
+
+/// Гипотезы аудита, которые в песочнице проверить нельзя (нет сборки Rust с зависимостями). Включать после воспроизведения
+/// на сборке Tauri; при `false` поведение точно прежнее. Подробности — CHANGES-stage-3.md, п. 3.10.
+/// RS-01: многооператорный скрипт — выполнить операторы по очереди, результат последнего вернуть (раньше: execute_batch, результат пуст).
+const SPLIT_MULTI_STATEMENT_SCRIPTS: bool = false;
+/// B-13: ошибка чтения посреди выборки (в том числе отмена) — вернуть ошибку, а не «успешный» усечённый результат.
+const FAIL_ON_MIDSTREAM_ERROR: bool = false;
 
 #[derive(Serialize, Deserialize)]
 pub struct QueryResult {
@@ -195,16 +226,27 @@ async fn execute_query(
             let mut stmt = match conn.prepare(&sql) {
                 Ok(s) => s,
                 Err(e) => {
-                    // Fallback for multi-statement scripts (e.g., CREATE ...; COPY ...)
-                    match conn.execute_batch(&sql) {
-                        Ok(_) => {
-                            return Ok(QueryResult {
-                                columns: Vec::new(),
-                                column_types: Vec::new(),
-                                rows: Vec::new(),
-                            });
+                    let parts = if SPLIT_MULTI_STATEMENT_SCRIPTS { sqlscript::split_statements(&sql) } else { Vec::new() };
+                    if let Some((last, head)) = parts.split_last().filter(|_| parts.len() > 1) {
+                        // RS-01: ранние операторы по одному (настоящая ошибка с номером оператора), результат даёт последний
+                        for (i, part) in head.iter().enumerate() {
+                            if let Err(err) = conn.execute_batch(part) {
+                                return Err(format!("Оператор {} из {}: {}", i + 1, parts.len(), err));
+                            }
                         }
-                        Err(_) => return Err(e.to_string()),
+                        conn.prepare(last).map_err(|err| format!("Оператор {} из {}: {}", parts.len(), parts.len(), err))?
+                    } else {
+                        // Fallback for multi-statement scripts (e.g., CREATE ...; COPY ...)
+                        match conn.execute_batch(&sql) {
+                            Ok(_) => {
+                                return Ok(QueryResult {
+                                    columns: Vec::new(),
+                                    column_types: Vec::new(),
+                                    rows: Vec::new(),
+                                });
+                            }
+                            Err(_) => return Err(e.to_string()),
+                        }
                     }
                 }
             };
@@ -224,7 +266,17 @@ async fn execute_query(
             const MAX_UI_ROWS: usize = 500_000;
             let mut rows = Vec::new();
 
-            while let Ok(Some(row)) = rows_iter.next() {
+            loop {
+                let row = match rows_iter.next() {
+                    Ok(Some(row)) => row,
+                    Ok(None) => break,
+                    Err(e) => {
+                        if FAIL_ON_MIDSTREAM_ERROR {
+                            return Err(e.to_string());
+                        }
+                        break;
+                    }
+                };
                 if rows.len() >= MAX_UI_ROWS {
                     break;
                 }
@@ -285,14 +337,8 @@ async fn execute_query(
                             }
                             _ => {
                                 if let Ok(val) = row.get::<_, Value>(col_idx) {
-                                    match val {
-                                        Value::Null => JsonValue::Null,
-                                        Value::Text(s) => JsonValue::String(s),
-                                        other => {
-                                            let s = format!("{:?}", other);
-                                            JsonValue::String(s)
-                                        }
-                                    }
+                                    // LIST, ARRAY, STRUCT, MAP, UNION, ENUM и прочее: JSON-текст вместо Rust Debug (п. 3.11, RS-02)
+                                    valjson::top_level_cell(&val)
                                 } else if let Ok(s) = row.get::<_, String>(col_idx) {
                                     JsonValue::String(s)
                                 } else {
@@ -372,16 +418,12 @@ async fn clickhouse_copy_to(
     body: String,
     file_path: String,
 ) -> Result<ClickhouseCopyResult, String> {
-    let (cancel_tx, mut cancel_rx) = tokio::sync::oneshot::channel::<()>();
-    {
-        let mut guard = state.cancel_tx.lock().unwrap_or_else(|e| e.into_inner());
-        *guard = Some(cancel_tx);
-    }
+    let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
+    let _cancel_guard = chcancel::CancelGuard::new(&state.cancel, cancel_tx);
+    let cancelled = wait_cancel(cancel_rx);
+    tokio::pin!(cancelled);
 
-    let client = Client::builder()
-        // we might not need to configure certs, but in case let's just let defaults apply
-        .build()
-        .map_err(|e| e.to_string())?;
+    let client = clickhouse_client()?;
 
     let req_method = if method.to_uppercase() == "POST" { reqwest::Method::POST } else { reqwest::Method::GET };
     let mut req = client.request(req_method, &url);
@@ -398,21 +440,39 @@ async fn clickhouse_copy_to(
         return Err(text);
     }
 
-    let mut file = File::create(&file_path).await.map_err(|e| e.to_string())?;
-    let mut stream = res.bytes_stream();
-    let mut bytes_written: u64 = 0;
+    // RS-08: пишем во временный файл рядом и переименовываем после успеха. Прежний файл не затирается ни при ошибке сети,
+    // ни при отмене, а частичный файл не остаётся. (Предупреждения о перезаписи нет: нужен новый параметр команды, см. отчёт.)
+    let tmp_path = format!("{}.part", file_path);
+    let outcome: Result<u64, String> = async {
+        let mut file = File::create(&tmp_path).await.map_err(|e| e.to_string())?;
+        let mut stream = res.bytes_stream();
+        let mut bytes_written: u64 = 0;
 
-    while let Some(chunk_res) = tokio::select! {
-        chunk_opt = stream.next() => chunk_opt,
-        _ = &mut cancel_rx => {
-            drop(file);
-            let _ = tokio::fs::remove_file(&file_path).await;
-            return Err("Запрос отменен пользователем".to_string());
+        while let Some(chunk_res) = tokio::select! {
+            chunk_opt = stream.next() => chunk_opt,
+            _ = &mut cancelled => {
+                return Err(CANCELLED_BY_USER.to_string());
+            }
+        } {
+            let chunk = chunk_res.map_err(|e| e.to_string())?;
+            file.write_all(&chunk).await.map_err(|e| e.to_string())?;
+            bytes_written += chunk.len() as u64;
         }
-    } {
-        let chunk = chunk_res.map_err(|e| e.to_string())?;
-        file.write_all(&chunk).await.map_err(|e| e.to_string())?;
-        bytes_written += chunk.len() as u64;
+        file.flush().await.map_err(|e| e.to_string())?;
+        Ok(bytes_written)
+    }
+    .await;
+
+    let bytes_written = match outcome {
+        Ok(n) => n,
+        Err(e) => {
+            let _ = tokio::fs::remove_file(&tmp_path).await;
+            return Err(e);
+        }
+    };
+    if let Err(e) = tokio::fs::rename(&tmp_path, &file_path).await {
+        let _ = tokio::fs::remove_file(&tmp_path).await;
+        return Err(e.to_string());
     }
 
     Ok(ClickhouseCopyResult {
@@ -430,13 +490,12 @@ async fn clickhouse_copy_from(
     headers: std::collections::HashMap<String, String>,
     file_path: String,
 ) -> Result<ClickhouseCopyResult, String> {
-    let (cancel_tx, mut cancel_rx) = tokio::sync::oneshot::channel::<()>();
-    {
-        let mut guard = state.cancel_tx.lock().unwrap_or_else(|e| e.into_inner());
-        *guard = Some(cancel_tx);
-    }
+    let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
+    let _cancel_guard = chcancel::CancelGuard::new(&state.cancel, cancel_tx);
+    let cancelled = wait_cancel(cancel_rx);
+    tokio::pin!(cancelled);
 
-    let client = Client::builder().build().map_err(|e| e.to_string())?;
+    let client = clickhouse_client()?;
 
     let file = File::open(&file_path).await.map_err(|e| e.to_string())?;
     let file_size = file.metadata().await.map_err(|e| e.to_string())?.len();
@@ -458,8 +517,8 @@ async fn clickhouse_copy_from(
     
     let res = tokio::select! {
         res_val = &mut send_fut => res_val,
-        _ = &mut cancel_rx => {
-            return Err("Запрос отменен пользователем".to_string());
+        _ = &mut cancelled => {
+            return Err(CANCELLED_BY_USER.to_string());
         }
     };
 
@@ -491,13 +550,12 @@ async fn execute_clickhouse_query_rust(
     headers: std::collections::HashMap<String, String>,
     body: String,
 ) -> Result<ClickhouseQueryResponse, String> {
-    let (cancel_tx, mut cancel_rx) = tokio::sync::oneshot::channel::<()>();
-    {
-        let mut guard = state.cancel_tx.lock().unwrap_or_else(|e| e.into_inner());
-        *guard = Some(cancel_tx);
-    }
+    let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
+    let _cancel_guard = chcancel::CancelGuard::new(&state.cancel, cancel_tx);
+    let cancelled = wait_cancel(cancel_rx);
+    tokio::pin!(cancelled);
 
-    let client = Client::builder().build().map_err(|e| e.to_string())?;
+    let client = clickhouse_client()?;
     let req_method = if method.to_uppercase() == "POST" { reqwest::Method::POST } else { reqwest::Method::GET };
     
     let mut req = client.request(req_method, &url);
@@ -511,8 +569,8 @@ async fn execute_clickhouse_query_rust(
     
     let res = tokio::select! {
         res_val = &mut send_fut => res_val,
-        _ = &mut cancel_rx => {
-            return Err("Запрос отменен пользователем".to_string());
+        _ = &mut cancelled => {
+            return Err(CANCELLED_BY_USER.to_string());
         }
     };
 
@@ -531,8 +589,8 @@ async fn execute_clickhouse_query_rust(
                     None => break,
                 }
             }
-            _ = &mut cancel_rx => {
-                return Err("Запрос отменен пользователем".to_string());
+            _ = &mut cancelled => {
+                return Err(CANCELLED_BY_USER.to_string());
             }
         }
     }
@@ -551,8 +609,8 @@ async fn execute_clickhouse_query_rust(
 
 #[tauri::command]
 fn cancel_clickhouse_query(state: State<'_, ClickhouseState>) -> Result<(), String> {
-    let mut guard = state.cancel_tx.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some(tx) = guard.take() {
+    // Отменяется самый поздний из идущих запросов (как и раньше); запросы, которые уже закончились, в реестре не остаются
+    if let Some(tx) = state.cancel.take_latest() {
         let _ = tx.send(());
     }
     Ok(())
@@ -570,7 +628,7 @@ fn main() {
     .manage(DuckDbCancelState {
         interrupt_handle: Arc::new(Mutex::new(None)),
     })
-    .manage(ClickhouseState { cancel_tx: Mutex::new(None) })
+    .manage(ClickhouseState { cancel: chcancel::CancelRegistry::new() })
     .invoke_handler(tauri::generate_handler![
       connect_db,
       configure_db,
@@ -585,6 +643,16 @@ fn main() {
       execute_clickhouse_query_rust,
       cancel_clickhouse_query
     ])
-    .run(tauri::generate_context!())
-    .expect("error while running tauri application");
+    .build(tauri::generate_context!())
+    .expect("error while building tauri application")
+    .run(|app_handle, event| {
+        // RS-10: при выходе закрываем соединение DuckDB, чтобы WAL был сведён в основной файл (checkpoint при закрытии)
+        if let tauri::RunEvent::Exit = event {
+            let state = app_handle.state::<DbState>();
+            // try_lock: если запрос ещё держит соединение, выход не ждёт его
+            if let Ok(mut guard) = state.0.try_lock() {
+                *guard = None;
+            }
+        }
+    });
 }

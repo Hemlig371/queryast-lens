@@ -10,9 +10,17 @@ import {
 } from '@xyflow/react';
 import { exportGraphImage, buildGraphTextExport, waitForGraphRendered } from './utils/graphExport';
 import { computeColumnStats as computeColumnStatsPure } from './utils/columnStats';
+import { reduceColumnClick, formatSelectedColumns } from './utils/columnSelection';
+import { needsJsonFormat, appendJsonFormat } from './utils/clickhouseFormat';
+import { buildSchemaDbKey, buildTableColumnsKey, SchemaEngine } from './utils/schemaKeys';
+import { resultRowsToMarkdown } from './utils/markdownTable';
+import { buildGroupBySql, buildKeepColumnsSql, buildRemoveColumnsSql, buildDistinctSql } from './utils/columnActionsSql';
 import { generateFilteredSortedSql as generateFilteredSortedSqlPure } from './utils/filteredSql';
 import { downloadFileWithFallback, copyToClipboard } from "./utils/exportUtils";
 import { t } from './utils/i18n';
+import { formatCellValue } from './utils/formatCellValue';
+import { nextTabName } from './utils/tabNames';
+import { decideOpenFile, MAX_OPEN_FILE_BYTES } from './utils/openFile';
 
 import { 
   Play, 
@@ -94,9 +102,11 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { SettingsModal, getSavedHotkeys, getSavedFormatterSettings, FormatterSettings, getSavedUiVisibilitySettings, UiVisibilitySettings, QuickActionTemplate, getQuickActionTemplates, exportWorkspaceSettings, importWorkspaceSettings, generateWorkspaceBundleObject, applyWorkspaceBundleSilently, resolveWorkspaceSyncFilePath } from './components/SettingsModal';
 import { VersionHistoryModal } from './components/VersionHistoryModal';
 import { saveVersion, getVersions, getLatestVersion } from './utils/versionHistory';
-import { splitBySemicolonIgnoringQuotes, formatColumnType, replaceVariablesInSql } from './lib/sqlUtils';
+import { formatColumnType, replaceVariablesInSql, buildQuickActionSource, findUnresolvedVariables } from './lib/sqlUtils';
 import { formatSqlText, compactSql } from './utils/sqlFormat';
-import { buildComboString } from './editor/hotkeysMatch';
+import { buildPagedSql, splitStatements, type ExecutionMode } from './utils/pagedSql';
+import { rowsFromColumns, getResultColumns, columnsFromMeta } from './utils/resultRows';
+import { resultRowsToTsv } from './utils/resultTsv';
 import { getTableSizeBadge } from './utils/tableSize';
 import { getSavedSession, SESSION_STORAGE_KEY } from './utils/appSession';
 import type { EditorTab } from './types/editorTab';
@@ -105,13 +115,22 @@ import { getSessionTabs, saveSessionTabs } from './utils/sessionStorage';
 import { connectDuckDbWasmFile, connectDuckDbWasmMemory, queryDuckDbWasm, disconnectDuckDbWasm, applyDuckDbConfigWasm, attachDuckDbWasmFile } from './lib/duckdbWasm';
 import { WasmFileManagerModal } from './components/WasmFileManagerModal';
 import { ClickhouseModal } from './components/ClickhouseModal';
-import { ClickhouseConfig, parseClickhouseCopy, getClickhouseUrl, getClickhouseHeaders, isTauriEnvironment, isCapacitorEnvironment, executeClickhouseQueryTauri, executeClickhouseQueryCapacitor, executeClickhouseCopyToTauri, executeClickhouseCopyToCapacitor, executeClickhouseCopyFromTauri, cancelClickhouseQueryTauri } from './lib/clickhouse';
+import { ClickhouseConfig, parseClickhouseCopy, parseClickhouseResponse, getClickhouseUrl, getClickhouseHeaders, isTauriEnvironment, isCapacitorEnvironment, executeClickhouseQueryTauri, executeClickhouseQueryCapacitor, executeClickhouseCopyToTauri, executeClickhouseCopyToCapacitor, executeClickhouseCopyFromTauri, cancelClickhouseQueryTauri } from './lib/clickhouse';
 import { getSchemaCache, saveSchemaCache } from './utils/schemaDbCache';
 import { replaceSecretsInSql } from './utils/vaultStorage';
 import { exportToExcel } from './utils/excelExporter';
 import { getSavedExcelSettings, getSavedExcelPresets } from './utils/excelSettingsStorage';
 import { ExcelPreset } from './types/excelSettings';
 import { saveTabResult, getTabResult, removeTabResult, cleanupOrphanedTabResults, getTabResultSync } from './utils/resultStorage';
+import { createRunTracker, executeStatsQuery } from './utils/queryRun';
+import { mergeTabResult, shouldPersistTabResult } from './utils/tabResultState';
+import { copyResultRows, type CopyResultInput } from './utils/copyResult';
+import { hasExcelSaveDirective } from './utils/excelParse';
+import { shouldLeaveCopyToBrowser, isSelectionInEditor } from './utils/copyGuard';
+import { reconcileSelectedNodeId, findSelectedNode } from './utils/graphSelection';
+import { nextIsModified, setTabSql, shouldConfirmClose, formatWithFeedback } from './utils/tabModified';
+import { switchConnection, stateAfterSwitch, type ConnState } from './utils/connectionSwitch';
+import { resolveHotkeyAction, classifyHotkeyTarget, hotkeyHint } from './utils/appHotkeys';
 
 export type { EditorTab } from './types/editorTab';
 
@@ -137,6 +156,8 @@ export default function App() {
   const [duckDbResults, setDuckDbResults] = useState<any[] | null>(null);
   const [queryExecutionDuration, setQueryExecutionDuration] = useState<string | null>(null);
   const [resultColumnTypes, setResultColumnTypes] = useState<Record<string, string>>({});
+  // Порядок столбцов результата (п. 3.2): объект строки не хранит порядок числовых имён; null — брать ключи первой строки
+  const [resultColumns, setResultColumns] = useState<string[] | null>(null);
   const [duckDbError, setDuckDbError] = useState<string | null>(null);
   const [runningTabId, setRunningTabId] = useState<string | null>(null);
   const [isDuckDbResultVisible, setIsDuckDbResultVisible] = useState<boolean>(false);
@@ -252,7 +273,7 @@ export default function App() {
         }
         const selected = await openFn({
           multiple: false,
-          filters: [{ name: 'DuckDB / SQLite', extensions: ['duckdb', 'db', 'sqlite'] }]
+          filters: [{ name: 'DuckDB', extensions: ['duckdb', 'db'] }]
         });
 
         if (selected && typeof selected === 'string') {
@@ -282,6 +303,9 @@ export default function App() {
 
   // Interactive Results Table States
   const [selectedResultCell, setSelectedResultCell] = useState<{ rowIndex: number; colKey: string } | null>(null);
+  // Мультивыбор столбцов в шапке (Shift — диапазон, Ctrl/Cmd — добавить/убрать). Пусто, пока выбран один столбец или ничего.
+  const [multiSelectedCols, setMultiSelectedCols] = useState<string[]>([]);
+  const columnAnchorRef = useRef<string | null>(null);
   const [executeContextMenu, setExecuteContextMenu] = useState<{ x: number; y: number; text: string } | null>(null);
   const [resultTableContextMenu, setResultTableContextMenu] = useState<{
     x: number;
@@ -327,6 +351,7 @@ export default function App() {
   }, [resultTableContextMenu]);
 
   const handleJumpToColumn = (colKey: string) => {
+    setMultiSelectedCols([]);
     setSelectedResultCell({ rowIndex: -1, colKey });
     setShowColumnJumpDropdown(false);
     setTimeout(() => {
@@ -535,11 +560,7 @@ export default function App() {
     };
   }, [activeEngine]);
 
-  const extractedTableName = useMemo(() => {
-    if (!lastExecutedSql.trim()) return 'table';
-    const cleanSql = lastExecutedSql.replace(/^(\s*(--[^\n]*\n|\/\*[\s\S]*?\*\/))*/g, '').trim();
-    return `(\n${cleanSql.replace(/;+$/, '')}\n) AS _sub`;
-  }, [lastExecutedSql]);
+  const extractedTableName = useMemo(() => buildQuickActionSource(lastExecutedSql), [lastExecutedSql]);
 
   const prevDuckDbPathRef = useRef<string | null>(duckDbConnectedPath);
   useEffect(() => {
@@ -552,12 +573,18 @@ export default function App() {
 
 
 
+  // Движок, чей кэш схемы сейчас показывается (ключи столбцов таблиц включают его)
+  const schemaEngine: SchemaEngine =
+    (activeEngine === 'clickhouse' || (!duckDbConnectedPath && !isWasmMode && clickhouseConfig)) && clickhouseConfig
+      ? 'clickhouse'
+      : 'duckdb';
+
   const toggleSchemaNode = (id: string) => {
     setExpandedSchemaNodes(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
   const fetchTableColumns = async (dbName: string, schemaName: string, tableName: string, tableType: string) => {
-    const tableKey = `${dbName}.${schemaName}.${tableName}`;
+    const tableKey = buildTableColumnsKey(schemaEngine, dbName, schemaName, tableName);
     if (tableColumnsMapRef.current[tableKey] && tableColumnsMapRef.current[tableKey].length > 0) return;
 
     setLoadingTableCols(prev => ({ ...prev, [tableKey]: true }));
@@ -734,9 +761,7 @@ export default function App() {
         setTableColumnsMap(prev => {
           const updated = { ...prev, [tableKey]: columns };
           const isCH = activeEngine === 'clickhouse' || (!duckDbConnectedPath && !isWasmMode && clickhouseConfig);
-          const dbKey = isCH && clickhouseConfig
-            ? `clickhouse:${clickhouseConfig.host}:${clickhouseConfig.user}:${clickhouseConfig.database || 'default'}`
-            : `duckdb:${duckDbConnectedPath || (isWasmMode ? 'wasm' : 'local')}`;
+          const dbKey = buildSchemaDbKey({ engine: isCH && clickhouseConfig ? 'clickhouse' : 'duckdb', clickhouse: clickhouseConfig, duckDbPath: duckDbConnectedPath, isWasm: isWasmMode });
           if (duckDbSchema) {
             saveSchemaCache({
               dbKey,
@@ -757,7 +782,7 @@ export default function App() {
 
   const handleToggleTableNode = async (dbName: string, schemaName: string, tableName: string, tableType: string) => {
     const nodeKey = `tbl-${dbName}-${schemaName}-${tableName}`;
-    const tableKey = `${dbName}.${schemaName}.${tableName}`;
+    const tableKey = buildTableColumnsKey(schemaEngine, dbName, schemaName, tableName);
     
     const isCurrentlyExpanded = !!expandedSchemaNodes[nodeKey];
     setExpandedSchemaNodes(prev => ({ ...prev, [nodeKey]: !isCurrentlyExpanded }));
@@ -805,7 +830,7 @@ export default function App() {
         : 'Tables';
       const tbl = tblName;
       if (!tbl) return;
-      const tableKey = `${db}.${sch}.${tbl}`;
+      const tableKey = buildTableColumnsKey(schemaEngine, db, sch, tbl);
       const cachedCols = tableColumnsMap[tableKey];
 
       let colMatch = false;
@@ -825,7 +850,7 @@ export default function App() {
       };
     });
     return tree;
-  }, [duckDbSchema, tableColumnsMap, schemaSearchTerm]);
+  }, [duckDbSchema, tableColumnsMap, schemaSearchTerm, schemaEngine]);
 
   const [showSnippetsModal, setShowSnippetsModal] = useState<boolean>(false);
   const [snippetsModalCategory, setSnippetsModalCategory] = useState<string | undefined>(undefined);
@@ -870,12 +895,84 @@ export default function App() {
       if (!row || typeof row !== 'object') return false;
       return Object.values(row).some(val => {
         if (val === null || val === undefined) return false;
-        return String(val).toLowerCase().includes(term);
+        return formatCellValue(val).toLowerCase().includes(term);
       });
     });
   }, [pagedResults, valueSearchTerm]);
 
   const computeColumnStats = useCallback((colKey: string, rows: any[]) => computeColumnStatsPure(colKey, rows), [activeEngine]);
+
+  // Столбцы результата в порядке выдачи (нужны для диапазона Shift и для REMOVE COLS).
+  const resultColumnKeys = useMemo<string[]>(
+    () => getResultColumns(duckDbResults, resultColumns),
+    [duckDbResults, resultColumns]
+  );
+
+  // Подсветка столбца: при мультивыборе — по списку, иначе как раньше — по выбранной ячейке/столбцу.
+  const isColHighlighted = (colKey: string) =>
+    multiSelectedCols.length > 0 ? multiSelectedCols.includes(colKey) : selectedResultCell?.colKey === colKey;
+
+  // 2+ столбца — мультивыбор (статистика закрывается и не считается); 1 — обычный выбор со статистикой; 0 — снять выбор.
+  const applyColumnSelection = (next: string[]) => {
+    if (next.length >= 2) {
+      setMultiSelectedCols(next);
+      setSelectedResultCell(null);
+      setDuckDbSelectedCell(null);
+    } else if (next.length === 1) {
+      setMultiSelectedCols([]);
+      setSelectedResultCell({ rowIndex: -1, colKey: next[0] });
+      setDuckDbSelectedCell({ title: `${t('Столбец:')} ${next[0]}`, content: computeColumnStats(next[0], displayedResults) });
+    } else {
+      setMultiSelectedCols([]);
+      setSelectedResultCell(null);
+      setDuckDbSelectedCell(null);
+    }
+  };
+
+  // Клик по таблице результатов: снять фокус с редактора и остаток выделения в нём, чтобы Ctrl+C копировал выбранное в таблице.
+  const releaseEditorFocus = () => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    try { window.getSelection()?.removeAllRanges(); } catch (_) {}
+  };
+
+  const handleColumnHeaderClick = (e: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }, colKey: string) => {
+    releaseEditorFocus();
+    const current = multiSelectedCols.length > 0
+      ? multiSelectedCols
+      : (selectedResultCell && selectedResultCell.rowIndex === -1 ? [selectedResultCell.colKey] : []);
+    const { selection, anchor } = reduceColumnClick(resultColumnKeys, current, columnAnchorRef.current, e, colKey);
+    columnAnchorRef.current = anchor;
+    applyColumnSelection(selection);
+  };
+
+  const handleColumnHeaderContextMenu = (
+    e: { preventDefault: () => void; stopPropagation: () => void; clientX: number; clientY: number },
+    colKey: string
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // ПКМ внутри мультивыбора сохраняет его; вне его — выбор сводится к одному столбцу, как раньше.
+    if (!(multiSelectedCols.length >= 2 && multiSelectedCols.includes(colKey))) {
+      setMultiSelectedCols([]);
+      setSelectedResultCell({ rowIndex: -1, colKey });
+    }
+    setResultTableContextMenu({ x: e.clientX, y: e.clientY, colKey });
+  };
+
+  // Меню шапки: ПКМ внутри мультивыбора (2+ столбца) работает со всеми выбранными, иначе — с одним столбцом.
+  const isMultiColumnMenu = !!resultTableContextMenu
+    && resultTableContextMenu.cellValue === undefined
+    && multiSelectedCols.length >= 2
+    && multiSelectedCols.includes(resultTableContextMenu.colKey);
+  const menuColumns: string[] = isMultiColumnMenu ? multiSelectedCols : (resultTableContextMenu ? [resultTableContextMenu.colKey] : []);
+
+  // Новый результат — мультивыбор сбрасывается (столбцы могли измениться).
+  useEffect(() => {
+    setMultiSelectedCols([]);
+    columnAnchorRef.current = null;
+  }, [duckDbResults]);
 
   useEffect(() => {
     if (selectedResultCell && selectedResultCell.rowIndex === -1 && selectedResultCell.colKey) {
@@ -889,19 +986,27 @@ export default function App() {
   useEffect(() => {
     const handleCopyKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.code === 'KeyC') {
-        const activeTag = document.activeElement?.tagName?.toLowerCase();
-        if (activeTag === 'input' || activeTag === 'textarea' || (document.activeElement as HTMLElement | null)?.isContentEditable) return;
-
         const selection = window.getSelection();
-        if (selection && selection.toString().length > 0) return;
+        if (shouldLeaveCopyToBrowser({
+          activeTag: document.activeElement?.tagName ?? '',
+          activeIsEditable: !!(document.activeElement as HTMLElement | null)?.isContentEditable,
+          selectionText: selection ? selection.toString() : '',
+          selectionInEditor: isSelectionInEditor(selection),
+        })) return;
 
-        if (selectedResultCell && displayedResults && displayedResults.length > 0) {
+        if (multiSelectedCols.length > 0 && displayedResults && displayedResults.length > 0) {
+          e.preventDefault();
+          e.stopPropagation();
+          copyToClipboard(formatSelectedColumns(multiSelectedCols));
+          setCopiedResultCell({ rowIndex: -1, colKey: multiSelectedCols[0] });
+          setTimeout(() => setCopiedResultCell(null), 1500);
+        } else if (selectedResultCell && displayedResults && displayedResults.length > 0) {
           let textToCopy = '';
           if (selectedResultCell.rowIndex === -1) {
             textToCopy = selectedResultCell.colKey;
           } else if (selectedResultCell.rowIndex >= 0 && displayedResults[selectedResultCell.rowIndex]) {
             const val = displayedResults[selectedResultCell.rowIndex][selectedResultCell.colKey];
-            textToCopy = val === null || val === undefined ? 'null' : String(val);
+            textToCopy = val === null || val === undefined ? 'null' : formatCellValue(val);
           }
           if (textToCopy) {
             e.preventDefault();
@@ -921,7 +1026,7 @@ export default function App() {
     };
     window.addEventListener('keydown', handleCopyKeyDown);
     return () => window.removeEventListener('keydown', handleCopyKeyDown);
-  }, [selectedResultCell, displayedResults, duckDbSelectedCell]);
+  }, [selectedResultCell, displayedResults, duckDbSelectedCell, multiSelectedCols]);
   const formatterSettingsRef = useRef<FormatterSettings>(formatterSettings);
   useEffect(() => {
     formatterSettingsRef.current = formatterSettings;
@@ -1000,6 +1105,7 @@ export default function App() {
         setDuckDbResults(data.duckDbResults);
         setQueryExecutionDuration(data.queryExecutionDuration);
         setResultColumnTypes(data.resultColumnTypes || {});
+        setResultColumns(data.resultColumns ?? null);
         setIsDuckDbResultVisible(data.isDuckDbResultVisible);
         setDuckDbPage(data.duckDbPage || 1);
         setDuckDbError(data.duckDbError || null);
@@ -1010,6 +1116,7 @@ export default function App() {
         setDuckDbResults(null);
         setQueryExecutionDuration(null);
         setResultColumnTypes({});
+        setResultColumns(null);
         setIsDuckDbResultVisible(false);
         setDuckDbPage(1);
         setDuckDbError(null);
@@ -1046,12 +1153,13 @@ export default function App() {
       duckDbResults,
       queryExecutionDuration,
       resultColumnTypes,
+      resultColumns,
       isDuckDbResultVisible,
       duckDbPage,
       duckDbError,
       lastExecutedSql
     }).catch(console.error);
-  }, [duckDbResults, queryExecutionDuration, resultColumnTypes, isDuckDbResultVisible, duckDbPage, duckDbError, lastExecutedSql, activeTabId, loadedTabId]);
+  }, [duckDbResults, queryExecutionDuration, resultColumnTypes, resultColumns, isDuckDbResultVisible, duckDbPage, duckDbError, lastExecutedSql, activeTabId, loadedTabId]);
   
   // Cleanup orphaned tab results once tabs are fully loaded from session
   useEffect(() => {
@@ -1063,6 +1171,7 @@ export default function App() {
 
   useEffect(() => {
     setResultTableContextMenu(null);
+    setMultiSelectedCols([]);
     if (isCreatingFilterTabRef.current) {
       isCreatingFilterTabRef.current = false;
     } else {
@@ -1157,14 +1266,23 @@ export default function App() {
     }
   };
 
-  const handleApplyTableGroupBy = (colKey: string) => {
+  // Действия над столбцами из меню шапки: GROUP BY / KEEP / REMOVE / DISTINCT.
+  // Оборачивают текущий запрос (с применёнными фильтрами таблицы) подзапросом и открывают результат во вкладке
+  // по той же схеме, что и прежний GROUP BY (сортировка и фильтры таблицы сбрасываются).
+  const handleApplyColumnAction = (kind: 'group' | 'keep' | 'remove' | 'distinct', cols: string[]) => {
     const activeTab = tabs.find(t => t.id === activeTabId);
     const rootBaseSql = activeTab?.originalSql || lastExecutedSql || activeTab?.sql || '';
     const cleanSql = rootBaseSql.trim().replace(/;+$/, '');
     if (!cleanSql) return;
 
     const baseFilteredSql = generateFilteredSortedSql(rootBaseSql, activeSqlFilters, []);
-    const newSql = `SELECT "${colKey.replace(/"/g, '""')}", COUNT(*) AS count\nFROM (\n  ${baseFilteredSql}\n) AS _sub\nGROUP BY 1\nORDER BY 2 DESC`;
+    const newSql =
+      kind === 'group' ? buildGroupBySql(baseFilteredSql, cols)
+      : kind === 'keep' ? buildKeepColumnsSql(baseFilteredSql, cols)
+      : kind === 'remove' ? buildRemoveColumnsSql(baseFilteredSql, resultColumnKeys, cols)
+      : buildDistinctSql(baseFilteredSql, cols);
+    if (!newSql) return;
+    const tabSuffix = kind === 'group' ? 'Group' : kind === 'keep' ? 'Keep' : kind === 'remove' ? 'Remove' : 'Distinct';
 
     sqlRef.current = newSql;
     setActiveSqlFilters([]);
@@ -1175,7 +1293,7 @@ export default function App() {
       handleExecuteCurrentEngineQuery(newSql, 1);
     } else {
       const newTabId = `tab_${Date.now()}`;
-      const newTabTitle = `${activeTab?.title || t('Запрос')} (Group)`;
+      const newTabTitle = `${activeTab?.title || t('Запрос')} (${tabSuffix})`;
       const newTab: EditorTab = {
         id: newTabId,
         title: newTabTitle,
@@ -1353,59 +1471,20 @@ export default function App() {
       const dbPath = savedSession?.duckDbConnectedPath;
       if (!dbPath) return;
 
+      setIsDuckDbRunning(true);
       try {
-        setIsDuckDbRunning(true);
-        let connectedSuccessfully = false;
-
-        if (isTauriEnv) {
-          try {
-            const path = await tauriInvoke<string>('connect_db', { path: dbPath, options: duckDbConfig });
-            setDuckDbConnectedPath(path || dbPath);
-            setIsWasmMode(false);
-            setDuckDbError(null);
-            connectedSuccessfully = true;
-          } catch (tauriErr) {
-            console.warn("Tauri auto-connect failed:", tauriErr);
-          }
-        }
-
-        if (!connectedSuccessfully) {
-          try {
-            const data = await fetchApiJson("/api/duckdb/connect", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ dbPath })
-            });
-            if (data && !data.error) {
-              connectedSuccessfully = true;
-              setIsWasmMode(false);
-              setDuckDbConnectedPath(data.path || dbPath);
-              setDuckDbError(null);
-            }
-          } catch (_) {
-            connectedSuccessfully = false;
-          }
-        }
-
-        if (!connectedSuccessfully && !isTauriEnv && dbPath === ':memory:') {
-          try {
-            await connectDuckDbWasmMemory();
-            connectedSuccessfully = true;
-            setIsWasmMode(true);
-            setDuckDbConnectedPath(':memory:');
-            setDuckDbError(null);
-          } catch (err) {
-            console.warn("WASM auto-connect to :memory: failed:", err);
-          }
-        }
-
-        if (connectedSuccessfully) {
-          setShowDuckDbSchemaPanel(true);
-        } else {
-          console.warn("Could not auto-reconnect DuckDB database for path:", dbPath);
-        }
+        // В десктопе (Tauri) локальный Express-сервер не используется: не опрашиваем чужие порты.
+        // Конфигурация DuckDB передаётся и в запасном пути (раньше терялась).
+        const conn = await openDuckDbConnection(dbPath, { tryExpress: !isTauriEnv, allowWasm: true });
+        setDuckDbConnectedPath(conn.path);
+        setIsWasmMode(conn.wasm);
+        setDuckDbError(null);
+        setShowDuckDbSchemaPanel(true);
       } catch (err: any) {
         console.warn("DuckDB auto-reconnect error:", err);
+        // сбой автопереподключения виден пользователю (раньше был только console.warn)
+        setDuckDbError(t("Не удалось переподключиться к DuckDB: ") + (err?.message || String(err)));
+        setIsDuckDbResultVisible(true);
       } finally {
         setIsDuckDbRunning(false);
       }
@@ -1549,28 +1628,134 @@ export default function App() {
     setShowDuckDbSchemaPanel(true);
   };
 
-  const handleConnectToRecentDuckDb = async (dbPath: string) => {
-    setShowDuckDbConnMenu(false);
-    if (duckDbConnectedPath || clickhouseConfig) {
-      await handleDisconnectDuckDb();
-    }
-    setClickhouseConfig(null);
-    setActiveEngine('duckdb');
-    if (isTauriEnv) {
-      setIsDuckDbRunning(true);
+  // ---- Подключение DuckDB (п. 3.7) ----
+  // Состояние интерфейса (ClickHouse, движок, путь, результаты) меняется только после успешного подключения.
+  // Если подключиться не удалось, прежнее подключение остаётся или открывается заново, а ошибка показывается.
+  type DuckDbConn = { path: string; wasm: boolean };
+
+  /** Закрывает подключение DuckDB в бэкенде, не меняя состояние интерфейса. Возвращает true, если это был WASM. */
+  const closeDuckDbBackend = async (): Promise<boolean> => {
+    if (isTauriEnv && !isWasmMode) {
       try {
-        const path = await tauriInvoke<string>('connect_db', { path: dbPath, options: duckDbConfig });
-        setDuckDbConnectedPath(path || dbPath);
-        setIsWasmMode(false);
-        setShowDuckDbSchemaPanel(true);
-        setDuckDbError(null);
-      } catch (err: any) {
-        setDuckDbError(t("Ошибка подключения к DuckDB: ") + (err.message || String(err)));
-        setIsDuckDbResultVisible(true);
-      } finally {
-        setIsDuckDbRunning(false);
+        await tauriInvoke('disconnect_db');
+      } catch (e) {
+        console.error(e);
       }
     }
+    if (isWasmMode) {
+      await disconnectDuckDbWasm();
+      return true;
+    } else if (!isTauriEnv) {
+      try {
+        await fetchApiJson("/api/duckdb/disconnect", { method: "POST" });
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    return false;
+  };
+
+  /** Открывает подключение (Tauri → локальный сервер → WASM), не меняя состояние интерфейса; при неудаче бросает ошибку. */
+  const openDuckDbConnection = async (
+    dbPath: string,
+    opts: { file?: File; tryExpress: boolean; allowWasm: boolean }
+  ): Promise<DuckDbConn> => {
+    let lastErr: unknown = null;
+
+    if (isTauriEnv) {
+      try {
+        const path = await tauriInvoke<string>('connect_db', { path: dbPath, options: duckDbConfig });
+        return { path: path || dbPath, wasm: false };
+      } catch (tauriErr) {
+        lastErr = tauriErr;
+        console.warn("Tauri native connection failed:", tauriErr);
+      }
+    }
+
+    if (opts.tryExpress) {
+      try {
+        const data = await fetchApiJson("/api/duckdb/connect", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dbPath, config: duckDbConfig })
+        });
+        if (data && !data.error) {
+          return { path: data.path || dbPath, wasm: false };
+        }
+        if (data?.error) lastErr = new Error(typeof data.error === 'string' ? data.error : (data.error.message || JSON.stringify(data.error)));
+      } catch (expressErr) {
+        lastErr = lastErr ?? expressErr;
+      }
+    }
+
+    if (opts.allowWasm && !isTauriEnv) {
+      if (opts.file) {
+        const fileName = await connectDuckDbWasmFile(opts.file, duckDbConfig);
+        return { path: fileName, wasm: true };
+      }
+      if (dbPath === ':memory:') {
+        await connectDuckDbWasmMemory(duckDbConfig);
+        return { path: ':memory:', wasm: true };
+      }
+    }
+
+    throw lastErr ?? new Error(t("Не удалось подключиться к DuckDB"));
+  };
+
+  const resetConnectionResultsUi = () => {
+    setDuckDbResults(null);
+    setDuckDbSelectedCell(null);
+    setDuckDbError(null);
+    setIsDuckDbResultVisible(false);
+    setIsDuckDbResultExpanded(false);
+  };
+
+  const connectDuckDb = async (
+    dbPath: string,
+    opts: { file?: File; tryExpress: boolean; allowWasm: boolean; errorPrefix: string }
+  ) => {
+    const previous: DuckDbConn | null = duckDbConnectedPath ? { path: duckDbConnectedPath, wasm: isWasmMode } : null;
+    const prevState: ConnState<ClickhouseConfig> = {
+      duckDbPath: duckDbConnectedPath,
+      wasm: isWasmMode,
+      clickhouse: clickhouseConfig,
+      engine: activeEngine === 'clickhouse' ? 'clickhouse' : 'duckdb',
+    };
+    setIsDuckDbRunning(true);
+    try {
+      const result = await switchConnection<DuckDbConn>({
+        previous,
+        // в десктопе Rust заменяет старое соединение только при успехе; для того же файла старое нужно закрыть заранее (блокировка файла)
+        openFirst: !!previous && isTauriEnv && !isWasmMode && previous.path !== dbPath,
+        closeCurrent: async () => { await closeDuckDbBackend(); },
+        open: () => openDuckDbConnection(dbPath, opts),
+        reopen: async (prev) => {
+          if (prev.wasm || prev.path === ':memory:') throw new Error('The previous connection cannot be restored');
+          return openDuckDbConnection(prev.path, { tryExpress: opts.tryExpress, allowWasm: false });
+        },
+      });
+      const next = stateAfterSwitch(prevState, result, (e: unknown) => opts.errorPrefix + ((e as any)?.message || String(e)));
+      if (next.resetResults) resetConnectionResultsUi();
+      setClickhouseConfig(next.state.clickhouse);
+      setActiveEngine(next.state.engine);
+      setDuckDbConnectedPath(next.state.duckDbPath);
+      setIsWasmMode(next.state.wasm);
+      if (result.ok) {
+        setShowDuckDbSchemaPanel(true);
+        setDuckDbError(null);
+      } else {
+        setDuckDbError(next.error);
+        setIsDuckDbResultVisible(true);
+      }
+    } finally {
+      setIsDuckDbRunning(false);
+    }
+  };
+
+  const handleConnectToRecentDuckDb = async (dbPath: string) => {
+    setShowDuckDbConnMenu(false);
+    if (!isTauriEnv) return;
+    await connectDuckDb(dbPath, { tryExpress: false, allowWasm: false, errorPrefix: t("Ошибка подключения к DuckDB: ") });
   };
 
   const handleConfigureDuckDb = async () => {
@@ -1586,30 +1771,11 @@ export default function App() {
         }
         const selected = await openFn({
           multiple: false,
-          filters: [{ name: 'DuckDB / SQLite', extensions: ['duckdb', 'db', 'sqlite'] }]
+          filters: [{ name: 'DuckDB', extensions: ['duckdb', 'db'] }]
         });
 
         if (selected && typeof selected === 'string') {
-          if (duckDbConnectedPath || clickhouseConfig) {
-            await handleDisconnectDuckDb();
-          }
-          setClickhouseConfig(null);
-          setActiveEngine('duckdb');
-          
-          const dbPath = selected;
-          setIsDuckDbRunning(true);
-          try {
-            const path = await tauriInvoke<string>('connect_db', { path: dbPath, options: duckDbConfig });
-            setDuckDbConnectedPath(path || dbPath);
-            setIsWasmMode(false);
-            setShowDuckDbSchemaPanel(true);
-            setDuckDbError(null);
-          } catch (err: any) {
-            setDuckDbError(t("Ошибка подключения к DuckDB: ") + (err.message || String(err)));
-            setIsDuckDbResultVisible(true);
-          } finally {
-            setIsDuckDbRunning(false);
-          }
+          await connectDuckDb(selected, { tryExpress: false, allowWasm: false, errorPrefix: t("Ошибка подключения к DuckDB: ") });
           return;
         }
         return;
@@ -1623,62 +1789,7 @@ export default function App() {
 
   const handleConnectInMemory = async () => {
     setShowDuckDbConnMenu(false);
-    if (duckDbConnectedPath || clickhouseConfig) {
-      await handleDisconnectDuckDb();
-    }
-    setClickhouseConfig(null);
-    setActiveEngine('duckdb');
-    
-    setIsDuckDbRunning(true);
-    let connectedSuccessfully = false;
-
-    if (isTauriEnv) {
-      try {
-        await tauriInvoke<string>('connect_db', { path: ':memory:', options: duckDbConfig });
-        setDuckDbConnectedPath(':memory:');
-        setIsWasmMode(false);
-        setShowDuckDbSchemaPanel(true);
-        setDuckDbError(null);
-        connectedSuccessfully = true;
-      } catch (tauriErr: any) {
-        console.warn("Tauri native in-memory connection failed, trying server/WASM:", tauriErr);
-      }
-    }
-
-    if (!connectedSuccessfully) {
-      try {
-        const data = await fetchApiJson("/api/duckdb/connect", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ dbPath: ':memory:', config: duckDbConfig })
-        });
-        if (data && !data.error) {
-          connectedSuccessfully = true;
-          setIsWasmMode(false);
-          setDuckDbConnectedPath(':memory:');
-          setShowDuckDbSchemaPanel(true);
-          setDuckDbError(null);
-        }
-      } catch (_) {
-        connectedSuccessfully = false;
-      }
-    }
-
-    if (!connectedSuccessfully && !isTauriEnv) {
-      try {
-        await connectDuckDbWasmMemory(duckDbConfig);
-        connectedSuccessfully = true;
-        setIsWasmMode(true);
-        setDuckDbConnectedPath(':memory:');
-        setShowDuckDbSchemaPanel(true);
-        setDuckDbError(null);
-      } catch (err: any) {
-        setDuckDbError(t("Ошибка in-memory подключения DuckDB: ") + (err.message || String(err)));
-        setIsDuckDbResultVisible(true);
-      }
-    }
-    
-    setIsDuckDbRunning(false);
+    await connectDuckDb(':memory:', { tryExpress: true, allowWasm: true, errorPrefix: t("Ошибка in-memory подключения DuckDB: ") });
   };
 
   const handleCreateDuckDbFile = async () => {
@@ -1698,26 +1809,7 @@ export default function App() {
         });
 
         if (selected && typeof selected === 'string') {
-          if (duckDbConnectedPath || clickhouseConfig) {
-            await handleDisconnectDuckDb();
-          }
-          setClickhouseConfig(null);
-          setActiveEngine('duckdb');
-
-          const dbPath = selected;
-          setIsDuckDbRunning(true);
-          try {
-            const path = await tauriInvoke<string>('connect_db', { path: dbPath, options: duckDbConfig });
-            setDuckDbConnectedPath(path || dbPath);
-            setIsWasmMode(false);
-            setShowDuckDbSchemaPanel(true);
-            setDuckDbError(null);
-          } catch (err: any) {
-            setDuckDbError(t("Ошибка создания файл базы данных DuckDB: ") + (err.message || String(err)));
-            setIsDuckDbResultVisible(true);
-          } finally {
-            setIsDuckDbRunning(false);
-          }
+          await connectDuckDb(selected, { tryExpress: false, allowWasm: false, errorPrefix: t("Ошибка создания файл базы данных DuckDB: ") });
         }
       } catch (dialogErr) {
         console.warn("Tauri save dialog error:", dialogErr);
@@ -1807,67 +1899,9 @@ export default function App() {
   const handleDuckDbFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (duckDbConnectedPath || clickhouseConfig) {
-        await handleDisconnectDuckDb();
-      }
-      setClickhouseConfig(null);
-      setActiveEngine('duckdb');
-
       // @ts-ignore - access non-standard path property for desktop environments
       const dbPath = file.path || file.name;
-      
-      try {
-        setIsDuckDbRunning(true);
-        let connectedSuccessfully = false;
-
-        // 1. Try Tauri native Rust command first if in Tauri environment
-        if (isTauriEnv) {
-          try {
-            const path = await tauriInvoke<string>('connect_db', { path: dbPath, options: duckDbConfig });
-            setDuckDbConnectedPath(path || dbPath);
-            setIsWasmMode(false);
-            setShowDuckDbSchemaPanel(true);
-            setDuckDbError(null);
-            connectedSuccessfully = true;
-          } catch (tauriErr: any) {
-            console.warn("Tauri native connection failed, trying server/WASM:", tauriErr);
-          }
-        }
-
-        // 2. Try Local Express server if not connected yet
-        if (!connectedSuccessfully) {
-          try {
-            const data = await fetchApiJson("/api/duckdb/connect", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ dbPath, config: duckDbConfig })
-            });
-            if (data && !data.error) {
-              connectedSuccessfully = true;
-              setIsWasmMode(false);
-              setDuckDbConnectedPath(data.path);
-              setShowDuckDbSchemaPanel(true);
-              setDuckDbError(null);
-            }
-          } catch (_) {
-            connectedSuccessfully = false;
-          }
-        }
-
-        // 3. Fallback to WASM Mode if neither Tauri nor Express backend connected
-        if (!connectedSuccessfully && !isTauriEnv) {
-          const fileName = await connectDuckDbWasmFile(file, duckDbConfig);
-          setIsWasmMode(true);
-          setDuckDbConnectedPath(fileName);
-          setShowDuckDbSchemaPanel(true);
-          setDuckDbError(null);
-        }
-      } catch (err: any) {
-        setDuckDbError(t("Ошибка подключения к DB: ") + (err.message || String(err)));
-        setIsDuckDbResultVisible(true);
-      } finally {
-        setIsDuckDbRunning(false);
-      }
+      await connectDuckDb(dbPath, { file, tryExpress: true, allowWasm: true, errorPrefix: t("Ошибка подключения к DB: ") });
     }
   };
 
@@ -1890,9 +1924,7 @@ export default function App() {
     }
 
     const isCH = activeEngine === 'clickhouse' || (!duckDbConnectedPath && !isWasmMode && clickhouseConfig);
-    const dbKey = isCH && clickhouseConfig
-      ? `clickhouse:${clickhouseConfig.host}:${clickhouseConfig.user}:${clickhouseConfig.database || 'default'}`
-      : `duckdb:${duckDbConnectedPath || (isWasmMode ? 'wasm' : 'local')}`;
+    const dbKey = buildSchemaDbKey({ engine: isCH && clickhouseConfig ? 'clickhouse' : 'duckdb', clickhouse: clickhouseConfig, duckDbPath: duckDbConnectedPath, isWasm: isWasmMode });
 
     try {
       if (isCH) {
@@ -2108,9 +2140,7 @@ export default function App() {
 
       if (showDuckDbSchemaPanel) {
         const isCH = activeEngine === 'clickhouse' || (!duckDbConnectedPath && !isWasmMode && clickhouseConfig);
-        const dbKey = isCH && clickhouseConfig
-          ? `clickhouse:${clickhouseConfig.host}:${clickhouseConfig.user}:${clickhouseConfig.database || 'default'}`
-          : `duckdb:${duckDbConnectedPath || (isWasmMode ? 'wasm' : 'local')}`;
+        const dbKey = buildSchemaDbKey({ engine: isCH && clickhouseConfig ? 'clickhouse' : 'duckdb', clickhouse: clickhouseConfig, duckDbPath: duckDbConnectedPath, isWasm: isWasmMode });
 
         // Если схема уже загружена в память для этой же БД, не делаем повторный запрос при разворачивании панели
         if (dbKey === lastConnectedDbKeyRef.current && duckDbSchema !== null) {
@@ -2149,30 +2179,11 @@ export default function App() {
   const handleDisconnectDuckDb = async () => {
     setIsDuckDbRunning(true);
     try {
-      if (isTauriEnv && !isWasmMode) {
-        try {
-          await tauriInvoke('disconnect_db');
-        } catch (e) {
-          console.error(e);
-        }
-      }
-      if (isWasmMode) {
-        await disconnectDuckDbWasm();
-        setIsWasmMode(false);
-      } else {
-        try {
-          await fetchApiJson("/api/duckdb/disconnect", { method: "POST" });
-        } catch (e) {
-          console.error(e);
-        }
-      }
+      const wasWasm = await closeDuckDbBackend();
+      if (wasWasm) setIsWasmMode(false);
     } finally {
       setDuckDbConnectedPath(null);
-      setDuckDbResults(null);
-      setDuckDbSelectedCell(null);
-      setDuckDbError(null);
-      setIsDuckDbResultVisible(false);
-      setIsDuckDbResultExpanded(false);
+      resetConnectionResultsUi();
       setIsDuckDbRunning(false);
     }
   };
@@ -2192,13 +2203,16 @@ export default function App() {
     }
   }, [uiVisibility.showDuckDbConfig, uiVisibility.showClickhouseConfig, duckDbConnectedPath, clickhouseConfig, activeEngine]);
 
-  const duckDbAbortControllerRef = useRef<AbortController | null>(null);
+  // Учёт запусков: у каждого запуска свой AbortController; отменённый запуск считается устаревшим и не пишет результат (п. 3.3)
+  const runTrackerRef = useRef(createRunTracker());
+  // Следующий запуск инициирован кнопками листания страниц результата (п. 3.5)
+  const isPagingRunRef = useRef<boolean>(false);
+  // Ошибка автоэкспорта в Excel (@excel_save) — отдельно от ошибки запроса, чтобы не подменять таблицу результата (п. 3.5)
+  // Режим, в котором скрипт запущен на странице 1 (по вкладкам): страницы ≥ 2 не должны заново выполнять подготовительные операторы (п. 3.1)
+  const executionModeByTabRef = useRef<Record<string, ExecutionMode | undefined>>({});
 
   const handleCancelDuckDbQuery = () => {
-    if (duckDbAbortControllerRef.current) {
-      duckDbAbortControllerRef.current.abort();
-      duckDbAbortControllerRef.current = null;
-    }
+    runTrackerRef.current.cancelAll();
     
     // Also cancel Clickhouse Tauri query if running
     if (isTauriEnvironment() && activeEngine === 'clickhouse') {
@@ -2213,7 +2227,8 @@ export default function App() {
     }
     
     setIsDuckDbRunning(false);
-    setDuckDbError(t("Запрос отменен пользователем"));
+    // ошибка записывается в состояние вкладки (и в хранилище), а не только на экран
+    updateEngineState(activeTabIdRef.current, lastExecutedSql || '', duckDbPage, { error: t("Запрос отменен пользователем") });
   };
 
   const handleExecuteDuckDb = async () => {
@@ -2279,26 +2294,31 @@ export default function App() {
       results?: any[] | null, 
       error?: string | null, 
       duration?: string | null, 
-      colTypes?: any 
-    }
+      colTypes?: any,
+      columns?: string[] | null
+    },
+    opts?: { skipAutoExport?: boolean }
   ) => {
     if (activeTabIdRef.current === originTabId) {
       if (updates.results !== undefined) {
         setDuckDbResults(updates.results);
+        setResultColumns(updates.columns ?? null);
         if (updates.results && Array.isArray(updates.results) && updates.results.length > 0) {
           maybeAutoSelectFirstCell(updates.results, queryToExec);
 
-          // Autonomous Excel export (only in Tauri, only if @excel_save: is present in SQL)
-          if (isTauriEnv && queryToExec.includes('@excel_save')) {
+          // Autonomous Excel export (only in Tauri, only for a real `@excel_save: path` directive in a block comment;
+          // not when paging through an already exported result, п. 3.5)
+          if (isTauriEnv && page === 1 && !opts?.skipAutoExport && hasExcelSaveDirective(queryToExec)) {
             (async () => {
               try {
                 await exportToExcel({
                   data: updates.results!,
+                  columns: updates.columns,
                   columnTypes: updates.colTypes || {},
                   sqlQuery: queryToExec,
                   settings: getSavedExcelSettings(),
                 });
-              } catch (autoErr) {
+              } catch (autoErr: any) {
                 console.warn("Autonomous Excel export failed:", autoErr);
               }
             })();
@@ -2315,45 +2335,40 @@ export default function App() {
         }
       }
     } else {
+      if (!shouldPersistTabResult(updates)) return;
       getTabResult(originTabId).then(existing => {
-        const newData = existing ? { ...existing } : {
-          duckDbResults: null,
-          queryExecutionDuration: null,
-          resultColumnTypes: {},
-          isDuckDbResultVisible: false,
-          duckDbPage: 1,
-          duckDbError: null,
-          lastExecutedSql: queryToExec
-        } as any;
-        if (updates.results !== undefined) newData.duckDbResults = updates.results;
-        if (updates.error !== undefined) newData.duckDbError = updates.error;
-        if (updates.duration !== undefined) newData.queryExecutionDuration = updates.duration;
-        if (updates.colTypes !== undefined) newData.resultColumnTypes = updates.colTypes;
-        newData.lastExecutedSql = queryToExec;
-        newData.duckDbPage = page;
-        if (updates.results !== undefined || updates.error !== undefined) {
-           if (updates.results !== null && updates.error !== null) {
-             newData.isDuckDbResultVisible = true;
-           }
-           saveTabResult(originTabId, newData).catch(console.error);
-           
-           // In case the user switched back to this tab while we were fetching from IDB
-           if (activeTabIdRef.current === originTabId) {
-             setDuckDbResults(newData.duckDbResults);
-             setDuckDbError(newData.duckDbError);
-             setQueryExecutionDuration(newData.queryExecutionDuration);
-             setResultColumnTypes(newData.resultColumnTypes || {});
-             setIsDuckDbResultVisible(newData.isDuckDbResultVisible);
-           }
+        const newData = mergeTabResult(existing, updates, { queryToExec, page });
+        saveTabResult(originTabId, newData).catch(console.error);
+
+        // In case the user switched back to this tab while we were fetching from IDB
+        if (activeTabIdRef.current === originTabId) {
+          setDuckDbResults(newData.duckDbResults);
+          setDuckDbError(newData.duckDbError);
+          setQueryExecutionDuration(newData.queryExecutionDuration);
+          setResultColumnTypes(newData.resultColumnTypes || {});
+          setResultColumns(newData.resultColumns ?? null);
+          setIsDuckDbResultVisible(newData.isDuckDbResultVisible);
         }
       }).catch(console.error);
     }
   };
 
   const executeDuckDbQueryWithPagination = async (queryToExec: string, page: number = 1, pageSizeToUse?: number, isQuickAction?: boolean, executionMode?: 'sequential' | 'parallel', targetTabId?: string) => {
+    const isPagingRun = isPagingRunRef.current; // запуск из кнопок листания: автоэкспорт Excel не повторяется
+    isPagingRunRef.current = false;
     const originTabId = targetTabId || activeTabId;
     if (!duckDbConnectedPath) {
       return;
+    }
+
+    // режим запуска: на странице ≥ 2 берётся тот, в котором скрипт был запущен на странице 1
+    const runMode: ExecutionMode | undefined = executionMode ?? (page > 1 ? executionModeByTabRef.current[originTabId] : undefined);
+    // страницу ≥ 2 у скрипта, последний оператор которого не листается, не выполняем (иначе повторился бы INSERT/CREATE) — до сброса результата
+    if (page > 1 && buildPagedSql(queryToExec, { page, pageSize: pageSizeToUse ?? effectiveMaxRows, dialect: 'duckdb', mode: runMode }).skip) {
+      return;
+    }
+    if (page === 1 && !isQuickAction) {
+      executionModeByTabRef.current[originTabId] = executionMode;
     }
 
     if (!isQuickAction) {
@@ -2362,15 +2377,22 @@ export default function App() {
     }
     setDuckDbPage(page);
 
-    const controller = new AbortController();
-    duckDbAbortControllerRef.current = controller;
+    const run = runTrackerRef.current.begin(originTabId);
+    // устаревший (отменённый) запуск не меняет ни результат вкладки, ни флаг «выполняется»
+    const updateRun = (u: Parameters<typeof updateEngineState>[3]) => {
+      if (run.isActive()) updateEngineState(originTabId, queryToExec, page, u, { skipAutoExport: isPagingRun });
+    };
+    const finishRun = () => {
+      const info = run.finish();
+      if (info.wasActive && info.remaining === 0) setIsDuckDbRunning(false);
+    };
     const queryStartTime = performance.now();
 
     try {
       setIsDuckDbRunning(true);
       setIsDuckDbResultVisible(true);
-      updateEngineState(originTabId, queryToExec, page, { error: null });
-      updateEngineState(originTabId, queryToExec, page, { results: null, duration: null });
+      updateRun({ error: null });
+      updateRun({ results: null, duration: null });
       setSummarizeResults(null);
       setDuckDbSelectedCell(null);
 
@@ -2380,24 +2402,22 @@ export default function App() {
       try {
         finalQuery = replaceSecretsInSql(finalQuery);
       } catch (vaultErr: any) {
-        setIsDuckDbRunning(false);
-        updateEngineState(originTabId, queryToExec, page, { error: vaultErr.message || String(vaultErr) });
+        updateRun({ error: vaultErr.message || String(vaultErr) });
+        finishRun();
         setIsDuckDbResultVisible(true);
         return;
       }
       
-      if (executionMode) {
-        const statements = splitBySemicolonIgnoringQuotes(finalQuery).map(s => s.trim()).filter(Boolean);
+      const maxRows = pageSizeToUse ?? effectiveMaxRows;
+
+      if (runMode === 'parallel') {
+        const statements = splitStatements(finalQuery);
         if (statements.length === 0) {
-          setIsDuckDbRunning(false);
+          finishRun();
           return;
         }
-
-        if (executionMode === 'sequential') {
-          const setupStatements = statements.slice(0, -1);
-          finalQuery = statements[statements.length - 1];
-          for (const stmt of setupStatements) {
-            if (controller.signal.aborted) throw new Error(t("Запрос отменен пользователем"));
+        const results = await Promise.all(statements.map(async (stmt) => {
+          try {
             if (isTauriEnv && !isWasmMode) {
               await tauriInvoke('execute_query', { sql: stmt });
             } else if (isWasmMode) {
@@ -2407,112 +2427,88 @@ export default function App() {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ query: stmt }),
-                signal: controller.signal
+                signal: run.signal
               });
               if (res.error) throw new Error(res.error);
             }
+            return { Query: stmt.length > 100 ? stmt.substring(0, 100) + '...' : stmt, Status: 'OK' };
+          } catch (e: any) {
+            return { Query: stmt.length > 100 ? stmt.substring(0, 100) + '...' : stmt, Status: `Error: ${e.message || String(e)}` };
           }
-        } else if (executionMode === 'parallel') {
-          const results = await Promise.all(statements.map(async (stmt) => {
-            try {
-              if (isTauriEnv && !isWasmMode) {
-                await tauriInvoke('execute_query', { sql: stmt });
-              } else if (isWasmMode) {
-                await queryDuckDbWasm(stmt);
-              } else {
-                const res = await fetchApiJson("/api/duckdb/query", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ query: stmt }),
-                  signal: controller.signal
-                });
-                if (res.error) throw new Error(res.error);
-              }
-              return { Query: stmt.length > 100 ? stmt.substring(0, 100) + '...' : stmt, Status: 'OK' };
-            } catch (e: any) {
-              return { Query: stmt.length > 100 ? stmt.substring(0, 100) + '...' : stmt, Status: `Error: ${e.message || String(e)}` };
-            }
-          }));
-          updateEngineState(originTabId, queryToExec, page, { results: results, duration: ((performance.now() - queryStartTime) / 1000).toFixed(2) });
-          setIsDuckDbRunning(false);
-          duckDbAbortControllerRef.current = null;
-          return;
-        }
+        }));
+        updateRun({ results: results, duration: ((performance.now() - queryStartTime) / 1000).toFixed(2) });
+        finishRun();
+        return;
       }
 
-      const maxRows = pageSizeToUse ?? effectiveMaxRows;
-      let queryWithLimit = finalQuery;
-      const cleanSqlHead = finalQuery
+      if (runMode === 'sequential' && splitStatements(finalQuery).length === 0) {
+        finishRun();
+        return;
+      }
+
+      // Запрос страницы: LIMIT/OFFSET у последнего оператора, подготовительные операторы — только на странице 1 (п. 3.1)
+      const paged = buildPagedSql(finalQuery, { page, pageSize: maxRows, dialect: 'duckdb', mode: runMode });
+      if (paged.skip) {
+        finishRun();
+        return;
+      }
+      for (const stmt of paged.setup) {
+        if (run.signal.aborted) throw new Error(t("Запрос отменен пользователем"));
+        if (isTauriEnv && !isWasmMode) {
+          await tauriInvoke('execute_query', { sql: stmt });
+        } else if (isWasmMode) {
+          await queryDuckDbWasm(stmt);
+        } else {
+          const res = await fetchApiJson("/api/duckdb/query", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ query: stmt }),
+            signal: run.signal
+          });
+          if (res.error) throw new Error(res.error);
+        }
+      }
+      const queryWithLimit = paged.main;
+      const cleanSqlHead = (runMode === 'sequential' ? paged.main : finalQuery)
         .replace(/^(\s*(--[^\n]*\n|\/\*[\s\S]*?\*\/))*/g, '')
         .trim();
-
-      if (maxRows > 0 && /^\s*\(?\s*(SELECT|WITH|FROM)\b/i.test(cleanSqlHead)) {
-        const stripped = finalQuery.replace(/;+$/, '');
-        const hasUnion = /\b(UNION|EXCEPT|INTERSECT)\b/i.test(stripped);
-        const hasLimit = /\bLIMIT\s+\d+/i.test(cleanSqlHead);
-        
-        if (!hasLimit) {
-          if (page > 1) {
-            const offset = (page - 1) * maxRows;
-            if (hasUnion) {
-              queryWithLimit = `SELECT * FROM (\n${stripped}\n) AS _limited_subquery LIMIT ${maxRows} OFFSET ${offset}`;
-            } else {
-              queryWithLimit = `${stripped}\nLIMIT ${maxRows} OFFSET ${offset}`;
-            }
-          } else {
-            if (hasUnion) {
-              queryWithLimit = `SELECT * FROM (\n${stripped}\n) AS _limited_subquery LIMIT ${maxRows}`;
-            } else {
-              queryWithLimit = `${stripped}\nLIMIT ${maxRows}`;
-            }
-          }
-        } else if (page > 1) {
-          const offset = (page - 1) * maxRows;
-          queryWithLimit = `SELECT * FROM (\n${stripped}\n) AS _limited_subquery LIMIT ${maxRows} OFFSET ${offset}`;
-        }
-      }
 
       if (isTauriEnv && !isWasmMode) {
         try {
           const res = await tauriInvoke<{ columns: string[]; column_types?: string[]; rows: any[][] }>('execute_query', {
             sql: queryWithLimit
           });
-          if (controller.signal.aborted) throw new Error(t("Запрос отменен пользователем"));
-          const parsed = (res?.rows || []).map(row => {
-            const obj: Record<string, any> = {};
-            (res.columns || []).forEach((col, idx) => {
-              obj[col] = row[idx];
-            });
-            return obj;
-          });
+          if (run.signal.aborted) throw new Error(t("Запрос отменен пользователем"));
+          // уникальные имена столбцов + отдельный порядок (п. 3.2): дубли `a, a` и числовые имена не теряются
+          const { rows: parsed, columns: parsedColumns } = rowsFromColumns(res?.columns || [], res?.rows || []);
           
           let finalColTypes = {};
           if (res?.columns && res?.column_types) {
             const typesDict: Record<string, string> = {};
-            res.columns.forEach((col, idx) => {
+            parsedColumns.forEach((col, idx) => {
               typesDict[col] = res.column_types![idx] || 'UNKNOWN';
             });
             finalColTypes = typesDict;
           }
-          updateEngineState(originTabId, queryToExec, page, { results: parsed, duration: ((performance.now() - queryStartTime) / 1000).toFixed(2), colTypes: finalColTypes });
+          updateRun({ results: parsed, duration: ((performance.now() - queryStartTime) / 1000).toFixed(2), colTypes: finalColTypes, columns: parsedColumns });
   
           
                     if ((uiVisibility.autoUpdateSchema ?? true) && /^\s*(CREATE|DROP|ATTACH|DETACH|RENAME)\b/i.test(cleanSqlHead)) {
             fetchDuckDbSchema(true);
           }
         } catch (tauriErr: any) {
-          if (controller.signal.aborted) throw new Error(t("Запрос отменен пользователем"));
+          if (run.signal.aborted) throw new Error(t("Запрос отменен пользователем"));
           let errMsg = typeof tauriErr === 'string' ? tauriErr : (tauriErr?.message || String(tauriErr));
           if (errMsg.includes("invalid escaped character") || errMsg.includes("trailing escape")) {
             errMsg += t("Подсказка пути");
           }
-          updateEngineState(originTabId, queryToExec, page, { error: errMsg });
+          updateRun({ error: errMsg });
         }
       } else if (isWasmMode) {
         const rows = await queryDuckDbWasm(queryWithLimit);
-        if (controller.signal.aborted) throw new Error(t("Запрос отменен пользователем"));
+        if (run.signal.aborted) throw new Error(t("Запрос отменен пользователем"));
         const finalColTypes = (rows as any).__columnTypes ? (rows as any).__columnTypes : {};
-        updateEngineState(originTabId, queryToExec, page, { results: rows, duration: ((performance.now() - queryStartTime) / 1000).toFixed(2), colTypes: finalColTypes });
+        updateRun({ results: rows, duration: ((performance.now() - queryStartTime) / 1000).toFixed(2), colTypes: finalColTypes, columns: (rows as any).__columns ?? null });
                 if ((uiVisibility.autoUpdateSchema ?? true) && /^\s*(CREATE|DROP|ATTACH|DETACH|RENAME)\b/i.test(cleanSqlHead)) {
           fetchDuckDbSchema(true);
         }
@@ -2521,11 +2517,11 @@ export default function App() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ query: queryWithLimit }),
-          signal: controller.signal
+          signal: run.signal
         });
         
         if (data.error) {
-          updateEngineState(originTabId, queryToExec, page, { error: data.error });
+          updateRun({ error: data.error });
         } else {
           const res = data.data || [];
           
@@ -2539,7 +2535,7 @@ export default function App() {
             });
             finalColTypes = typesDict;
           }
-          updateEngineState(originTabId, queryToExec, page, { results: res, duration: ((performance.now() - queryStartTime) / 1000).toFixed(2), colTypes: finalColTypes });
+          updateRun({ results: res, duration: ((performance.now() - queryStartTime) / 1000).toFixed(2), colTypes: finalColTypes, columns: columnsFromMeta(data.meta) });
   
           
                     if ((uiVisibility.autoUpdateSchema ?? true) && /^\s*(CREATE|DROP|ATTACH|DETACH|RENAME)\b/i.test(cleanSqlHead)) {
@@ -2548,25 +2544,35 @@ export default function App() {
         }
       }
     } catch (err: any) {
-      if (err.name === 'AbortError' || controller.signal.aborted) {
-        updateEngineState(originTabId, queryToExec, page, { error: t("Запрос отменен пользователем") });
+      if (err.name === 'AbortError' || run.signal.aborted) {
+        updateRun({ error: t("Запрос отменен пользователем") });
       } else {
         let errMsg = err.message || t("Ошибка выполнения запроса");
         if (errMsg.includes("invalid escaped character") || errMsg.includes("trailing escape")) {
           errMsg += t("Подсказка пути");
         }
-        updateEngineState(originTabId, queryToExec, page, { error: errMsg });
+        updateRun({ error: errMsg });
       }
     } finally {
-      setIsDuckDbRunning(false);
-      duckDbAbortControllerRef.current = null;
+      finishRun();
     }
   };
 
   const executeClickhouseQueryWithPagination = async (queryToExec: string, page: number = 1, pageSizeToUse?: number, isQuickAction?: boolean, executionMode?: 'sequential' | 'parallel', targetTabId?: string) => {
+    const isPagingRun = isPagingRunRef.current;
+    isPagingRunRef.current = false;
     const originTabId = targetTabId || activeTabId;
     if (!clickhouseConfig) {
       return;
+    }
+
+    // режим запуска и пропуск страницы ≥ 2 без листаемого запроса — как в executeDuckDbQueryWithPagination (п. 3.1)
+    const runMode: ExecutionMode | undefined = executionMode ?? (page > 1 ? executionModeByTabRef.current[originTabId] : undefined);
+    if (page > 1 && buildPagedSql(queryToExec, { page, pageSize: pageSizeToUse ?? effectiveMaxRows, dialect: 'clickhouse', mode: runMode }).skip) {
+      return;
+    }
+    if (page === 1 && !isQuickAction) {
+      executionModeByTabRef.current[originTabId] = executionMode;
     }
 
     if (!isQuickAction) {
@@ -2575,15 +2581,23 @@ export default function App() {
     }
     setDuckDbPage(page);
 
-    const controller = new AbortController();
-    duckDbAbortControllerRef.current = controller;
+    const run = runTrackerRef.current.begin(originTabId);
+    // устаревший (отменённый) запуск не меняет ни результат вкладки, ни флаг «выполняется»
+    const updateRun = (u: Parameters<typeof updateEngineState>[3]) => {
+      if (run.isActive()) updateEngineState(originTabId, queryToExec, page, u, { skipAutoExport: isPagingRun });
+    };
+    const finishRun = () => {
+      const info = run.finish();
+      if (info.wasActive && info.remaining === 0) setIsDuckDbRunning(false);
+    };
     const queryStartTime = performance.now();
 
     try {
       setIsDuckDbRunning(true);
       setIsDuckDbResultVisible(true);
-      updateEngineState(originTabId, queryToExec, page, { error: null });
-      updateEngineState(originTabId, queryToExec, page, { results: null, duration: null });
+      updateRun({ error: null });
+      updateRun({ results: null, duration: null });
+      setSummarizeResults(null);
       setDuckDbSelectedCell(null);
       
       let finalQuery = queryToExec.trim();
@@ -2592,24 +2606,22 @@ export default function App() {
       try {
         finalQuery = replaceSecretsInSql(finalQuery);
       } catch (vaultErr: any) {
-        setIsDuckDbRunning(false);
-        updateEngineState(originTabId, queryToExec, page, { error: vaultErr.message || String(vaultErr) });
+        updateRun({ error: vaultErr.message || String(vaultErr) });
+        finishRun();
         setIsDuckDbResultVisible(true);
         return;
       }
       
-      if (executionMode) {
-        const statements = splitBySemicolonIgnoringQuotes(finalQuery).map(s => s.trim()).filter(Boolean);
+      const maxRows = pageSizeToUse ?? effectiveMaxRows;
+
+      if (runMode === 'parallel') {
+        const statements = splitStatements(finalQuery);
         if (statements.length === 0) {
-          setIsDuckDbRunning(false);
+          finishRun();
           return;
         }
-
-        if (executionMode === 'sequential') {
-          const setupStatements = statements.slice(0, -1);
-          finalQuery = statements[statements.length - 1];
-          for (const stmt of setupStatements) {
-            if (controller.signal.aborted) throw new Error(t("Запрос отменен пользователем"));
+        const results = await Promise.all(statements.map(async (stmt) => {
+          try {
             if (isTauriEnvironment()) {
               await executeClickhouseQueryTauri(clickhouseConfig, stmt);
             } else if (isCapacitorEnvironment()) {
@@ -2619,42 +2631,58 @@ export default function App() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ...clickhouseConfig, query: stmt }),
-                signal: controller.signal
+                signal: run.signal
               });
               if (res.error) throw new Error(res.error);
             }
+            return { Query: stmt.length > 100 ? stmt.substring(0, 100) + '...' : stmt, Status: 'OK' };
+          } catch (e: any) {
+            return { Query: stmt.length > 100 ? stmt.substring(0, 100) + '...' : stmt, Status: `Error: ${e.message || String(e)}` };
           }
-        } else if (executionMode === 'parallel') {
-          const results = await Promise.all(statements.map(async (stmt) => {
-            try {
-              if (isTauriEnvironment()) {
-                await executeClickhouseQueryTauri(clickhouseConfig, stmt);
-              } else if (isCapacitorEnvironment()) {
-                await executeClickhouseQueryCapacitor(clickhouseConfig, stmt);
-              } else {
-                const res = await fetchApiJson('/api/clickhouse/query', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ ...clickhouseConfig, query: stmt }),
-                  signal: controller.signal
-                });
-                if (res.error) throw new Error(res.error);
-              }
-              return { Query: stmt.length > 100 ? stmt.substring(0, 100) + '...' : stmt, Status: 'OK' };
-            } catch (e: any) {
-              return { Query: stmt.length > 100 ? stmt.substring(0, 100) + '...' : stmt, Status: `Error: ${e.message || String(e)}` };
-            }
-          }));
-          updateEngineState(originTabId, queryToExec, page, { results: results, duration: ((performance.now() - queryStartTime) / 1000).toFixed(2) });
-          setIsDuckDbRunning(false);
-          duckDbAbortControllerRef.current = null;
-          return;
+        }));
+        updateRun({ results: results, duration: ((performance.now() - queryStartTime) / 1000).toFixed(2) });
+        finishRun();
+        return;
+      }
+
+      if (runMode === 'sequential' && splitStatements(finalQuery).length === 0) {
+        finishRun();
+        return;
+      }
+
+      // Запрос страницы: LIMIT перед SETTINGS/FORMAT, подготовительные операторы — только на странице 1 (п. 3.1)
+      const paged = buildPagedSql(finalQuery, { page, pageSize: maxRows, dialect: 'clickhouse', mode: runMode });
+      if (paged.skip) {
+        finishRun();
+        return;
+      }
+      for (const stmt of paged.setup) {
+        if (run.signal.aborted) throw new Error(t("Запрос отменен пользователем"));
+        if (isTauriEnvironment()) {
+          await executeClickhouseQueryTauri(clickhouseConfig, stmt);
+        } else if (isCapacitorEnvironment()) {
+          await executeClickhouseQueryCapacitor(clickhouseConfig, stmt);
+        } else {
+          const res = await fetchApiJson('/api/clickhouse/query', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...clickhouseConfig, query: stmt }),
+            signal: run.signal
+          });
+          if (res.error) throw new Error(res.error);
         }
       }
 
-      const cleanSqlHead = finalQuery
+      const cleanSqlHead = (runMode === 'sequential' ? paged.main : finalQuery)
         .replace(/^(\s*(--[^\n]*\n|\/\*[\s\S]*?\*\/))*/g, '')
         .trim();
+
+      // Результат COPY записывается в исходную вкладку через updateEngineState (п. 3.4): раньше setDuckDbResults менял экран
+      // активной вкладки, а в хранилище вкладки результат не попадал
+      const finishCopy = (input: CopyResultInput) => {
+        const rows = copyResultRows(input);
+        updateRun({ results: rows, duration: ((performance.now() - queryStartTime) / 1000).toFixed(2), colTypes: {}, columns: Object.keys(rows[0]) });
+      };
 
       // Check for COPY (...) TO / FROM
       const copyCmd = parseClickhouseCopy(cleanSqlHead);
@@ -2663,32 +2691,16 @@ export default function App() {
           if (isTauriEnvironment()) {
             try {
               const res = await executeClickhouseCopyToTauri(clickhouseConfig, copyCmd.innerSql, copyCmd.filePath);
-              setDuckDbResults([
-                {
-                  Status: 'Success (COPY TO)',
-                  File: copyCmd.filePath,
-                  Message: res.message,
-                  Bytes: `${res.bytes} bytes`,
-                },
-              ]);
-              updateEngineState(originTabId, queryToExec, page, { duration: ((performance.now() - queryStartTime) / 1000).toFixed(2) });
+              finishCopy({ kind: 'TO', filePath: copyCmd.filePath, message: res.message, bytes: res.bytes });
             } catch (err: any) {
-              updateEngineState(originTabId, queryToExec, page, { error: err.message || String(err) });
+              updateRun({ error: err.message || String(err) });
             }
           } else if (isCapacitorEnvironment()) {
             try {
               const res = await executeClickhouseCopyToCapacitor(clickhouseConfig, copyCmd.innerSql, copyCmd.filePath);
-              setDuckDbResults([
-                {
-                  Status: 'Success (COPY TO)',
-                  File: copyCmd.filePath,
-                  Message: res.message,
-                  Bytes: `${res.bytes} bytes`,
-                },
-              ]);
-              updateEngineState(originTabId, queryToExec, page, { duration: ((performance.now() - queryStartTime) / 1000).toFixed(2) });
+              finishCopy({ kind: 'TO', filePath: copyCmd.filePath, message: res.message, bytes: res.bytes });
             } catch (err: any) {
-              updateEngineState(originTabId, queryToExec, page, { error: err.message || String(err) });
+              updateRun({ error: err.message || String(err) });
             }
           } else {
             const data = await fetchApiJson('/api/clickhouse/copy-to', {
@@ -2699,40 +2711,25 @@ export default function App() {
                 innerSql: copyCmd.innerSql,
                 filePath: copyCmd.filePath,
               }),
-              signal: controller.signal,
+              signal: run.signal,
             });
 
             if (data.error) {
-              updateEngineState(originTabId, queryToExec, page, { error: data.error });
+              updateRun({ error: data.error });
             } else {
-              setDuckDbResults([
-                {
-                  Status: 'Success (COPY TO)',
-                  File: copyCmd.filePath,
-                  Message: data.message || `File saved (${data.bytes || 0} bytes)`,
-                },
-              ]);
-              updateEngineState(originTabId, queryToExec, page, { duration: ((performance.now() - queryStartTime) / 1000).toFixed(2) });
+              finishCopy({ kind: 'TO', filePath: copyCmd.filePath, message: data.message || `File saved (${data.bytes || 0} bytes)` });
             }
           }
         } else if (copyCmd.type === 'COPY_FROM') {
           if (isTauriEnvironment()) {
             try {
               const res = await executeClickhouseCopyFromTauri(clickhouseConfig, copyCmd.innerSql, copyCmd.filePath);
-              setDuckDbResults([
-                {
-                  Status: 'Success (COPY FROM)',
-                  File: copyCmd.filePath,
-                  Message: res.message,
-                  Response: res.response || 'OK',
-                },
-              ]);
-              updateEngineState(originTabId, queryToExec, page, { duration: ((performance.now() - queryStartTime) / 1000).toFixed(2) });
+              finishCopy({ kind: 'FROM', filePath: copyCmd.filePath, message: res.message, response: res.response });
             } catch (err: any) {
-              updateEngineState(originTabId, queryToExec, page, { error: err.message || String(err) });
+              updateRun({ error: err.message || String(err) });
             }
           } else if (isCapacitorEnvironment()) {
-            updateEngineState(originTabId, queryToExec, page, {
+            updateRun({
               error: t('COPY FROM недоступен на Android: загрузка файла с диска в ClickHouse поддерживается только в десктопной версии'),
             });
           } else {
@@ -2744,61 +2741,24 @@ export default function App() {
                 innerSql: copyCmd.innerSql,
                 filePath: copyCmd.filePath,
               }),
-              signal: controller.signal,
+              signal: run.signal,
             });
 
             if (data.error) {
-              updateEngineState(originTabId, queryToExec, page, { error: data.error });
+              updateRun({ error: data.error });
             } else {
-              setDuckDbResults([
-                {
-                  Status: 'Success (COPY FROM)',
-                  File: copyCmd.filePath,
-                  Message: data.message || 'Data successfully loaded into Clickhouse',
-                  Response: data.response || 'OK',
-                },
-              ]);
-              updateEngineState(originTabId, queryToExec, page, { duration: ((performance.now() - queryStartTime) / 1000).toFixed(2) });
+              finishCopy({ kind: 'FROM', filePath: copyCmd.filePath, message: data.message || 'Data successfully loaded into Clickhouse', response: data.response });
             }
           }
         }
         return;
       }
 
-      // SELECT / WITH query pagination limit wrapper
-      const maxRows = pageSizeToUse ?? effectiveMaxRows;
-      let queryWithLimit = finalQuery;
+      // SELECT / WITH: запрос страницы уже построен (buildPagedSql)
+      let queryWithLimit = paged.main;
 
-      if (maxRows > 0 && /^\s*\(?\s*(SELECT|WITH|FROM)\b/i.test(cleanSqlHead)) {
-        const stripped = queryWithLimit.replace(/;+$/, '');
-        const hasUnion = /\b(UNION|EXCEPT|INTERSECT)\b/i.test(stripped);
-        const hasLimit = /\bLIMIT\s+\d+/i.test(cleanSqlHead);
-        
-        if (!hasLimit) {
-          if (page > 1) {
-            const offset = (page - 1) * maxRows;
-            if (hasUnion) {
-              queryWithLimit = `SELECT * FROM (\n${stripped}\n) AS _limited_subquery LIMIT ${maxRows} OFFSET ${offset}`;
-            } else {
-              queryWithLimit = `${stripped}\nLIMIT ${maxRows} OFFSET ${offset}`;
-            }
-          } else {
-            if (hasUnion) {
-              queryWithLimit = `SELECT * FROM (\n${stripped}\n) AS _limited_subquery LIMIT ${maxRows}`;
-            } else {
-              queryWithLimit = `${stripped}\nLIMIT ${maxRows}`;
-            }
-          }
-        } else if (page > 1) {
-          // If query already has a LIMIT, but user asks for page > 1, we must wrap it to safely paginate 
-          // (otherwise appending LIMIT causes a syntax error, e.g. "LIMIT 10 LIMIT 100")
-          const offset = (page - 1) * maxRows;
-          queryWithLimit = `SELECT * FROM (\n${stripped}\n) AS _limited_subquery LIMIT ${maxRows} OFFSET ${offset}`;
-        }
-      }
-
-      if (!/\bFORMAT\b/i.test(queryWithLimit) && /^\s*(SELECT|SHOW|DESCRIBE|DESC|EXPLAIN|WITH)\b/i.test(queryWithLimit)) {
-        queryWithLimit += '\nFORMAT JSON';
+      if (needsJsonFormat(queryWithLimit)) {
+        queryWithLimit = appendJsonFormat(queryWithLimit);
       }
 
       let data: any = null;
@@ -2823,7 +2783,7 @@ export default function App() {
               ...clickhouseConfig,
               query: queryWithLimit,
             }),
-            signal: controller.signal,
+            signal: run.signal,
           });
         } catch {
           const url = getClickhouseUrl(clickhouseConfig);
@@ -2832,23 +2792,18 @@ export default function App() {
             method: 'POST',
             headers,
             body: queryWithLimit,
-            signal: controller.signal,
+            signal: run.signal,
           });
           const text = await chRes.text();
           if (!chRes.ok) {
             throw new Error(text || `HTTP ${chRes.status}`);
           }
-          try {
-            const parsed = JSON.parse(text);
-            data = { success: true, data: parsed.data || parsed, meta: parsed.meta };
-          } catch {
-            data = { success: true, text };
-          }
+          data = parseClickhouseResponse(text, queryWithLimit);
         }
       }
 
       if (data && data.error) {
-        updateEngineState(originTabId, queryToExec, page, { error: data.error });
+        updateRun({ error: data.error });
       } else if (data) {
         let resArr: any[] = [];
         if (Array.isArray(data.data)) {
@@ -2869,7 +2824,7 @@ export default function App() {
           });
           finalColTypes = typesDict;
         }
-        updateEngineState(originTabId, queryToExec, page, { results: resArr, duration: ((performance.now() - queryStartTime) / 1000).toFixed(2), colTypes: finalColTypes });
+        updateRun({ results: resArr, duration: ((performance.now() - queryStartTime) / 1000).toFixed(2), colTypes: finalColTypes, columns: columnsFromMeta(data.meta) });
   
         
                 if ((uiVisibility.autoUpdateSchema ?? true) && /^\s*(CREATE|DROP|ATTACH|DETACH|RENAME)\b/i.test(cleanSqlHead)) {
@@ -2877,14 +2832,13 @@ export default function App() {
         }
       }
     } catch (err: any) {
-      if (err.name === 'AbortError' || controller.signal?.aborted) {
-        updateEngineState(originTabId, queryToExec, page, { error: t('Запрос отменен пользователем') });
+      if (err.name === 'AbortError' || run.signal?.aborted) {
+        updateRun({ error: t('Запрос отменен пользователем') });
       } else {
-        updateEngineState(originTabId, queryToExec, page, { error: err.message || t('Ошибка выполнения ClickHouse запроса') });
+        updateRun({ error: err.message || t('Ошибка выполнения ClickHouse запроса') });
       }
     } finally {
-      setIsDuckDbRunning(false);
-      duckDbAbortControllerRef.current = null;
+      finishRun();
     }
   };
 
@@ -2920,6 +2874,13 @@ export default function App() {
     } else {
       executeDuckDbQueryWithPagination(finalQuery, page, pageSizeToUse, isQuickAction, executionMode, targetTabId);
     }
+  };
+
+  // Листание страниц результата: запрос выполняется заново, но автоэкспорт Excel (@excel_save) не повторяется (п. 3.5)
+  const handleChangeResultPage = (newPage: number) => {
+    if (isAnyQueryRunning) return;
+    isPagingRunRef.current = true;
+    handleExecuteCurrentEngineQuery(lastExecutedSql, newPage);
   };
 
   const handleExecuteDuckDbQuery = async () => {
@@ -2962,73 +2923,41 @@ export default function App() {
   const handleExecuteQuickAction = useCallback((qa: QuickActionTemplate) => {
     setShowQuickActionsMenu(false);
     const targetQuery = qa.template.replace(/\{table\}/g, extractedTableName);
+    // переменная {{$…}} берётся из SQL активной вкладки: если её там нет, говорим об этом, а не отправляем запрос с «{{$…}}»
+    const missingVars = findUnresolvedVariables(targetQuery, sqlRef.current);
+    if (missingVars.length > 0) {
+      setDuckDbError(`${t('Переменная не найдена:')} ${missingVars.map(v => `{{$${v}}}`).join(', ')}`);
+      setIsDuckDbResultVisible(true);
+      return;
+    }
     executeSpecificDuckDbQueryRef.current(targetQuery, true);
   }, [extractedTableName]);
 
+  // Служебные запросы статистики (SUMMARIZE, распределения, ATTACH/USE). Перед выполнением подставляются {{$переменные}} и секреты —
+  // как в основном запросе (п. 3.3); отмена и «выполняется» — общие с основным запросом через runTrackerRef.
   const handleExecuteRawQueryForStats = useCallback(async (sqlToRun: string): Promise<any[]> => {
-    const isClickhouse = activeEngine === 'clickhouse' || (!duckDbConnectedPath && !!clickhouseConfig);
-    if (isClickhouse && clickhouseConfig) {
-      let queryWithFormat = sqlToRun.trim();
-      if (!/\bFORMAT\b/i.test(queryWithFormat) && /^\s*(SELECT|SHOW|DESCRIBE|DESC|EXPLAIN|WITH)\b/i.test(queryWithFormat)) {
-        queryWithFormat += ' FORMAT JSON';
-      }
-      
-      const controller = new AbortController();
-      duckDbAbortControllerRef.current = controller;
-      setIsDuckDbRunning(true);
-      
-      try {
+    const executeRaw = async (sql: string, signal: AbortSignal): Promise<any[]> => {
+      const isClickhouse = activeEngine === 'clickhouse' || (!duckDbConnectedPath && !!clickhouseConfig);
+      if (isClickhouse && clickhouseConfig) {
+        let queryWithFormat = sql.trim();
+        if (needsJsonFormat(queryWithFormat)) {
+          queryWithFormat = appendJsonFormat(queryWithFormat);
+        }
         if (isTauriEnvironment()) {
           const res = await executeClickhouseQueryTauri(clickhouseConfig, queryWithFormat);
-          if (controller.signal.aborted) throw new Error(t("Запрос отменен пользователем"));
           return res?.data || [];
         } else if (isCapacitorEnvironment()) {
           const res = await executeClickhouseQueryCapacitor(clickhouseConfig, queryWithFormat);
-          if (controller.signal.aborted) throw new Error(t("Запрос отменен пользователем"));
           return res?.data || [];
-        } else {
-          const data = await fetchApiJson('/api/clickhouse/query', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              ...clickhouseConfig,
-              query: queryWithFormat,
-            }),
-            signal: controller.signal
-          });
-          if (controller.signal.aborted) throw new Error(t("Запрос отменен пользователем"));
-          if (data?.error) {
-            const errVal = typeof data.error === 'object' ? (data.error.message || JSON.stringify(data.error)) : data.error;
-            throw new Error(errVal);
-          }
-          return data?.data || [];
         }
-      } catch (err: any) {
-        if (controller.signal.aborted || err.name === 'AbortError') {
-          throw new Error(t("Запрос отменен пользователем"));
-        }
-        throw err;
-      } finally {
-        setIsDuckDbRunning(false);
-        duckDbAbortControllerRef.current = null;
-      }
-    } else {
-      if (isTauriEnvironment() && !isWasmMode) {
-        const res = await tauriInvoke<{ columns: string[]; rows: any[][] }>('execute_query', { sql: sqlToRun });
-        return (res?.rows || []).map(row => {
-          const obj: Record<string, any> = {};
-          (res.columns || []).forEach((col, idx) => {
-            obj[col] = row[idx];
-          });
-          return obj;
-        });
-      } else if (isWasmMode) {
-        return await queryDuckDbWasm(sqlToRun);
-      } else {
-        const data = await fetchApiJson('/api/duckdb/query', {
+        const data = await fetchApiJson('/api/clickhouse/query', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: sqlToRun })
+          body: JSON.stringify({
+            ...clickhouseConfig,
+            query: queryWithFormat,
+          }),
+          signal
         });
         if (data?.error) {
           const errVal = typeof data.error === 'object' ? (data.error.message || JSON.stringify(data.error)) : data.error;
@@ -3036,7 +2965,35 @@ export default function App() {
         }
         return data?.data || [];
       }
-    }
+      if (isTauriEnvironment() && !isWasmMode) {
+        const res = await tauriInvoke<{ columns: string[]; rows: any[][] }>('execute_query', { sql });
+        // одинаковые имена столбцов не должны терять значения (п. 3.2)
+        return rowsFromColumns(res?.columns || [], res?.rows || []).rows;
+      } else if (isWasmMode) {
+        return await queryDuckDbWasm(sql);
+      }
+      const data = await fetchApiJson('/api/duckdb/query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: sql }),
+        signal
+      });
+      if (data?.error) {
+        const errVal = typeof data.error === 'object' ? (data.error.message || JSON.stringify(data.error)) : data.error;
+        throw new Error(errVal);
+      }
+      return data?.data || [];
+    };
+
+    return executeStatsQuery(sqlToRun, {
+      tracker: runTrackerRef.current,
+      scope: activeTabIdRef.current,
+      substitute: (sql) => replaceSecretsInSql(replaceVariablesInSql(sql, sqlRef.current)),
+      execute: executeRaw,
+      cancelledMessage: t("Запрос отменен пользователем"),
+      onStart: ({ othersActive }) => { if (othersActive === 0) setIsDuckDbRunning(true); },
+      onFinish: (info) => { if (info.wasActive && info.remaining === 0) setIsDuckDbRunning(false); },
+    });
   }, [activeEngine, clickhouseConfig, duckDbConnectedPath, isWasmMode]);
 
   const handleSelectTab = (targetId: string) => {
@@ -3067,10 +3024,9 @@ export default function App() {
   const handleAddTab = () => {
     if (tabs.length >= 9) return;
     const newId = Date.now().toString();
-    const nextNum = tabs.length + 1;
     const newTab: EditorTab = {
       id: newId,
-      title: `${t('Вкладка')} ${nextNum}`,
+      title: nextTabName(tabs.map((tab: EditorTab) => tab.title), t('Вкладка'), 'Вкладка'),
       sql: ''
     };
 
@@ -3126,8 +3082,8 @@ export default function App() {
     if (tabs.length <= 1) return;
 
     const tabToClose = tabs.find(t => t.id === idToClose);
-    if (tabToClose?.isModified) {
-      setTabToClosePendingConfirm(tabToClose);
+    if (shouldConfirmClose(tabToClose)) {
+      setTabToClosePendingConfirm(tabToClose!);
       return;
     }
 
@@ -3151,14 +3107,7 @@ export default function App() {
     }
     
     handleSqlChangeTimeoutRef.current = setTimeout(() => {
-      setTabs(prev => prev.map(t => {
-        if (t.id === activeTabId) {
-          if (t.sql === newSql) return t;
-          if (t.isModified) return { ...t, sql: newSql };
-          return { ...t, sql: newSql, isModified: true };
-        }
-        return t;
-      }));
+      setTabs(prev => setTabSql(prev, activeTabId, newSql));
     }, 200);
   }, [activeTabId]);
 
@@ -3227,7 +3176,21 @@ export default function App() {
         return;
       }
       const filePath = (file as any).path || undefined;
+      const decision = decideOpenFile(file, filePath, tabs);
+      if (decision.kind === 'activate') {
+        handleSelectTab(decision.tabId);
+        e.target.value = '';
+        return;
+      }
+      if (decision.kind === 'tooLarge') {
+        alert(`${t('Файл слишком большой:')} ${file.name} (${t('максимум')} ${MAX_OPEN_FILE_BYTES / (1024 * 1024)} ${t('МБ')})`);
+        e.target.value = '';
+        return;
+      }
       const reader = new FileReader();
+      reader.onerror = () => {
+        alert(`${t('Не удалось прочитать файл:')} ${file.name}`);
+      };
       reader.onload = (event) => {
         const content = event.target?.result as string;
         if (typeof content === 'string') {
@@ -3265,7 +3228,21 @@ export default function App() {
         return;
       }
       const filePath = (file as any).path || undefined;
+      const decision = decideOpenFile(file, filePath, tabs);
+      if (decision.kind === 'activate') {
+        handleSelectTab(decision.tabId);
+        e.target.value = '';
+        return;
+      }
+      if (decision.kind === 'tooLarge') {
+        alert(`${t('Файл слишком большой:')} ${file.name} (${t('максимум')} ${MAX_OPEN_FILE_BYTES / (1024 * 1024)} ${t('МБ')})`);
+        e.target.value = '';
+        return;
+      }
       const reader = new FileReader();
+      reader.onerror = () => {
+        alert(`${t('Не удалось прочитать файл:')} ${file.name}`);
+      };
       reader.onload = (event) => {
         const content = event.target?.result as string;
         if (typeof content === 'string') {
@@ -3471,31 +3448,14 @@ export default function App() {
         return {
           ...t,
           sql: newSql,
-          isModified: t.savedContent !== undefined ? t.savedContent !== newSql : true,
+          isModified: nextIsModified(t, newSql),
         };
       }
       return t;
     }));
   };
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((uiVisibility.showDuckDbConfig || uiVisibility.showClickhouseConfig) && (e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-        e.preventDefault();
-        handleExecuteDuckDb();
-      }
-      if (!e.altKey && (e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S' || e.code === 'KeyS' || e.key === 'ы' || e.key === 'Ы')) {
-        e.preventDefault();
-        if (e.shiftKey) {
-          handleSaveAsSqlFile();
-        } else {
-          handleSaveSqlFile();
-        }
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [duckDbConnectedPath, clickhouseConfig, isDuckDbRunning, activeEngine, activeTabId, tabs]);
+  // Ctrl+Enter / Ctrl+S / Ctrl+Shift+S обрабатываются только глобальным настраиваемым обработчиком ниже (п. 3.9, H-01)
 
 
 
@@ -3558,7 +3518,9 @@ export default function App() {
   }, [activeEngine]);
 
   
-  const [selectedNode, setSelectedNode] = useState<any | null>(null);
+  // Выбранный узел хранится как id; объект берётся из актуального списка узлов (п. 3.8)
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const selectedNode = useMemo(() => findSelectedNode(nodes as any[], selectedNodeId) as any, [nodes, selectedNodeId]);
 
   // DATA LINEAGE HIGHLIGHT CALCULATIONS
   const getLineageElements = useCallback((selectedNodeId: string | null, allNodes: any[], allEdges: any[]) => {
@@ -3641,7 +3603,6 @@ export default function App() {
       };
     });
   }, [edges, lineageHighlightMode, lineageEdgeIds, theme]);
-  const [showAstPreview, setShowAstPreview] = useState<boolean>(false);
   const [copied, setCopied] = useState<string | boolean>(false);
   const [showLeftPanel, setShowLeftPanel] = useState<boolean>(true);
   const [showMiniMap, setShowMiniMap] = useState<boolean>(true);
@@ -3681,7 +3642,7 @@ export default function App() {
       await exportGraphImage(nodesRef.current, theme, format, transparent);
     } catch (err: any) {
       console.error('Export graph failed:', err);
-      setError(`Failed to export graph: ${err.message || String(err)}`);
+      setError(`${t("Не удалось экспортировать граф:")} ${err.message || String(err)}`);
     } finally {
       setIsExporting(false);
     }
@@ -3829,50 +3790,37 @@ export default function App() {
         isResultTableHoveredRef: currentIsResultTableHoveredRef,
       } = hotkeysStateRef.current;
 
-      const combo = buildComboString(e);
+      // Что вызывает это нажатие: сочетания только из настроек, не в полях ввода, при открытом окне — только Esc (п. 3.9)
+      const anyModalOpen = !!(currentShowSettingsModal || currentShowSnippetsModal || currentShowHistoryModal || currentShowClickhouseModal);
+      const resolved = resolveHotkeyAction(e, currentHotkeys, {
+        target: classifyHotkeyTarget(e.target as any),
+        modalOpen: anyModalOpen,
+        tabCount: currentTabs.length,
+      });
+      if (!resolved) return;
+      const action = resolved.action;
 
-      // Tab switching hotkey (Modifier + 1..9)
-      const tabModifier = currentHotkeys.tabSwitchModifier || 'Ctrl';
-      let modMatch = false;
-      if (tabModifier === 'Ctrl' && (e.ctrlKey || e.metaKey)) modMatch = true;
-      else if (tabModifier === 'Alt' && e.altKey) modMatch = true;
-      else if (tabModifier === 'Shift' && e.shiftKey) modMatch = true;
-      else if (tabModifier === 'Meta' && e.metaKey) modMatch = true;
-
-      if (modMatch) {
-        let digitNum: number | null = null;
-        if (e.code && e.code.startsWith('Digit')) {
-          const d = parseInt(e.code.slice(5), 10);
-          if (d >= 1 && d <= 9) digitNum = d;
-        } else if (e.key && e.key >= '1' && e.key <= '9') {
-          digitNum = parseInt(e.key, 10);
-        }
-
-        if (digitNum !== null) {
-          const targetIndex = digitNum - 1;
-          if (currentTabs[targetIndex]) {
-            e.preventDefault();
-            e.stopPropagation();
-            currentHandleSelectTab(currentTabs[targetIndex].id);
-            return;
-          }
-        }
+      if (action === 'selectTab') {
+        e.preventDefault();
+        e.stopPropagation();
+        currentHandleSelectTab(currentTabs[resolved.tabIndex!].id);
+        return;
       }
 
-      if (combo === (currentHotkeys.visualize || 'Ctrl+Enter')) {
+      if (action === 'visualize') {
         e.preventDefault();
         e.stopPropagation();
         if (!currentIsMaximizedSql) {
+          // режим графа: только строим граф, запрос не выполняется
           currentHandleVisualize();
-        }
-        if (currentUiVisibility.showDuckDbConfig || currentUiVisibility.showClickhouseConfig) {
+        } else if (currentUiVisibility.showDuckDbConfig || currentUiVisibility.showClickhouseConfig) {
           currentHandleExecuteDuckDb();
         }
-      } else if (combo === (currentHotkeys.saveFile || 'Ctrl+S')) {
+      } else if (action === 'saveFile') {
         e.preventDefault();
         e.stopPropagation();
         currentHandleSaveSqlFile();
-      } else if (combo === (currentHotkeys.openFile || 'Ctrl+O')) {
+      } else if (action === 'openFile') {
         e.preventDefault();
         e.stopPropagation();
         if (isTauriEnvironment() || isTauriEnv) {
@@ -3880,11 +3828,11 @@ export default function App() {
         } else {
           fileInputRef.current?.click();
         }
-      } else if (combo === (currentHotkeys.copySql || 'Ctrl+Shift+C')) {
+      } else if (action === 'copySql') {
         e.preventDefault();
         e.stopPropagation();
         currentHandleCopySql();
-      } else if (combo === (currentHotkeys.commentBlock || 'Ctrl+/')) {
+      } else if (action === 'commentBlock') {
         e.preventDefault();
         e.stopPropagation();
         const sel = sqlEditorRef.current?.getSelection();
@@ -3937,52 +3885,52 @@ export default function App() {
             }
           }
         }
-      } else if (combo === (currentHotkeys.toggleWrap || 'Alt+W')) {
+      } else if (action === 'toggleWrap') {
         e.preventDefault();
         e.stopPropagation();
         setIsWrapSql((prev) => !prev);
-      } else if (combo === (currentHotkeys.formatSql || 'Ctrl+Shift+F')) {
+      } else if (action === 'formatSql') {
         e.preventDefault();
         e.stopPropagation();
         currentHandleFormatSql();
-      } else if (combo === (currentHotkeys.openSnippets || 'Ctrl+K')) {
+      } else if (action === 'openSnippets') {
         e.preventDefault();
         e.stopPropagation();
         currentSetShowSnippetsModal(true);
-      } else if (combo === (currentHotkeys.toggleMaximized || 'Alt+F')) {
+      } else if (action === 'toggleMaximized') {
         e.preventDefault();
         e.stopPropagation();
         setIsMaximizedSql((prev) => !prev);
-      } else if (combo === (currentHotkeys.toggleTheme || 'Alt+T')) {
+      } else if (action === 'toggleTheme') {
         e.preventDefault();
         e.stopPropagation();
         setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
-      } else if (combo === (currentHotkeys.openSettings || 'Ctrl+,')) {
+      } else if (action === 'openSettings') {
         e.preventDefault();
         e.stopPropagation();
         currentSetShowSettingsModal(true);
-      } else if (combo === (currentHotkeys.exportResultsCopy || 'Ctrl+Shift+E')) {
+      } else if (action === 'exportResultsCopy') {
         e.preventDefault();
         e.stopPropagation();
         currentHandleCopyResultsToClipboard();
-      } else if (combo === (currentHotkeys.saveAsFile || 'Ctrl+Shift+S')) {
+      } else if (action === 'saveAsFile') {
         e.preventDefault();
         e.stopPropagation();
         currentHandleSaveAsSqlFile();
-      } else if (combo === (currentHotkeys.refreshSchema || 'Ctrl+R')) {
+      } else if (action === 'refreshSchema') {
         e.preventDefault();
         e.stopPropagation();
         currentFetchDuckDbSchema();
         currentSetShowDuckDbSchemaPanel?.(true);
-      } else if (combo === (currentHotkeys.escapeAction || 'Esc')) {
+      } else if (action === 'escapeAction') {
         let acted = false;
-        if (currentSelectedResultCell || currentDuckDbSelectedCell) {
+        if (!anyModalOpen && (currentSelectedResultCell || currentDuckDbSelectedCell)) {
           currentSetSelectedResultCell?.(null);
           currentSetDuckDbSelectedCell?.(null);
           currentSetIsCellZoomed?.(false);
           currentSetIsCellSqlHighlighted?.(false);
           acted = true;
-        } else if (currentIsResultTableHoveredRef?.current && currentIsDuckDbResultVisible) {
+        } else if (!anyModalOpen && currentIsResultTableHoveredRef?.current && currentIsDuckDbResultVisible) {
           if (currentIsDuckDbResultExpanded) {
             currentSetIsDuckDbResultExpanded(false);
             currentSetIsCellZoomed?.(false);
@@ -3992,7 +3940,7 @@ export default function App() {
             currentSetIsCellSqlHighlighted?.(false);
           }
           acted = true;
-        } else if (currentIsMaximizedSql && currentIsDuckDbRunning) {
+        } else if (!anyModalOpen && currentIsMaximizedSql && currentIsDuckDbRunning) {
           currentHandleCancelDuckDbQuery();
           acted = true;
         } else if (currentShowSettingsModal) {
@@ -4014,15 +3962,15 @@ export default function App() {
           e.preventDefault();
           e.stopPropagation();
         }
-      } else if (combo === (currentHotkeys.toggleMiniMap || 'Alt+M')) {
+      } else if (action === 'toggleMiniMap') {
         e.preventDefault();
         e.stopPropagation();
         setShowMiniMap((prev) => !prev);
-      } else if (combo === (currentHotkeys.exportGraph || 'Ctrl+E')) {
+      } else if (action === 'exportGraph') {
         e.preventDefault();
         e.stopPropagation();
         setShowExportMenu((prev) => !prev);
-      } else if (combo === (currentHotkeys.toggleColumnStats || 'Alt+Q')) {
+      } else if (action === 'toggleColumnStats') {
         e.preventDefault();
         e.stopPropagation();
         if (currentResultsViewMode === 'chart') {
@@ -4034,7 +3982,7 @@ export default function App() {
           currentSetIsDuckDbResultExpanded(true);
           currentSetStatsInitialMode({ chartType: 'list', listSubMode: 'columns' });
         }
-      } else if (combo === (currentHotkeys.openActionMenu || 'Ctrl+`')) {
+      } else if (action === 'openActionMenu') {
         e.preventDefault();
         e.stopPropagation();
         if (currentActiveTabId === ACTION_MENU_TAB_ID) {
@@ -4045,15 +3993,15 @@ export default function App() {
         } else {
           currentHandleSelectTab(ACTION_MENU_TAB_ID);
         }
-      } else if (combo === (currentHotkeys.exportSettings || 'Ctrl+Alt+S')) {
+      } else if (action === 'exportSettings') {
         e.preventDefault();
         e.stopPropagation();
         currentExportWorkspaceSettings?.();
-      } else if (combo === (currentHotkeys.importSettings || 'Ctrl+Alt+A')) {
+      } else if (action === 'importSettings') {
         e.preventDefault();
         e.stopPropagation();
         currentSettingsImportFileInputRef?.current?.click();
-      } else if (combo === (currentHotkeys.exportExcelReport || 'Ctrl+Alt+E')) {
+      } else if (action === 'exportExcelReport') {
         e.preventDefault();
         e.stopPropagation();
         currentHandleExportExcel?.();
@@ -4083,7 +4031,7 @@ export default function App() {
       setAstResult(null);
       setNodes([]);
       setEdges([]);
-      setSelectedNode(null);
+      setSelectedNodeId(null);
       return;
     }
 
@@ -4091,6 +4039,10 @@ export default function App() {
     if (result.error) {
       setError(result.error);
       setAstResult(null);
+      // Неудачный разбор не оставляет на экране граф предыдущего запроса
+      setNodes([]);
+      setEdges([]);
+      setSelectedNodeId(null);
       return;
     }
 
@@ -4116,7 +4068,7 @@ export default function App() {
       setAstResult(null);
       setNodes([]);
       setEdges([]);
-      setSelectedNode(null);
+      setSelectedNodeId(null);
       return;
     }
 
@@ -4144,9 +4096,9 @@ export default function App() {
       setNodes(result.nodes);
       setEdges(result.edges);
       if (result.nodes.length > 0) {
-        setSelectedNode(result.nodes[0]);
+        setSelectedNodeId(result.nodes[0].id);
       } else {
-        setSelectedNode(null);
+        setSelectedNodeId(null);
       }
     } catch (err: any) {
       setError(`Mermaid parse error: ${err?.message || String(err)}`);
@@ -4189,15 +4141,8 @@ export default function App() {
         setNodes(layouted.nodes);
         setEdges(layouted.edges);
         
-        // Select the result node as default if available and no selected node
-        if (!selectedNode) {
-          const resultNode = layouted.nodes.find(n => n.id.endsWith('result'));
-          if (resultNode) {
-            setSelectedNode(resultNode);
-          } else if (layouted.nodes.length > 0) {
-            setSelectedNode(layouted.nodes[0]);
-          }
-        }
+        // Выбор сохраняется, если узел остался в новом графе; иначе — узел результата / первый (п. 3.8)
+        setSelectedNodeId((prev: string | null) => reconcileSelectedNodeId(prev, layouted.nodes));
       } catch (err: any) {
         const errMsg = err.message || String(err);
         if (!errMsg.includes("Not a SELECT query")) {
@@ -4205,6 +4150,10 @@ export default function App() {
         } else {
           setError(null);
         }
+        // Граф предыдущего запроса не должен оставаться на экране после неудачного построения
+        setNodes([]);
+        setEdges([]);
+        setSelectedNodeId(null);
       }
     }
   }, [astResult, dialect, direction, showSortNodes, showLimitNodes, collapsedQueries, handleToggleExpand, setNodes, setEdges]);
@@ -4269,22 +4218,12 @@ export default function App() {
 
     const rowsToCopy = displayedResults && displayedResults.length > 0 ? displayedResults : pagedResults;
     if (rowsToCopy && rowsToCopy.length > 0) {
-      let csv = '';
-      if (isTransposed) {
-        const headers = [t('Поле \\ №'), ...rowsToCopy.map((_, i) => `#${(duckDbPage - 1) * effectiveMaxRows + i + 1}`)];
-        const rows = Object.keys(rowsToCopy[0]).map(colKey => [
-          colKey,
-          ...rowsToCopy.map(r => r[colKey] === null ? 'null' : String(r[colKey]))
-        ]);
-        csv = [headers.join('\t'), ...rows.map(r => r.join('\t'))].join('\n');
-      } else {
-        const headers = ['#', ...Object.keys(rowsToCopy[0])];
-        const rows = rowsToCopy.map((r, i) => [
-          (duckDbPage - 1) * effectiveMaxRows + i + 1,
-          ...Object.values(r).map(v => v === null ? 'null' : String(v))
-        ]);
-        csv = [headers.join('\t'), ...rows.map(r => r.join('\t'))].join('\n');
-      }
+      const csv = resultRowsToTsv(rowsToCopy, {
+        transposed: isTransposed,
+        firstRowNumber: (duckDbPage - 1) * effectiveMaxRows + 1,
+        fieldLabel: t('Поле \\ №'),
+        columns: resultColumns,
+      });
       copyToClipboard(csv)
         .then(triggerCopied)
         .catch(() => {
@@ -4296,7 +4235,7 @@ export default function App() {
           }
         });
     } else if (duckDbResults && duckDbResults.length > 0) {
-      const cols = Object.keys(duckDbResults[0]);
+      const cols = resultColumnKeys;
       const csv = ['#', ...cols].join('\t');
       copyToClipboard(csv)
         .then(triggerCopied)
@@ -4320,6 +4259,25 @@ export default function App() {
     }
   };
 
+  // Копирование таблицы Markdown (GFM). TSV для Excel — отдельная кнопка, её формат не менялся.
+  const handleCopyResultsAsMarkdown = () => {
+    const rows = displayedResults && displayedResults.length > 0 ? displayedResults : pagedResults;
+    if (!rows || rows.length === 0) return;
+    const md = resultRowsToMarkdown(rows as Record<string, unknown>[], {
+      transposed: isTransposed,
+      firstRowNumber: (duckDbPage - 1) * effectiveMaxRows + 1,
+      fieldLabel: t('Поле \\ №'),
+      columns: resultColumns,
+    });
+    if (!md) return;
+    copyToClipboard(md)
+      .then(() => {
+        setCopied('md');
+        setTimeout(() => setCopied(false), 2000);
+      })
+      .catch((e) => console.error('Failed to copy results as Markdown:', e));
+  };
+
   const [isExportingExcel, setIsExportingExcel] = useState<boolean>(false);
   const [showExcelPresetsMenu, setShowExcelPresetsMenu] = useState<boolean>(false);
 
@@ -4330,6 +4288,7 @@ export default function App() {
       const activeSql = lastExecutedSql || getActiveTabSql();
       await exportToExcel({
         data: duckDbResults,
+        columns: resultColumns,
         columnTypes: resultColumnTypes,
         sqlQuery: activeSql,
         settings: preset.settings,
@@ -4367,8 +4326,25 @@ export default function App() {
       const width = tableEl.scrollWidth;
       const height = tableEl.scrollHeight;
 
+      // Таблица сама фона не имеет — берём фон первого непрозрачного предка (иначе на картинке прозрачные ячейки).
+      const solidBackground = (() => {
+        let cur: HTMLElement | null = container;
+        while (cur) {
+          const c = getComputedStyle(cur).backgroundColor;
+          if (c && c !== 'transparent') {
+            const alphaMatch = c.match(/(?:,\s*|\/\s*)([\d.]+%?)\s*\)$/);
+            let alpha = 1;
+            if (alphaMatch) alpha = alphaMatch[1].endsWith('%') ? parseFloat(alphaMatch[1]) / 100 : parseFloat(alphaMatch[1]);
+            if (alpha >= 0.95) return c;
+          }
+          cur = cur.parentElement;
+        }
+        return theme === 'dark' ? '#0f172a' : '#ffffff';
+      })();
+
       const blobPromise = import('html-to-image').then(({ toBlob }) => toBlob(tableEl, {
         pixelRatio: 2,
+        backgroundColor: solidBackground,
         width,
         height,
         style: {
@@ -4431,17 +4407,21 @@ export default function App() {
     formatSqlText(text, dialect, formatterSettingsRef.current || formatterSettings);
 
   const handleFormatSql = async () => {
-    setIsFormatted(true);
-    setTimeout(() => setIsFormatted(false), 1500);
+    // «Отформатировано» показывается только после успешного форматирования (п. 3.17)
+    const flashFormatted = () => {
+      setIsFormatted(true);
+      setTimeout(() => setIsFormatted(false), 1500);
+    };
 
     const sel = sqlEditorRef.current?.getSelection();
 
     if (sel && sel.text.trim()) {
-      try {
-        const formatted = await doFormat(sel.text);
-        sqlEditorRef.current?.replaceSelection(formatted);
-      } catch (e) {
-        console.warn('Format error', e);
+      const res = await formatWithFeedback(sel.text, doFormat);
+      if (res.ok === true) {
+        sqlEditorRef.current?.replaceSelection(res.text);
+        flashFormatted();
+      } else {
+        console.warn('Format error', res.error);
       }
       return;
     }
@@ -4449,13 +4429,14 @@ export default function App() {
     const currentSqlText = sqlRef.current;
     if (!currentSqlText.trim()) return;
 
-    try {
-      const formatted = await doFormat(currentSqlText);
-      sqlRef.current = formatted;
-      setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: formatted } : t));
-    } catch (e) {
-      console.warn('Format error', e);
+    const res = await formatWithFeedback(currentSqlText, doFormat);
+    if (res.ok === false) {
+      console.warn('Format error', res.error);
+      return;
     }
+    sqlRef.current = res.text;
+    setTabs(prev => setTabSql(prev, activeTabId, res.text));
+    flashFormatted();
   };
 
   const handleInsertGeneratedSqlFromStats = async (cols: string[]) => {
@@ -4492,11 +4473,11 @@ export default function App() {
     if (!currentSqlText) return;
     const compacted = compactSql(currentSqlText);
     sqlRef.current = compacted;
-    setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: compacted } : t));
+    setTabs(prev => setTabSql(prev, activeTabId, compacted));
   }, [activeTabId]);
 
   const handleNodeClick = (_event: any, node: any) => {
-    setSelectedNode(node);
+    setSelectedNodeId(node.id);
   };
 
   if (isInitializing) {
@@ -4629,7 +4610,7 @@ export default function App() {
             {/* CODE EDITOR WORKSPACE */}
             <div className="flex-1 flex flex-col min-h-0 relative">
               {/* SYNTAX HIGHLIGHTED SQL EDITOR OR ACTION MENU */}
-              <ErrorBoundary title={t("Ошибка редактора SQL")} theme={theme}>
+              <ErrorBoundary title={t("Ошибка редактора SQL")} theme={theme} resetKey={activeTabId}>
                 {!isTabsLoaded ? (
                   <div className="flex-1 flex flex-col items-center justify-center p-8 space-y-3">
                     <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
@@ -4662,7 +4643,7 @@ export default function App() {
                     onCompactSql={handleCompactSql}
                     onExecuteQuickAction={handleExecuteQuickAction}
                     extractedTableName={extractedTableName}
-                    isQuickActionsEnabled={uiVisibility.showDuckDbConfig || uiVisibility.showClickhouseConfig}
+                    isQuickActionsEnabled={(uiVisibility.showDuckDbConfig || uiVisibility.showClickhouseConfig) && !!duckDbResults && duckDbResults.length > 0 && !isAnyQueryRunning}
                     schemaTables={duckDbSchema || undefined}
                   />
                 ) : (
@@ -4777,7 +4758,7 @@ export default function App() {
               className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md font-mono transition-all shrink-0 ${
                 theme === 'dark' ? 'text-slate-300 hover:text-slate-100' : 'text-slate-700 hover:text-slate-900'
               }`}
-              title={t('Форматировать SQL (Ctrl+Shift+F)')}
+              title={hotkeyHint(t('Форматировать SQL'), hotkeys, 'formatSql')}
             >
               {isFormatted ? (
                 <Check className="w-3 h-3 text-emerald-500" />
@@ -5216,7 +5197,7 @@ export default function App() {
 
           {/* REACT FLOW CANVAS CONTAINER */}
           <div className={`flex-1 w-full relative min-h-0 ${theme === 'dark' ? 'bg-slate-850' : 'bg-slate-200'} ${isMaximizedSql ? 'graph-paused' : ''}`} style={{ willChange: 'transform', transform: 'translateZ(0)', zoom: 1 / ((uiVisibility.uiScale ?? 100) / 100) }}>
-            <ErrorBoundary title={t("Ошибка отображения графа")} theme={theme}>
+            <ErrorBoundary title={t("Ошибка отображения графа")} theme={theme} resetKey={activeTabId}>
             {/* Grid Pattern Background styled specifically to match the design style */}
             <div className={`absolute inset-0 pointer-events-none opacity-[0.07] dark:opacity-10`} style={{ backgroundImage: 'radial-gradient(#64748b 1px, transparent 1px)', backgroundSize: '24px 24px' }}></div>
             
@@ -5310,43 +5291,6 @@ export default function App() {
                 <button type="button" onClick={() => setMermaidNotice(null)} className="shrink-0 opacity-70 hover:opacity-100" aria-label="close">
                   <X className="w-3.5 h-3.5" />
                 </button>
-              </div>
-            )}
-
-            {/* RAW AST OVERLAY SIDEBAR */}
-            {showAstPreview && (
-              <div className={`absolute right-0 top-0 bottom-0 w-80 border-l z-20 flex flex-col shadow-2xl animate-in slide-in-from-right duration-200 ${
-                theme === 'dark' ? 'bg-[#172033] border-slate-600 text-slate-200' : 'bg-slate-100 border-slate-300 text-slate-800'
-              }`}>
-                <div className={`flex items-center justify-between p-3 border-b ${
-                  theme === 'dark' ? 'border-slate-600 bg-slate-850/40' : 'border-slate-200 bg-slate-50'
-                }`}>
-                  <div className="flex items-center gap-1.5 text-xs font-mono text-amber-500 font-bold">
-                    <Terminal className="w-3.5 h-3.5" />
-                    <span>Parsed AST Tree</span>
-                  </div>
-                  <button
-                    onClick={() => setShowAstPreview(false)}
-                    className={`p-1 rounded transition-colors ${
-                      theme === 'dark' ? 'hover:bg-slate-600 text-slate-200' : 'hover:bg-slate-200 text-slate-700'
-                    }`}
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-                <div className="flex-1 p-3 overflow-y-auto text-[11px] font-mono select-text">
-                  {astResult ? (
-                    <pre className={`p-3 rounded-lg border overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-full ${
-                      theme === 'dark' ? 'bg-[#172033] border-slate-750 text-slate-100' : 'bg-slate-50 border-slate-200 text-slate-800'
-                    }`}>
-                      {JSON.stringify(astResult, null, 2)}
-                    </pre>
-                  ) : (
-                    <div className="text-slate-400 italic text-center mt-10">
-                      No AST available. Parse a valid query to inspect its syntax tree.
-                    </div>
-                  )}
-                </div>
               </div>
             )}
           </div>
@@ -5520,7 +5464,7 @@ export default function App() {
                 </div>
 
                 <button
-                  onClick={() => setSelectedNode(null)}
+                  onClick={() => setSelectedNodeId(null)}
                   className={`p-1.5 rounded transition-colors shrink-0 ${
                     theme === 'dark' ? 'hover:bg-slate-600 text-slate-200' : 'hover:bg-slate-100 text-slate-600'
                   }`}
@@ -5680,8 +5624,6 @@ export default function App() {
                             <button
                               onClick={() => {
                                 setShowDuckDbConnMenu(false);
-                                setClickhouseConfig(null);
-                                setActiveEngine('duckdb');
                                 handleConfigureDuckDb();
                               }}
                               className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center gap-2 transition-colors ${
@@ -5694,8 +5636,6 @@ export default function App() {
                             <button
                               onClick={() => {
                                 setShowDuckDbConnMenu(false);
-                                setClickhouseConfig(null);
-                                setActiveEngine('duckdb');
                                 handleCreateDuckDbFile();
                               }}
                               className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center gap-2 transition-colors ${
@@ -5708,8 +5648,6 @@ export default function App() {
                             <button
                               onClick={() => {
                                 setShowDuckDbConnMenu(false);
-                                setClickhouseConfig(null);
-                                setActiveEngine('duckdb');
                                 handleConnectInMemory();
                               }}
                               className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center gap-2 transition-colors ${
@@ -5746,10 +5684,7 @@ export default function App() {
                             <button
                               onClick={() => {
                                 setShowDuckDbConnMenu(false);
-                                if (duckDbConnectedPath) {
-                                  handleDisconnectDuckDb();
-                                }
-                                setActiveEngine('clickhouse');
+                                // подключение меняется только по кнопке «Подключить» в окне (onConnect), отмена окна ничего не отключает (п. 3.7)
                                 setShowClickhouseModal(true);
                               }}
                               className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center gap-2 transition-colors ${
@@ -5991,24 +5926,26 @@ export default function App() {
                       <span className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>{t('Загрузка SQL сессии...')}</span>
                     </div>
                   ) : activeTabId === ACTION_MENU_TAB_ID ? (
-                    <ActionMenuTabContent
-                      theme={theme}
-                      activeEngine={activeEngine}
-                      isDuckDbRunning={isDuckDbRunning}
-                      onExecuteSql={(sqlToExec, dialect, isSeq) => {
-                        handleExecuteCurrentEngineQuery(sqlToExec, 1, undefined, false, isSeq ? 'sequential' : undefined);
-                      }}
-                      onOpenSnippetsManager={(cat, snippetId) => {
-                        setSnippetsModalCategory(cat || ACTION_MENU_CATEGORY);
-                        if (snippetId) setSnippetsModalEditId(snippetId);
-                        setShowSnippetsModal(true);
-                      }}
-                      onInsertIntoEditor={(sqlToInsert) => {
-                        handleInsertSnippet(sqlToInsert);
-                      }}
-                    />
+                    <ErrorBoundary title={t("Ошибка редактора SQL")} theme={theme} resetKey={activeTabId}>
+                      <ActionMenuTabContent
+                        theme={theme}
+                        activeEngine={activeEngine}
+                        isDuckDbRunning={isDuckDbRunning}
+                        onExecuteSql={(sqlToExec, dialect, isSeq) => {
+                          handleExecuteCurrentEngineQuery(sqlToExec, 1, undefined, false, isSeq ? 'sequential' : undefined);
+                        }}
+                        onOpenSnippetsManager={(cat, snippetId) => {
+                          setSnippetsModalCategory(cat || ACTION_MENU_CATEGORY);
+                          if (snippetId) setSnippetsModalEditId(snippetId);
+                          setShowSnippetsModal(true);
+                        }}
+                        onInsertIntoEditor={(sqlToInsert) => {
+                          handleInsertSnippet(sqlToInsert);
+                        }}
+                      />
+                    </ErrorBoundary>
                   ) : (
-                    <ErrorBoundary title={t("Ошибка редактора SQL")} theme={theme}>
+                    <ErrorBoundary title={t("Ошибка редактора SQL")} theme={theme} resetKey={activeTabId}>
                       <SqlEditor editorRef={sqlEditorRef}
                     docId={activeTabId}
                         value={getActiveTabSql()}
@@ -6018,7 +5955,7 @@ export default function App() {
                         onCompactSql={handleCompactSql}
                         onExecuteQuickAction={handleExecuteQuickAction}
                         extractedTableName={extractedTableName}
-                        isQuickActionsEnabled={uiVisibility.showDuckDbConfig || uiVisibility.showClickhouseConfig}
+                        isQuickActionsEnabled={(uiVisibility.showDuckDbConfig || uiVisibility.showClickhouseConfig) && !!duckDbResults && duckDbResults.length > 0 && !isAnyQueryRunning}
                         isFullScreen={true}
                         schemaTables={duckDbSchema || undefined}
                       />
@@ -6100,7 +6037,7 @@ export default function App() {
                       <button 
                         onClick={() => fetchDuckDbSchema(true)}
                         className={`p-1 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-200 text-slate-500 hover:text-slate-800'}`}
-                        title={t("Обновить схему (Ctrl+R)")}
+                        title={hotkeyHint(t('Обновить схему'), hotkeys, 'refreshSchema')}
                       >
                         <RefreshCw className={`w-3.5 h-3.5 ${isSchemaLoading ? 'animate-spin text-blue-400' : ''}`} />
                       </button>
@@ -6322,7 +6259,7 @@ export default function App() {
                                                         {Object.entries(tables).map(([tableName, tableData]: any) => {
                                                   const itemInfo = tableData.info || {};
                                                   const cols = tableData.columns;
-                                                  const tableKey = `${dbName}.${schemaName}.${tableName}`;
+                                                  const tableKey = buildTableColumnsKey(schemaEngine, dbName, schemaName, tableName);
                                                   const sizeBadge = getTableSizeBadge([itemInfo]);
                                                   const isLoadingCols = !!loadingTableCols[tableKey];
                                                   const isExpanded = !!expandedSchemaNodes[`tbl-${dbName}-${schemaName}-${tableName}`];
@@ -6602,7 +6539,7 @@ export default function App() {
                         <div className="flex items-center gap-1">
                           <button
                             disabled={duckDbPage <= 1 || isAnyQueryRunning}
-                            onClick={() => handleExecuteCurrentEngineQuery(lastExecutedSql, duckDbPage - 1)}
+                            onClick={() => handleChangeResultPage(duckDbPage - 1)}
                             className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded transition-all font-mono disabled:opacity-30 disabled:cursor-not-allowed ${
                               theme === 'dark' ? 'text-slate-300 hover:text-slate-100 hover:bg-slate-700/40' : 'text-slate-700 hover:text-slate-900 hover:bg-slate-400/30'
                             }`}
@@ -6617,7 +6554,7 @@ export default function App() {
                           </span>
                           <button
                             disabled={isAnyQueryRunning || !duckDbResults || duckDbResults.length < effectiveMaxRows}
-                            onClick={() => handleExecuteCurrentEngineQuery(lastExecutedSql, duckDbPage + 1)}
+                            onClick={() => handleChangeResultPage(duckDbPage + 1)}
                             className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded transition-all font-mono disabled:opacity-30 disabled:cursor-not-allowed ${
                               theme === 'dark' ? 'text-slate-300 hover:text-slate-100 hover:bg-slate-700/40' : 'text-slate-700 hover:text-slate-900 hover:bg-slate-400/30'
                             }`}
@@ -6674,7 +6611,7 @@ export default function App() {
                                   theme === 'dark' ? 'bg-slate-800 border-slate-600 text-slate-200' : 'bg-white border-slate-300 text-slate-800'
                                 }`}>
                                   <div className="max-h-52 overflow-y-auto space-y-0.5 pr-0.5">
-                                    {Object.keys(duckDbResults[0])
+                                    {resultColumnKeys
                                       .filter(col => col.toLowerCase().includes(columnSearchTerm.toLowerCase()))
                                       .map((col) => {
                                         const isSelected = selectedResultCell?.colKey === col;
@@ -6702,7 +6639,7 @@ export default function App() {
                                           </button>
                                         );
                                       })}
-                                    {Object.keys(duckDbResults[0]).filter(col => col.toLowerCase().includes(columnSearchTerm.toLowerCase())).length === 0 && (
+                                    {resultColumnKeys.filter(col => col.toLowerCase().includes(columnSearchTerm.toLowerCase())).length === 0 && (
                                       <div className="text-[11px] text-slate-400 p-2 text-center italic">
                                         {t('Столбцы не найдены')}
                                       </div>
@@ -6830,61 +6767,9 @@ export default function App() {
                             return;
                           }
 
-                          setIsDuckDbRunning(true);
                           setDuckDbError(null);
 
-                          const handleExecuteRawQueryForStats = async (sqlToRun: string): Promise<any[]> => {
-                            const isClickhouse = (activeEngine as string) === 'clickhouse' || (!duckDbConnectedPath && !!clickhouseConfig);
-                            if (isClickhouse && clickhouseConfig) {
-                              let queryWithFormat = sqlToRun.trim();
-                              if (!/\bFORMAT\b/i.test(queryWithFormat) && /^\s*(SELECT|SHOW|DESCRIBE|DESC|EXPLAIN|WITH)\b/i.test(queryWithFormat)) {
-                                queryWithFormat += ' FORMAT JSON';
-                              }
-                              if (isTauriEnvironment()) {
-                                const res = await executeClickhouseQueryTauri(clickhouseConfig, queryWithFormat);
-                                return res?.data || [];
-                              } else if (isCapacitorEnvironment()) {
-                                const res = await executeClickhouseQueryCapacitor(clickhouseConfig, queryWithFormat);
-                                return res?.data || [];
-                              } else {
-                                const data = await fetchApiJson('/api/clickhouse/query', {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({
-                                    ...clickhouseConfig,
-                                    query: queryWithFormat,
-                                  }),
-                                });
-                                if (data?.error) throw new Error(data.error);
-                                return data?.data || [];
-                              }
-                            } else {
-                              if (isTauriEnvironment() && !isWasmMode) {
-                                const res = await tauriInvoke<{ columns: string[]; rows: any[][] }>('execute_query', { sql: sqlToRun });
-                                return (res?.rows || []).map(row => {
-                                  const obj: Record<string, any> = {};
-                                  (res.columns || []).forEach((col, idx) => {
-                                    obj[col] = row[idx];
-                                  });
-                                  return obj;
-                                });
-                              } else if (isWasmMode) {
-                                return await queryDuckDbWasm(sqlToRun);
-                              } else {
-                                const data = await fetchApiJson('/api/duckdb/query', {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ query: sqlToRun })
-                                });
-                                if (data?.error) throw new Error(data.error);
-                                return data?.data || [];
-                              }
-                            }
-                          };
-
-                          const runRawQuery = async (sqlToRun: string): Promise<any[]> => {
-                            return await handleExecuteRawQueryForStats(sqlToRun);
-                          };
+                          const runRawQuery = (sqlToRun: string): Promise<any[]> => handleExecuteRawQueryForStats(sqlToRun);
 
                           try {
                             const strippedSql = (lastExecutedSql || '').trim().replace(/;+$/, '');
@@ -6918,8 +6803,6 @@ export default function App() {
                           } catch (err: any) {
                             console.error("SUMMARIZE execution error:", err);
                             setDuckDbError(err?.message || String(err));
-                          } finally {
-                            setIsDuckDbRunning(false);
                           }
                         }}
                         disabled={!duckDbResults || duckDbResults.length === 0}
@@ -7058,6 +6941,15 @@ export default function App() {
                       {copied === 'tsv' ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
                     </button>
                     <button 
+                      onClick={handleCopyResultsAsMarkdown}
+                      className={`h-6 w-6 flex items-center justify-center rounded transition-colors ${
+                        theme === 'dark' ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'
+                      }`}
+                      title={copied === 'md' ? t("Скопировано!") : t("Скопировать как Markdown")}
+                    >
+                      {copied === 'md' ? <Check className="w-4 h-4 text-emerald-500" /> : <TableProperties className="w-4 h-4" />}
+                    </button>
+                    <button 
                       onClick={handleCopyTableAsImage}
                       className={`h-6 w-6 flex items-center justify-center rounded transition-colors ${
                         theme === 'dark' ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'
@@ -7111,7 +7003,7 @@ export default function App() {
                   </div>
                 </div>
                 
-                <div 
+              <div 
                   className="flex-1 overflow-hidden relative flex flex-row min-h-0"
                   onMouseEnter={() => { isResultTableHoveredRef.current = true; }}
                   onMouseLeave={() => { isResultTableHoveredRef.current = false; }}
@@ -7140,6 +7032,7 @@ export default function App() {
                       ) : resultsViewMode === 'chart' ? (
                         <DataStatsViewer
                           data={duckDbResults}
+                          columns={resultColumns}
                           theme={theme}
                           columnTypes={resultColumnTypes}
                           initialChartType={statsInitialMode.chartType}
@@ -7181,8 +7074,8 @@ export default function App() {
                             </tr>
                           </thead>
                           <tbody>
-                            {displayedResults.length > 0 && Object.keys(displayedResults[0]).map((colKey) => {
-                              const isColSelected = selectedResultCell?.colKey === colKey;
+                            {displayedResults.length > 0 && resultColumnKeys.map((colKey) => {
+                              const isColSelected = isColHighlighted(colKey);
                               const isColCopied = copiedResultCell?.rowIndex === -1 && copiedResultCell?.colKey === colKey;
                               return (
                                 <tr key={colKey}>
@@ -7194,19 +7087,9 @@ export default function App() {
                                         : theme === 'dark' ? 'bg-slate-800 text-slate-300 hover:bg-slate-700 border-r-slate-600 border-b-slate-700/80' : 'bg-slate-100 text-slate-800 hover:bg-slate-200 border-r-slate-300 border-b-slate-200'
                                     }`}
                                     title={`${colKey}${resultColumnTypes[colKey] ? ` (${formatColumnType(resultColumnTypes[colKey])})` : ''}`}
-                                    onClick={() => {
-                                      if (document.activeElement instanceof HTMLElement) {
-                                        document.activeElement.blur();
-                                      }
-                                      setSelectedResultCell({ rowIndex: -1, colKey });
-                                      setDuckDbSelectedCell({ title: `${t('Столбец:')} ${colKey}`, content: computeColumnStats(colKey, displayedResults) });
-                                    }}
-                                    onContextMenu={(e) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      setSelectedResultCell({ rowIndex: -1, colKey });
-                                      setResultTableContextMenu({ x: e.clientX, y: e.clientY, colKey });
-                                    }}
+                                    onClick={(e) => handleColumnHeaderClick(e, colKey)}
+                                    onMouseDown={(e) => { if (e.shiftKey) e.preventDefault(); }}
+                                    onContextMenu={(e) => handleColumnHeaderContextMenu(e, colKey)}
                                   >
                                     <div className="flex items-center justify-between gap-1">
                                       <span className="truncate">{colKey}</span>
@@ -7237,7 +7120,7 @@ export default function App() {
                                       cellClasses += theme === 'dark' ? 'border-r-slate-700/80 border-b-slate-700/80 text-slate-400 hover:bg-slate-700/50' : 'border-r-slate-200 border-b-slate-200 text-slate-600 hover:bg-slate-200/50';
                                     }
 
-                                    const valStr = val === null ? null : String(val);
+                                    const valStr = val === null ? null : formatCellValue(val);
                                     const displayVal = valStr === null ? null : (valStr.length > 200 ? valStr.substring(0, 200) + '…' : valStr);
 
                                     return (
@@ -7246,9 +7129,7 @@ export default function App() {
                                         className={cellClasses}
                                         title={valStr === null ? 'null' : (valStr.length > 200 ? valStr.substring(0, 200) + '...' : valStr)}
                                         onClick={() => {
-                                          if (document.activeElement instanceof HTMLElement) {
-                                            document.activeElement.blur();
-                                          }
+                                          releaseEditorFocus();
                                           setSelectedResultCell({ rowIndex: i, colKey });
                                           setDuckDbSelectedCell({ title: t(t('Значение')), content: valStr === null ? 'null' : valStr });
                                         }}
@@ -7282,8 +7163,8 @@ export default function App() {
                               }`}>
                                 #
                               </th>
-                              {Object.keys(duckDbResults[0]).map((col) => {
-                                const isColSelected = selectedResultCell?.colKey === col;
+                              {resultColumnKeys.map((col) => {
+                                const isColSelected = isColHighlighted(col);
                                 const isColCopied = copiedResultCell?.rowIndex === -1 && copiedResultCell?.colKey === col;
                                 const sortInfo = activeSqlSorts.find(s => s.colKey === col);
                                 const isFiltered = activeSqlFilters.some(f => f.colKey === col);
@@ -7307,19 +7188,9 @@ export default function App() {
                                           : 'border-b-slate-300 border-r-slate-200 text-slate-800 bg-slate-100 hover:bg-slate-200'
                                     }`}
                                     title={`${col.length > 200 ? col.substring(0, 200) + '...' : col}${resultColumnTypes[col] ? ` (${formatColumnType(resultColumnTypes[col])})` : ''}`}
-                                    onClick={() => {
-                                      if (document.activeElement instanceof HTMLElement) {
-                                        document.activeElement.blur();
-                                      }
-                                      setSelectedResultCell({ rowIndex: -1, colKey: col });
-                                      setDuckDbSelectedCell({ title: `${t('Столбец:')} ${col}`, content: computeColumnStats(col, displayedResults) });
-                                    }}
-                                    onContextMenu={(e) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      setSelectedResultCell({ rowIndex: -1, colKey: col });
-                                      setResultTableContextMenu({ x: e.clientX, y: e.clientY, colKey: col });
-                                    }}
+                                    onClick={(e) => handleColumnHeaderClick(e, col)}
+                                    onMouseDown={(e) => { if (e.shiftKey) e.preventDefault(); }}
+                                    onContextMenu={(e) => handleColumnHeaderContextMenu(e, col)}
                                   >
                                     <div className="flex items-center justify-between gap-1">
                                       <span className="truncate">{col}</span>
@@ -7368,10 +7239,11 @@ export default function App() {
                                   }`}>
                                     {rowNum}
                                   </td>
-                                  {Object.entries(row).map(([colKey, val]: [string, any], j) => {
+                                  {resultColumnKeys.map((colKey, j) => {
+                                    const val: any = (row as any)[colKey];
                                     const isCellSelected = selectedResultCell?.rowIndex === i && selectedResultCell?.colKey === colKey;
                                     const isCellCopied = copiedResultCell?.rowIndex === i && copiedResultCell?.colKey === colKey;
-                                    const isColSelected = selectedResultCell?.colKey === colKey;
+                                    const isColSelected = isColHighlighted(colKey);
                                     const safeKey = getCssVarSafeName(colKey);
 
                                     let cellClasses = `px-3 py-1.5 whitespace-nowrap overflow-hidden text-ellipsis cursor-pointer border-r border-b `;
@@ -7394,7 +7266,7 @@ export default function App() {
                                         : 'border-r-slate-200 border-b-slate-200 text-slate-600 hover:bg-slate-200/50';
                                     }
 
-                                    const valStr = val === null ? null : String(val);
+                                    const valStr = val === null ? null : formatCellValue(val);
                                     const displayVal = valStr === null ? null : (valStr.length > 200 ? valStr.substring(0, 200) + '…' : valStr);
 
                                     return (
@@ -7408,9 +7280,7 @@ export default function App() {
                                         className={cellClasses}
                                         title={valStr === null ? 'null' : (valStr.length > 200 ? valStr.substring(0, 200) + '...' : valStr)}
                                         onClick={() => {
-                                          if (document.activeElement instanceof HTMLElement) {
-                                            document.activeElement.blur();
-                                          }
+                                          releaseEditorFocus();
                                           setSelectedResultCell({ rowIndex: i, colKey });
                                           setDuckDbSelectedCell({ title: t(t('Значение')), content: valStr === null ? 'null' : valStr });
                                         }}
@@ -7598,11 +7468,13 @@ export default function App() {
                   const scale = (uiVisibility.uiScale ?? 100) / 100;
                   return {
                     left: Math.max(8, Math.min(resultTableContextMenu.x / scale, (window.innerWidth / scale) - 220)),
-                    top: Math.max(8, Math.min(resultTableContextMenu.y / scale, (window.innerHeight / scale) - 280)),
+                    top: Math.max(8, Math.min(resultTableContextMenu.y / scale, (window.innerHeight / scale) - 340)),
                   };
                 })()}
                 onClick={(e) => e.stopPropagation()}
               >
+                {!isMultiColumnMenu && (
+                <>
                 {/* SORT ASC */}
                 <button
                   type="button"
@@ -7633,24 +7505,74 @@ export default function App() {
                   <span>ORDER BY (DESC)</span>
                 </button>
 
-                {/* HEADER-ONLY ACTIONS (GROUP BY & NULL/EMPTY FILTERS) */}
+                </>
+                )}
+
+                {/* HEADER-ONLY ACTIONS (GROUP BY, REMOVE/KEEP COLS, DISTINCT & NULL/EMPTY FILTERS) */}
                 {resultTableContextMenu.cellValue === undefined && (
                   <>
                     {/* GROUP BY */}
                     <button
                       type="button"
                       onClick={() => {
-                        handleApplyTableGroupBy(resultTableContextMenu.colKey);
+                        handleApplyColumnAction('group', menuColumns);
                         setResultTableContextMenu(null);
                       }}
-                      className={`w-full text-left px-3 py-1.5 flex items-center gap-2 transition-colors border-t ${
+                      className={`w-full text-left px-3 py-1.5 flex items-center gap-2 transition-colors ${
                         theme === 'dark' ? 'hover:bg-slate-700 border-slate-700/60' : 'hover:bg-slate-100 border-slate-200'
                       }`}
                     >
                       <BarChart3 className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                      <span className="truncate">GROUP BY "{resultTableContextMenu.colKey}"</span>
+                      <span className="truncate">{isMultiColumnMenu ? 'GROUP BY' : `GROUP BY "${resultTableContextMenu.colKey}"`}</span>
                     </button>
 
+                    {/* REMOVE COLS */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleApplyColumnAction('remove', menuColumns);
+                        setResultTableContextMenu(null);
+                      }}
+                      className={`w-full text-left px-3 py-1.5 flex items-center gap-2 transition-colors ${
+                        theme === 'dark' ? 'hover:bg-slate-700 border-slate-700/60' : 'hover:bg-slate-100 border-slate-200'
+                      }`}
+                    >
+                      <X className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                      <span className="truncate">{isMultiColumnMenu ? 'REMOVE COLS' : 'REMOVE COL'}</span>
+                    </button>
+
+                    {/* KEEP COLS */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleApplyColumnAction('keep', menuColumns);
+                        setResultTableContextMenu(null);
+                      }}
+                      className={`w-full text-left px-3 py-1.5 flex items-center gap-2 transition-colors ${
+                        theme === 'dark' ? 'hover:bg-slate-700 border-slate-700/60' : 'hover:bg-slate-100 border-slate-200'
+                      }`}
+                    >
+                      <Columns className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      <span className="truncate">{isMultiColumnMenu ? 'KEEP COLS' : 'KEEP COL'}</span>
+                    </button>
+
+                    {/* DISTINCT */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleApplyColumnAction('distinct', menuColumns);
+                        setResultTableContextMenu(null);
+                      }}
+                      className={`w-full text-left px-3 py-1.5 flex items-center gap-2 transition-colors ${
+                        theme === 'dark' ? 'hover:bg-slate-700 border-slate-700/60' : 'hover:bg-slate-100 border-slate-200'
+                      }`}
+                    >
+                      <Layers className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                      <span className="truncate">{isMultiColumnMenu ? 'DISTINCT' : `DISTINCT "${resultTableContextMenu.colKey}"`}</span>
+                    </button>
+
+                    {!isMultiColumnMenu && (
+                    <>
                     {/* NULL / EMPTY FILTERS */}
                     <button
                       type="button"
@@ -7679,6 +7601,8 @@ export default function App() {
                       <Filter className="w-3.5 h-3.5 text-sky-400 shrink-0" />
                       <span className="truncate">WHERE IS NOT NULL</span>
                     </button>
+                    </>
+                    )}
                   </>
                 )}
 
@@ -7861,7 +7785,7 @@ export default function App() {
                   className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded transition-all ${
                     theme === 'dark' ? 'text-slate-300 hover:text-slate-100' : 'text-slate-700 hover:text-slate-900'
                   }`}
-                  title={t('Форматировать SQL (Ctrl+Shift+F)')}
+                  title={hotkeyHint(t('Форматировать SQL'), hotkeys, 'formatSql')}
                 >
                   {isFormatted ? (
                     <Check className="w-3.5 h-3.5 text-emerald-500" />
@@ -7878,7 +7802,7 @@ export default function App() {
                   className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded transition-all ${
                     theme === 'dark' ? 'text-slate-300 hover:text-slate-100' : 'text-slate-700 hover:text-slate-900'
                   }`}
-                  title={t('Формат в одну строку (Ctrl+Alt+M)')}
+                  title={hotkeyHint(t('Формат в одну строку'), hotkeys, 'compactSql')}
                 >
                   {isCompacted ? (
                     <Check className="w-3.5 h-3.5 text-emerald-500" />
@@ -8019,7 +7943,7 @@ export default function App() {
         currentDialect={dialect}
         currentTabTitle={activeTabTitleRef.current}
         onRestoreVersion={(restoredSql, restoredDialect) => {
-          sqlRef.current = restoredSql; setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: restoredSql } : t));
+          sqlRef.current = restoredSql; setTabs(prev => setTabSql(prev, activeTabId, restoredSql));
           if (restoredDialect) {
             setDialect(restoredDialect as any);
           }

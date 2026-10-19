@@ -10,6 +10,7 @@ import {
   importVersions,
   cleanupOldVersions
 } from '../src/utils/versionHistory';
+import { formatVersionLabel } from '../src/utils/versionHistory';
 
 describe('versionHistory (IndexedDB storage)', () => {
   beforeEach(async () => {
@@ -85,5 +86,30 @@ describe('versionHistory (IndexedDB storage)', () => {
 
   it('should throw error when saving empty query', async () => {
     await expect(saveVersion('   ')).rejects.toThrow('SQL query is empty');
+  });
+});
+
+// Подпись времени снимка: язык передаётся явно, часовой пояс задан для воспроизводимости (п. 1.13)
+describe('formatVersionLabel', () => {
+  const morning = Date.UTC(2024, 4, 1, 10, 30, 45);
+  const afternoon = Date.UTC(2024, 4, 1, 15, 5, 9);
+
+  it('formats the label in the Russian style for "ru"', () => {
+    expect(formatVersionLabel(morning, 'ru', 'UTC')).toBe('01.05.2024, 10:30:45');
+    expect(formatVersionLabel(afternoon, 'ru', 'UTC')).toBe('01.05.2024, 15:05:09');
+  });
+
+  // Новое поведение: английский язык больше не даёт подпись в формате ru-RU
+  it('formats the label in the English style for "en"', () => {
+    expect(formatVersionLabel(morning, 'en', 'UTC')).toMatch(/^05\/01\/2024, 10:30:45\sAM$/);
+    expect(formatVersionLabel(afternoon, 'en', 'UTC')).toMatch(/^05\/01\/2024, 03:05:09\sPM$/);
+  });
+
+  it('gives different labels for "ru" and "en"', () => {
+    expect(formatVersionLabel(morning, 'en', 'UTC')).not.toBe(formatVersionLabel(morning, 'ru', 'UTC'));
+  });
+
+  it('falls back to the Russian style for an unknown language', () => {
+    expect(formatVersionLabel(morning, 'xx', 'UTC')).toBe('01.05.2024, 10:30:45');
   });
 });

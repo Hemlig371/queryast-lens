@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useDeferredValue, useMemo } from 'react';
-import { downloadFileWithFallback } from '../utils/exportUtils';
+import { downloadFileWithFallback, copyToClipboard } from '../utils/exportUtils';
+import { TRASH_CATEGORY, trashSnippet, isTrashed, withoutTrash } from '../utils/snippetTrash';
 import { 
   Code, 
   Plus, 
@@ -20,7 +21,7 @@ import {
   Workflow,
   PlaySquare
 } from 'lucide-react';
-import { loadSnippetsFromDB, saveSnippetsToDB, addSnippetToDB, updateSnippetInDB, deleteSnippetFromDB, cachedSnippets, getSnippetExportFilename } from '../utils/snippetsStorage';
+import { saveSnippetsToDB, addSnippetToDB, updateSnippetInDB, deleteSnippetFromDB, cachedSnippets, getSnippetExportFilename, migrateLegacySnippets } from '../utils/snippetsStorage';
 import { SqlEditor, highlightSqlHtml } from './SqlEditor';
 import { t } from '../utils/i18n';
 
@@ -1486,7 +1487,6 @@ interface SqlSnippetsManagerProps {
   initialEditSnippetId?: string;
 }
 
-const LOCAL_STORAGE_KEY = 'sql_custom_snippets_v2';
 const LOCAL_STORAGE_FAVORITES_KEY = 'sql_favorite_snippets_ids_v1';
 const LOCAL_STORAGE_DELETED_KEY = 'sql_deleted_snippets_ids_v1';
 const SNIPPETS_PER_PAGE = 50;
@@ -1567,6 +1567,7 @@ export function SqlSnippetsManager({
   const [formDialect, setFormDialect] = useState<string>('General');
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copyFailedId, setCopyFailedId] = useState<string | null>(null);
   const rightPanelRef = useRef<HTMLDivElement>(null);
   const hasInitializedEditRef = useRef<boolean>(false);
 
@@ -1574,17 +1575,8 @@ export function SqlSnippetsManager({
   useEffect(() => {
     const loadSnippets = async () => {
       try {
-        let snippets = await loadSnippetsFromDB();
-        if (snippets.length === 0) {
-          const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
-          if (saved) {
-            const parsed = JSON.parse(saved);
-            if (parsed && parsed.length > 0) {
-              snippets = parsed;
-              await saveSnippetsToDB(snippets);
-            }
-          }
-        }
+        // перенос из старого ключа localStorage выполняется один раз и ничего не стирает (п. 3.16)
+        const { snippets } = await migrateLegacySnippets();
         setCustomSnippets(snippets);
       } catch (e) {
         console.error('Failed to load snippets from DB', e);
@@ -1694,8 +1686,10 @@ export function SqlSnippetsManager({
       };
     }
 
+    // шаблоны из «Корзины» не формируют ни категории, ни диалекты
+    const liveSnippets = withoutTrash(allSnippets);
     const rawDialects = Array.from(
-      new Set(allSnippets.map(s => s.dialect).filter((d): d is string => Boolean(d)))
+      new Set(liveSnippets.map(s => s.dialect).filter((d): d is string => Boolean(d)))
     );
     
     // Set of dialects to separate them into bottom group
@@ -1704,9 +1698,9 @@ export function SqlSnippetsManager({
       ...rawDialects
     ]);
 
-    const rawCategories = Array.from(new Set(allSnippets.map(s => s.category))).filter(Boolean);
+    const rawCategories = Array.from(new Set(liveSnippets.map(s => s.category))).filter(Boolean);
     const regularCategories = rawCategories.filter(c => !knownDialectSet.has(c) && c !== ACTION_MENU_CATEGORY && c !== JOBS_CATEGORY && c !== 'Все' && c !== 'Избранное');
-    const activeDialects = Array.from(new Set(allSnippets.map(s => s.dialect).filter((d): d is string => Boolean(d))));
+    const activeDialects = Array.from(new Set(liveSnippets.map(s => s.dialect).filter((d): d is string => Boolean(d))));
 
     // Sort alphabetically
     const sortedCategories = [...regularCategories].sort(naturalStringCompare);
@@ -1714,7 +1708,7 @@ export function SqlSnippetsManager({
 
     // Move General to the bottom of the list
     const filteredDialects = sortedDialects.filter(d => d !== 'General');
-    const hasGeneral = sortedDialects.includes('General') || allSnippets.some(s => s.dialect === 'General');
+    const hasGeneral = sortedDialects.includes('General') || liveSnippets.some(s => s.dialect === 'General');
 
     const categories = Array.from(new Set([
       'Все', 
@@ -1723,7 +1717,8 @@ export function SqlSnippetsManager({
       JOBS_CATEGORY,
       ...sortedCategories,
       ...filteredDialects,
-      ...(hasGeneral ? ['General'] : [])
+      ...(hasGeneral ? ['General'] : []),
+      TRASH_CATEGORY // «Корзина» всегда последняя
     ]));
 
     const categorySuggestions = Array.from(new Set([ACTION_MENU_CATEGORY, JOBS_CATEGORY, 'Запросы', 'Схемы', 'Агрегаты', 'Соединения (JOIN)', 'Транзакции', ...regularCategories]));
@@ -1743,12 +1738,18 @@ export function SqlSnippetsManager({
 
     const favSet = new Set(favoriteIds);
     const counts: Record<string, number> = {
-      'Все': allSnippets.length,
+      'Все': withoutTrash(allSnippets).length,
       'Избранное': 0,
       [JOBS_CATEGORY]: 0,
+      [TRASH_CATEGORY]: 0,
     };
     
     for (const s of allSnippets) {
+      // «Корзина» считается только сама по себе: в «Все», Jobs, диалекты и избранное её шаблоны не входят
+      if (isTrashed(s)) {
+        counts[TRASH_CATEGORY]++;
+        continue;
+      }
       if (s.category && counts[s.category] === undefined) counts[s.category] = 0;
       if (s.dialect && counts[s.dialect] === undefined) counts[s.dialect] = 0;
       
@@ -1769,6 +1770,8 @@ export function SqlSnippetsManager({
 
     return allSnippets.filter(s => {
       const matchesCat = 
+        selectedCategory === TRASH_CATEGORY ? isTrashed(s) :
+        isTrashed(s) ? false :
         selectedCategory === 'Все' ? true :
         selectedCategory === 'Избранное' ? favSet.has(s.id) :
         selectedCategory === JOBS_CATEGORY ? s.sql.trim().startsWith('-- @job') :
@@ -1858,28 +1861,43 @@ export function SqlSnippetsManager({
   const handleDeleteSnippet = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
 
-    // 1. Remove from customSnippets array (for both custom created and custom overrides)
-    setCustomSnippets(prev => prev.filter(s => s.id !== id));
-    deleteSnippetFromDB(id).catch(e => console.error(e));
-    window.dispatchEvent(new Event('sql_snippets_updated'));
-
-    // 2. Only store in deletedIds if it is a built-in template from POPULAR_SNIPPETS
-    const isBuiltIn = POPULAR_SNIPPETS.some(s => s.id === id);
-    if (isBuiltIn) {
-      const updatedDeleted = Array.from(new Set([...deletedIds, id]));
-      setDeletedIds(updatedDeleted);
-      try {
-        localStorage.setItem(LOCAL_STORAGE_DELETED_KEY, JSON.stringify(updatedDeleted));
-      } catch (err) {
-        console.error('Failed to save deleted snippets to localStorage', err);
+    // «Удалить» = переместить в «Корзину»; из самой «Корзины» — удалить насовсем (как раньше)
+    const target = allSnippets.find(s => s.id === id);
+    if (target && !isTrashed(target)) {
+      const trashed = trashSnippet({ ...target, isCustom: true });
+      if (customSnippets.some(s => s.id === id)) {
+        setCustomSnippets(prev => prev.map(s => s.id === id ? trashed : s));
+        updateSnippetInDB(trashed).catch(err => console.error(err));
+      } else {
+        // встроенный шаблон: копия с тем же id скрывает оригинал (как при правке встроенного)
+        setCustomSnippets(prev => [trashed, ...prev]);
+        addSnippetToDB(trashed).catch(err => console.error(err));
       }
-    } else if (deletedIds.includes(id)) {
-      const updatedDeleted = deletedIds.filter(dId => dId !== id);
-      setDeletedIds(updatedDeleted);
-      try {
-        localStorage.setItem(LOCAL_STORAGE_DELETED_KEY, JSON.stringify(updatedDeleted));
-      } catch (err) {
-        console.error('Failed to save deleted snippets to localStorage', err);
+      window.dispatchEvent(new Event('sql_snippets_updated'));
+    } else {
+      // 1. Remove from customSnippets array (for both custom created and custom overrides)
+      setCustomSnippets(prev => prev.filter(s => s.id !== id));
+      deleteSnippetFromDB(id).catch(e => console.error(e));
+      window.dispatchEvent(new Event('sql_snippets_updated'));
+
+      // 2. Only store in deletedIds if it is a built-in template from POPULAR_SNIPPETS
+      const isBuiltIn = POPULAR_SNIPPETS.some(s => s.id === id);
+      if (isBuiltIn) {
+        const updatedDeleted = Array.from(new Set([...deletedIds, id]));
+        setDeletedIds(updatedDeleted);
+        try {
+          localStorage.setItem(LOCAL_STORAGE_DELETED_KEY, JSON.stringify(updatedDeleted));
+        } catch (err) {
+          console.error('Failed to save deleted snippets to localStorage', err);
+        }
+      } else if (deletedIds.includes(id)) {
+        const updatedDeleted = deletedIds.filter(dId => dId !== id);
+        setDeletedIds(updatedDeleted);
+        try {
+          localStorage.setItem(LOCAL_STORAGE_DELETED_KEY, JSON.stringify(updatedDeleted));
+        } catch (err) {
+          console.error('Failed to save deleted snippets to localStorage', err);
+        }
       }
     }
 
@@ -1926,17 +1944,22 @@ export function SqlSnippetsManager({
     setFormDialect('General');
   };
 
-  const handleCopyCode = (id: string, code: string, e: React.MouseEvent) => {
+  const handleCopyCode = async (id: string, code: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    navigator.clipboard.writeText(code);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
+    const ok = await copyToClipboard(code);
+    if (ok) {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+    } else {
+      setCopyFailedId(id);
+      setTimeout(() => setCopyFailedId(null), 2000);
+    }
   };
 
 
   // Export to JSON
   const handleExportJson = () => {
-    const listToExport = allSnippets.length > 0 ? allSnippets : POPULAR_SNIPPETS;
+    const listToExport = allSnippets.length > 0 ? withoutTrash(allSnippets) : POPULAR_SNIPPETS;
     const blob = new Blob([JSON.stringify(listToExport, null, 2)], { type: 'application/json' });
     downloadFileWithFallback(blob, `sql_snippets_${new Date().toISOString().slice(0,10)}.json`);
   };
@@ -1944,7 +1967,7 @@ export function SqlSnippetsManager({
   // Export to ZIP
   const handleExportZip = async () => {
     // Export all snippets that the user currently sees (custom + popular, minus deleted)
-    const listToExport = allSnippets.length > 0 ? allSnippets : POPULAR_SNIPPETS;
+    const listToExport = allSnippets.length > 0 ? withoutTrash(allSnippets) : POPULAR_SNIPPETS;
     if (listToExport.length === 0) return;
 
     try {
@@ -2290,7 +2313,6 @@ export function SqlSnippetsManager({
                       value={formSql}
                       onChange={setFormSql}
                       theme={theme}
-                      placeholder="SELECT * FROM table_name..."
                     />
                   </div>
                 </div>
@@ -2430,7 +2452,7 @@ export function SqlSnippetsManager({
                             }`}
                             title={t('Скопировать код')}
                           >
-                            {copiedId === snippet.id ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                            {copiedId === snippet.id ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : copyFailedId === snippet.id ? <X className="w-3.5 h-3.5 text-red-500" /> : <Copy className="w-3.5 h-3.5" />}
                           </button>
 
                           <button
@@ -2463,7 +2485,7 @@ export function SqlSnippetsManager({
                       theme === 'dark' ? 'bg-slate-900/90 border border-slate-800' : 'bg-slate-100/90 border border-slate-200'
                     }`}>
                       <div 
-                        dangerouslySetInnerHTML={{ __html: highlightSqlHtml(snippet.sql, theme) }}
+                        dangerouslySetInnerHTML={{ __html: highlightSqlHtml(snippet.sql.slice(0, 3000), theme) }}
                         className="whitespace-pre"
                       />
                     </div>

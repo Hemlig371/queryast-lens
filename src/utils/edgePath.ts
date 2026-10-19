@@ -43,3 +43,22 @@ export function pathMidpoint(pts: Pt[]): Pt {
   }
   return pts[0];
 }
+
+/**
+ * Промежуточные точки маршрута, которые почти лежат на прямой «начало — конец», только портят линию:
+ * размеры узлов в раскладке и на экране различаются на несколько px, и ребро получается волнистым.
+ * Если все такие точки отклоняются от прямой не больше tol px, маршрут не нужен — рисуем прямую.
+ * Точки, которые реально обходят узлы (отклонение больше tol), остаются.
+ */
+export function dropNearStraightRoute(from: Pt, inner: Pt[], to: Pt, tol = 16): Pt[] {
+  if (inner.length === 0) return inner;
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const len = Math.hypot(dx, dy);
+  if (len === 0) return inner;
+  for (const p of inner) {
+    const dist = Math.abs(dx * (from.y - p.y) - (from.x - p.x) * dy) / len;
+    if (dist > tol) return inner;
+  }
+  return [];
+}

@@ -10,13 +10,13 @@ All data is stored locally, in the browser or WebView profile (desktop and Andro
 
 | Key | Contents |
 | :--- | :--- |
-| `sql_visualizer_session_v2` | UI state: active tab, dialect, graph direction, theme, path of the open DuckDB database, ClickHouse connection parameters **without the password**, schema panel state |
+| `sql_visualizer_session_v2` | UI state: active tab, dialect, graph direction, theme, path of the open DuckDB database, ClickHouse connection parameters **without the password**, schema panel state. The `tabs` field in this record is a leftover from older versions and is not written: tab contents are stored in `sql_visualizer_tabs_session` |
 | `sql_visualizer_tabs_session` | Tab contents (SQL, file name, modified flag). If localStorage overflows, tab texts move to IndexedDB `sql_visualizer_tabs_db` |
 | `sql_visualizer_ui_visibility_v1` | UI and engine settings: page sizes, zoom, DuckDB parameters (memory, directories, threads), **Init SQL**, sync path |
 | `sql_visualizer_hotkeys_v1`, `sql_visualizer_formatter_v1` | Hotkeys, formatter rules |
 | `sql_quick_action_templates`, `sql_custom_autocomplete_templates` | Quick actions, autocomplete templates |
 | `queryast_lens_excel_settings_v1`, `queryast_lens_excel_presets_v1` | Excel settings and presets |
-| `sql_custom_snippets_v2`, `sql_favorite_snippets_ids_v1`, `sql_deleted_snippets_ids_v1` | Snippets (local copy), favorites, deleted |
+| `sql_custom_snippets_v2`, `sql_custom_snippets_v2_migrated`, `sql_favorite_snippets_ids_v1`, `sql_deleted_snippets_ids_v1` | Old local copy of snippets (removed after migration to IndexedDB) and the migration marker, favorites, deleted |
 | `app_lang` | Interface language |
 | `sql_last_workspace_sync_time` | Time of the last workspace sync |
 | `sessionStorage`: `sql_is_importing_session` | Internal flag used during import |

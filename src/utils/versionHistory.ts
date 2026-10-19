@@ -1,3 +1,5 @@
+import { currentLang, localeForLang } from './i18n';
+
 export interface SqlVersionItem {
   id: string;
   timestamp: number;
@@ -33,6 +35,22 @@ function openDB(): Promise<IDBDatabase> {
   });
 }
 
+/**
+ * Подпись времени снимка версии. Язык передаётся явно (в приложении — currentLang),
+ * timeZone нужен только для воспроизводимых проверок; без него берётся часовой пояс системы.
+ */
+export function formatVersionLabel(timestamp: number, lang: string, timeZone?: string): string {
+  return new Date(timestamp).toLocaleString(localeForLang(lang), {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    ...(timeZone ? { timeZone } : {})
+  });
+}
+
 export async function saveVersion(
   sql: string,
   label?: string,
@@ -42,15 +60,7 @@ export async function saveVersion(
   const db = await openDB();
 
   const timestamp = Date.now();
-  const dateObj = new Date(timestamp);
-  const formattedTime = dateObj.toLocaleString('ru-RU', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit'
-  });
+  const formattedTime = formatVersionLabel(timestamp, currentLang);
 
   const lines = sql.split('\n').length;
   const item: SqlVersionItem = {

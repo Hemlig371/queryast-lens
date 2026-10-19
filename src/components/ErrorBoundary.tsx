@@ -1,30 +1,37 @@
 import React, { ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { t } from '../utils/i18n';
+import {
+  boundaryErrorState,
+  deriveBoundaryState,
+  initialBoundaryState,
+  type ErrorBoundaryState,
+} from '../utils/errorBoundaryState';
 
 interface Props {
   children: ReactNode;
   title?: string;
   theme?: 'dark' | 'light';
   onReset?: () => void;
+  /** Ключ документа/вкладки: при смене ключа экран ошибки снимается сам. */
+  resetKey?: unknown;
 }
 
-interface State {
-  hasError: boolean;
-  error: Error | null;
-}
+type State = ErrorBoundaryState;
 
 export class ErrorBoundary extends React.Component<Props, State> {
   constructor(props: Props) {
     super(props);
-    this.state = {
-      hasError: false,
-      error: null,
-    };
+    this.state = initialBoundaryState(props.resetKey);
     this.handleReset = this.handleReset.bind(this);
   }
 
-  public static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, error };
+  public static getDerivedStateFromError(error: Error): Pick<State, 'hasError' | 'error'> {
+    return boundaryErrorState(error);
+  }
+
+  public static getDerivedStateFromProps(props: Props, state: State): Partial<State> | null {
+    return deriveBoundaryState(props.resetKey, state);
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
@@ -32,7 +39,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
   }
 
   private handleReset() {
-    this.setState({ hasError: false, error: null });
+    this.setState({ hasError: false, error: null, resetKey: this.props.resetKey });
     if (this.props.onReset) {
       this.props.onReset();
     }
@@ -53,10 +60,10 @@ export class ErrorBoundary extends React.Component<Props, State> {
             <AlertTriangle className="w-5 h-5" />
           </div>
           <h3 className="text-sm font-semibold mb-1">
-            {this.props.title || 'Ошибка отображения'}
+            {this.props.title || t('Ошибка отображения')}
           </h3>
           <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mb-4 font-mono break-words line-clamp-3">
-            {this.state.error?.message || 'Произошла ошибка при отображении этого модуля.'}
+            {this.state.error?.message || t('Произошла ошибка при отображении этого модуля.')}
           </p>
           <button
             type="button"
@@ -64,7 +71,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
             className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md font-medium bg-red-600 hover:bg-red-500 text-white transition-colors"
           >
             <RefreshCw className="w-3.5 h-3.5" />
-            <span>Перезапустить модуль</span>
+            <span>{t('Перезапустить модуль')}</span>
           </button>
         </div>
       );

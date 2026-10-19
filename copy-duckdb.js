@@ -22,6 +22,7 @@ for (const file of files) {
     fs.copyFileSync(src, dest);
     console.log(`Copied ${file} to public/duckdb/`);
   } else {
-    console.warn(`Warning: Source file ${src} does not exist.`);
+    console.error(`Error: Source file ${src} does not exist.`);
+    process.exit(1);
   }
 }

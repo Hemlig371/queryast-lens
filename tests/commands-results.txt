@@ -1,0 +1,72 @@
+==========================================
+COMMAND: npm run lint
+==========================================
+
+> queryast-lens@8.0.2 lint
+> tsc --noEmit
+
+EXIT CODE: 0
+
+==========================================
+COMMAND: npm run build
+==========================================
+
+> queryast-lens@8.0.2 build
+> npm run copy-duckdb && vite build
+
+
+> queryast-lens@8.0.2 copy-duckdb
+> node copy-duckdb.js
+
+Copied duckdb-mvp.wasm to public/duckdb/
+Copied duckdb-browser-mvp.worker.js to public/duckdb/
+Copied duckdb-eh.wasm to public/duckdb/
+Copied duckdb-browser-eh.worker.js to public/duckdb/
+vite v6.4.3 building for production...
+transforming...
+✓ 3042 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                2.20 kB │ gzip:   0.84 kB
+dist/assets/index-ZUpKDLQC.css               138.34 kB │ gzip:  20.66 kB
+dist/assets/react-vendor-Dmi9bgg0.js           0.04 kB │ gzip:   0.06 kB
+dist/assets/tauri-DssRF2O3.js                  0.10 kB │ gzip:   0.11 kB
+dist/assets/clipboard-BZkRO_Of.js              0.18 kB │ gzip:   0.16 kB
+dist/assets/web-BbfkJ-xV.js                    0.37 kB │ gzip:   0.25 kB
+dist/assets/index-BmSuobZ4.js                  0.50 kB │ gzip:   0.32 kB
+dist/assets/tauri-DFHPio5F.js                  0.52 kB │ gzip:   0.33 kB
+dist/assets/index-yKT19U4M.js                  1.01 kB │ gzip:   0.55 kB
+dist/assets/dialog-DO-hyRRo.js                 1.68 kB │ gzip:   0.45 kB
+dist/assets/fs-ByFrHDX7.js                     2.71 kB │ gzip:   0.87 kB
+dist/assets/web-DRZemkSY.js                    8.85 kB │ gzip:   3.05 kB
+dist/assets/index-Bton3lqe.js                  9.14 kB │ gzip:   3.61 kB
+dist/assets/window-BR-B9gvm.js                12.56 kB │ gzip:   2.60 kB
+dist/assets/index-CgJtiJsK.js                 13.75 kB │ gzip:   5.41 kB
+dist/assets/MarkdownPreview-CRnn_x5A.js       24.92 kB │ gzip:  10.13 kB
+dist/assets/lucide-DedoTCkJ.js                35.05 kB │ gzip:   7.17 kB
+dist/assets/jszip.min-CYtYDY_X.js             97.36 kB │ gzip:  30.22 kB
+dist/assets/duckdb-browser-B1OXJVkn.js       200.09 kB │ gzip:  46.68 kB
+dist/assets/flow-vendor-Uc8uKeSM.js          225.11 kB │ gzip:  72.22 kB
+dist/assets/codemirror-vendor-I0lXlj0V.js    286.43 kB │ gzip:  93.54 kB
+dist/assets/index-BUkRylgN.js                293.53 kB │ gzip:  76.18 kB
+dist/assets/sql-vendor-BaAMQnEt.js         2,618.15 kB │ gzip: 514.93 kB
+dist/assets/index-3NFRY_wm.js              2,934.56 kB │ gzip: 790.75 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 1m 2s
+EXIT CODE: 0
+
+==========================================
+COMMAND: cargo check
+==========================================
+sh: 17: cargo: not found
+EXIT CODE: 127
+
+==========================================
+COMMAND: cargo test
+==========================================
+sh: 23: cargo: not found
+EXIT CODE: 127

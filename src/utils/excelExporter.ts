@@ -1,11 +1,14 @@
-import { parseExcelDate, extractExcelComments } from './excelParse';
+import { parseExcelDate, extractExcelComments, sanitizeExportFileBase } from './excelParse';
 import ExcelJS from 'exceljs';
 import { ExcelSettings } from '../types/excelSettings';
 import { downloadFileWithFallback } from './exportUtils';
 import { getSavedExcelPresets } from './excelSettingsStorage';
+import { getResultColumns } from './resultRows';
 
 export interface ExportExcelOptions {
   data: any[];
+  /** Порядок столбцов (п. 3.2): без него берутся ключи первой строки, у которых числовые имена идут первыми. */
+  columns?: readonly string[] | null;
   columnTypes?: Record<string, string>;
   sqlQuery?: string;
   filename?: string;
@@ -120,6 +123,7 @@ function estimateCellLines(val: any, colWidth: number, wrapText: boolean, fontSi
 
 export async function exportToExcel({
   data,
+  columns,
   columnTypes = {},
   sqlQuery = '',
   filename,
@@ -134,7 +138,7 @@ export async function exportToExcel({
   let parsedFilename = settings.defaultFileName || '';
   let resolvedAutoSavePath: string | undefined;
 
-  const rawColumns = Object.keys(data[0] || {});
+  const rawColumns = getResultColumns(data, columns);
   if (rawColumns.length === 0) {
     throw new Error('Колонки таблицы не найдены');
   }
@@ -1314,7 +1318,7 @@ export async function exportToExcel({
   const buffer = await workbook.xlsx.writeBuffer();
 
   // Generate File Name
-  const baseName = parsedFilename || sanitizeSheetName(settings.defaultFileName || 'report', 'report');
+  const baseName = sanitizeExportFileBase(parsedFilename, sanitizeSheetName(settings.defaultFileName || 'report', 'report'));
   const exportFileName = filename || `${baseName}_${new Date().toISOString().slice(0, 10)}.xlsx`;
 
   // Download File (Web Blob or Tauri API)

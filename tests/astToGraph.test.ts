@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseSqlToAst, astToGraph, stripCommentsSafely, splitQueries, getLayoutedElements, distinctLabel } from '../src/utils/astToGraph';
+import { parseSqlToAst, astToGraph, stripCommentsSafely, splitQueries, getLayoutedElements, distinctLabel, tokenizeSql } from '../src/utils/astToGraph';
 
 describe('astToGraph utils', () => {
   describe('stripCommentsSafely', () => {
@@ -115,6 +115,71 @@ describe('astToGraph utils', () => {
       const g = build('WITH t AS (SELECT 1 a FROM base1) SELECT * FROM t; SELECT * FROM t JOIN z ON z.a = t.a');
       const leaked = g.edges.filter(e => e.source.includes('cte_wrap_t') && e.target.startsWith('main_q1_'));
       expect(leaked.length).toBe(0);
+    });
+  });
+
+  describe('CTE: RECURSIVE и [NOT] MATERIALIZED (D-06)', () => {
+    const cteNames = (sql: string) => (parseSqlToAst(sql, 'PostgreSQL').ast.ctes ?? []).map((c: any) => c.name);
+    const graphIds = (sql: string) => {
+      const r = parseSqlToAst(sql, 'PostgreSQL');
+      return astToGraph(r.ast, 'main_', 'PostgreSQL').nodes.map(n => n.id);
+    };
+
+    it('обычный WITH разбирается как раньше', () => {
+      expect(cteNames('WITH t AS (SELECT 1 a FROM base1) SELECT * FROM t')).toEqual(['t']);
+      expect(cteNames('WITH a AS (SELECT 1 x FROM p), b AS (SELECT 2 y FROM q) SELECT * FROM a JOIN b ON a.x = b.y')).toEqual(['a', 'b']);
+    });
+
+    it('WITH RECURSIVE даёт CTE-узел', () => {
+      const sql = 'WITH RECURSIVE r AS (SELECT 1 AS n FROM seed) SELECT * FROM r';
+      expect(cteNames(sql)).toEqual(['r']);
+      expect(graphIds(sql).some(id => id.includes('cte_wrap_r'))).toBe(true);
+    });
+
+    it('WITH RECURSIVE со списком столбцов и несколькими CTE', () => {
+      expect(cteNames('WITH RECURSIVE r(n) AS (SELECT 1 FROM seed), s AS (SELECT 2 FROM seed2) SELECT * FROM r, s')).toEqual(['r', 's']);
+    });
+
+    it('AS MATERIALIZED (...) даёт CTE-узел', () => {
+      const sql = 'WITH m AS MATERIALIZED (SELECT 1 a FROM base1) SELECT * FROM m';
+      expect(cteNames(sql)).toEqual(['m']);
+      expect(graphIds(sql).some(id => id.includes('cte_wrap_m'))).toBe(true);
+    });
+
+    it('AS NOT MATERIALIZED (...) даёт CTE-узел', () => {
+      const sql = 'WITH n AS NOT MATERIALIZED (SELECT 1 a FROM base1), k AS (SELECT 2 b FROM base2) SELECT * FROM n, k';
+      expect(cteNames(sql)).toEqual(['n', 'k']);
+    });
+
+    it('RECURSIVE вместе с MATERIALIZED', () => {
+      expect(cteNames('WITH RECURSIVE r AS MATERIALIZED (SELECT 1 AS n FROM seed) SELECT * FROM r')).toEqual(['r']);
+    });
+
+    it('CTE по имени recursive (без ключевого слова) по-прежнему разбирается', () => {
+      expect(cteNames('WITH recursive AS (SELECT 1 a FROM base1) SELECT * FROM recursive')).toEqual(['recursive']);
+    });
+  });
+
+  describe('tokenizeSql: # (D-05)', () => {
+    const comments = (sql: string) => tokenizeSql(sql).filter(t => t.type === 'comment').map(t => t.value);
+
+    it('# в начале слова — по-прежнему комментарий до конца строки (MySQL)', () => {
+      expect(comments('SELECT 1 # note\n, 2')).toEqual(['# note']);
+      expect(stripCommentsSafely('SELECT 1 # note\nFROM t')).not.toContain('note');
+    });
+
+    it('оператор #>> не начинает комментарий', () => {
+      const sql = "SELECT doc #>> '{a,b}' AS v FROM t";
+      expect(comments(sql)).toEqual([]);
+      expect(stripCommentsSafely(sql)).toContain("'{a,b}' AS v FROM t");
+    });
+
+    it('оператор #> не начинает комментарий', () => {
+      expect(comments("SELECT doc #> '{a}' FROM t")).toEqual([]);
+    });
+
+    it('-- комментарий рядом с #>> работает как раньше', () => {
+      expect(comments("SELECT doc #>> '{a}' FROM t -- хвост")).toEqual(['-- хвост']);
     });
   });
 

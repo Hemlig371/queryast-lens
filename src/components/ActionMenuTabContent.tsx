@@ -15,12 +15,15 @@ import {
   RefreshCw,
   ChevronLeft,
   ChevronRight,
-  Briefcase
+  Briefcase,
+  X
 } from 'lucide-react';
 import { Snippet, POPULAR_SNIPPETS, ACTION_MENU_CATEGORY, compareSnippetsAlphabetical, naturalStringCompare } from './SqlSnippetsManager';
 import { loadSnippetsFromDB } from '../utils/snippetsStorage';
 import { splitBySemicolonIgnoringQuotes } from '../lib/sqlUtils';
 import { t } from '../utils/i18n';
+import { clampPage } from '../utils/pagination';
+import { copyToClipboard } from '../utils/exportUtils';
 
 interface ActionMenuTabContentProps {
   theme: 'dark' | 'light';
@@ -92,18 +95,24 @@ const ActionCard: React.FC<ActionCardProps> = ({
 
   const [varValues, setVarValues] = useState<Record<string, string>>(initialVars);
   const [copied, setCopied] = useState<boolean>(false);
+  const [copyFailed, setCopyFailed] = useState<boolean>(false);
 
   useEffect(() => {
     setVarValues(initialVars);
   }, [initialVars]);
 
-  const handleCopy = (e: React.MouseEvent) => {
+  const handleCopy = async (e: React.MouseEvent) => {
     e.stopPropagation();
     let finalSql = snippet.sql;
     parsedVariables.forEach((v) => {
       finalSql = finalSql.split(v.token).join(varValues[v.token] || '');
     });
-    navigator.clipboard.writeText(finalSql);
+    // буфер недоступен (нет фокуса окна, запрет): вместо галочки — крестик
+    if (!(await copyToClipboard(finalSql))) {
+      setCopyFailed(true);
+      setTimeout(() => setCopyFailed(false), 1500);
+      return;
+    }
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
@@ -197,6 +206,8 @@ const ActionCard: React.FC<ActionCardProps> = ({
           >
             {copied ? (
               <Check className="w-3.5 h-3.5 text-emerald-500" />
+            ) : copyFailed ? (
+              <X className="w-3.5 h-3.5 text-red-500" />
             ) : (
               <Copy className="w-3.5 h-3.5 opacity-70" />
             )}
@@ -226,6 +237,8 @@ const ActionCard: React.FC<ActionCardProps> = ({
                 }`}
                 value={varValues[v.token] || ''}
                 onChange={(e) => setVarValues({ ...varValues, [v.token]: e.target.value })}
+                // двойной клик в поле (выделение слова) не должен открывать менеджер шаблонов
+                onDoubleClick={(e) => e.stopPropagation()}
               />
             </div>
           ))}
@@ -390,6 +403,12 @@ export const ActionMenuTabContent: React.FC<ActionMenuTabContentProps> = ({
     }).sort(compareSnippetsAlphabetical);
   }, [snippets, selectedDialectFilter, onlyJobs, searchQuery]);
 
+  // после удаления шаблона последняя страница может исчезнуть: показываем ближайшую существующую
+  const safePage = clampPage(currentPage, filteredSnippets.length, 20);
+  useEffect(() => {
+    if (safePage !== currentPage) setCurrentPage(safePage);
+  }, [safePage, currentPage]);
+
   return (
     <div className={`flex-1 flex flex-col h-full overflow-hidden select-none ${
       theme === 'dark' ? 'bg-slate-900 text-slate-100' : 'bg-slate-50 text-slate-800'
@@ -483,7 +502,7 @@ export const ActionMenuTabContent: React.FC<ActionMenuTabContentProps> = ({
         ) : (
           <div className="flex flex-col min-h-full">
             <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', alignContent: 'start' }}>
-              {filteredSnippets.slice((currentPage - 1) * 20, currentPage * 20).map((snippet) => {
+              {filteredSnippets.slice((safePage - 1) * 20, safePage * 20).map((snippet) => {
                 const isExecutingThis = isDuckDbRunning && runningSnippetId === snippet.id;
                 return (
                   <ActionCard
@@ -501,8 +520,8 @@ export const ActionMenuTabContent: React.FC<ActionMenuTabContentProps> = ({
             {filteredSnippets.length > 20 && (
               <div className="mt-auto pt-6 mb-2 flex items-center justify-center gap-4 shrink-0">
                 <button
-                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage(Math.max(1, safePage - 1))}
+                  disabled={safePage === 1}
                   className={`p-1.5 rounded transition-colors disabled:opacity-30 disabled:hover:bg-transparent ${
                     theme === 'dark' ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-200 text-slate-600'
                   }`}
@@ -510,11 +529,11 @@ export const ActionMenuTabContent: React.FC<ActionMenuTabContentProps> = ({
                   <ChevronLeft className="w-5 h-5" />
                 </button>
                 <span className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
-                  {t('Страница')} {currentPage} {t('из')} {Math.ceil(filteredSnippets.length / 20)}
+                  {t('Страница')} {safePage} {t('из')} {Math.ceil(filteredSnippets.length / 20)}
                 </span>
                 <button
-                  onClick={() => setCurrentPage((p) => Math.min(Math.ceil(filteredSnippets.length / 20), p + 1))}
-                  disabled={currentPage === Math.ceil(filteredSnippets.length / 20)}
+                  onClick={() => setCurrentPage(Math.min(Math.ceil(filteredSnippets.length / 20), safePage + 1))}
+                  disabled={safePage === Math.ceil(filteredSnippets.length / 20)}
                   className={`p-1.5 rounded transition-colors disabled:opacity-30 disabled:hover:bg-transparent ${
                     theme === 'dark' ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-200 text-slate-600'
                   }`}

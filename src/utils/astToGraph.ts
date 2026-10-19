@@ -1,6 +1,7 @@
 import pkg from 'node-sql-parser';
 const { Parser } = pkg;
 import dagre from 'dagre';
+import { getNodeDimensions } from './graphNodeSize';
 
 export interface GraphNode {
   id: string;
@@ -46,7 +47,8 @@ export function tokenizeSql(sql: string): Token[] {
       continue;
     }
 
-    if ((char === '-' && nextChar === '-') || char === '#') {
+    // «#» — комментарий MySQL, но не начало операторов PostgreSQL «#>» и «#>>»
+    if ((char === '-' && nextChar === '-') || (char === '#' && nextChar !== '>')) {
       const start = i;
       while (i < len && sql[i] !== '\n' && sql[i] !== '\r') i++;
       tokens.push({ type: 'comment', value: sql.substring(start, i), start, end: i });
@@ -1001,7 +1003,8 @@ function extractCtes(sql: string, dialect: string): { ctes: any[], mainSql: stri
   const ctes: any[] = [];
   let workingSql = sql.trim();
   
-  const withMatch = workingSql.match(/^\s*WITH\s+/i);
+  // Необязательное RECURSIVE после WITH (если за ним не сразу AS: так называется сам CTE)
+  const withMatch = workingSql.match(/^\s*WITH\s+(?:RECURSIVE\s+(?!AS\b))?/i);
   if (!withMatch) {
     return { ctes, mainSql: workingSql };
   }
@@ -1009,7 +1012,7 @@ function extractCtes(sql: string, dialect: string): { ctes: any[], mainSql: stri
   workingSql = workingSql.substring(withMatch[0].length).trim();
 
   while (true) {
-    const cteHeaderMatch = workingSql.match(/^([A-Za-z0-9_\u0400-\u04FFёЁ]+)(?:\s*\([^)]+\))?\s+AS\s*\(/i);
+    const cteHeaderMatch = workingSql.match(/^([A-Za-z0-9_\u0400-\u04FFёЁ]+)(?:\s*\([^)]+\))?\s+AS\s*(?:(?:NOT\s+)?MATERIALIZED\s*)?\(/i);
     if (!cteHeaderMatch) break;
 
     const cteName = cteHeaderMatch[1];
@@ -2052,28 +2055,6 @@ export function getLayoutedElements(nodes: GraphNode[], edges: GraphEdge[], dire
   const topologyKey = `${direction}_${nodeKey}_${edgeKey}`;
 
   const cachedPositions = layoutPositionCache.get(topologyKey);
-
-  const getNodeDimensions = (node: GraphNode) => {
-    let width = 256; // Tailwind w-64
-    let height = 90;
-
-    if (['resultNode', 'filterNode', 'havingNode'].includes(node.type)) {
-      const rows = node.data?.columns?.length || 1;
-      height = Math.min(280, 70 + rows * 45); 
-    } else if (node.type === 'tableNode') {
-      const rows = node.data?.columns?.length || 1;
-      height = Math.min(250, 90 + rows * 30);
-    } else if (['limitNode', 'sortNode'].includes(node.type)) {
-      height = 70;
-    } else if (node.type === 'joinNode') {
-      height = 100;
-    } else if (node.type === 'collapseNode') {
-      width = 220; // компактный заголовок запроса
-      height = 32;
-    }
-    
-    return { width, height };
-  };
 
   if (cachedPositions) {
     const newNodes = nodes.map((node) => {

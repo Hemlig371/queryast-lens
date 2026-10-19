@@ -3,7 +3,7 @@ import React, { useRef, useState, useLayoutEffect, useEffect } from 'react';
 import { Search, Replace, ChevronUp, ChevronDown, X, CaseSensitive, Table } from 'lucide-react';
 import { EditorState, EditorSelection, Compartment, Prec, Annotation } from '@codemirror/state';
 import type { Extension } from '@codemirror/state';
-import { EditorView, keymap, drawSelection, dropCursor, lineNumbers, placeholder as cmPlaceholder, Decoration } from '@codemirror/view';
+import { EditorView, keymap, drawSelection, dropCursor, lineNumbers, Decoration } from '@codemirror/view';
 import { history, historyKeymap, standardKeymap, insertNewline } from '@codemirror/commands';
 import { getSavedHotkeys, getSavedUiVisibilitySettings, getQuickActionTemplates, QuickActionTemplate } from './SettingsModal';
 import { SchemaTableItem } from '../utils/schemaDbCache';
@@ -32,8 +32,9 @@ import {
   findAllMatches,
   computeReplacementText,
   replaceAllInText,
+  AUTOCOMPLETE_WORD_RE,
 } from '../editor/editorOps';
-import { buildComboString, matchHotkeyCombo } from '../editor/hotkeysMatch';
+import { matchHotkeyCombo } from '../editor/hotkeysMatch';
 
 // Реэкспорт прежнего публичного API модуля (на него завязаны App, SettingsModal, SqlSnippetsManager).
 export { DEFAULT_AUTOCOMPLETE_TEMPLATES, getCustomAutocompleteTemplates } from '../editor/templates';
@@ -61,7 +62,6 @@ interface SqlEditorProps {
   onChange?: (val: string) => void;
   isWrapSql?: boolean;
   theme: 'dark' | 'light';
-  placeholder?: string;
   minHeightClass?: string;
   height?: string;
   onCompactSql?: () => void;
@@ -88,7 +88,6 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
     onChange,
     isWrapSql = false,
     theme,
-    placeholder = "Enter SQL Query here...",
     minHeightClass = "min-h-0",
     height,
     onExecuteQuickAction,
@@ -146,6 +145,10 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
   // Актуальное UI-состояние для обработчиков, живущих внутри CodeMirror
   const ui = useRef({ showSearch, showQuickActionsPopup, showAutocomplete, suggestions, selectedIndex, customTemplates });
   ui.current = { showSearch, showQuickActionsPopup, showAutocomplete, suggestions, selectedIndex, customTemplates };
+  // результат исчез (или пошёл новый запрос) при открытом попапе — закрыть, чтобы он не перехватывал цифры 1–9
+  useEffect(() => {
+    if (!isQuickActionsEnabled) setShowQuickActionsPopup(false);
+  }, [isQuickActionsEnabled]);
 
   // ------------------------------------------------------------------ утилиты
 
@@ -234,7 +237,7 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
 
     const line = view.state.doc.lineAt(sel.head);
     const textBefore = line.text.slice(0, sel.head - line.from);
-    const match = textBefore.match(/([a-zA-Z_][a-zA-Z_0-9.]*)$/);
+    const match = textBefore.match(AUTOCOMPLETE_WORD_RE);
 
     if (match || forceShow) {
       const typed = match ? match[1].toUpperCase() : '';
@@ -279,7 +282,7 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
     const sel = view.state.selection.main;
     const line = view.state.doc.lineAt(sel.head);
     const textBefore = line.text.slice(0, sel.head - line.from);
-    const match = textBefore.match(/([a-zA-Z_][a-zA-Z_0-9.]*)$/);
+    const match = textBefore.match(AUTOCOMPLETE_WORD_RE);
     if (!match) return;
 
     const wordStart = sel.head - match[1].length;
@@ -377,6 +380,8 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
       const sel = view.state.selection.main;
       if (!sel.empty) selText = view.state.sliceDoc(sel.from, sel.to).trim();
     }
+    // Текст для поиска берём из документа один раз при открытии панели (дальше — по изменениям, пока панель открыта)
+    setValue(view ? view.state.doc.toString() : propValue);
     setShowSearch(true);
     setShowReplace(withReplace);
     if (selText && selText.length <= 200 && !selText.includes('\n')) {
@@ -483,7 +488,10 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
     const docLen = view.state.doc.length;
     if (match.start + match.length > docLen) return;
     const matched = view.state.sliceDoc(match.start, match.start + match.length);
-    const replacementText = computeReplacementText(matched, searchQuery, replaceQuery, matchCase, useRegex);
+    const replacementText = computeReplacementText(
+      matched, searchQuery, replaceQuery, matchCase, useRegex,
+      useRegex ? { text: view.state.doc.toString(), start: match.start } : undefined,
+    );
     view.focus();
     view.dispatch({
       changes: { from: match.start, to: match.start + match.length, insert: replacementText },
@@ -627,7 +635,6 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
 
   const buildDynamicExtensions = (): Extension => [
     EditorState.readOnly.of(!latest.current.onChange),
-    cmPlaceholder(latest.current.placeholder ?? "Enter SQL Query here..."),
   ];
 
   const buildExtensions = (): Extension[] => [
@@ -664,7 +671,8 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
     EditorView.updateListener.of(update => {
       if (update.docChanged) {
         const text = update.state.doc.toString();
-        setValue(text);
+        // Состояние value нужно только панели поиска: без неё не перерисовываем компонент на каждый ввод
+        if (ui.current.showSearch) setValue(text);
         const isExternal = update.transactions.some(tr => tr.annotation(externalChange));
         if (!isExternal) {
           markEmitted(text);
@@ -712,7 +720,7 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
         selection: saved ? EditorSelection.single(Math.min(saved.anchor, len), Math.min(saved.head, len)) : undefined,
         extensions: buildExtensions(),
       }));
-      setValue(propValue);
+      if (ui.current.showSearch) setValue(propValue);
       if (saved) {
         requestAnimationFrame(() => {
           if (viewRef.current === view) view.scrollDOM.scrollTop = saved.scrollTop;
@@ -730,7 +738,7 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
       changes: d,
       annotations: externalChange.of(true),
     });
-    setValue(propValue);
+    if (ui.current.showSearch) setValue(propValue);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [propValue, docId]);
 
@@ -748,7 +756,7 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
   useEffect(() => {
     viewRef.current?.dispatch({ effects: compartments.dynamic.reconfigure(buildDynamicExtensions()) });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [!!onChange, placeholder]);
+  }, [!!onChange]);
 
   // Программный API для App
   useEffect(() => {
@@ -843,7 +851,6 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
         (search && activeEl && (search === activeEl || search.parentElement?.contains(activeEl)));
       if (!isInsideEditor) return;
 
-      const combo = buildComboString(e);
       const savedHotkeys = getSavedHotkeys();
       const L = latest.current;
 
@@ -864,10 +871,10 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
       const targetCompactCombo = savedHotkeys.compactSql || 'Ctrl+Alt+M';
       const targetQuickActionsCombo = savedHotkeys.quickActionsMenu || 'Ctrl+Q';
 
-      const isSearch = combo === targetSearchCombo || (!e.shiftKey && (e.ctrlKey || e.metaKey) && (e.code === 'KeyF' || e.key?.toLowerCase() === 'f' || e.key?.toLowerCase() === 'а'));
-      const isReplace = combo === targetReplaceCombo || (!e.shiftKey && (e.ctrlKey || e.metaKey) && (e.code === 'KeyH' || e.key?.toLowerCase() === 'h' || e.key?.toLowerCase() === 'р'));
-      const isCompact = combo === targetCompactCombo || ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.code === 'KeyU' || e.key?.toLowerCase() === 'u' || e.key?.toLowerCase() === 'г'));
-      const isQuickActions = combo === targetQuickActionsCombo || (!e.shiftKey && !e.altKey && (e.ctrlKey || e.metaKey) && (e.code === 'KeyQ' || e.key?.toLowerCase() === 'q' || e.key?.toLowerCase() === 'й'));
+      const isSearch = matchHotkeyCombo(e, targetSearchCombo);
+      const isReplace = matchHotkeyCombo(e, targetReplaceCombo);
+      const isCompact = matchHotkeyCombo(e, targetCompactCombo);
+      const isQuickActions = matchHotkeyCombo(e, targetQuickActionsCombo);
 
       if (isSearch) {
         consume();
@@ -934,7 +941,7 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
                 }`}
               />
               <span className="text-[10px] text-slate-400 shrink-0 min-w-[45px] text-center font-mono">
-                {searchQuery ? (matches.length > 0 ? `${currentMatchIndex + 1}/${matches.length}` : t(t('0 совп.'))) : ''}
+                {searchQuery ? (matches.length > 0 ? `${currentMatchIndex + 1}/${matches.length}` : t('0 совп.')) : ''}
               </span>
             </div>
 

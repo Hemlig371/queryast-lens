@@ -2,6 +2,8 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
+import { appendCopyFormat } from "./src/utils/clickhouseFormat";
+import { parseClickhouseResponse } from "./src/lib/clickhouse";
 
 let duckdbModule: any = null;
 async function loadDuckDbModule() {
@@ -16,7 +18,10 @@ async function loadDuckDbModule() {
 }
 
 const app = express();
-app.use(express.json());
+// Общий разбор JSON (лимит по умолчанию 100 КБ). Загрузка файлов разбирает тело сама, с лимитом 500 МБ:
+// общий парсер, стоящий раньше, отвечал бы 413 на любое тело крупнее лимита по умолчанию.
+const jsonParser = express.json();
+app.use((req, res, next) => (req.path === "/api/vfs/upload" ? next() : jsonParser(req, res, next)));
 
 // Enable CORS for desktop clients (Tauri) and local connections
 app.use((req, res, next) => {
@@ -40,31 +45,40 @@ app.get("/api/health", (req, res) => {
 let db: any = null;
 let currentDbPath: string | null = null;
 
-function applyDuckDbPragmas(dbObj: any, config: any) {
+// Выполняет оператор и ждёт результата; ошибка DuckDB превращается в исключение
+function runDuckDbStatement(dbObj: any, sql: string, label: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    dbObj.run(sql, (err: any) => {
+      if (err) {
+        reject(new Error(`${label} failed: ${err.message}`));
+      } else {
+        resolve();
+      }
+    });
+  });
+}
+
+async function applyDuckDbPragmas(dbObj: any, config: any): Promise<void> {
   if (!dbObj || !config) return;
   const { memoryLimit, tempDirectory, extensionDirectory, threads, initSql } = config;
   
   if (memoryLimit && String(memoryLimit).trim()) {
     const cleanMem = String(memoryLimit).trim().replace(/['";]/g, '');
-    dbObj.run(`PRAGMA memory_limit='${cleanMem}';`, () => {});
+    await runDuckDbStatement(dbObj, `PRAGMA memory_limit='${cleanMem}';`, "PRAGMA memory_limit");
   }
-  if (threads !== undefined && parseInt(threads) >= 0) {
-    dbObj.run(`PRAGMA threads=${parseInt(threads)};`, () => {});
+  if (threads !== undefined && parseInt(threads) > 0) { // 0 = «авто»: DuckDB отвергает PRAGMA threads=0
+    await runDuckDbStatement(dbObj, `PRAGMA threads=${parseInt(threads)};`, "PRAGMA threads");
   }
   if (tempDirectory && String(tempDirectory).trim()) {
     const cleanDir = String(tempDirectory).trim().replace(/['";]/g, '');
-    dbObj.run(`PRAGMA temp_directory='${cleanDir}';`, () => {});
+    await runDuckDbStatement(dbObj, `PRAGMA temp_directory='${cleanDir}';`, "PRAGMA temp_directory");
   }
   if (extensionDirectory && String(extensionDirectory).trim()) {
     const cleanDir = String(extensionDirectory).trim().replace(/['";]/g, '');
-    dbObj.run(`PRAGMA extension_directory='${cleanDir}';`, () => {});
+    await runDuckDbStatement(dbObj, `PRAGMA extension_directory='${cleanDir}';`, "PRAGMA extension_directory");
   }
   if (initSql && String(initSql).trim()) {
-    dbObj.run(String(initSql), (err: any) => {
-      if (err) {
-        console.warn("Failed to execute DuckDB initSql:", err.message);
-      }
-    });
+    await runDuckDbStatement(dbObj, String(initSql), "Init SQL");
   }
 }
 
@@ -101,7 +115,17 @@ app.post("/api/duckdb/connect", async (req, res) => {
     currentDbPath = dbPath;
 
     if (config) {
-      applyDuckDbPragmas(db, config);
+      try {
+        await applyDuckDbPragmas(db, config);
+      } catch (pragmaErr) {
+        // Подключение не считается успешным: закрываем, чтобы состояние сервера совпадало с тем, что увидит клиент
+        if (typeof db.close === 'function') {
+          db.close();
+        }
+        db = null;
+        currentDbPath = null;
+        throw pragmaErr;
+      }
     }
 
     res.json({ success: true, path: dbPath });
@@ -110,12 +134,12 @@ app.post("/api/duckdb/connect", async (req, res) => {
   }
 });
 
-app.post("/api/duckdb/configure", (req, res) => {
+app.post("/api/duckdb/configure", async (req, res) => {
   if (!db) {
     return res.status(400).json({ error: "No database connected" });
   }
   try {
-    applyDuckDbPragmas(db, req.body);
+    await applyDuckDbPragmas(db, req.body);
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -188,6 +212,13 @@ app.post("/api/duckdb/query", (req, res) => {
         if (!res.headersSent) {
           res.status(500).json({ error: callbackErr.message });
         }
+      } finally {
+        // Освобождаем подготовленный оператор (иначе они копятся на время жизни соединения)
+        try {
+          stmt.finalize();
+        } catch {
+          // ignore
+        }
       }
     });
   } catch (err: any) {
@@ -233,7 +264,7 @@ app.post("/api/clickhouse/test", async (req, res) => {
 });
 
 app.post("/api/clickhouse/query", async (req, res) => {
-  const { protocol, host, user, key, database, query } = req.body; console.log("CH QUERY:", query);
+  const { protocol, host, user, key, database, query } = req.body;
   if (!host || !query) {
     return res.status(400).json({ error: "Host and query are required" });
   }
@@ -261,10 +292,9 @@ app.post("/api/clickhouse/query", async (req, res) => {
     }
 
     try {
-      const json = JSON.parse(responseText);
-      res.json({ success: true, data: json.data || json, meta: json.meta });
-    } catch {
-      res.json({ success: true, text: responseText });
+      res.json(parseClickhouseResponse(responseText, query, Infinity));
+    } catch (parseErr: any) {
+      res.status(502).json({ error: parseErr.message });
     }
   } catch (err: any) {
     res.status(500).json({ error: err.message || String(err) });
@@ -284,19 +314,7 @@ app.post("/api/clickhouse/copy-to", async (req, res) => {
     if (params.toString() === '') params.set('default_format', 'JSON');
     const url = `${protocol || 'http'}://${cleanHost}/?${params.toString()}`;
 
-    let sqlToExec = innerSql.trim().replace(/;+$/, '');
-    if (!/\bFORMAT\b/i.test(sqlToExec)) {
-      const ext = path.extname(filePath).toLowerCase();
-      if (ext === '.csv') {
-        sqlToExec += ' FORMAT CSVWithNames';
-      } else if (ext === '.tsv' || ext === '.tab') {
-        sqlToExec += ' FORMAT TSVWithNames';
-      } else if (ext === '.json') {
-        sqlToExec += ' FORMAT JSONEachRow';
-      } else {
-        sqlToExec += ' FORMAT Parquet';
-      }
-    }
+    const sqlToExec = appendCopyFormat(innerSql, filePath);
 
     const chRes = await fetch(url, {
       method: 'POST',
@@ -345,23 +363,12 @@ app.post("/api/clickhouse/copy-from", async (req, res) => {
 
     const fileBuffer = fs.readFileSync(filePath);
     const cleanHost = host.replace(/^https?:\/\//i, '');
-    const ext = path.extname(filePath).toLowerCase();
 
     let target = innerSql.trim();
     if (!/^INSERT INTO/i.test(target)) {
       target = `INSERT INTO ${target}`;
     }
-    if (!/\bFORMAT\b/i.test(target)) {
-      if (ext === '.csv') {
-        target += ' FORMAT CSVWithNames';
-      } else if (ext === '.tsv' || ext === '.tab') {
-        target += ' FORMAT TSVWithNames';
-      } else if (ext === '.json') {
-        target += ' FORMAT JSONEachRow';
-      } else {
-        target += ' FORMAT Parquet';
-      }
-    }
+    target = appendCopyFormat(target, filePath);
 
     const params = new URLSearchParams();
     if (database) params.set('database', database);

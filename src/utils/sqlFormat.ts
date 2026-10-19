@@ -1,94 +1,73 @@
 import { t } from './i18n';
 import { splitBySemicolonIgnoringQuotes } from '../lib/sqlUtils';
+import { splitSqlSegments, type SqlSegment } from './sqlTokens';
 import type { FormatterSettings } from '../components/SettingsModal';
 
 // Чистые функции форматирования/сжатия SQL. Вынесены из App.tsx (этап A1) без изменения логики.
 // Настройки форматтера и диалект теперь передаются параметрами, а не берутся из замыкания App.
 
-export const convertInlineDashComments = (sql: string): string => {
-  const lines = sql.split('\n');
-  return lines
-    .map((line) => {
-      let inString: string | null = null;
-      let inBlockComment = false;
-      let codeFoundBeforeDash = false;
-      let dashIndex = -1;
+// Хвостовой `-- текст` превращается в `/* текст */`; комментарий на отдельной строке остаётся как есть.
+// Разбор идёт по всему тексту (splitSqlSegments), а не построчно: `--` внутри многострочной строки или блочного комментария не трогается.
+const SPACE_ONLY = /^[ \t\r]*$/;
 
-      for (let i = 0; i < line.length; i++) {
-        const char = line[i];
-        const nextChar = line[i + 1];
-
-        if (inString) {
-          if (char === inString && line[i - 1] !== '\\') {
-            inString = null;
-          }
-        } else if (inBlockComment) {
-          if (char === '*' && nextChar === '/') {
-            inBlockComment = false;
-            i++;
-          }
-        } else if (char === "'" || char === '"' || char === '`') {
-          inString = char;
-          codeFoundBeforeDash = true;
-        } else if (char === '/' && nextChar === '*') {
-          inBlockComment = true;
-          i++;
-        } else if (char === '-' && nextChar === '-') {
-          dashIndex = i;
-          break;
-        } else if (char !== ' ' && char !== '\t' && char !== '\r') {
-          codeFoundBeforeDash = true;
-        }
-      }
-
-      if (dashIndex !== -1 && codeFoundBeforeDash) {
-        const before = line.slice(0, dashIndex);
-        const commentText = line.slice(dashIndex + 2);
-        const safeCommentText = commentText.replace(/\*\//g, '* /');
-        return `${before}/* ${safeCommentText.trim()} */`;
-      }
-
-      return line;
-    })
-    .join('\n');
+/** Состояние «на текущей строке до этого места только пробелы» после очередного сегмента. */
+const nextLineBlank = (lineBlank: boolean, seg: SqlSegment): boolean => {
+  if (seg.type === 'string' || seg.type === 'block-comment') return false;
+  if (seg.type === 'line-comment') return false;
+  const nl = seg.text.lastIndexOf('\n');
+  if (nl >= 0) return SPACE_ONLY.test(seg.text.slice(nl + 1));
+  return lineBlank && SPACE_ONLY.test(seg.text);
 };
 
+const inlineDashToBlock = (lineCommentText: string): string => {
+  const safeCommentText = lineCommentText.slice(2).replace(/\*\//g, '* /');
+  return `/* ${safeCommentText.trim()} */`;
+};
+
+export const convertInlineDashComments = (sql: string): string => {
+  let out = '';
+  let lineBlank = true;
+  for (const seg of splitSqlSegments(sql)) {
+    if (seg.type === 'line-comment' && !lineBlank) {
+      out += inlineDashToBlock(seg.text);
+    } else {
+      out += seg.text;
+    }
+    lineBlank = nextLineBlank(lineBlank, seg);
+  }
+  return out;
+};
+
+// Сжатие SQL в одну строку на кусок кода: строки и блочные комментарии переносятся без изменений (пробелы, переводы строк),
+// пробельные символы между токенами схлопываются, хвостовые `--` становятся `/* */`, отдельные строки `--` остаются отдельными строками.
 export const compactSql = (text: string): string => {
   if (!text) return text;
 
-  const preprocessed = convertInlineDashComments(text);
-  const lines = preprocessed.split('\n');
-
-  const chunks: Array<{ type: 'comment' | 'code'; lines: string[] }> = [];
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    const isStandaloneComment = trimmed.startsWith('--');
-
-    if (isStandaloneComment) {
-      chunks.push({ type: 'comment', lines: [trimmed] });
-    } else {
-      if (chunks.length > 0 && chunks[chunks.length - 1].type === 'code') {
-        chunks[chunks.length - 1].lines.push(line);
-      } else {
-        chunks.push({ type: 'code', lines: [line] });
-      }
-    }
-  }
-
   const resultLines: string[] = [];
+  let buf = '';
+  let lineBlank = true;
+  const flush = () => {
+    const trimmed = buf.trim();
+    if (trimmed) resultLines.push(trimmed);
+    buf = '';
+  };
 
-  for (const chunk of chunks) {
-    if (chunk.type === 'comment') {
-      resultLines.push(chunk.lines[0]);
-    } else {
-      const codeBlock = chunk.lines.join('\n').trim();
-      if (codeBlock) {
-        const compacted = codeBlock.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ');
-        resultLines.push(compacted);
+  for (const seg of splitSqlSegments(text)) {
+    if (seg.type === 'line-comment') {
+      if (lineBlank) {
+        flush();
+        resultLines.push(seg.text.trim());
+      } else {
+        buf += inlineDashToBlock(seg.text);
       }
+    } else if (seg.type === 'code') {
+      buf += seg.text.replace(/\s+/g, ' ');
+    } else {
+      buf += seg.text; // строка или блочный комментарий — как есть
     }
+    lineBlank = nextLineBlank(lineBlank, seg);
   }
+  flush();
 
   return resultLines.join('\n');
 };

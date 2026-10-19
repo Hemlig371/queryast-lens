@@ -5,6 +5,8 @@ import { AutocompleteTemplate, DEFAULT_AUTOCOMPLETE_TEMPLATES, getCustomAutocomp
 import { getVersions, importVersions, SqlVersionItem, cleanupOldVersions } from '../utils/versionHistory';
 import { importSchemaCacheEntries, SchemaCacheEntry } from '../utils/schemaDbCache';
 import { loadSnippetsFromDB, saveSnippetsToDB } from '../utils/snippetsStorage';
+import { withoutTrash } from '../utils/snippetTrash';
+import { isWorkspaceBundle, WORKSPACE_BUNDLE_APP } from '../utils/workspaceBundle';
 import { Snippet } from './SqlSnippetsManager';
 import { getSessionTabs, saveSessionTabs } from '../utils/sessionStorage';
 import type { EditorTab } from '../types/editorTab';
@@ -14,37 +16,10 @@ import { getSavedExcelSettings, saveExcelSettings, resetExcelSettings } from '..
 import { ExcelSettingsTab } from './ExcelSettingsTab';
 import { t, changeLanguage, currentLang } from '../utils/i18n';
 
-export interface QuickActionTemplate {
-  id: string;
-  name: string;
-  template: string;
-}
-
-export const DEFAULT_QUICK_ACTIONS: QuickActionTemplate[] = [
-  {
-    id: 'qa-1',
-    name: 'Количество строк',
-    template: 'SELECT COUNT(*) FROM {table};',
-  },
-  {
-    id: 'qa-2',
-    name: 'Структура таблицы',
-    template: 'DESCRIBE {table};',
-  },
-];
-
-export function getQuickActionTemplates(): QuickActionTemplate[] {
-  try {
-    const raw = localStorage.getItem('sql_quick_action_templates');
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    }
-  } catch (e) {
-    console.error('Failed to load quick action templates', e);
-  }
-  return DEFAULT_QUICK_ACTIONS;
-}
+import { buildComboString, findHotkeyConflict } from '../editor/hotkeysMatch';
+import { DEFAULT_QUICK_ACTIONS, getQuickActionTemplates, type QuickActionTemplate } from '../utils/quickActionTemplates';
+export { DEFAULT_QUICK_ACTIONS, getQuickActionTemplates };
+export type { QuickActionTemplate };
 
 export interface HotkeyBinding {
   id: string;
@@ -514,7 +489,8 @@ export async function generateWorkspaceBundleObject(): Promise<{version: number,
 
   try {
     const snippets = await loadSnippetsFromDB();
-    backupData['sql_visualizer_snippets'] = snippets;
+    // «Корзина» шаблонов не экспортируется (файл настроек и файл синхронизации тоже)
+    backupData['sql_visualizer_snippets'] = withoutTrash(snippets);
   } catch (err) {
     console.warn('Failed to get IndexedDB snippets for export:', err);
   }
@@ -530,7 +506,7 @@ export async function generateWorkspaceBundleObject(): Promise<{version: number,
 
   return {
     version: 1,
-    app: 'QueryAST Lens Workspace Bundle',
+    app: WORKSPACE_BUNDLE_APP,
     exportedAt: new Date().toISOString(),
     data: backupData
   };
@@ -656,11 +632,13 @@ export async function importWorkspaceSettings(file: File, onBeforeImport?: () =>
     try {
       const content = e.target?.result as string;
       const parsed = JSON.parse(content);
-      if (typeof parsed !== 'object' || parsed === null) {
-        throw new Error('Invalid backup file format');
+      // Только пакет настроек: любой другой JSON (шаблоны, история версий) не должен очищать localStorage
+      if (!isWorkspaceBundle(parsed)) {
+        alert(t('Файл не является пакетом настроек QueryAST Lens. Настройки не изменены.'));
+        return;
       }
 
-      const dataObj: Record<string, unknown> = parsed.data && typeof parsed.data === 'object' ? parsed.data : parsed;
+      const dataObj: Record<string, unknown> = parsed.data;
 
       // Extract existing explicitly configured (non-default) DuckDB engine settings before clearing localStorage
       let existingDuckDbSettings: Partial<UiVisibilitySettings> = {};
@@ -753,6 +731,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'formatter' | 'ui' | 'hotkeys' | 'excel'>('ui');
   const [listeningActionId, setListeningActionId] = useState<string | null>(null);
+  // Действие, с которым конфликтует только что введённое сочетание: { записываемое действие, занявшее его }
+  const [hotkeyConflict, setHotkeyConflict] = useState<{ actionId: string; withId: string } | null>(null);
 
   // Excel Settings State
   const [excelSettings, setExcelSettings] = useState<ExcelSettings>(getSavedExcelSettings);
@@ -899,47 +879,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         return;
       }
 
-      const parts: string[] = [];
-      if (e.ctrlKey || e.metaKey) parts.push('Ctrl');
-      if (e.altKey) parts.push('Alt');
-      if (e.shiftKey) parts.push('Shift');
-
-      let keyName = e.key ? e.key.toUpperCase() : '';
-      if (e.code && e.code.startsWith('Key')) {
-        keyName = e.code.slice(3).toUpperCase();
-      } else if (e.code && e.code.startsWith('Digit')) {
-        keyName = e.code.slice(5);
-      } else if (e.code === 'Space' || e.key === ' ') {
-        keyName = 'Space';
-      } else if (e.code === 'Enter' || e.key === 'Enter') {
-        keyName = 'Enter';
-      } else if (e.code === 'Escape' || e.key === 'Escape') {
-        keyName = 'Esc';
-      } else if (e.code === 'Slash') {
-        keyName = '/';
-      } else if (e.code === 'Backslash') {
-        keyName = '\\';
-      } else if (e.code === 'Period') {
-        keyName = '.';
-      } else if (e.code === 'Comma') {
-        keyName = ',';
-      } else if (e.code === 'Semicolon') {
-        keyName = ';';
-      } else if (e.code === 'Quote') {
-        keyName = "'";
-      } else if (e.code === 'BracketLeft') {
-        keyName = '[';
-      } else if (e.code === 'BracketRight') {
-        keyName = ']';
-      } else if (e.code === 'Minus') {
-        keyName = '-';
-      } else if (e.code === 'Equal') {
-        keyName = '=';
-      } else if (e.code === 'Backquote' || e.key === '`' || e.key === '~' || e.key === 'ё' || e.key === 'Ё') {
-        keyName = '`';
+      // Esc отменяет запись сочетания и само не записывается
+      if (e.code === 'Escape' || e.key === 'Escape') {
+        setHotkeyConflict(null);
+        setListeningActionId(null);
+        return;
       }
 
-      const combo = parts.length > 0 ? `${parts.join('+')}+${keyName}` : keyName;
+      const combo = buildComboString(e);
+
+      const conflictWith = findHotkeyConflict(DEFAULT_HOTKEYS, hotkeys, listeningActionId, combo);
+      if (conflictWith) {
+        setHotkeyConflict({ actionId: listeningActionId, withId: conflictWith });
+        setListeningActionId(null);
+        return;
+      }
+      setHotkeyConflict(null);
 
       const updated = { ...hotkeys, [listeningActionId]: combo };
       onUpdateHotkeys(updated);
@@ -970,6 +925,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       onUpdateHotkeys(defaults);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(defaults));
       setListeningActionId(null);
+      setHotkeyConflict(null);
     }
   };
 
@@ -2179,6 +2135,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               <div className={`text-[11px] ${
                                 theme === 'dark' ? 'text-slate-400' : 'text-slate-700'
                               }`}>{t(item.description)}</div>
+                              {hotkeyConflict?.actionId === item.id && (
+                                <div className="text-[11px] font-semibold text-amber-500">
+                                  {t('Сочетание уже занято:')} {t(DEFAULT_HOTKEYS.find(h => h.id === hotkeyConflict.withId)?.label ?? hotkeyConflict.withId)}
+                                </div>
+                              )}
                             </div>
 
                             {item.id === 'tabSwitchModifier' ? (
@@ -2202,7 +2163,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               </select>
                             ) : (
                               <button
-                                onClick={() => setListeningActionId(isListening ? null : item.id)}
+                                onClick={() => { setHotkeyConflict(null); setListeningActionId(isListening ? null : item.id); }}
                                 className={`px-3 py-1.5 rounded font-mono text-xs font-bold border shadow-xs transition-all shrink-0 min-w-[100px] text-center ${
                                   isListening
                                     ? 'bg-amber-500 text-slate-900 border-amber-400 animate-pulse'

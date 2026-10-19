@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatColumnType, splitBySemicolonIgnoringQuotes, replaceVariablesInSql } from '../src/lib/sqlUtils';
+import { formatColumnType, splitBySemicolonIgnoringQuotes, replaceVariablesInSql, getLastSelectStatement, buildQuickActionSource, findUnresolvedVariables } from '../src/lib/sqlUtils';
 
 describe('sqlUtils', () => {
   describe('formatColumnType', () => {
@@ -97,5 +97,73 @@ SELECT * FROM a WHERE id = 42 UNION ALL SELECT * FROM b WHERE id = 42;`;
       expect(replaceVariablesInSql("SELECT '{{$дата=2024-01-01}}'")).toBe("SELECT '2024-01-01'");
       expect(replaceVariablesInSql("SELECT {{$Регион}}", "-- {{$Регион=42}}")).toBe('SELECT 42');
     });
+  });
+});
+
+describe('getLastSelectStatement (B-10)', () => {
+  it('один запрос: без хвостовой «;»', () => {
+    expect(getLastSelectStatement('SELECT 1;')).toBe('SELECT 1');
+    expect(getLastSelectStatement('  select a from t  ')).toBe('select a from t');
+  });
+  it('скрипт из двух SELECT — последний', () => {
+    expect(getLastSelectStatement('SELECT 1; SELECT 2 AS x;')).toBe('SELECT 2 AS x');
+  });
+  it('DDL перед SELECT не попадает в результат', () => {
+    expect(getLastSelectStatement('CREATE TABLE t AS SELECT 1 a; SELECT * FROM t')).toBe('SELECT * FROM t');
+  });
+  it('DDL после SELECT: берётся последний SELECT', () => {
+    expect(getLastSelectStatement('SELECT 1; DROP TABLE t')).toBe('SELECT 1');
+  });
+  it('нет SELECT — последний непустой оператор', () => {
+    expect(getLastSelectStatement('CREATE TABLE a(x int); INSERT INTO a VALUES (1)')).toBe('INSERT INTO a VALUES (1)');
+  });
+  it('комментарий после «;» не считается оператором', () => {
+    expect(getLastSelectStatement('SELECT 1; -- готово')).toBe('SELECT 1');
+    expect(getLastSelectStatement('SELECT 1; /* конец */')).toBe('SELECT 1');
+  });
+  it('комментарии в начале оператора отбрасываются', () => {
+    expect(getLastSelectStatement('-- шапка\n/* ещё */ SELECT 3')).toBe('SELECT 3');
+  });
+  it('«;» в строке не делит оператор; WITH считается SELECT-подобным', () => {
+    expect(getLastSelectStatement("SELECT 'a;b'; WITH c AS (SELECT 1) SELECT * FROM c")).toBe('WITH c AS (SELECT 1) SELECT * FROM c');
+    expect(getLastSelectStatement("SELECT 'a;b'")).toBe("SELECT 'a;b'");
+  });
+  it('пустой ввод', () => {
+    expect(getLastSelectStatement('')).toBe('');
+    expect(getLastSelectStatement(' ;; -- x')).toBe('');
+  });
+});
+
+describe('buildQuickActionSource (B-10)', () => {
+  it('до первого запроса — table', () => {
+    expect(buildQuickActionSource('')).toBe('table');
+    expect(buildQuickActionSource('  \n')).toBe('table');
+  });
+  it('одиночный SELECT — как раньше', () => {
+    expect(buildQuickActionSource('SELECT 1;')).toBe('(\nSELECT 1\n) AS _sub');
+  });
+  it('скрипт: оборачивается только последний SELECT', () => {
+    expect(buildQuickActionSource('CREATE TABLE t AS SELECT 1 a; SELECT * FROM t; -- готово')).toBe('(\nSELECT * FROM t\n) AS _sub');
+  });
+});
+
+describe('findUnresolvedVariables (B-10)', () => {
+  it('все переменные определены в тексте вкладки — пусто', () => {
+    expect(findUnresolvedVariables('SELECT {{$a}}', '-- {{$a=5}}\nSELECT 1')).toEqual([]);
+  });
+  it('нет определения — имя в списке, без повторов', () => {
+    expect(findUnresolvedVariables('SELECT {{$a}}, {{$b}}, {{$a}}', '')).toEqual(['a', 'b']);
+  });
+  it('определение внутри самого запроса считается', () => {
+    expect(findUnresolvedVariables('SELECT {{$a=1}}, {{$a}}')).toEqual([]);
+  });
+  it('системная {{$timestamp}} определена всегда', () => {
+    expect(findUnresolvedVariables('SELECT {{$timestamp}}')).toEqual([]);
+  });
+  it('кириллические имена', () => {
+    expect(findUnresolvedVariables('SELECT {{$таблица}}', '')).toEqual(['таблица']);
+  });
+  it('без переменных', () => {
+    expect(findUnresolvedVariables('SELECT 1')).toEqual([]);
   });
 });

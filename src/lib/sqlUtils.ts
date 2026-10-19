@@ -118,3 +118,43 @@ export const replaceVariablesInSql = (sql: string, contextSql?: string): string 
 
   return result;
 };
+
+// ---- Быстрые действия над результатом (Ctrl+Q и кнопка с молнией) ----
+
+const LEADING_COMMENTS_RE = /^(\s*(--[^\n]*(\n|$)|\/\*[\s\S]*?\*\/))*/;
+const SELECT_LIKE_RE = /^\(?\s*(SELECT|WITH|FROM|VALUES|TABLE)\b/i;
+
+/**
+ * Последний запрос скрипта, который выдаёт строки: из нескольких операторов берётся последний SELECT-подобный
+ * (иначе последний непустой); комментарии в начале и после последнего `;` не считаются оператором.
+ * Завершающая `;` убирается. Пустой текст → ''.
+ */
+export const getLastSelectStatement = (sql: string): string => {
+  const bodies = splitBySemicolonIgnoringQuotes(sql || '')
+    .map(s => s.replace(LEADING_COMMENTS_RE, '').trim())
+    .filter(Boolean);
+  if (bodies.length === 0) return '';
+  for (let i = bodies.length - 1; i >= 0; i--) {
+    if (SELECT_LIKE_RE.test(bodies[i])) return bodies[i];
+  }
+  return bodies[bodies.length - 1];
+};
+
+/** Источник для `{table}` в шаблонах быстрых действий: `table` до первого запроса, иначе последний SELECT в подзапросе. */
+export const buildQuickActionSource = (lastExecutedSql: string): string => {
+  const last = getLastSelectStatement(lastExecutedSql);
+  if (!last) return 'table';
+  return `(\n${last}\n) AS _sub`;
+};
+
+/** Имена переменных `{{$имя}}`, которым не нашлось значения (ни в `sql`, ни в `contextSql`). Без повторов, в порядке появления. */
+export const findUnresolvedVariables = (sql: string, contextSql?: string): string[] => {
+  const resolved = replaceVariablesInSql(sql, contextSql);
+  const names: string[] = [];
+  const re = /\{\{\$([a-zA-Z0-9_Ѐ-ӿ]+)\}\}/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(resolved)) !== null) {
+    if (!names.includes(m[1])) names.push(m[1]);
+  }
+  return names;
+};

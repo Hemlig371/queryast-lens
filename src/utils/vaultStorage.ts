@@ -176,7 +176,7 @@ export async function isVaultConfigured(): Promise<boolean> {
 }
 
 /**
- * Check if the vault is currently unlocked and within the 4-hour window
+ * Check if the vault is currently unlocked and within the 8-hour window
  */
 export function isVaultUnlocked(): boolean {
   if (!memoryVault) return false;

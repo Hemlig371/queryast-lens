@@ -212,6 +212,34 @@ describe('excelExporter utils', () => {
         sqlQuery: '/* @excel_save: /tmp/test_report.xlsx @sheet: MySheet @totals: SUM */ SELECT * FROM t'
       });
     });
+
+    // п. 3.2: порядок столбцов задаёт список columns; числовые имена и уникализированные дубли не теряются
+    it('порядок столбцов берётся из columns, а не из ключей объекта (числовые имена)', async () => {
+      const { exportToExcel } = await import('../src/utils/excelExporter');
+      const { DEFAULT_EXCEL_SETTINGS } = await import('../src/types/excelSettings');
+      const { downloadFileWithFallback } = await import('../src/utils/exportUtils');
+      const ExcelJS = (await import('exceljs')).default;
+
+      const data = [{ '1': 'y', '2': 'x', b: 'z', b_2: 'w' }];
+      await exportToExcel({
+        data,
+        columns: ['2', '1', 'b', 'b_2'],
+        columnTypes: { '1': 'String', '2': 'String', b: 'String', b_2: 'String' },
+        settings: { ...DEFAULT_EXCEL_SETTINGS }
+      });
+
+      const calls = (downloadFileWithFallback as any).mock.calls;
+      const blob: Blob = calls[calls.length - 1][0];
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(await blob.arrayBuffer());
+      const ws = wb.worksheets[0];
+      const wanted = ['2', '1', 'b', 'b_2'];
+      let headers: string[] | null = null;
+      ws.eachRow((row) => {
+        const vals = (row.values as any[]).slice(1).map((v) => String(v ?? ''));
+        if (!headers && vals.includes('b_2')) headers = vals.filter((v) => wanted.includes(v));
+      });
+      expect(headers).toEqual(wanted);
+    });
   });
 });
-

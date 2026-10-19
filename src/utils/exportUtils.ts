@@ -1,19 +1,15 @@
-export async function copyToClipboard(text: string) {
-  const isTauri = typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_IPC__' in window);
-  if (isTauri) {
-    try {
+import { copyTextWith } from './clipboard';
+
+/** Копирует текст в буфер обмена. Возвращает true при успехе и false при отказе (окно без фокуса, запрет, нет API). */
+export async function copyToClipboard(text: string): Promise<boolean> {
+  return copyTextWith(text, {
+    isTauri: typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_IPC__' in window),
+    tauriWrite: async (value) => {
       const { writeText } = await import('@tauri-apps/api/clipboard');
-      await writeText(text);
-      return;
-    } catch (e) {
-      console.warn("Tauri clipboard failed, falling back to web:", e);
-    }
-  }
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch (err) {
-    console.error("Clipboard write failed:", err);
-  }
+      await writeText(value);
+    },
+    webWrite: (value) => navigator.clipboard.writeText(value),
+  });
 }
 
 export async function downloadFileWithFallback(blob: Blob, filename: string, targetPath?: string | null) {

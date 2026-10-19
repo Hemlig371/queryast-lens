@@ -20,7 +20,7 @@ export const getCustomAutocompleteTemplates = (): AutocompleteTemplate[] => {
     const raw = localStorage.getItem('sql_custom_autocomplete_templates');
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
+      if (Array.isArray(parsed)) {
         return parsed.filter((t: any) => t && typeof t.keyword === 'string');
       }
     }

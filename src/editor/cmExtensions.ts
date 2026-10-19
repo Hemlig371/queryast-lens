@@ -1,9 +1,9 @@
 import { EditorView, Decoration, ViewPlugin, MatchDecorator } from '@codemirror/view';
 import type { DecorationSet, ViewUpdate } from '@codemirror/view';
 import { StateEffect, StateField } from '@codemirror/state';
-import type { Extension, Range } from '@codemirror/state';
+import type { EditorState, Extension, Range } from '@codemirror/state';
 import { SQL_COLORS, VARIABLE_PATTERN, sqlHighlighting } from './sqlLanguage';
-import { findMatchingBrackets } from './editorOps';
+import { findMatchingBrackets, wordOccurrenceRegExp } from './editorOps';
 
 export const EDITOR_FONT_FAMILY =
   'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
@@ -36,7 +36,6 @@ export const buildEditorTheme = (theme: 'dark' | 'light'): Extension => {
         '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground': {
           backgroundColor: dark ? 'rgba(59,130,246,0.42)' : 'rgba(59,130,246,0.36)',
         },
-        '.cm-placeholder': { color: '#64748b' },
         '.cm-gutters': {
           backgroundColor: dark ? 'rgba(30,41,59,0.8)' : '#e2e8f0',
           color: '#64748b',
@@ -149,6 +148,17 @@ export const buildSearchDecorations = (
 
 const MAX_BRACKET_DOC = 150_000;
 
+// Строка документа кэшируется по ссылке на неизменяемый doc: при простом движении курсора документ заново не копируется
+let cachedDoc: EditorState['doc'] | null = null;
+let cachedDocText = '';
+const docText = (state: EditorState): string => {
+  if (cachedDoc !== state.doc) {
+    cachedDoc = state.doc;
+    cachedDocText = state.doc.toString();
+  }
+  return cachedDocText;
+};
+
 const buildCursorDecorations = (view: EditorView): DecorationSet => {
   const state = view.state;
   const sel = state.selection.main;
@@ -158,10 +168,8 @@ const buildCursorDecorations = (view: EditorView): DecorationSet => {
     const raw = state.sliceDoc(sel.from, sel.to).trim();
     const searchActive = state.field(searchActiveField, false);
     if (!searchActive && raw.length >= 1 && raw.length <= 100 && !raw.includes('\n')) {
-      const escaped = raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const pattern = /^\w+$/.test(raw) ? `\\b${escaped}\\b` : escaped;
       try {
-        const re = new RegExp(pattern, 'gi');
+        const re = wordOccurrenceRegExp(raw);
         for (const { from, to } of view.visibleRanges) {
           const text = state.sliceDoc(from, to);
           let m: RegExpExecArray | null;
@@ -175,7 +183,7 @@ const buildCursorDecorations = (view: EditorView): DecorationSet => {
       }
     }
   } else if (state.doc.length < MAX_BRACKET_DOC) {
-    const pair = findMatchingBrackets(state.doc.toString(), sel.head);
+    const pair = findMatchingBrackets(docText(state), sel.head);
     if (pair) {
       for (const idx of pair) {
         ranges.push(Decoration.mark({ class: 'lens-bracket' }).range(idx, idx + 1));

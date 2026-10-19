@@ -10,13 +10,13 @@
 
 | Ключ | Содержимое |
 | :--- | :--- |
-| `sql_visualizer_session_v2` | Состояние интерфейса: активная вкладка, диалект, направление графа, тема, путь к открытой базе DuckDB, параметры подключения ClickHouse **без пароля**, состояние панели схемы |
+| `sql_visualizer_session_v2` | Состояние интерфейса: активная вкладка, диалект, направление графа, тема, путь к открытой базе DuckDB, параметры подключения ClickHouse **без пароля**, состояние панели схемы. Поле `tabs` в этой записи — остаток старых версий и не пишется: тексты вкладок лежат в `sql_visualizer_tabs_session` |
 | `sql_visualizer_tabs_session` | Тексты вкладок (SQL, имя файла, признак изменений). При переполнении localStorage тексты уходят в IndexedDB `sql_visualizer_tabs_db` |
 | `sql_visualizer_ui_visibility_v1` | Настройки интерфейса и движков: размеры страницы, масштаб, параметры DuckDB (память, каталоги, потоки), **Init SQL**, путь синхронизации |
 | `sql_visualizer_hotkeys_v1`, `sql_visualizer_formatter_v1` | Горячие клавиши, правила форматирования |
 | `sql_quick_action_templates`, `sql_custom_autocomplete_templates` | Быстрые действия, шаблоны автодополнения |
 | `queryast_lens_excel_settings_v1`, `queryast_lens_excel_presets_v1` | Настройки и пресеты Excel |
-| `sql_custom_snippets_v2`, `sql_favorite_snippets_ids_v1`, `sql_deleted_snippets_ids_v1` | Сниппеты (локальная копия), избранное, удалённые |
+| `sql_custom_snippets_v2`, `sql_custom_snippets_v2_migrated`, `sql_favorite_snippets_ids_v1`, `sql_deleted_snippets_ids_v1` | Старая локальная копия сниппетов (после переноса в IndexedDB удаляется) и отметка о переносе, избранное, удалённые |
 | `app_lang` | Язык интерфейса |
 | `sql_last_workspace_sync_time` | Время последней синхронизации рабочего пространства |
 | `sessionStorage`: `sql_is_importing_session` | Служебный флаг на время импорта |

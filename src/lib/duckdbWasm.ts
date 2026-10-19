@@ -1,3 +1,6 @@
+import { normalizeWasmTable } from '../utils/wasmResult';
+import { isSystemVfsFile, detectCopyTarget, type WasmRegisterResult } from '../utils/wasmFiles';
+
 let dbInstance: any = null;
 let connInstance: any = null;
 let duckDbInitPromise: Promise<any> | null = null;
@@ -91,7 +94,7 @@ export async function applyDuckDbConfigWasm(options?: DuckDbConfigOptions) {
       const cleanMem = options.memoryLimit.trim().replace(/['";]/g, '');
       await connInstance.query(`PRAGMA memory_limit = '${cleanMem}';`);
     }
-    if (options.threads !== undefined && options.threads >= 0) {
+    if (options.threads !== undefined && options.threads > 0) { // 0 = «авто»: PRAGMA threads=0 отвергается
       await connInstance.query(`PRAGMA threads = ${options.threads};`);
     }
     if (options.tempDirectory && options.tempDirectory.trim()) {
@@ -279,13 +282,13 @@ export async function queryDuckDbWasm(sqlQuery: string) {
   // Ensure all uploaded VFS files are registered in DuckDB WASM VFS before running query
   await ensureWasmFilesRegistered(db);
 
-  // Detect if query is COPY ... TO 'fileName'
-  const isCopyMatch = /COPY\b[\s\S]*?\bTO\b\s*['"]([^'"]+)['"]/i.exec(sqlQuery);
-  const copyTargetFile = isCopyMatch ? isCopyMatch[1].trim() : null;
+  // COPY ... TO 'файл': ищется только в коде, комментарии и строки не считаются (WS-07)
+  const copyTargetFile = detectCopyTarget(sqlQuery);
 
   const result = await connInstance.query(sqlQuery);
 
   // Handle COPY TO output file extraction from WASM VFS
+  let copyNotice: string | null = null;
   if (copyTargetFile) {
     try {
       const fileNameOnly = copyTargetFile.split(/[\\\/]/).pop() || copyTargetFile;
@@ -299,45 +302,31 @@ export async function queryDuckDbWasm(sqlQuery: string) {
         } catch (_) {}
       }
 
-      if (exportedBuffer && exportedBuffer.length > 0) {
+      if (exportedBuffer) {
+        // Пустой файл (0 байт) — тоже настоящий результат COPY; раньше он молча не сохранялся.
         if (isTauriEnvironment()) {
           await writeTauriFileBinary(copyTargetFile, exportedBuffer);
         } else {
           await downloadFileInBrowser(fileNameOnly, exportedBuffer);
         }
+      } else {
+        copyNotice = `COPY TO '${copyTargetFile}': файл не найден в виртуальной памяти WASM, сохранить его не удалось`;
+        console.warn(copyNotice);
       }
     } catch (e) {
+      copyNotice = `COPY TO '${copyTargetFile}': ошибка сохранения файла: ${e instanceof Error ? e.message : String(e)}`;
       console.warn("Failed to process COPY TO output file:", e);
     }
   }
 
-  const rawRows = result.toArray();
-  const maxRows = Math.min(rawRows.length, 500000);
-  const rows = [];
-  for (let i = 0; i < maxRows; i++) {
-    const row = rawRows[i];
-    const obj: Record<string, any> = row.toJSON();
-    for (const key in obj) {
-      if (typeof obj[key] === 'bigint') {
-        obj[key] = obj[key].toString();
-      } else if (obj[key] instanceof Date) {
-        obj[key] = obj[key].toISOString().replace('T', ' ').replace('Z', '');
-      }
-    }
-    rows.push(obj);
-  }
-
-  const typesDict: Record<string, string> = {};
-  if (result?.schema?.fields) {
-    result.schema.fields.forEach((f: any) => {
-      if (f.name && f.type) {
-        typesDict[f.name] = f.type.toString();
-      }
-    });
-  }
-  
-  const resultRows: any = rows;
-  resultRows.__columnTypes = typesDict;
+  // Не более 500 000 строк без материализации всей таблицы (WS-05); значения приводятся к виду Tauri (п. 3.14, WS-04):
+  // даты и время — строками, DECIMAL/BIGINT — строками, INTERVAL, BLOB, вложенные значения — как в execute_query.
+  // Имена столбцов делаются уникальными, порядок хранится отдельно (п. 3.2).
+  const normalized = normalizeWasmTable(result as any, 500000);
+  const resultRows: any = normalized.rows;
+  resultRows.__columnTypes = normalized.columnTypes;
+  resultRows.__columns = normalized.columns;
+  if (copyNotice) resultRows.__notice = copyNotice; // пока только в свойстве массива: в интерфейсе не показывается
 
   return resultRows;
 }
@@ -367,26 +356,7 @@ export async function getRegisteredWasmFiles(): Promise<Array<{ name: string; si
   const result: Array<{ name: string; size?: number; loadedAt?: Date }> = [];
   const seen = new Set<string>();
 
-  const isSystemFile = (filename: string): boolean => {
-    const f = filename.toLowerCase();
-    return (
-      f.startsWith('.') ||
-      f === 'package.json' ||
-      f === 'package-lock.json' ||
-      f === 'tsconfig.json' ||
-      f === 'tsconfig.node.json' ||
-      f === 'vite.config.ts' ||
-      f === 'server.ts' ||
-      f === 'index.html' ||
-      f === 'components.json' ||
-      f.startsWith('node_modules') ||
-      f.startsWith('dist') ||
-      f.startsWith('src') ||
-      f.startsWith('public') ||
-      f.endsWith('.js') ||
-      f.endsWith('.lock')
-    );
-  };
+  const isSystemFile = isSystemVfsFile;
 
   // 1. First add files from registeredVfsFiles Map
   for (const [name, meta] of registeredVfsFiles.entries()) {
@@ -450,7 +420,8 @@ export async function getRegisteredWasmFiles(): Promise<Array<{ name: string; si
     await Promise.race([fetchWasmFiles(), timeoutPromise]);
   } catch (_) {}
 
-  // 3. Try fetching from Server API (if DuckDB server is active)
+  // 3. Список с dev-сервера: только там, где он есть (в Tauri и Capacitor его нет, WS-06)
+  if (hasDevVfsServer()) {
   try {
     const fetchServerFiles = async () => {
       const res = await fetch('/api/duckdb/query', {
@@ -482,6 +453,7 @@ export async function getRegisteredWasmFiles(): Promise<Array<{ name: string; si
     const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 1000));
     await Promise.race([fetchServerFiles(), timeoutPromise]);
   } catch (_) {}
+  }
 
   return result;
 }
@@ -518,6 +490,8 @@ export async function dropWasmFile(fileName: string): Promise<boolean> {
     } catch (_) {}
   }
 
+  // Файл убран из реестра выше; true возвращается только если и WASM подтвердил удаление (раньше — всегда true, WS-07).
+  let wasmDone = false;
   try {
     const dropTask = async () => {
       const db = await getDuckDbWasm();
@@ -533,17 +507,22 @@ export async function dropWasmFile(fileName: string): Promise<boolean> {
           await connInstance.query(`DETACH "${alias}"`);
         } catch (_) {}
       }
+      wasmDone = true;
     };
 
-    const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 1000));
+    const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 5000));
     await Promise.race([dropTask(), timeoutPromise]);
-  } catch (_) {}
+  } catch (e) {
+    console.warn("WASM drop failed:", cleanFileName, e);
+  }
 
-  return true;
+  return wasmDone;
 }
 
-export async function registerWasmFile(fileName: string, buffer: Uint8Array): Promise<boolean> {
+export async function registerWasmFile(fileName: string, buffer: Uint8Array): Promise<WasmRegisterResult> {
   const cleanFileName = fileName.split(/[\\\/]/).pop() || fileName;
+  let serverSync: WasmRegisterResult['serverSync'] = 'skipped';
+  let error: string | undefined;
 
   // Store in memory map with buffer immediately
   registeredVfsFiles.set(cleanFileName, { buffer, size: buffer.byteLength, loadedAt: new Date() });
@@ -561,13 +540,20 @@ export async function registerWasmFile(fileName: string, buffer: Uint8Array): Pr
       });
       if (!res.ok) {
         console.warn("Server VFS sync failed status:", res.status);
+        serverSync = 'failed';
+        error = `server VFS: HTTP ${res.status}`;
+      } else {
+        serverSync = 'ok';
       }
     } catch (e) {
       console.warn("Server VFS sync failed:", e);
+      serverSync = 'failed';
+      error = `server VFS: ${e instanceof Error ? e.message : String(e)}`;
     }
   }
 
   // Attempt WASM worker registration with generous timeout
+  let registered = false;
   try {
     const registerTask = async () => {
       const db = await getDuckDbWasm();
@@ -576,6 +562,7 @@ export async function registerWasmFile(fileName: string, buffer: Uint8Array): Pr
       } catch (_) {}
       await db.registerFileBuffer(cleanFileName, buffer);
       wasmRegisteredSet.add(cleanFileName);
+      registered = true;
       // Free buffer reference from JS memory once registered in WASM VFS
       const entry = registeredVfsFiles.get(cleanFileName);
       if (entry) {
@@ -588,10 +575,12 @@ export async function registerWasmFile(fileName: string, buffer: Uint8Array): Pr
     );
     await Promise.race([registerTask(), timeoutPromise]);
   } catch (e) {
+    // Буфер остаётся в реестре: ensureWasmFilesRegistered зарегистрирует файл перед ближайшим запросом.
     console.warn("WASM worker registration postponed to query time:", cleanFileName, e);
+    error = e instanceof Error ? e.message : String(e);
   }
 
-  return true;
+  return { status: registered ? 'registered' : 'postponed', serverSync, ...(error ? { error } : {}) };
 }
 
 export async function disconnectDuckDbWasm() {

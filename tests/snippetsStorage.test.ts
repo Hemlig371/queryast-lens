@@ -119,5 +119,43 @@ describe('snippetsStorage (IndexedDB storage)', () => {
       expect(res.baseName).toBe('snippet_abcdef');
       expect(res.fileName).toBe('snippet_abcdef.py');
     });
+
+    // Характеризующие: расширение берётся по последней точке (так задумано, п. 1.7 это не меняет)
+    it('takes the extension after the last dot', () => {
+      const v = getSnippetExportFilename('v1.2', 'snip123');
+      expect(v.baseName).toBe('v1');
+      expect(v.extension).toBe('2');
+      expect(v.fileName).toBe('v1.2');
+
+      const q = getSnippetExportFilename('My.Query.Final', 'snip123');
+      expect(q.baseName).toBe('MyQuery');
+      expect(q.extension).toBe('final');
+      expect(q.fileName).toBe('MyQuery.final');
+    });
+
+    it('keeps other Cyrillic letters and drops punctuation', () => {
+      const res = getSnippetExportFilename('Отчет по объему!', 'snip123');
+      expect(res.fileName).toBe('Отчет_по_объему.sql');
+    });
+
+    // Новое поведение (п. 1.7): буква «ё» не вырезается
+    it('keeps the letter ё in the file name', () => {
+      const res = getSnippetExportFilename('Отчёт по объёму', 'snip123');
+      expect(res.baseName).toBe('Отчёт_по_объёму');
+      expect(res.extension).toBe('sql');
+      expect(res.fileName).toBe('Отчёт_по_объёму.sql');
+    });
+
+    it('keeps the capital letter Ё', () => {
+      const res = getSnippetExportFilename('Ёлка', 'snip123');
+      expect(res.fileName).toBe('Ёлка.sql');
+    });
+
+    it('keeps ё together with an explicit extension', () => {
+      const res = getSnippetExportFilename('ёж.md', 'snip123');
+      expect(res.baseName).toBe('ёж');
+      expect(res.extension).toBe('md');
+      expect(res.fileName).toBe('ёж.md');
+    });
   });
 });

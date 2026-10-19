@@ -1,6 +1,7 @@
 import { t } from '../utils/i18n';
 import React, { useState, useEffect } from 'react';
-import { Key, Lock, Unlock, Shield, Eye, EyeOff, Plus, Trash2, Check, Copy, AlertCircle, AlertTriangle, RotateCcw } from 'lucide-react';
+import { Key, Lock, Unlock, Shield, Eye, EyeOff, Plus, Trash2, Check, Copy, AlertCircle, AlertTriangle, RotateCcw, X } from 'lucide-react';
+import { copyToClipboard } from '../utils/exportUtils';
 import {
   isVaultConfigured,
   isVaultUnlocked,
@@ -34,6 +35,7 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
 
   const [showValues, setShowValues] = useState<Record<string, boolean>>({});
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [copyFailedKey, setCopyFailedKey] = useState<string | null>(null);
 
   // Change PIN state
   const [isChangingPin, setIsChangingPin] = useState(false);
@@ -47,11 +49,16 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
 
   // ClickHouse URI format copy state
   const [copiedFormat, setCopiedFormat] = useState(false);
+  const [copyFormatFailed, setCopyFormatFailed] = useState(false);
 
-  const handleCopyUriFormat = () => {
-    navigator.clipboard.writeText('https://login:password@host:8443/database');
-    setCopiedFormat(true);
-    setTimeout(() => setCopiedFormat(false), 1500);
+  const handleCopyUriFormat = async () => {
+    if (await copyToClipboard('https://login:password@host:8443/database')) {
+      setCopiedFormat(true);
+      setTimeout(() => setCopiedFormat(false), 1500);
+    } else {
+      setCopyFormatFailed(true);
+      setTimeout(() => setCopyFormatFailed(false), 1500);
+    }
   };
 
   const refreshState = async () => {
@@ -181,10 +188,14 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
     }
   };
 
-  const handleCopyValue = (name: string, value: string) => {
-    navigator.clipboard.writeText(value);
-    setCopiedKey(name);
-    setTimeout(() => setCopiedKey(null), 1500);
+  const handleCopyValue = async (name: string, value: string) => {
+    if (await copyToClipboard(value)) {
+      setCopiedKey(name);
+      setTimeout(() => setCopiedKey(null), 1500);
+    } else {
+      setCopyFailedKey(name);
+      setTimeout(() => setCopyFailedKey(null), 1500);
+    }
   };
 
   const handleChangePin = async (e?: React.FormEvent) => {
@@ -467,6 +478,8 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
                 <span>https://login:password@host:8443/database</span>
                 {copiedFormat ? (
                   <Check className="w-3 h-3 text-emerald-500" />
+                ) : copyFormatFailed ? (
+                  <X className="w-3 h-3 text-red-500" />
                 ) : (
                   <Copy className="w-3 h-3 opacity-60 hover:opacity-100" />
                 )}
@@ -533,6 +546,8 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
                         >
                           {copiedKey === sec.name ? (
                             <Check className="w-3.5 h-3.5 text-emerald-500" />
+                          ) : copyFailedKey === sec.name ? (
+                            <X className="w-3.5 h-3.5 text-red-500" />
                           ) : (
                             <Copy className="w-3.5 h-3.5" />
                           )}

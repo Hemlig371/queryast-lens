@@ -2,6 +2,7 @@ import { t } from '../utils/i18n';
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Upload, Trash2, HardDrive, FileText, Database, Check, AlertCircle, RefreshCw, Loader2 } from 'lucide-react';
 import { registerWasmFile, dropWasmFile, getRegisteredWasmFiles } from '../lib/duckdbWasm';
+import { describeRegisterResult } from '../utils/wasmFiles';
 
 interface WasmFileManagerModalProps {
   isOpen: boolean;
@@ -32,7 +33,7 @@ export function WasmFileManagerModal({
 }: WasmFileManagerModalProps) {
   const [files, setFiles] = useState<VfsFileItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [message, setMessage] = useState<{ type: 'success' | 'warning' | 'error'; text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const loadFileList = async () => {
@@ -63,22 +64,38 @@ export function WasmFileManagerModal({
     setIsLoading(true);
     setMessage(null);
 
-    let successCount = 0;
+    // Статус честный по каждому файлу (WM-01): «успешно» — только если файл зарегистрирован; отложенная регистрация и сбои — отдельно.
+    let okCount = 0;
+    let postponedCount = 0;
+    const failed: string[] = [];
+    const reasons: string[] = [];
     try {
       for (let i = 0; i < selectedFiles.length; i++) {
         const file = selectedFiles[i];
-        const buffer = new Uint8Array(await file.arrayBuffer());
-        const ok = await registerWasmFile(file.name, buffer);
-        if (ok) successCount++;
+        try {
+          const buffer = new Uint8Array(await file.arrayBuffer());
+          const outcome = describeRegisterResult(await registerWasmFile(file.name, buffer));
+          if (outcome.cause === 'postponed') postponedCount++;
+          else okCount++;
+          if (outcome.details) reasons.push(`${file.name}: ${outcome.details}`);
+        } catch (err: any) {
+          failed.push(file.name);
+          reasons.push(`${file.name}: ${err?.message || String(err)}`);
+        }
       }
 
       await loadFileList();
+      const parts: string[] = [];
+      if (okCount > 0) parts.push(`${t('Загружено и подключено файлов: ')}${okCount}`);
+      if (postponedCount > 0) parts.push(`${t('Загружено, подключение отложено до запроса: ')}${postponedCount}`);
+      if (failed.length > 0) parts.push(`${t('Не загружено: ')}${failed.join(', ')}`);
+      if (reasons.length > 0) parts.push(`${t('Причина: ')}${reasons.join('; ')}`);
       setMessage({
-        type: 'success',
-        text: `${t('Успешно загружено файлов в WASM VFS: ')}${successCount}`,
+        type: failed.length > 0 ? 'error' : postponedCount > 0 || reasons.length > 0 ? 'warning' : 'success',
+        text: parts.join('. '),
       });
 
-      if (onSchemaRefresh) {
+      if (onSchemaRefresh && okCount + postponedCount > 0) {
         onSchemaRefresh();
       }
     } catch (err: any) {
@@ -168,12 +185,16 @@ export function WasmFileManagerModal({
                 ? theme === 'dark'
                   ? 'bg-emerald-950/50 border-emerald-800/50 text-emerald-300'
                   : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                : message.type === 'warning'
+                ? theme === 'dark'
+                  ? 'bg-amber-950/50 border-amber-800/50 text-amber-300'
+                  : 'bg-amber-50 border-amber-200 text-amber-800'
                 : theme === 'dark'
                 ? 'bg-rose-950/50 border-rose-800/50 text-rose-300'
                 : 'bg-rose-50 border-rose-200 text-rose-800'
             }`}
           >
-            {message.type === 'success' ? <Check className="w-4 h-4 shrink-0 text-emerald-500" /> : <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />}
+            {message.type === 'success' ? <Check className="w-4 h-4 shrink-0 text-emerald-500" /> : <AlertCircle className={`w-4 h-4 shrink-0 ${message.type === 'warning' ? 'text-amber-500' : 'text-rose-500'}`} />}
             <span>{message.text}</span>
           </div>
         )}

@@ -1,4 +1,5 @@
 import { t } from './i18n';
+import { formatCellValue } from './formatCellValue';
 
 // Статистика по колонке результата (Count/Distinct/Null, для числовых — Sum/Min/Max/Avg/Median).
 // Вынесено из App.tsx (этап A2) без изменения логики.
@@ -15,7 +16,7 @@ export function computeColumnStats(colKey: string, rows: any[]): string {
     if (val === null || val === undefined || val === '') {
       nullOrEmptyCount++;
     } else {
-      uniqueValues.add(String(val));
+      uniqueValues.add(formatCellValue(val));
       if (typeof val === 'number' && !isNaN(val)) {
         numericValues.push(val);
       } else if (typeof val === 'string' && val.trim() !== '') {

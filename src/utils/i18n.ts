@@ -12,6 +12,13 @@ function getInitialLang(): string {
 
 export const currentLang = getInitialLang();
 
+// Локаль для toLocaleString по языку интерфейса: 'en' -> en-US, иначе ru-RU
+export function localeForLang(lang: string): string {
+  return lang === 'en' ? 'en-US' : 'ru-RU';
+}
+
+export const currentLocale = localeForLang(currentLang);
+
 export const EN_DICT: Record<string, string> = {
   " для построения логического графа.": " to build logical graph.",
   " дн назад": " d ago",
@@ -261,6 +268,15 @@ export const EN_DICT: Record<string, string> = {
   "Модификатор клавиш для быстрого перехода на вкладки от 1 до 9": "Key modifier for quick switching to tabs 1 through 9",
   "Нажмите или перетащите для вставки": "Click or drag to insert",
   "Нажмите клавиши...": "Press keys...",
+  "Сочетание уже занято:": "This combination is already used by:",
+  "Не удалось экспортировать граф:": "Failed to export graph:",
+  "Переменная не найдена:": "Variable not found:",
+  "Файл слишком большой:": "File is too large:",
+  "максимум": "maximum",
+  "МБ": "MB",
+  "Не удалось прочитать файл:": "Failed to read file:",
+  "Корзина": "Trash",
+  "Файл не является пакетом настроек QueryAST Lens. Настройки не изменены.": "The file is not a QueryAST Lens settings bundle. Settings were not changed.",
   "Нажмите повторно для переключения между статистикой по категориям и по столбцам": "Click again to toggle between category and column statistics",
   "Нажмите повторно для переключения ориентации (вертикальная / горизонтальная)": "Click again to toggle orientation (vertical / horizontal)",
   "Нажмите, чтобы развернуть и скопировать название": "Click to expand and copy name",
@@ -294,6 +310,7 @@ export const EN_DICT: Record<string, string> = {
   "Обновить по БД": "Refresh from DB",
   "Обновить список файлов VFS": "Refresh VFS file list",
   "Обновить схему (Ctrl+R)": "Refresh schema (Ctrl+R)",
+  "Обновить схему": "Refresh schema",
   "Обновить схему базы данных": "Refresh database schema",
   "Обновлено": "Updated",
   "Обновлять дерево схемы при изменении структуры БД (не применяется последовательно и параллельно)": "Update schema tree on DB structure changes (does not run sequentially or in parallel)",
@@ -340,6 +357,19 @@ export const EN_DICT: Record<string, string> = {
   "Ошибка выполнения SQL запроса": "SQL query execution error",
   "Ошибка выполнения запроса": "Query execution error",
   "Ошибка отображения графа": "Graph Display Error",
+  "Подзапрос": "Subquery",
+  "Псевдоним": "Alias",
+  "Источники:": "Sources:",
+  "Колонки / Поля вставки:": "Columns / Insert fields:",
+  "Только константные выражения": "Constant Expressions Only",
+  "Нет столбцов в результате": "No columns projected",
+  "Выполнение сложного запроса": "Complex query execution",
+  "Развернуть детали": "Expand Details",
+  "Свернуть": "Collapse",
+  "Блок запроса": "Query block",
+  "Ошибка отображения": "Display Error",
+  "Произошла ошибка при отображении этого модуля.": "An error occurred while displaying this module.",
+  "Перезапустить модуль": "Restart module",
   "Ошибка подключения к DB: ": "Database connection error: ",
   "Ошибка подключения к DuckDB: ": "DuckDB connection error: ",
   "Ошибка при загрузке файла: ": "Error uploading file: ",
@@ -481,6 +511,7 @@ export const EN_DICT: Record<string, string> = {
   "Скопировать график как PNG с прозрачным фоном": "Copy chart as transparent PNG",
   "Скопировать значение": "Copy value",
   "Скопировать результаты (TSV)": "Copy results (TSV)",
+  "Скопировать как Markdown": "Copy as Markdown",
   "Скопировать таблицу как картинку": "Copy table as image",
   "Скопировать текст запроса": "Copy query text",
   "Скрывает кнопки Graph и Editor": "Hides Graph and Editor toggle buttons",
@@ -564,6 +595,10 @@ export const EN_DICT: Record<string, string> = {
   "Управление файлами в оперативной памяти мобильного движка DuckDB": "Manage files in DuckDB mobile in-memory engine",
   "Управляет порогом переноса строк (Expression Width). Повысьте значение, чтобы список столбцов  оставался в одну компактную строку.": "Controls Expression Width line-wrap threshold. Increase value to keep  columns on a single line.",
   "Успешно загружено файлов в WASM VFS: ": "Successfully uploaded files to WASM VFS: ",
+  "Загружено и подключено файлов: ": "Uploaded and registered files: ",
+  "Загружено, подключение отложено до запроса: ": "Uploaded, registration postponed until the next query: ",
+  "Не загружено: ": "Not uploaded: ",
+  "Причина: ": "Reason: ",
   "Успешно импортировано рабочее пространство! Страница перезагружается...": "Workspace successfully imported! Reloading page...",
   "Установить ПИН-код": "Set PIN code",
   "Учитывать регистр (включено)": "Match case (enabled)",

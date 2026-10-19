@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { t, currentLang } from '../utils/i18n';
-import { RotateCcw, FileSpreadsheet, Palette, Columns, Calculator, Printer, Save, Trash2, Bookmark, Copy, Check } from 'lucide-react';
+import { RotateCcw, FileSpreadsheet, Palette, Columns, Calculator, Printer, Save, Trash2, Bookmark, Copy, Check, X } from 'lucide-react';
+import { copyToClipboard } from '../utils/exportUtils';
 import { ExcelSettings, ExcelPreset } from '../types/excelSettings';
 import {
   CLASSIC_PRESET_ID,
@@ -27,15 +28,20 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
   const [presetNameInput, setPresetNameInput] = useState<string>('');
   const [savedFeedback, setSavedFeedback] = useState<boolean>(false);
   const [copiedTemplate, setCopiedTemplate] = useState<boolean>(false);
+  const [copyTemplateFailed, setCopyTemplateFailed] = useState<boolean>(false);
 
   const sampleSqlComment = currentLang === 'en'
     ? '/* #Title ##Subtitle @preset:PresetName @file:FileName @sheet:SheetName @totals:SUM @split:No/Name @group:No/Name @group_cols:No @group_hide:true @skip:No/Name @hide:No/Name @protect:12345 @excel_save:Path */'
     : '/* #Заголовок ##Подзаголовок @preset:ИмяПресета @file:ИмяФайла @sheet:ИмяЛиста @totals:SUM @split:№/Имя @group:№/Имя @group_cols:№ @group_hide:true @skip:№/Имя @hide:№/Имя @protect:12345 @excel_save:Путь */';
 
-  const handleCopySqlCommentTemplate = () => {
-    navigator.clipboard.writeText(sampleSqlComment);
-    setCopiedTemplate(true);
-    setTimeout(() => setCopiedTemplate(false), 2000);
+  const handleCopySqlCommentTemplate = async () => {
+    if (await copyToClipboard(sampleSqlComment)) {
+      setCopiedTemplate(true);
+      setTimeout(() => setCopiedTemplate(false), 2000);
+    } else {
+      setCopyTemplateFailed(true);
+      setTimeout(() => setCopyTemplateFailed(false), 2000);
+    }
   };
 
   // Sync preset name input when selection changes
@@ -1726,6 +1732,10 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
               {copiedTemplate ? (
                 <>
                   <Check className="w-3 h-3 text-white" />
+                </>
+              ) : copyTemplateFailed ? (
+                <>
+                  <X className="w-3 h-3 text-red-500" />
                 </>
               ) : (
                 <>
