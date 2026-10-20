@@ -67,13 +67,14 @@ export function isJsonResponseExpected(sql: string): boolean {
   return (getFormatClause(sql) || '').toUpperCase() === 'JSON';
 }
 
-/** Формат файла для COPY по расширению пути (неизвестное расширение — Parquet, как и раньше). */
+/** Формат файла для COPY по расширению пути (неизвестное расширение — CSV). */
 export function copyFormatForPath(filePath: string): string {
   const ext = (filePath.split(/[\\/]/).pop() || '').split('.').pop()?.toLowerCase();
   if (ext === 'csv') return 'CSVWithNames';
   if (ext === 'tsv' || ext === 'tab') return 'TSVWithNames';
   if (ext === 'json') return 'JSONEachRow';
-  return 'Parquet';
+  if (ext === 'parquet') return 'Parquet';
+  return 'CSVWithNames';
 }
 
 /** Дописывает формат по расширению файла с новой строки (хвостовой `--` комментарий его не съедает), если формат не задан. */

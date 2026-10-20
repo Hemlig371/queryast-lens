@@ -1,3 +1,4 @@
+import { MAX_RESULT_ROWS, rowLimitMessage } from '../utils/rowLimit';
 import { normalizeWasmTable } from '../utils/wasmResult';
 import { isSystemVfsFile, detectCopyTarget, type WasmRegisterResult } from '../utils/wasmFiles';
 
@@ -319,10 +320,11 @@ export async function queryDuckDbWasm(sqlQuery: string) {
     }
   }
 
-  // Не более 500 000 строк без материализации всей таблицы (WS-05); значения приводятся к виду Tauri (п. 3.14, WS-04):
+  // Больше 500 000 строк — ошибка, таблица не материализуется (WS-05); значения приводятся к виду Tauri (п. 3.14, WS-04):
   // даты и время — строками, DECIMAL/BIGINT — строками, INTERVAL, BLOB, вложенные значения — как в execute_query.
   // Имена столбцов делаются уникальными, порядок хранится отдельно (п. 3.2).
-  const normalized = normalizeWasmTable(result as any, 500000);
+  if (((result as any)?.numRows ?? 0) > MAX_RESULT_ROWS) throw new Error(rowLimitMessage());
+  const normalized = normalizeWasmTable(result as any, MAX_RESULT_ROWS);
   const resultRows: any = normalized.rows;
   resultRows.__columnTypes = normalized.columnTypes;
   resultRows.__columns = normalized.columns;

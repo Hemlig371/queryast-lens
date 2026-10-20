@@ -56,7 +56,7 @@ Consequences:
 
 * Algorithms: PBKDF2-SHA256 (100,000 iterations) derives the key from the PIN; encryption is AES-256-GCM (Web Crypto API). A random salt (16 bytes) and initialization vector (12 bytes) are generated for each entry. The key is not exportable.
 * PIN: digits only, at least 4. Without the PIN the data cannot be decrypted and **the PIN cannot be recovered** (you can only reset the Vault together with its secrets).
-* Unlocking: after the PIN is entered, decrypted secrets are kept in memory for 8 hours, then the Vault locks. There is no setting for the duration and no inactivity timer. Closing the application also locks the Vault. You can lock it manually with the button in the Vault section.
+* Unlocking: after the PIN is entered, decrypted secrets are kept in memory for 12 hours, then the Vault locks. There is no setting for the duration and no inactivity timer. Closing the application also locks the Vault. You can lock it manually with the button in the Vault section.
 * Usage: `{{NAME}}` in SQL is replaced with the value right before execution; the tab, version history and snippets keep the `{{NAME}}` text. Allowed name characters: Latin letters, digits, `_`, `-`. Secrets with the `ch_` prefix are ClickHouse connection strings; they are offered as a list in the connection form.
 * If the SQL contains `{{` while the Vault is locked (or not set up), the query is not executed — even if the query contains no secrets.
 
@@ -74,7 +74,7 @@ Consequences:
 
 ## 5. Desktop permissions (Tauri)
 
-`src-tauri/tauri.conf.json` grants the window broad permissions: `allowlist.all`, file read/write across the whole disk (`fs` scope `$HOME/**`, `/**`, `C:/**`…`F:/**`), HTTP to any address, and no content security policy (`csp`). The Rust commands `read_text_file` and `write_text_file` accept any path. Narrowing these permissions and enabling CSP are not currently done. In practice, code running in the interface has access to the user's files, so the interface is protected at the content level: Markdown and graph labels are sanitized with DOMPurify, SQL highlighting escapes text, and raw HTML is not executed.
+`src-tauri/tauri.conf.json` grants the window broad permissions: `allowlist.all`, file read/write across the whole disk (`fs` scope `$HOME/**`, `/**`, `C:/**`…`F:/**`), HTTP to any address, and no content security policy (`csp`). The Rust commands `read_text_file` and `write_text_file` accept any path. The `list_dir` command returns the contents of any folder (for the file tree), and `open_path` launches in an external app only files whose extensions are on an allowlist (Office, PDF). Narrowing these permissions and enabling CSP are not currently done. In practice, code running in the interface has access to the user's files, so the interface is protected at the content level: Markdown and graph labels are sanitized with DOMPurify, SQL highlighting escapes text, and raw HTML is not executed.
 
 ## 6. Recommendations
 

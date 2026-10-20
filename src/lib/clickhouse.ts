@@ -1,3 +1,4 @@
+import { MAX_RESULT_ROWS, rowLimitMessage } from '../utils/rowLimit';
 import { appendCopyFormat, isJsonResponseExpected, stripTrailingNoise } from '../utils/clickhouseFormat';
 
 export interface ClickhouseConfig {
@@ -104,19 +105,22 @@ export function getClickhouseHeaders(config: ClickhouseConfig, contentType: stri
   return headers;
 }
 
+class RowLimitError extends Error {}
+
 /**
  * Разбирает ответ ClickHouse. Если запрос должен был вернуть JSON (SELECT … FORMAT JSON), а пришло другое
  * (страница сайта, TSV), это ошибка. Для остальных запросов (INSERT, DDL, свой FORMAT) текст — нормальный ответ.
  */
-export function parseClickhouseResponse(responseText: string, query: string, maxRows: number = 500000): { success: true; data?: any; meta?: any; text?: string } {
+export function parseClickhouseResponse(responseText: string, query: string, maxRows: number = MAX_RESULT_ROWS): { success: true; data?: any; meta?: any; text?: string } {
   try {
     const parsed = JSON.parse(responseText);
     let data = parsed.data || parsed;
     if (Array.isArray(data) && data.length > maxRows) {
-      data = data.slice(0, maxRows);
+      throw new RowLimitError(rowLimitMessage());
     }
     return { success: true, data, meta: parsed.meta };
-  } catch {
+  } catch (e) {
+    if (e instanceof RowLimitError) throw e;
     if (isJsonResponseExpected(query)) {
       throw new Error(`Ответ ClickHouse не в формате JSON: ${responseText.trim().slice(0, 200)}`);
     }
@@ -145,11 +149,13 @@ export async function executeClickhouseQueryTauri(config: ClickhouseConfig, quer
     });
 
     let responseText = '';
-    if (response.bytes && Array.isArray(response.bytes)) {
-      const uint8Array = new Uint8Array(response.bytes);
-      responseText = new TextDecoder('utf-8').decode(uint8Array);
+    if (typeof response.text === 'string') {
+      responseText = response.text;
+    } else if (response.bytes && Array.isArray(response.bytes)) {
+      // ответ старого формата (массив байтов)
+      responseText = new TextDecoder('utf-8').decode(new Uint8Array(response.bytes));
     } else {
-      responseText = response.text || '';
+      responseText = '';
     }
     
     return parseClickhouseResponse(responseText, query);

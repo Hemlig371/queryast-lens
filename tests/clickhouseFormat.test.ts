@@ -111,7 +111,8 @@ describe('copyFormatForPath / appendCopyFormat', () => {
     expect(copyFormatForPath('/tmp/a.tab')).toBe('TSVWithNames');
     expect(copyFormatForPath('a.json')).toBe('JSONEachRow');
     expect(copyFormatForPath('a.parquet')).toBe('Parquet');
-    expect(copyFormatForPath('a.xlsx')).toBe('Parquet');
+    expect(copyFormatForPath('a.xlsx')).toBe('CSVWithNames');
+    expect(copyFormatForPath('noext')).toBe('CSVWithNames');
   });
   it('FORMAT дописывается с новой строки и убирает ; в конце', () => {
     expect(appendCopyFormat('SELECT 1;', 'x.csv')).toBe('SELECT 1\nFORMAT CSVWithNames');

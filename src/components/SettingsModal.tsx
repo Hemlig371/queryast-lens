@@ -17,6 +17,7 @@ import { ExcelSettingsTab } from './ExcelSettingsTab';
 import { t, changeLanguage, currentLang } from '../utils/i18n';
 
 import { buildComboString, findHotkeyConflict } from '../editor/hotkeysMatch';
+import { MAX_RESULT_ROWS } from '../utils/rowLimit';
 import { DEFAULT_QUICK_ACTIONS, getQuickActionTemplates, type QuickActionTemplate } from '../utils/quickActionTemplates';
 export { DEFAULT_QUICK_ACTIONS, getQuickActionTemplates };
 export type { QuickActionTemplate };
@@ -94,6 +95,8 @@ export interface UiVisibilitySettings {
   autocompleteOnType?: boolean;
   uiScale?: number;
   workspaceSyncPath?: string;
+  /** Корневая папка дерева файлов (машинно-специфичный путь, как workspaceSyncPath). */
+  fileTreeRoot?: string;
 }
 
 export const DEFAULT_FORMATTER_SETTINGS: FormatterSettings = {
@@ -550,6 +553,9 @@ export async function applyWorkspaceBundleSilently(
         if (currentVis.workspaceSyncPath && currentVis.workspaceSyncPath.trim() !== '') {
           existingPreservedSettings.workspaceSyncPath = currentVis.workspaceSyncPath;
         }
+        if (currentVis.fileTreeRoot && currentVis.fileTreeRoot.trim() !== '') {
+          existingPreservedSettings.fileTreeRoot = currentVis.fileTreeRoot;
+        }
         if (currentVis.uiScale !== undefined) {
           existingPreservedSettings.uiScale = currentVis.uiScale;
         }
@@ -664,6 +670,9 @@ export async function importWorkspaceSettings(file: File, onBeforeImport?: () =>
           }
           if (currentVis.workspaceSyncPath) {
             existingDuckDbSettings.workspaceSyncPath = currentVis.workspaceSyncPath;
+          }
+          if (currentVis.fileTreeRoot) {
+            existingDuckDbSettings.fileTreeRoot = currentVis.fileTreeRoot;
           }
           if (currentVis.uiScale !== undefined) {
             existingDuckDbSettings.uiScale = currentVis.uiScale;
@@ -953,7 +962,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const updateDuckDbMaxRows = (val: number) => {
-    const updated = { ...uiVisibility, duckDbMaxRows: val };
+    const updated = { ...uiVisibility, duckDbMaxRows: Math.min(val, MAX_RESULT_ROWS) };
     onUpdateUiVisibility(updated);
     localStorage.setItem(UI_VISIBILITY_STORAGE_KEY, JSON.stringify(updated));
   };
@@ -965,7 +974,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const updateClickhouseMaxRows = (val: number) => {
-    const updated = { ...uiVisibility, clickhouseMaxRows: val };
+    const updated = { ...uiVisibility, clickhouseMaxRows: Math.min(val, MAX_RESULT_ROWS) };
     onUpdateUiVisibility(updated);
     localStorage.setItem(UI_VISIBILITY_STORAGE_KEY, JSON.stringify(updated));
   };
@@ -978,6 +987,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const updateWorkspaceSyncPath = (val: string) => {
     const updated = { ...uiVisibility, workspaceSyncPath: val };
+    onUpdateUiVisibility(updated);
+    localStorage.setItem(UI_VISIBILITY_STORAGE_KEY, JSON.stringify(updated));
+  };
+
+  const updateFileTreeRoot = (val: string) => {
+    const updated = { ...uiVisibility, fileTreeRoot: val };
     onUpdateUiVisibility(updated);
     localStorage.setItem(UI_VISIBILITY_STORAGE_KEY, JSON.stringify(updated));
   };
@@ -1162,6 +1177,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                   <input 
                                     type="number" 
                                     min="1" 
+                                    max={MAX_RESULT_ROWS}
                                     step="10"
                                     value={uiVisibility.duckDbMaxRows ?? 100} 
                                     onChange={e => {
@@ -1247,6 +1263,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 <input 
                                   type="number" 
                                   min="1" 
+                                  max={MAX_RESULT_ROWS}
                                   step="10"
                                   value={uiVisibility.clickhouseMaxRows ?? 100} 
                                   onChange={e => {
@@ -1544,6 +1561,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               {/* SECRETS VAULT SECTION */}
               <VaultSettingsSection theme={theme} />
 
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
               {/* WORKSPACE SYNCHRONIZATION SETTING */}
               <div
                 className={`p-4 rounded-xl border space-y-3.5 ${
@@ -1568,6 +1586,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     }`}
                   />
                 </div>
+              </div>
+
+              {/* FILE TREE ROOT SETTING */}
+              <div
+                className={`p-4 rounded-xl border space-y-3.5 ${
+                  theme === 'dark' ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'
+                }`}
+              >
+                <h4 className={`font-bold text-xs ${theme === 'dark' ? 'text-slate-200' : 'text-slate-900'}`}>
+                  {t('Корневая папка дерева файлов')}
+                </h4>
+                <input
+                  type="text"
+                  value={uiVisibility.fileTreeRoot || ''}
+                  onChange={(e) => updateFileTreeRoot(e.target.value)}
+                  placeholder={t('Пусто: папка открытой БД, затем домашняя папка')}
+                  className={`w-full px-3 py-1.5 rounded-lg border text-xs outline-none ${
+                    theme === 'dark'
+                      ? 'bg-slate-900 border-slate-700 text-slate-200 focus:border-blue-500'
+                      : 'bg-white border-slate-300 text-slate-800 focus:border-blue-500'
+                  }`}
+                />
+              </div>
               </div>
             </div>
           ) : activeTab === 'formatter' ? (

@@ -17,6 +17,8 @@ export interface SavedSession {
   schemaSearchTerm?: string;
   expandedSchemaNodes?: Record<string, boolean>;
   showDuckDbSchemaPanel?: boolean;
+  /** Секция «Файлы» в панели схемы; в старых сессиях поля нет — тогда 'split'. */
+  filesSectionMode?: 'split' | 'collapsed' | 'max';
   clickhouseConfig?: ClickhouseConfig | null;
   activeEngine?: 'duckdb' | 'clickhouse' | null;
 }

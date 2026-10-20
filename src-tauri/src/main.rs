@@ -4,6 +4,7 @@
 )]
 
 mod chcancel;
+mod fstree;
 mod sqlscript;
 mod timefmt;
 mod valjson;
@@ -16,6 +17,7 @@ use serde_json::{json, Value as JsonValue};
 use tauri::{State, Manager};
 use reqwest::Client;
 use tokio::fs::File;
+use fstree::{list_dir, open_path};
 use tokio::io::AsyncWriteExt;
 use futures_util::StreamExt;
 
@@ -52,8 +54,9 @@ async fn wait_cancel(rx: tokio::sync::oneshot::Receiver<()>) {
 /// на сборке Tauri; при `false` поведение точно прежнее. Подробности — CHANGES-stage-3.md, п. 3.10.
 /// RS-01: многооператорный скрипт — выполнить операторы по очереди, результат последнего вернуть (раньше: execute_batch, результат пуст).
 const SPLIT_MULTI_STATEMENT_SCRIPTS: bool = false;
-/// B-13: ошибка чтения посреди выборки (в том числе отмена) — вернуть ошибку, а не «успешный» усечённый результат.
-const FAIL_ON_MIDSTREAM_ERROR: bool = false;
+/// Предел строк результата: больше — ошибка, а не молча усечённый результат (то же значение в `src/utils/rowLimit.ts`).
+const MAX_UI_ROWS: usize = 500_000;
+const ROW_LIMIT_ERROR: &str = "Результат больше 500 000 строк. Добавьте LIMIT или сохраните результат в файл через COPY.";
 
 #[derive(Serialize, Deserialize)]
 pub struct QueryResult {
@@ -263,22 +266,17 @@ async fn execute_query(
                 (0, Vec::new(), Vec::new())
             };
 
-            const MAX_UI_ROWS: usize = 500_000;
             let mut rows = Vec::new();
 
             loop {
                 let row = match rows_iter.next() {
                     Ok(Some(row)) => row,
                     Ok(None) => break,
-                    Err(e) => {
-                        if FAIL_ON_MIDSTREAM_ERROR {
-                            return Err(e.to_string());
-                        }
-                        break;
-                    }
+                    // Ошибка чтения посреди выборки (в том числе отмена) — ошибка, а не «успешный» неполный результат (B-13)
+                    Err(e) => return Err(e.to_string()),
                 };
                 if rows.len() >= MAX_UI_ROWS {
-                    break;
+                    return Err(ROW_LIMIT_ERROR.to_string());
                 }
                 let mut row_vals = Vec::with_capacity(col_count);
                 for col_idx in 0..col_count {
@@ -433,7 +431,11 @@ async fn clickhouse_copy_to(
     }
     let req = req.body(body);
 
-    let res = req.send().await.map_err(|e| e.to_string())?;
+    // Отмена работает и пока ждём заголовки ответа, а не только во время записи файла
+    let res = tokio::select! {
+        r = req.send() => r.map_err(|e| e.to_string())?,
+        _ = &mut cancelled => return Err(CANCELLED_BY_USER.to_string()),
+    };
 
     if !res.status().is_success() {
         let text = res.text().await.unwrap_or_default();
@@ -539,7 +541,7 @@ async fn clickhouse_copy_from(
 #[derive(Serialize)]
 pub struct ClickhouseQueryResponse {
     pub success: bool,
-    pub bytes: Option<Vec<u8>>,
+    pub text: Option<String>,
 }
 
 #[tauri::command]
@@ -595,7 +597,11 @@ async fn execute_clickhouse_query_rust(
         }
     }
     
-    let text = String::from_utf8_lossy(&body_bytes).to_string();
+    // Без второй копии ответа: байты переходят в строку; lossy-разбор только если в ответе невалидный UTF-8
+    let text = match String::from_utf8(body_bytes) {
+        Ok(s) => s,
+        Err(e) => String::from_utf8_lossy(e.as_bytes()).into_owned(),
+    };
     
     if !status.is_success() {
         return Err(text);
@@ -603,7 +609,7 @@ async fn execute_clickhouse_query_rust(
     
     Ok(ClickhouseQueryResponse {
         success: true,
-        bytes: Some(body_bytes),
+        text: Some(text),
     })
 }
 
@@ -641,7 +647,9 @@ fn main() {
       clickhouse_copy_to,
       clickhouse_copy_from,
       execute_clickhouse_query_rust,
-      cancel_clickhouse_query
+      cancel_clickhouse_query,
+      list_dir,
+      open_path
     ])
     .build(tauri::generate_context!())
     .expect("error while building tauri application")

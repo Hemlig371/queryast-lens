@@ -64,7 +64,7 @@ Cross-platform SQL Query Workbench and analytical database client (DuckDB, Click
 
 #### 🛠️ Productivity, i18n & Security Vault
 * **Snippets & Quick Actions**: Manage reusable SQL snippets with natural string sorting and clipboard copying. ZIP exports group snippets into virtual folders. Multi-statement pipeline execution via `-- @job` directive.
-* **Encrypted Vault (AES-256 GCM)**: Client-side connection secret encryption using Web Crypto API with PIN-code protection; the vault stays unlocked for 8 hours after the PIN is entered. Supports dynamic macro substitution (`{{SECRET_NAME}}`) directly inside queries.
+* **Encrypted Vault (AES-256 GCM)**: Client-side connection secret encryption using Web Crypto API with PIN-code protection; the vault stays unlocked for 12 hours after the PIN is entered. Supports dynamic macro substitution (`{{SECRET_NAME}}`) directly inside queries.
 * **WASM VFS File Manager**: Visual GUI modal for DuckDB WebAssembly to drag-and-drop, inspect, delete, and upload `.parquet`, `.csv`, `.json`, and `.duckdb` files.
 * **Workspace Synchronization**: Automatic background import/export of workspace sessions and tabs via a shared directory or cloud storage path (Dropbox, local NAS) in Desktop mode.
 * **Version History & Schema Cache**: Automatic query snapshot tracking and IndexedDB schema caching with automated stale record cleanup.
@@ -151,7 +151,7 @@ rm -f squashfs-root/usr/lib/libwayland-*.so*
 
 #### 🛠️ Инструменты продуктивности и хранилище
 * **Библиотека сниппетов и действий (No-code Action Menu)**: Сохранение часто используемых запросов с поддержкой естественной алфавитной сортировки. Экспорт в ZIP распределяет сниппеты по папкам ("Избранное", "Jobs"). Поддержка многокомандных пайплайнов выполнения через директиву `-- @job`.
-* **Защищённый Vault (AES-256 GCM)**: Шифрование параметров подключения и секретов в браузере с защитой пин-кодом; после ввода PIN хранилище остаётся разблокированным 8 часов. Подстановка секретов в SQL-запросы в формате `{{SECRET_NAME}}`.
+* **Защищённый Vault (AES-256 GCM)**: Шифрование параметров подключения и секретов в браузере с защитой пин-кодом; после ввода PIN хранилище остаётся разблокированным 12 часов. Подстановка секретов в SQL-запросы в формате `{{SECRET_NAME}}`.
 * **Файловый менеджер WASM VFS**: Графический интерфейс для управления виртуальной файловой системой DuckDB WASM (Drag & Drop загрузка, инспекция и удаление `.parquet`, `.csv`, `.json`, `.duckdb`).
 * **Синхронизация рабочего пространства**: Фоновый автоматический обмен сессиями, вкладками и настройками через общий файл/папку (Dropbox, сетевой диск) в десктоп-версии (Tauri).
 * **История версий и кэш**: Автоматическое сохранение снимков запросов и кэширование схем в IndexedDB с процедурами автоочистки устаревших записей.

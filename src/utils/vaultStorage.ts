@@ -4,7 +4,7 @@
  * Features:
  * - PBKDF2 (100,000 iterations, SHA-256) + AES-GCM (256-bit)
  * - Isolated IndexedDB database: 'app_secure_vault_db' (never touched by settings export/import)
- * - 8-hour unlock lifetime in memory
+ * - 12-hour unlock lifetime in memory
  * - ClickHouse URI parser with support for double-escaped separators (@@ -> @, :: -> :)
  * - Zero-overhead SQL secret replacer (exits immediately if no '{{' found)
  */
@@ -26,7 +26,7 @@ const DB_NAME = 'app_secure_vault_db';
 const STORE_NAME = 'vault_meta';
 const DB_VERSION = 1;
 const RECORD_ID = 'root_vault';
-const UNLOCK_DURATION_MS = 8 * 60 * 60 * 1000; // 8 hours
+const UNLOCK_DURATION_MS = 12 * 60 * 60 * 1000; // 12 hours
 
 // In-memory state for unlocked vault
 interface MemoryVaultState {
@@ -176,7 +176,7 @@ export async function isVaultConfigured(): Promise<boolean> {
 }
 
 /**
- * Check if the vault is currently unlocked and within the 8-hour window
+ * Check if the vault is currently unlocked and within the 12-hour window
  */
 export function isVaultUnlocked(): boolean {
   if (!memoryVault) return false;

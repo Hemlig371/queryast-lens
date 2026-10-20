@@ -104,6 +104,7 @@ import { VersionHistoryModal } from './components/VersionHistoryModal';
 import { saveVersion, getVersions, getLatestVersion } from './utils/versionHistory';
 import { formatColumnType, replaceVariablesInSql, buildQuickActionSource, findUnresolvedVariables } from './lib/sqlUtils';
 import { formatSqlText, compactSql } from './utils/sqlFormat';
+import { MAX_RESULT_ROWS } from './utils/rowLimit';
 import { buildPagedSql, splitStatements, type ExecutionMode } from './utils/pagedSql';
 import { rowsFromColumns, getResultColumns, columnsFromMeta } from './utils/resultRows';
 import { resultRowsToTsv } from './utils/resultTsv';
@@ -112,7 +113,10 @@ import { getSavedSession, SESSION_STORAGE_KEY } from './utils/appSession';
 import type { EditorTab } from './types/editorTab';
 import { MermaidActionGroup } from './components/MermaidActionGroup';
 import { getSessionTabs, saveSessionTabs } from './utils/sessionStorage';
-import { connectDuckDbWasmFile, connectDuckDbWasmMemory, queryDuckDbWasm, disconnectDuckDbWasm, applyDuckDbConfigWasm, attachDuckDbWasmFile } from './lib/duckdbWasm';
+import { connectDuckDbWasmFile, connectDuckDbWasmMemory, queryDuckDbWasm, disconnectDuckDbWasm, applyDuckDbConfigWasm, attachDuckDbWasmFile, getRegisteredWasmFiles } from './lib/duckdbWasm';
+import { FileTreePanel } from './components/FileTreePanel';
+import { pickFileTreeRoot, type FilesSectionMode, type FileEntry } from './utils/fileTree';
+import { createTauriProvider, createVfsProvider } from './utils/fileTreeProviders';
 import { WasmFileManagerModal } from './components/WasmFileManagerModal';
 import { ClickhouseModal } from './components/ClickhouseModal';
 import { ClickhouseConfig, parseClickhouseCopy, parseClickhouseResponse, getClickhouseUrl, getClickhouseHeaders, isTauriEnvironment, isCapacitorEnvironment, executeClickhouseQueryTauri, executeClickhouseQueryCapacitor, executeClickhouseCopyToTauri, executeClickhouseCopyToCapacitor, executeClickhouseCopyFromTauri, cancelClickhouseQueryTauri } from './lib/clickhouse';
@@ -196,6 +200,9 @@ export default function App() {
   const [isSchemaZoomed, setIsSchemaZoomed] = useState<boolean>(false);
   const [schemaSearchTerm, setSchemaSearchTerm] = useState<string>(() => savedSession?.schemaSearchTerm || '');
   const [showDuckDbSchemaPanel, setShowDuckDbSchemaPanel] = useState<boolean>(() => savedSession?.showDuckDbSchemaPanel ?? true);
+  // Секция «Файлы» в панели схемы: split — пополам, collapsed — только заголовок, max — на всю панель.
+  const [filesSectionMode, setFilesSectionMode] = useState<FilesSectionMode>(() => savedSession?.filesSectionMode ?? 'split');
+  const [homeDirPath, setHomeDirPath] = useState<string>('');
   const [expandedSchemaNodes, setExpandedSchemaNodes] = useState<Record<string, boolean>>(() => savedSession?.expandedSchemaNodes || {});
 
   // Clickhouse Integration State
@@ -863,9 +870,9 @@ export default function App() {
   const [formatterSettings, setFormatterSettings] = useState<FormatterSettings>(() => getSavedFormatterSettings());
   const [uiVisibility, setUiVisibility] = useState<UiVisibilitySettings>(() => getSavedUiVisibilitySettings());
 
-  const effectiveMaxRows = activeEngine === 'clickhouse'
+  const effectiveMaxRows = Math.min(activeEngine === 'clickhouse'
     ? (uiVisibility.clickhouseMaxRows ?? 100)
-    : (uiVisibility.duckDbMaxRows ?? 100);
+    : (uiVisibility.duckDbMaxRows ?? 100), MAX_RESULT_ROWS);
 
   useEffect(() => {
     const scale = (uiVisibility.uiScale ?? 100) / 100;
@@ -1427,6 +1434,7 @@ export default function App() {
     schemaSearchTerm,
     expandedSchemaNodes,
     showDuckDbSchemaPanel,
+    filesSectionMode,
     clickhouseConfig,
     activeEngine
   });
@@ -1445,6 +1453,7 @@ export default function App() {
       schemaSearchTerm,
       expandedSchemaNodes,
       showDuckDbSchemaPanel,
+      filesSectionMode,
       clickhouseConfig,
       activeEngine
     };
@@ -1461,6 +1470,7 @@ export default function App() {
     schemaSearchTerm,
     expandedSchemaNodes,
     showDuckDbSchemaPanel,
+    filesSectionMode,
     clickhouseConfig,
     activeEngine
   ]);
@@ -1880,6 +1890,44 @@ export default function App() {
     return invoke<T>(cmd, args);
   };
 
+  // Дерево файлов: Tauri — реальная ФС (Rust list_dir), dev и WASM/Android — виртуальная ФС DuckDB-WASM.
+  const fileTreeProvider = useMemo(
+    () => isTauriEnv ? createTauriProvider(tauriInvoke) : createVfsProvider(getRegisteredWasmFiles),
+    [isTauriEnv] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  useEffect(() => {
+    if (!isTauriEnv) return;
+    (async () => {
+      try {
+        const { homeDir } = await import('@tauri-apps/api/path');
+        setHomeDirPath(await homeDir());
+      } catch { /* домашняя папка недоступна — корень останется пустым */ }
+    })();
+  }, [isTauriEnv]);
+  const fileTreeRoot = isTauriEnv
+    ? pickFileTreeRoot({ configured: uiVisibility.fileTreeRoot, dbPath: duckDbConnectedPath, home: homeDirPath })
+    : '';
+
+  // Двойной клик по текстовому файлу: тот же путь, что у «Открыть файл» (дедуп вкладок, лимит размера).
+  const handleOpenTreeFile = async (entry: FileEntry) => {
+    try {
+      const { readBinaryFile } = await import('@tauri-apps/api/fs');
+      const bytes = await readBinaryFile(entry.path);
+      const file = new File([bytes], entry.name, { type: 'text/plain' });
+      Object.defineProperty(file, 'path', { value: entry.path });
+      handleOpenFile({ target: { files: [file], value: '' } } as any);
+    } catch (e) {
+      console.warn('Open file from tree error:', e);
+    }
+  };
+  const handleOpenTreeExternal = async (entry: FileEntry) => {
+    try {
+      await tauriInvoke('open_path', { path: entry.path });
+    } catch (e) {
+      console.warn('open_path error:', e);
+    }
+  };
+
   const duckDbConfig = useMemo(() => ({
     allowUnsignedExtensions: uiVisibility.duckDbAllowUnsignedExtensions ?? false,
     memoryLimit: uiVisibility.duckDbMemoryLimit || '8GB',
@@ -2158,7 +2206,8 @@ export default function App() {
               setTableColumnsMap(cached.tableColumnsMap);
             }
           }
-          const STALE_MS = 3 * 24 * 60 * 60 * 1000;
+          // Кэш схемы считается устаревшим через 5 дней. Для :memory: кэш не читается вовсе (isInMemory выше): схема всегда запрашивается заново.
+          const STALE_MS = 5 * 24 * 60 * 60 * 1000;
           const isStale = (Date.now() - cached.timestamp) > STALE_MS;
           if (isStale) {
             fetchDuckDbSchema(true);
@@ -2380,7 +2429,8 @@ export default function App() {
     const run = runTrackerRef.current.begin(originTabId);
     // устаревший (отменённый) запуск не меняет ни результат вкладки, ни флаг «выполняется»
     const updateRun = (u: Parameters<typeof updateEngineState>[3]) => {
-      if (run.isActive()) updateEngineState(originTabId, queryToExec, page, u, { skipAutoExport: isPagingRun });
+      // тексты ошибок переводятся по точному совпадению (например, ошибка лимита строк из Rust/Express)
+      if (run.isActive()) updateEngineState(originTabId, queryToExec, page, typeof u.error === 'string' ? { ...u, error: t(u.error) } : u, { skipAutoExport: isPagingRun });
     };
     const finishRun = () => {
       const info = run.finish();
@@ -2584,7 +2634,8 @@ export default function App() {
     const run = runTrackerRef.current.begin(originTabId);
     // устаревший (отменённый) запуск не меняет ни результат вкладки, ни флаг «выполняется»
     const updateRun = (u: Parameters<typeof updateEngineState>[3]) => {
-      if (run.isActive()) updateEngineState(originTabId, queryToExec, page, u, { skipAutoExport: isPagingRun });
+      // тексты ошибок переводятся по точному совпадению (например, ошибка лимита строк из Rust/Express)
+      if (run.isActive()) updateEngineState(originTabId, queryToExec, page, typeof u.error === 'string' ? { ...u, error: t(u.error) } : u, { skipAutoExport: isPagingRun });
     };
     const finishRun = () => {
       const info = run.finish();
@@ -5726,6 +5777,19 @@ export default function App() {
                   )}
 
                   </div>
+                  {!duckDbConnectedPath && !clickhouseConfig && !showDuckDbSchemaPanel && (
+                    <button
+                      onClick={() => setShowDuckDbSchemaPanel(true)}
+                      className={`flex items-center justify-center h-[26px] w-[26px] rounded transition-colors ${
+                        theme === 'dark' 
+                          ? 'text-blue-400 hover:bg-blue-950/40 border border-blue-500/30' 
+                          : 'text-blue-600 hover:bg-blue-100 border border-blue-300 shadow-2xs'
+                      }`}
+                      title={t('Схема и файлы')}
+                    >
+                      <Database className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                   {duckDbConnectedPath && (
                     <div className="flex items-center gap-1">
                       {!showDuckDbSchemaPanel && (
@@ -5736,7 +5800,7 @@ export default function App() {
                               ? 'text-blue-400 hover:bg-blue-950/40 border border-blue-500/30' 
                               : 'text-blue-600 hover:bg-blue-100 border border-blue-300 shadow-2xs'
                           }`}
-                          title={t('Показать схему DuckDB')}
+                          title={t('Схема и файлы')}
                         >
                           <Database className="w-3.5 h-3.5" />
                         </button>
@@ -5765,7 +5829,7 @@ export default function App() {
                               ? 'text-blue-400 hover:bg-blue-950/40 border border-blue-500/30' 
                               : 'text-blue-600 hover:bg-blue-100 border border-blue-300 shadow-2xs'
                           }`}
-                          title={t('Показать схему Clickhouse')}
+                          title={t('Схема и файлы')}
                         >
                           <Database className="w-3.5 h-3.5" />
                         </button>
@@ -6020,10 +6084,12 @@ export default function App() {
               </div>
 
               {/* SCHEMA BROWSER */}
-              {showDuckDbSchemaPanel && (duckDbConnectedPath || clickhouseConfig) && (
+              {showDuckDbSchemaPanel && (
                 <div 
-                  className={`${isSchemaZoomed ? 'w-[50vw]' : 'w-[30vw] min-w-[220px]'} flex flex-col shrink-0 border-l ${theme === 'dark' ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-300'}`}
+                  className={`${isSchemaZoomed ? 'w-[50vw]' : 'w-[30vw] min-w-[220px]'} flex flex-col shrink-0 border-l min-h-0 ${theme === 'dark' ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-300'}`}
                 >
+                  {(duckDbConnectedPath || clickhouseConfig) && (
+                  <div className={filesSectionMode === 'max' ? 'hidden' : `flex flex-col min-h-0 ${filesSectionMode === 'collapsed' ? 'flex-1' : 'flex-1 basis-0'}`}>
                   <div className={`px-3 h-[37px] border-b flex items-center justify-between shrink-0 transition-colors ${theme === 'dark' ? 'border-slate-700 bg-slate-800' : 'border-slate-300 bg-slate-100'}`}>
                     <span className={`text-xs font-semibold flex items-center gap-2 text-sm truncate shrink-0 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>
                       <Database className="w-3.5 h-3.5 text-teal-500" />
@@ -6424,6 +6490,21 @@ export default function App() {
                       <span className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>{t('Схема не загружена или пуста')}</span>
                     </div>
                   )}
+                  </div>
+                  )}
+                  <FileTreePanel
+                    theme={theme}
+                    provider={fileTreeProvider}
+                    root={fileTreeRoot}
+                    mode={filesSectionMode}
+                    onModeChange={setFilesSectionMode}
+                    standalone={!(duckDbConnectedPath || clickhouseConfig)}
+                    isZoomed={isSchemaZoomed}
+                    onToggleZoom={() => setIsSchemaZoomed(z => !z)}
+                    onClose={() => setShowDuckDbSchemaPanel(false)}
+                    onOpenInTab={handleOpenTreeFile}
+                    onOpenExternal={handleOpenTreeExternal}
+                  />
                 </div>
               )}
 

@@ -2,6 +2,7 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
+import { MAX_RESULT_ROWS, rowLimitMessage } from "./src/utils/rowLimit";
 import { appendCopyFormat } from "./src/utils/clickhouseFormat";
 import { parseClickhouseResponse } from "./src/lib/clickhouse";
 
@@ -192,8 +193,8 @@ app.post("/api/duckdb/query", (req, res) => {
         }
         
         let dataToReturn = resData;
-        if (Array.isArray(dataToReturn) && dataToReturn.length > 500000) {
-          dataToReturn = dataToReturn.slice(0, 500000);
+        if (Array.isArray(dataToReturn) && dataToReturn.length > MAX_RESULT_ROWS) {
+          return res.status(500).json({ error: rowLimitMessage() });
         }
 
         const responsePayload = {

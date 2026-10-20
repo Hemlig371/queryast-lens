@@ -140,9 +140,10 @@ describe('clickhouse utils', () => {
     it('свой формат пользователя (CSV) — текст, не ошибка', () => {
       expect(parseClickhouseResponse('1,2\n', 'SELECT 1, 2 FORMAT CSV')).toEqual({ success: true, text: '1,2' });
     });
-    it('усечение до maxRows', () => {
+    it('больше maxRows — ошибка, а не усечение', () => {
       const body = JSON.stringify({ data: [1, 2, 3, 4] });
-      expect(parseClickhouseResponse(body, 'SELECT 1 FORMAT JSON', 2).data).toEqual([1, 2]);
+      expect(() => parseClickhouseResponse(body, 'SELECT 1 FORMAT JSON', 2)).toThrow('500');
+      expect(parseClickhouseResponse(body, 'SELECT 1 FORMAT JSON', 4).data).toEqual([1, 2, 3, 4]);
       expect(parseClickhouseResponse(body, 'SELECT 1 FORMAT JSON', Infinity).data).toEqual([1, 2, 3, 4]);
     });
   });

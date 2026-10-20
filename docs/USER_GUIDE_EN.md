@@ -260,7 +260,7 @@ The application includes an encrypted secrets vault (**Encrypted Vault**) using 
    FROM read_parquet('https://my-bucket.s3.amazonaws.com/data.parquet?token={{PROD_TOKEN}}');
    ```
 4. Upon execution, `{{NAME}}` is replaced with the secret value right before the query is sent; the tab text, version history and snippets keep `{{NAME}}`.
-5. After the PIN is entered, the vault stays unlocked for 8 hours and then locks automatically (an inactivity timer and a configurable period are not provided). You can lock it earlier with the "Lock" button in the Vault section. Unlocking only lasts for the current run of the application.
+5. After the PIN is entered, the vault stays unlocked for 12 hours and then locks automatically (an inactivity timer and a configurable period are not provided). You can lock it earlier with the "Lock" button in the Vault section. Unlocking only lasts for the current run of the application.
 6. If the query text contains `{{` (including an unresolved `{{$variable}}`) while the vault is locked, the query is not executed and a message about the locked vault appears.
 
 ---
@@ -346,6 +346,7 @@ When DuckDB options are enabled in **UI Elements**, additional connection parame
 ### Custom Autocomplete & Quick Actions
 * **Autocomplete Templates**: The **Formats** tab allows adding, editing, and deleting custom SQL snippets and macros that appear in the editor's autocomplete dropdown.
 * **Quick Actions**: Template actions displayed in the schema tree context menu (e.g., "Duplicate rows", "Copy table", "Export to Parquet"). They support the `{table}` placeholder for dynamic substitution.
+* **Schema and files**: the database-icon button opens a panel with a file tree at the bottom (folders are read when expanded; size shows as a badge and in the tooltip). Drag a file into the editor to insert its path in single quotes. On desktop, double-click opens text files (`sql, md, txt, py, sh, yml, yaml, toml, ini, log`) in a tab and Office/PDF documents in the external app. The root is set in Settings ("File tree root folder"), otherwise the open DB's folder, then the home folder. Browser and mobile builds show the DuckDB-WASM virtual file system list (drag only). The list refreshes via the button and when the window regains focus (at most once per 10 s); `Ctrl + R` refreshes only the database schema.
 
 ### Custom Keyboard Shortcuts (Hotkeys)
 The **Hotkeys** tab enables remapping all editor, tab, and graph shortcuts to match your preferred keybindings (DBeaver, DataGrip, VS Code). Click on any key binding button and press your desired shortcut.

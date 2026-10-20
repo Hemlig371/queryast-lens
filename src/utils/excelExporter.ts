@@ -1,5 +1,6 @@
 import { parseExcelDate, extractExcelComments, sanitizeExportFileBase } from './excelParse';
 import ExcelJS from 'exceljs';
+import { t } from './i18n';
 import { ExcelSettings } from '../types/excelSettings';
 import { downloadFileWithFallback } from './exportUtils';
 import { getSavedExcelPresets } from './excelSettingsStorage';
@@ -286,7 +287,7 @@ export async function exportToExcel({
 
   const totalCells = data.length * rawColumns.length;
   if (totalCells > 1500000) {
-    throw new Error(`Объем данных слишком велик для Excel-отчета (${totalCells.toLocaleString('ru-RU')} ячеек). Пожалуйста, используйте фильтры, чтобы уменьшить количество строк (максимум ~1.5 млн ячеек), или скопируйте/скачайте данные в другом формате.`);
+    throw new Error(t('Объем данных слишком велик для Excel-отчета ({n} ячеек). Пожалуйста, используйте фильтры, чтобы уменьшить количество строк (максимум ~1.5 млн ячеек), или скопируйте/скачайте данные в другом формате.').replace('{n}', totalCells.toLocaleString()));
   }
 
   const workbook = new ExcelJS.Workbook();
