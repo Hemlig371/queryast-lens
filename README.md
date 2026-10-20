@@ -188,4 +188,3 @@ rm -f squashfs-root/usr/lib/libwayland-*.so*
 # 3. Запуск из распакованной директории
 ./squashfs-root/AppRun
 ```
-
