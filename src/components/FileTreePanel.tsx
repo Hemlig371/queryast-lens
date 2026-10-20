@@ -85,8 +85,10 @@ export const FileTreePanel: React.FC<Props> = ({
     if (open) loadFolders([entry.path]); // папка читается при каждом раскрытии
   };
 
-  const btn = `h-6 w-6 flex items-center justify-center rounded transition-colors ${dark ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'}`;
+  const btn = `h-[22px] w-[22px] flex items-center justify-center rounded transition-colors ${dark ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'}`;
   const smallBtn = `p-1 rounded transition-colors ${dark ? 'hover:bg-slate-700 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-200 text-slate-500 hover:text-slate-800'}`;
+  // Одна шапка для обоих режимов (и по виду как у Schema Browser): высота, фон, граница, отступы.
+  const headerCls = `px-3 h-[37px] border-b flex items-center justify-between shrink-0 ${dark ? 'border-slate-700 bg-slate-800' : 'border-slate-300 bg-slate-100'}`;
   const refreshBtn = (
     <button onClick={refresh} className={smallBtn} title={t('Обновить файлы')}>
       <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-blue-400' : ''}`} />
@@ -147,7 +149,7 @@ export const FileTreePanel: React.FC<Props> = ({
   if (standalone) {
     return (
       <div className="flex flex-col flex-1 min-h-0">
-        <div className={`px-3 h-[37px] border-b flex items-center justify-between shrink-0 ${dark ? 'border-slate-700 bg-slate-800' : 'border-slate-300 bg-slate-100'}`}>
+        <div className={headerCls}>
           <span className={`text-xs font-semibold flex items-center gap-2 min-w-0 ${dark ? 'text-slate-300' : 'text-slate-700'}`}>
             <Folder className="w-3.5 h-3.5 text-amber-500 shrink-0" />
             <span>{t('Файлы')}</span>
@@ -169,8 +171,12 @@ export const FileTreePanel: React.FC<Props> = ({
   }
 
   return (
-    <div className={`flex flex-col min-h-0 border-t ${mode === 'collapsed' ? 'shrink-0' : 'flex-1 basis-0'} ${dark ? 'border-slate-700' : 'border-slate-300'}`}>
-      <div className={`px-3 h-[30px] flex items-center justify-between shrink-0 ${dark ? 'bg-slate-800/60' : 'bg-slate-100/60'}`}>
+    <div className={`flex flex-col min-h-0 ${mode === 'collapsed' ? 'shrink-0' : 'flex-1 basis-0'}`}>
+      {/* Верхняя линия — внутренней тенью, а не border-t: высота и центровка содержимого шапки совпадают с шапкой Schema Browser. */}
+      <div
+        className={`${headerCls}${mode === 'collapsed' ? ' border-b-0' : ''}`}
+        style={mode === 'max' ? undefined : { boxShadow: `inset 0 1px 0 0 ${dark ? '#334155' : '#cbd5e1'}` }}
+      >
         <span className={`text-xs font-semibold flex items-center gap-2 min-w-0 ${dark ? 'text-slate-300' : 'text-slate-700'}`}>
           <Folder className="w-3.5 h-3.5 text-amber-500 shrink-0" />
           <span>{t('Файлы')}</span>
