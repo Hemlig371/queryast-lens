@@ -118,7 +118,7 @@ export function stripTrailingNoise(sql: string): string {
   return sql.slice(0, end);
 }
 
-/** Добавляет `FORMAT JSON` с новой строки (чтобы не попасть в хвостовой `--` комментарий), убирая `;` в конце. */
+/** Добавляет `FORMAT JSON` с новой строки, убирая в конце `;`, пробелы и комментарии (иначе `FORMAT` оказался бы после `;`). */
 export function appendJsonFormat(sql: string): string {
-  return `${sql.replace(/[;\s]+$/, '')}\nFORMAT JSON`;
+  return `${stripTrailingNoise(sql)}\nFORMAT JSON`;
 }

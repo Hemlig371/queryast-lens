@@ -1799,7 +1799,7 @@ export default function App() {
 
   const handleConnectInMemory = async () => {
     setShowDuckDbConnMenu(false);
-    await connectDuckDb(':memory:', { tryExpress: true, allowWasm: true, errorPrefix: t("Ошибка in-memory подключения DuckDB: ") });
+    await connectDuckDb(':memory:', { tryExpress: !isTauriEnv, allowWasm: true, errorPrefix: t("Ошибка in-memory подключения DuckDB: ") });
   };
 
   const handleCreateDuckDbFile = async () => {
@@ -1949,7 +1949,7 @@ export default function App() {
     if (file) {
       // @ts-ignore - access non-standard path property for desktop environments
       const dbPath = file.path || file.name;
-      await connectDuckDb(dbPath, { file, tryExpress: true, allowWasm: true, errorPrefix: t("Ошибка подключения к DB: ") });
+      await connectDuckDb(dbPath, { file, tryExpress: !isTauriEnv, allowWasm: true, errorPrefix: t("Ошибка подключения к DB: ") });
     }
   };
 

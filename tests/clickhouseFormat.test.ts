@@ -53,7 +53,10 @@ describe('appendJsonFormat', () => {
     expect(appendJsonFormat('SELECT 1 \n')).toBe('SELECT 1\nFORMAT JSON');
   });
   it('хвостовой -- комментарий не съедает FORMAT', () => {
-    expect(appendJsonFormat('SELECT 1 -- c')).toBe('SELECT 1 -- c\nFORMAT JSON');
+    expect(appendJsonFormat('SELECT 1 -- c')).toBe('SELECT 1\nFORMAT JSON');
+    expect(appendJsonFormat('SELECT 1 LIMIT 5; -- c')).toBe('SELECT 1 LIMIT 5\nFORMAT JSON');
+    expect(appendJsonFormat('SELECT 1;\n/* e */')).toBe('SELECT 1\nFORMAT JSON');
+    expect(appendJsonFormat("SELECT 'a;--b'")).toBe("SELECT 'a;--b'\nFORMAT JSON");
   });
 });
 

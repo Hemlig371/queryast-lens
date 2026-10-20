@@ -59,7 +59,7 @@ Query text processing order:
 
 Cancellation: an `AbortController` in the interface plus the native commands `cancel_duckdb_query` (interrupts the DuckDB connection) and `cancel_clickhouse_query` (aborts the HTTP request). The native DuckDB layer holds **one** connection under a lock, so queries run one at a time.
 
-The result cap is 500,000 rows per query (Rust, WASM and ClickHouse truncate without notification).
+The result cap is 500,000 rows per query (Rust, WASM and ClickHouse); above that the query ends with an error instead of a truncated result.
 
 ## 4. Results and tabs
 
