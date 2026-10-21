@@ -11,7 +11,16 @@ import { t } from './i18n';
  * Непонятное выражение целиком пропускается и попадает в `warnings` с номером строки.
  */
 
-export type MermaidHead = 'arrow' | 'circle' | 'cross' | 'none';
+/** Наконечники связей ER-диаграммы (нотация «воронья лапка»): ровно один, ноль или один, один или много, ноль или много */
+export type ErHead = 'er-one' | 'er-zero-one' | 'er-one-many' | 'er-zero-many';
+export type MermaidHead = 'arrow' | 'circle' | 'cross' | 'none' | ErHead;
+
+export interface ErAttribute {
+  type: string;
+  name: string;
+  keys: Array<'PK' | 'FK' | 'UK'>;
+  comment?: string;
+}
 export type MermaidLineType = 'solid' | 'dotted' | 'thick' | 'invisible';
 
 export interface MermaidIssue {
@@ -24,6 +33,8 @@ export interface MermaidNodeIR {
   id: string;
   label: string;
   shape: string;
+  /** сущность ER-диаграммы (shape === 'entity'): атрибуты таблицы */
+  er?: { attributes: ErAttribute[] };
   /** id самого внутреннего подграфа, в котором узел встретился первым */
   subgraph?: string;
   classes: string[];
@@ -51,6 +62,8 @@ export interface MermaidSubgraphIR {
   parent?: string;
   /** узлы, объявленные прямо в этом подграфе (без вложенных) */
   nodeIds: string[];
+  /** `direction` внутри подграфа: учитывается, если узлы подграфа не связаны с внешними (как в Mermaid) */
+  direction?: 'TB' | 'LR' | 'BT' | 'RL';
 }
 
 export interface MermaidIR {
@@ -574,6 +587,16 @@ export function parseMermaidSource(
       }
 
       seenStatement = true;
+
+      // --- direction внутри подграфа ---
+      const subDir = /^direction\s+(TB|TD|BT|LR|RL)\s*$/i.exec(stmt);
+      if (subDir) {
+        if (subStack.length > 0) {
+          const d = subDir[1].toUpperCase();
+          subStack[subStack.length - 1].direction = (d === 'TD' ? 'TB' : d) as 'TB' | 'LR' | 'BT' | 'RL';
+        }
+        continue;
+      }
 
       // --- директивы, которые не влияют на граф ---
       if (/^(click|direction|title|accTitle)\b/i.test(stmt)) continue;

@@ -9,7 +9,7 @@ The same React interface runs in three shells:
 | Shell | How it runs | DuckDB | ClickHouse |
 | :--- | :--- | :--- | :--- |
 | **Desktop** (Tauri 1, Rust) | `npm run tauri dev/build` | Native DuckDB in Rust (`src-tauri/src/main.rs`) with access to files on disk; DuckDB-WASM is also available | Rust HTTP client (`reqwest`) |
-| **Android** (Capacitor 6) | `npx cap …` (the `android/` folder is created by CI) | DuckDB-WASM in the WebView | `CapacitorHttp` (bypasses CORS); `COPY FROM` is unavailable |
+| **Android** (Capacitor 6) | `npx cap …` (the `android/` folder is created by CI) | DuckDB-WASM in the WebView | `CapacitorHttp` (bypasses CORS); `COPY FROM` is unavailable. Narrow layout, system Back button (`@capacitor/app`) |
 | **Web, development mode** | `npm run dev` (`server.ts`, Express + Vite) | The `duckdb` package on the server (`/api/duckdb/*`) or DuckDB-WASM | Server proxy (`/api/clickhouse/*`) |
 
 Environment detection: `isTauriEnvironment()` / `isCapacitorEnvironment()` (`src/lib/clickhouse.ts`) and the `isWasmMode` flag in `App.tsx`. If neither Tauri nor the Express server is available, the application falls back to DuckDB-WASM. For server calls, `fetchApiJson` tries the same origin, then `127.0.0.1`/`localhost` on ports 48291 and 3000.
@@ -21,6 +21,7 @@ Most state logic lives in a single `App()` component (`src/App.tsx`, about 8,000
 Things worth knowing when making changes:
 * The editor and the "Action Menu" panel are rendered in two JSX branches (normal and maximized layout, `isMaximizedSql`), so editor UI changes must be made in both.
 * The global key handler (`keydown`, capture phase) reads current values through `current*` refs because it subscribes once (dependency `[activeEngine]`). To add an action: add an id and shortcut to `DEFAULT_HOTKEYS` (`SettingsModal.tsx`) → add a branch in the handler → update the shortcut reference in the guide.
+* A narrow screen (width up to 767 px, like Tailwind's `max-md:`) is detected by window width, not by platform: `useIsNarrow` (`src/utils/useIsNarrow.ts`, a single `matchMedia` subscription) in components and `isNarrowNow()` in handlers. Layout changes use the `max-md:` classes and `narrow-scroll-x` (`index.css`: a toolbar in one row scrolled by finger); from 768 px wide the layout is unchanged. On a narrow screen either the editor or the graph is shown, and the schema panel slides in from the right. The Android Back button (`backPressRef` in `App.tsx`, Capacitor only) closes, in order: menus and confirmations → dialogs → the selected cell → the result table in the expanded editor → otherwise it minimizes the app.
 * Localization: the key is the Russian text, the English variant lives in `EN_DICT` (`src/utils/i18n.ts`). The language changes by reloading the page.
 
 ## 3. Query execution
@@ -72,6 +73,10 @@ The result cap is 500,000 rows per query (Rust, WASM and ClickHouse); above that
 
 `fetchDuckDbSchema` and its ClickHouse counterpart read the database catalogs (`system.*` for ClickHouse) and build the schema tree for the panel and autocomplete. The result is cached in IndexedDB (`schemaDbCache`); entries older than 7 days are purged.
 
+### File tree
+
+The lower part of the "Schema and files" panel is `FileTreePanel.tsx`. The pure logic is in `src/utils/fileTree.ts` (sorting, filtering, name checks, `planMove`, path remapping `remapPath`). The list comes from a `FileTreeProvider`: in Tauri (`createTauriProvider`, `fileTreeProviders.ts`) folders are read by the Rust command `list_dir`; in the browser and on Android (`createVfsProvider`) it is the DuckDB-WASM virtual file system, without file operations. The operations (`ops`: show in file manager, "Open with…", rename, move into a folder, move to trash) exist only for the Tauri provider and are implemented by the commands in `src-tauri/src/fstree.rs`: `reveal_path`, `open_with`, `rename_path`, `move_path`, `trash_path`. After a rename or move, `App.handleTreePathChanged` rewrites the `filePath` of tabs opened from those files. Dragging a file into the editor carries `text/plain` (the quoted path); a move inside the tree uses a separate data type, `application/x-queryast-path`. The move target is a folder (for a file, its folder; for empty space, the root), and a failure is shown as a brief red highlight of the target. The sort order is stored in the session (`SavedSession.filesSort`).
+
 ## 6. SQL graph
 
 ```
@@ -88,8 +93,8 @@ SQL (selection or whole text)
 
 ## 7. Mermaid and Markdown
 
-* The **Markdown** button: if the text looks like pure Mermaid (`looksLikeMermaid`), an interactive graph is built (`mermaidParse.ts` → `mermaidToGraph.ts` with dagre layout → `MermaidNodes.tsx` nodes, edges follow the layout route). Otherwise a document opens.
-* Document: a custom renderer `markdown.ts` (no external Markdown libraries) → DOMPurify sanitization → `MarkdownPreview.tsx`. ` ```mermaid ` blocks are drawn as static SVG (`mermaidSvg.ts`) using the same parser; only `flowchart`/`graph` are supported.
+* The **Markdown** button: if the text looks like pure Mermaid (`looksLikeMermaid`), an interactive graph is built (`mermaidParse.ts`, or `erParse.ts` for `erDiagram` → `mermaidToGraph.ts` with dagre layout → `edgePath.ts`: ports on node sides and orthogonal lines: bends in the gaps between columns, merge buses, back-edge corridors, labels beside the line; `direction` in a subgraph = separate layout → `MermaidNodes.tsx` nodes and edges). Otherwise a document opens.
+* Document: a custom renderer `markdown.ts` (no external Markdown libraries) → DOMPurify sanitization → `MarkdownPreview.tsx`. ` ```mermaid ` blocks are drawn as static SVG (`mermaidSvg.ts`) using the same parser; `flowchart`/`graph` and `erDiagram` are supported; edge geometry (`edgePath.ts`) is shared with the interactive graph.
 * Copy to Word: a `copy` handler produces HTML (diagrams as PNG in `data:` URLs). Document export as an image: `documentExport.ts` with canvas size limits from `canvasLimits.ts`.
 * A document and the graph are not shown in the graph area at the same time: an open document hides the graph.
 

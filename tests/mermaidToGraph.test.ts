@@ -49,8 +49,10 @@ describe('mermaidToGraph', () => {
     // невидимая связь ~~~ в рёбра React Flow не попадает
     expect(result.edges.map(e => e.label)).toEqual(['yes', undefined]);
     expect(result.edges[0].style.stroke).toBe('#f00');
-    expect(result.edges[1].markerStart).toBeDefined();
-    expect(result.edges[1].markerEnd).toBeDefined();
+    // стрелки рисует MermaidEdge сам: вид наконечников лежит в data, RF-маркеров нет
+    expect(result.edges[1].data.headStart).toBe('arrow');
+    expect(result.edges[1].data.headEnd).toBe('arrow');
+    expect(result.edges[1].markerEnd).toBeUndefined();
   });
 
   it('ошибки: тип диаграммы и номер строки', () => {
@@ -100,6 +102,7 @@ describe('mermaidToGraph', () => {
     expect(b.data.nodeHeight > a.data.nodeHeight).toBe(true);
     expect(r.edges[0].label).toBe('раз, два');
     expect(r.edges[0].type).toBe('mermaidEdge');
-    expect(r.edges[0].data.points.length >= 2).toBe(true);
+    expect(r.edges[0].data.route.start).toBeDefined();
+    expect(r.edges[0].data.route.end).toBeDefined();
   });
 });

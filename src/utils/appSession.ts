@@ -19,6 +19,8 @@ export interface SavedSession {
   showDuckDbSchemaPanel?: boolean;
   /** Секция «Файлы» в панели схемы; в старых сессиях поля нет — тогда 'split'. */
   filesSectionMode?: 'split' | 'collapsed' | 'max';
+  /** Порядок записей в дереве файлов; в старых сессиях поля нет — по имени (А→Я). */
+  filesSort?: { key: 'name' | 'date' | 'size'; dir: 'asc' | 'desc' };
   clickhouseConfig?: ClickhouseConfig | null;
   activeEngine?: 'duckdb' | 'clickhouse' | null;
 }

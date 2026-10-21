@@ -59,13 +59,15 @@ Cross-platform SQL Query Workbench and analytical database client (DuckDB, Click
 * **Interactive AST Graphs**: Parses SQL into abstract syntax trees with customizable layout orientation (Left-to-Right / Top-to-Bottom).
 * **Data Lineage Tracing**: Selecting a node highlights everything upstream and downstream of it in the graph (tables, CTEs, subqueries, JOINs). Works on graph nodes within one query; there is no column-level lineage and no tracking between separate queries.
 * **Diagram & Schema Exports**: Export node graphs to PNG, SVG, JPEG, JSON, Mermaid, Draw.io, and raw XML Schema formats.
-* **Two-way Mermaid Support**: In addition to export, paste raw Mermaid diagrams (`graph TD; ...`) into the editor to visualize them directly as interactive node graphs.
-* **Markdown Preview**: The **Markdown** button renders notes with tables, highlighted SQL blocks and ```` ```mermaid ```` diagrams (static SVG, openable as an interactive graph). Pure Mermaid text still opens as a graph.
+* **Two-way Mermaid Support**: In addition to export, paste raw Mermaid diagrams (`graph TD; ...` flowcharts and `erDiagram` entity-relationship diagrams) into the editor to visualize them directly as interactive node graphs.
+* **Markdown Preview**: The **Markdown** button renders notes with tables, highlighted SQL blocks and ```` ```mermaid ```` diagrams (flowchart/graph and erDiagram; static SVG, openable as an interactive graph). Pure Mermaid text still opens as a graph.
 
 #### 🛠️ Productivity, i18n & Security Vault
 * **Snippets & Quick Actions**: Manage reusable SQL snippets with natural string sorting and clipboard copying. ZIP exports group snippets into virtual folders. Multi-statement pipeline execution via `-- @job` directive.
 * **Encrypted Vault (AES-256 GCM)**: Client-side connection secret encryption using Web Crypto API with PIN-code protection; the vault stays unlocked for 12 hours after the PIN is entered. Supports dynamic macro substitution (`{{SECRET_NAME}}`) directly inside queries.
 * **WASM VFS File Manager**: Visual GUI modal for DuckDB WebAssembly to drag-and-drop, inspect, delete, and upload `.parquet`, `.csv`, `.json`, and `.duckdb` files.
+* **File Tree (Desktop)**: the files panel under the schema shows folders on disk with search, sorting by name, date or size, a context menu (open with, show in file manager, rename, move to trash) and moving files and folders between folders by drag and drop. Dragging a file into the editor inserts its path.
+* **Narrow Screens & Android**: in windows up to 767 px wide and on Android, the editor and the graph are shown one at a time, toolbars scroll horizontally, and the system Back button closes dialogs first.
 * **Workspace Synchronization**: Automatic background import/export of workspace sessions and tabs via a shared directory or cloud storage path (Dropbox, local NAS) in Desktop mode.
 * **Version History & Schema Cache**: Automatic query snapshot tracking and IndexedDB schema caching with automated stale record cleanup.
 * **Localization & UI Zoom**: Built-in interface language toggling (RU/EN) and adjustable UI scaling (70%–150%).
@@ -146,13 +148,15 @@ rm -f squashfs-root/usr/lib/libwayland-*.so*
 * **Интерактивный граф запроса**: Разбор SQL-запросов на узлы AST (`node-sql-parser`) и построение интерактивных графов (`@xyflow/react`) с возможностью переключения ориентации (слева-направо / сверху-вниз).
 * **Отслеживание Data Lineage**: При выборе узла подсвечивается всё, что находится выше и ниже него по графу (таблицы, CTE, подзапросы, JOIN). Работает по узлам графа внутри одного запроса; построчного (по колонкам) lineage и связей между отдельными запросами нет.
 * **Экспорт графов и схем**: Сохранение диаграмм в форматы PNG, SVG, JPEG, JSON, Mermaid, Draw.io и сырую схему XML Schema.
-* **Двусторонний Mermaid**: Помимо экспорта, поддержка визуализации вставленных в редактор Mermaid-диаграмм (`graph TD; ...`) в виде интерактивного графа узлов.
-* **Markdown-предпросмотр**: кнопка **Markdown** показывает заметки с таблицами, подсвеченными SQL-блоками и диаграммами ```` ```mermaid ```` (статичный SVG, можно открыть как интерактивный граф). Чистый Mermaid по-прежнему открывается как граф.
+* **Двусторонний Mermaid**: Помимо экспорта, поддержка визуализации вставленных в редактор Mermaid-диаграмм (блок-схемы `graph TD; ...` и ER-диаграммы `erDiagram`) в виде интерактивного графа узлов.
+* **Markdown-предпросмотр**: кнопка **Markdown** показывает заметки с таблицами, подсвеченными SQL-блоками и диаграммами ```` ```mermaid ```` (flowchart/graph и erDiagram; статичный SVG, можно открыть как интерактивный граф). Чистый Mermaid по-прежнему открывается как граф.
 
 #### 🛠️ Инструменты продуктивности и хранилище
 * **Библиотека сниппетов и действий (No-code Action Menu)**: Сохранение часто используемых запросов с поддержкой естественной алфавитной сортировки. Экспорт в ZIP распределяет сниппеты по папкам ("Избранное", "Jobs"). Поддержка многокомандных пайплайнов выполнения через директиву `-- @job`.
 * **Защищённый Vault (AES-256 GCM)**: Шифрование параметров подключения и секретов в браузере с защитой пин-кодом; после ввода PIN хранилище остаётся разблокированным 12 часов. Подстановка секретов в SQL-запросы в формате `{{SECRET_NAME}}`.
 * **Файловый менеджер WASM VFS**: Графический интерфейс для управления виртуальной файловой системой DuckDB WASM (Drag & Drop загрузка, инспекция и удаление `.parquet`, `.csv`, `.json`, `.duckdb`).
+* **Дерево файлов (десктоп)**: панель файлов под схемой показывает папки на диске с поиском, сортировкой по имени, дате или размеру, контекстным меню (открыть с помощью, показать в проводнике, переименовать, в корзину) и переносом файлов и папок между папками перетаскиванием. Перетаскивание файла в редактор вставляет его путь.
+* **Узкие экраны и Android**: в окнах шириной до 767 px и на Android редактор и граф показываются по очереди, панели кнопок прокручиваются по горизонтали, а системная кнопка «Назад» сначала закрывает окна.
 * **Синхронизация рабочего пространства**: Фоновый автоматический обмен сессиями, вкладками и настройками через общий файл/папку (Dropbox, сетевой диск) в десктоп-версии (Tauri).
 * **История версий и кэш**: Автоматическое сохранение снимков запросов и кэширование схем в IndexedDB с процедурами автоочистки устаревших записей.
 * **Мультиязычный интерфейс и зум**: Поддержка переключения языков интерфейса (RU/EN) и масштабирование интерфейса (70%–150%).

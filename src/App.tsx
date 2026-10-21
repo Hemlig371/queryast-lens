@@ -14,6 +14,7 @@ import { reduceColumnClick, formatSelectedColumns } from './utils/columnSelectio
 import { needsJsonFormat, appendJsonFormat } from './utils/clickhouseFormat';
 import { buildSchemaDbKey, buildTableColumnsKey, SchemaEngine } from './utils/schemaKeys';
 import { resultRowsToMarkdown } from './utils/markdownTable';
+import { isNarrowNow, useIsNarrow } from './utils/useIsNarrow';
 import { buildGroupBySql, buildKeepColumnsSql, buildRemoveColumnsSql, buildDistinctSql } from './utils/columnActionsSql';
 import { generateFilteredSortedSql as generateFilteredSortedSqlPure } from './utils/filteredSql';
 import { downloadFileWithFallback, copyToClipboard } from "./utils/exportUtils";
@@ -115,7 +116,7 @@ import { MermaidActionGroup } from './components/MermaidActionGroup';
 import { getSessionTabs, saveSessionTabs } from './utils/sessionStorage';
 import { connectDuckDbWasmFile, connectDuckDbWasmMemory, queryDuckDbWasm, disconnectDuckDbWasm, applyDuckDbConfigWasm, attachDuckDbWasmFile, getRegisteredWasmFiles } from './lib/duckdbWasm';
 import { FileTreePanel } from './components/FileTreePanel';
-import { pickFileTreeRoot, type FilesSectionMode, type FileEntry } from './utils/fileTree';
+import { pickFileTreeRoot, detectPlatform, normalizeFileSort, remapPath, isSameOrInside, type FilesSectionMode, type FileEntry, type FileSort } from './utils/fileTree';
 import { createTauriProvider, createVfsProvider } from './utils/fileTreeProviders';
 import { WasmFileManagerModal } from './components/WasmFileManagerModal';
 import { ClickhouseModal } from './components/ClickhouseModal';
@@ -147,7 +148,7 @@ export default function App() {
   const [activePresetId, setActivePresetId] = useState<string>(sqlPresets[0].id);
   const [showSortNodes, setShowSortNodes] = useState<boolean>(false);
   const [showLimitNodes, setShowLimitNodes] = useState<boolean>(false);
-  const [isWrapSql, setIsWrapSql] = useState<boolean>(() => savedSession?.isWrapSql ?? false);
+  const [isWrapSql, setIsWrapSql] = useState<boolean>(() => savedSession?.isWrapSql ?? isNarrowNow());
   const [isMaximizedSql, setIsMaximizedSql] = useState<boolean>(() => savedSession?.isMaximizedSql ?? true);
   
   // DuckDB Integration State
@@ -199,9 +200,11 @@ export default function App() {
   const [isSchemaLoading, setIsSchemaLoading] = useState<boolean>(false);
   const [isSchemaZoomed, setIsSchemaZoomed] = useState<boolean>(false);
   const [schemaSearchTerm, setSchemaSearchTerm] = useState<string>(() => savedSession?.schemaSearchTerm || '');
-  const [showDuckDbSchemaPanel, setShowDuckDbSchemaPanel] = useState<boolean>(() => savedSession?.showDuckDbSchemaPanel ?? true);
+  const [showDuckDbSchemaPanel, setShowDuckDbSchemaPanel] = useState<boolean>(() => savedSession?.showDuckDbSchemaPanel ?? !isNarrowNow());
   // Секция «Файлы» в панели схемы: split — пополам, collapsed — только заголовок, max — на всю панель.
   const [filesSectionMode, setFilesSectionMode] = useState<FilesSectionMode>(() => savedSession?.filesSectionMode ?? 'split');
+  // Порядок записей в дереве файлов (имя / дата изменения / размер); в старых сессиях поля нет — по имени.
+  const [filesSort, setFilesSort] = useState<FileSort>(() => normalizeFileSort(savedSession?.filesSort));
   const [homeDirPath, setHomeDirPath] = useState<string>('');
   const [expandedSchemaNodes, setExpandedSchemaNodes] = useState<Record<string, boolean>>(() => savedSession?.expandedSchemaNodes || {});
 
@@ -1435,6 +1438,7 @@ export default function App() {
     expandedSchemaNodes,
     showDuckDbSchemaPanel,
     filesSectionMode,
+    filesSort,
     clickhouseConfig,
     activeEngine
   });
@@ -1454,6 +1458,7 @@ export default function App() {
       expandedSchemaNodes,
       showDuckDbSchemaPanel,
       filesSectionMode,
+      filesSort,
       clickhouseConfig,
       activeEngine
     };
@@ -1471,6 +1476,7 @@ export default function App() {
     expandedSchemaNodes,
     showDuckDbSchemaPanel,
     filesSectionMode,
+    filesSort,
     clickhouseConfig,
     activeEngine
   ]);
@@ -1892,7 +1898,7 @@ export default function App() {
 
   // Дерево файлов: Tauri — реальная ФС (Rust list_dir), dev и WASM/Android — виртуальная ФС DuckDB-WASM.
   const fileTreeProvider = useMemo(
-    () => isTauriEnv ? createTauriProvider(tauriInvoke) : createVfsProvider(getRegisteredWasmFiles),
+    () => isTauriEnv ? createTauriProvider(tauriInvoke, detectPlatform(navigator.userAgent)) : createVfsProvider(getRegisteredWasmFiles),
     [isTauriEnv] // eslint-disable-line react-hooks/exhaustive-deps
   );
   useEffect(() => {
@@ -1919,6 +1925,27 @@ export default function App() {
     } catch (e) {
       console.warn('Open file from tree error:', e);
     }
+  };
+  // Файл или папка переименованы (newPath) либо удалены в корзину (null): вкладки, открытые из них, следуют за путём.
+  // Удалённый файл остаётся во вкладке как несохранённый (Ctrl+S предложит «Сохранить как»).
+  const handleTreePathChanged = (oldPath: string, newPath: string | null) => {
+    setTabs(prev => {
+      let changed = false;
+      const next = prev.map(tab => {
+        if (!tab.filePath) return tab;
+        if (newPath === null) {
+          if (!isSameOrInside(tab.filePath, oldPath)) return tab;
+          changed = true;
+          return { ...tab, filePath: undefined };
+        }
+        const moved = remapPath(tab.filePath, oldPath, newPath);
+        if (moved === null) return tab;
+        changed = true;
+        const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
+        return { ...tab, filePath: moved, title: tab.title === baseName(tab.filePath) ? baseName(moved) : tab.title };
+      });
+      return changed ? next : prev;
+    });
   };
   const handleOpenTreeExternal = async (entry: FileEntry) => {
     try {
@@ -3656,7 +3683,9 @@ export default function App() {
   }, [edges, lineageHighlightMode, lineageEdgeIds, theme]);
   const [copied, setCopied] = useState<string | boolean>(false);
   const [showLeftPanel, setShowLeftPanel] = useState<boolean>(true);
-  const [showMiniMap, setShowMiniMap] = useState<boolean>(true);
+  // Узкий экран (телефон): на экране либо редактор, либо граф
+  const isNarrow = useIsNarrow();
+  const [showMiniMap, setShowMiniMap] = useState<boolean>(() => !isNarrowNow());
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [showExportMenu, setShowExportMenu] = useState<boolean>(false);
 
@@ -3787,6 +3816,68 @@ export default function App() {
       isResultTableHoveredRef,
     };
   });
+
+  // Android: системная кнопка «Назад» (только в Capacitor). Порядок действий:
+  // открытое меню или подтверждение → окно (настройки, шаблоны, история, подключения, WASM) →
+  // выбранная ячейка → таблица результата в редакторе (как Esc) → иначе приложение сворачивается.
+  const backPressRef = useRef<() => boolean>(() => false);
+  useEffect(() => {
+    backPressRef.current = () => {
+      if (executeContextMenu) { setExecuteContextMenu(null); return true; }
+      if (resultTableContextMenu) { setResultTableContextMenu(null); return true; }
+      if (schemaContextMenu) { setSchemaContextMenu(null); return true; }
+      if (tabToClosePendingConfirm) { setTabToClosePendingConfirm(null); return true; }
+
+      if (showSettingsModal) { setShowSettingsModal(false); return true; }
+      if (showSnippetsModal) {
+        setShowSnippetsModal(false);
+        setSnippetsModalCategory(undefined);
+        setSnippetsModalEditId(undefined);
+        return true;
+      }
+      if (showHistoryModal) { setShowHistoryModal(false); return true; }
+      if (showClickhouseModal) { setShowClickhouseModal(false); return true; }
+      if (showWasmFileModal) { setShowWasmFileModal(false); return true; }
+
+      if (selectedResultCell || duckDbSelectedCell) {
+        setSelectedResultCell(null);
+        setDuckDbSelectedCell(null);
+        setIsCellZoomed(false);
+        setIsCellSqlHighlighted(false);
+        return true;
+      }
+      if (isMaximizedSql && isDuckDbResultVisible) {
+        if (isDuckDbResultExpanded) {
+          setIsDuckDbResultExpanded(false);
+          setIsCellZoomed(false);
+        } else {
+          setIsDuckDbResultVisible(false);
+        }
+        setIsCellSqlHighlighted(false);
+        return true;
+      }
+      return false;
+    };
+  });
+
+  useEffect(() => {
+    if (!isCapacitorEnvironment()) return;
+    let cancelled = false;
+    let removeListener: (() => void) | undefined;
+    import('@capacitor/app')
+      .then(async ({ App: CapacitorApp }) => {
+        const handle = await CapacitorApp.addListener('backButton', () => {
+          if (!backPressRef.current()) CapacitorApp.minimizeApp().catch(console.error);
+        });
+        if (cancelled) handle.remove();
+        else removeListener = () => { handle.remove(); };
+      })
+      .catch((e) => console.warn('Back button handler is not available:', e));
+    return () => {
+      cancelled = true;
+      removeListener?.();
+    };
+  }, []);
 
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
@@ -4070,6 +4161,8 @@ export default function App() {
   ) => {
     setMarkdownSource(null);
     setMermaidNotice(null);
+    // Узкий экран: граф показывается вместо редактора (вернуться — кнопкой в шапке графа)
+    if (isNarrowNow()) setShowLeftPanel(false);
     if (queryText === sqlRef.current) {
       const editorSelection = sqlEditorRef.current?.getSelection();
       if (editorSelection && editorSelection.start !== editorSelection.end) {
@@ -4106,6 +4199,7 @@ export default function App() {
     currentDir = direction
   ) => {
     setMarkdownSource(null);
+    if (isNarrowNow()) setShowLeftPanel(false);
     if (queryText === sqlRef.current) {
       const editorSelection = sqlEditorRef.current?.getSelection();
       if (editorSelection && editorSelection.start !== editorSelection.end) {
@@ -4170,6 +4264,7 @@ export default function App() {
       return;
     }
     setMermaidNotice(null);
+    if (isNarrowNow()) setShowLeftPanel(false);
     setMarkdownSource(text);
   };
 
@@ -4229,7 +4324,7 @@ export default function App() {
   const handleDirectionChange = (newDir: 'LR' | 'TB') => {
     setDirection(newDir);
     if (nodes.length > 0) {
-      const isMermaid = nodes.some(n => n.type === 'mermaidNode' || n.type === 'mermaidGroupNode');
+      const isMermaid = nodes.some(n => n.type === 'mermaidNode' || n.type === 'mermaidEntityNode' || n.type === 'mermaidGroupNode');
       if (isMermaid) {
         // пока открыт предпросмотр Markdown, в редакторе не Mermaid — граф не пересобираем
         if (markdownSource === null) handleVisualizeMermaid(undefined, newDir);
@@ -4555,7 +4650,7 @@ export default function App() {
         
         {/* LEFT PANEL: INPUT & CONFIG (40% WIDTH) */}
         {showLeftPanel && (
-        <aside id="control-panel" className={`w-[40%] min-w-[380px] max-w-[580px] border-r flex flex-col shrink-0 transition-colors ${
+        <aside id="control-panel" className={`w-[40%] min-w-[380px] max-w-[580px] max-md:w-full max-md:min-w-0 max-md:max-w-none border-r flex flex-col shrink-0 transition-colors ${
           theme === 'dark' ? 'bg-slate-750/50 border-slate-600' : 'bg-slate-200/80 border-slate-400/60'
         }`}>
           
@@ -4705,6 +4800,8 @@ export default function App() {
 
           {/* VISUALIZE ACTION BAR */}
           <div className="flex flex-wrap items-center gap-1.5 relative">
+            {/* На узком экране вспомогательные кнопки — одна строка с прокруткой; на десктопе обёртка не влияет на вёрстку (contents) */}
+            <div className="contents max-md:flex max-md:w-full max-md:items-center max-md:gap-1.5 narrow-scroll-x">
             {/* SETTINGS BUTTON */}
             <button
               onClick={() => setShowSettingsModal(true)}
@@ -4742,7 +4839,7 @@ export default function App() {
                     className="fixed inset-0 z-30" 
                     onClick={() => setShowPresetsDropdown(false)} 
                   />
-                  <div className={`absolute bottom-full mb-1.5 left-0 z-40 rounded-lg border shadow-xl p-2 w-72 animate-in fade-in duration-150 ${
+                  <div className={`absolute bottom-full mb-1.5 left-0 max-md:fixed max-md:inset-x-2 max-md:bottom-2 max-md:mb-0 max-md:w-auto max-md:max-h-[70vh] max-md:overflow-y-auto z-40 rounded-lg border shadow-xl p-2 w-72 animate-in fade-in duration-150 ${
                     theme === 'dark' ? 'bg-slate-800 border-slate-600 text-slate-200' : 'bg-white border-slate-300 text-slate-800'
                   }`}>
                     <div className="flex items-center justify-between pb-1.5 border-b border-slate-600/40 mb-1.5">
@@ -4842,21 +4939,23 @@ export default function App() {
             <button
               onClick={handleCopySql}
               className={`flex items-center gap-1 text-xs px-1.5 py-1.5 rounded-md transition-colors shrink-0 ${theme === 'dark' ? 'text-slate-300 hover:text-slate-100' : 'text-slate-600 hover:text-slate-900'}`}
-              title="Copy SQL"
+              title={t('Скопировать SQL')}
             >
               {copied === 'sql' ? (
                 <>
                   <Check className="w-3 h-3 text-emerald-500" />
-                  <span className="text-emerald-500 font-medium">Copied!</span>
+                  <span className="text-emerald-500 font-medium">{t('Скопировано!')}</span>
                 </>
               ) : (
                 <>
                   <Copy className="w-3 h-3" />
-                  <span>Copy</span>
+                  <span>{t('Копировать')}</span>
                 </>
               )}
             </button>
             )}
+
+            </div>
 
             <div className="ml-auto flex items-center gap-1.5 shrink-0">
               {uiVisibility.showMermaidIntegration !== false && (
@@ -4877,12 +4976,12 @@ export default function App() {
         )}
 
         {/* RIGHT PANEL: INTERACTIVE CANVAS (70% WIDTH) */}
-        <section className={`flex-1 flex flex-col h-full relative transition-colors ${
+        <section className={`flex-1 max-md:min-w-0 flex flex-col h-full relative transition-colors ${showLeftPanel ? 'max-md:hidden' : ''} ${
           theme === 'dark' ? 'bg-slate-850 text-slate-200' : 'bg-slate-200 text-slate-800'
         }`}>
           
           {/* CANVAS CONTROLS HEADER */}
-          <div className={`flex items-center justify-between px-4 h-[38px] border-b z-10 select-none transition-colors ${
+          <div className={`flex items-center justify-between px-4 h-[38px] narrow-scroll-x max-md:gap-3 border-b z-10 select-none transition-colors ${
             theme === 'dark' ? 'bg-slate-750 border-slate-600 text-slate-200' : 'bg-slate-200/80 border-slate-400/60 text-slate-800'
           }`}>
             <div className="flex items-center gap-3 text-xs">
@@ -4972,7 +5071,7 @@ export default function App() {
 
             {/* AST Preview toggle and Info labels */}
             <div className="flex items-center gap-2">
-              {uiVisibility.showEditorToggleBtn && (
+              {(uiVisibility.showEditorToggleBtn || isNarrow) && (
               <button
                 onClick={() => setShowLeftPanel(!showLeftPanel)}
                 className={`p-1.5 rounded-lg border transition-all ${
@@ -5038,7 +5137,7 @@ export default function App() {
                       className="fixed inset-0 z-20" 
                       onClick={() => setShowExportMenu(false)} 
                     />
-                    <div className={`absolute right-0 mt-1 w-52 rounded-lg border shadow-xl z-30 overflow-hidden py-1 text-xs ${
+                    <div className={`absolute right-0 max-md:fixed max-md:top-auto max-md:right-2 mt-1 w-52 rounded-lg border shadow-xl z-30 overflow-hidden py-1 text-xs ${
                       theme === 'dark' ? 'bg-slate-750 border-slate-600 text-slate-100' : 'bg-slate-100 border-slate-300 text-slate-800'
                     }`}>
                       {uiVisibility.showExportPngBg !== false && (
@@ -5304,7 +5403,7 @@ export default function App() {
                       if (n.type === 'tableNode') return theme === 'dark' ? '#3b82f6' : '#2563eb';
                       if (n.type === 'resultNode') return theme === 'dark' ? '#10b981' : '#059669';
                       if (n.type === 'filterNode') return theme === 'dark' ? '#f59e0b' : '#d97706';
-                      if (n.type === 'mermaidNode') return theme === 'dark' ? '#64748b' : '#94a3b8';
+                      if (n.type === 'mermaidNode' || n.type === 'mermaidEntityNode') return theme === 'dark' ? '#64748b' : '#94a3b8';
                       if (n.type === 'mermaidGroupNode') return 'transparent';
                       return theme === 'dark' ? '#475569' : '#94a3b8';
                     }}
@@ -5482,7 +5581,7 @@ export default function App() {
                       </div>
                     )}
 
-                    {selectedNode.type === 'mermaidNode' && (
+                    {(selectedNode.type === 'mermaidNode' || selectedNode.type === 'mermaidEntityNode') && (
                       <div className="space-y-1">
                         <div>
                           <span className={theme === 'dark' ? 'text-slate-300' : 'text-slate-600'}>Shape:</span>{' '}
@@ -5540,17 +5639,17 @@ export default function App() {
             <div className={`flex flex-nowrap items-center justify-between gap-2 px-4 h-[38px] border-b shrink-0 ${
               theme === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-slate-200/90 border-slate-300'
             }`}>
-              <div 
+              <div
                 onClick={() => setIsMaximizedSql(false)}
-                className="flex items-center gap-2.5"
+                className="flex items-center gap-2.5 shrink-0"
               >
                 <Search className="w-3.5 h-3.5 text-blue-500" />
-                <h3 className={`font-bold text-sm truncate ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>
+                <h3 className={`font-bold text-sm truncate max-md:hidden ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>
                   Query Editor
                 </h3>
               </div>
 
-              <div className="flex items-center gap-2 sm:gap-3 ml-auto">
+              <div className="flex items-center gap-2 sm:gap-3 ml-auto narrow-scroll-x max-md:min-w-0 max-md:flex-1">
                 {uiVisibility.showOpenFile && (
                 <button
                   onClick={() => isTauriEnvironment() || isTauriEnv ? openWithTauriAndDelegate(handleOpenFile) : fileInputRef.current?.click()}
@@ -5667,7 +5766,7 @@ export default function App() {
                         className="fixed inset-0 z-30" 
                         onClick={() => setShowDuckDbConnMenu(false)} 
                       />
-                      <div className={`absolute top-full mt-1 right-0 z-40 rounded-lg border shadow-xl p-1.5 w-60 animate-in fade-in duration-150 ${
+                      <div className={`absolute top-full mt-1 right-0 max-md:fixed max-md:top-auto max-md:right-2 z-40 rounded-lg border shadow-xl p-1.5 w-60 animate-in fade-in duration-150 ${
                         theme === 'dark' ? 'bg-slate-800 border-slate-600 text-slate-200' : 'bg-white border-slate-300 text-slate-800'
                       }`}>
                         {uiVisibility.showDuckDbConfig && (
@@ -5863,10 +5962,14 @@ export default function App() {
                   <div className="h-4 w-px bg-slate-400/40 dark:bg-slate-600" />
 
                   <button
-                    onClick={() => setIsMaximizedSql(false)}
+                    onClick={() => {
+                      setIsMaximizedSql(false);
+                      // Узкий экран: «Вернуться к графу» показывает граф, а не панель редактора
+                      if (isNarrowNow()) setShowLeftPanel(false);
+                    }}
                     className={`flex items-center justify-center gap-1.5 px-3 h-[26px] rounded-md text-xs font-semibold transition-colors ${
-                      theme === 'dark' 
-                        ? 'bg-slate-700 border border-slate-600 text-slate-200 hover:bg-slate-600' 
+                      theme === 'dark'
+                        ? 'bg-slate-700 border border-slate-600 text-slate-200 hover:bg-slate-600'
                         : 'bg-white border border-slate-300 text-slate-800 hover:bg-slate-50 shadow-2xs'
                     }`}
                     title={t('Вернуться к графу')}
@@ -6086,7 +6189,7 @@ export default function App() {
               {/* SCHEMA BROWSER */}
               {showDuckDbSchemaPanel && (
                 <div 
-                  className={`${isSchemaZoomed ? 'w-[50vw]' : 'w-[30vw] min-w-[220px]'} flex flex-col shrink-0 border-l min-h-0 ${theme === 'dark' ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-300'}`}
+                  className={`${isSchemaZoomed ? 'w-[50vw]' : 'w-[30vw] min-w-[220px]'} max-md:fixed max-md:inset-y-0 max-md:right-0 max-md:z-50 max-md:w-[85vw] max-md:min-w-0 max-md:shadow-2xl flex flex-col shrink-0 border-l min-h-0 ${theme === 'dark' ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-300'}`}
                 >
                   {(duckDbConnectedPath || clickhouseConfig) && (
                   <div className={filesSectionMode === 'max' ? 'hidden' : `flex flex-col min-h-0 ${filesSectionMode === 'collapsed' ? 'flex-1' : 'flex-1 basis-0'}`}>
@@ -6498,6 +6601,10 @@ export default function App() {
                     root={fileTreeRoot}
                     mode={filesSectionMode}
                     onModeChange={setFilesSectionMode}
+                    sort={filesSort}
+                    onSortChange={setFilesSort}
+                    uiScale={uiVisibility.uiScale ?? 100}
+                    onPathChanged={handleTreePathChanged}
                     standalone={!(duckDbConnectedPath || clickhouseConfig)}
                     isZoomed={isSchemaZoomed}
                     onToggleZoom={() => setIsSchemaZoomed(z => !z)}
@@ -7028,7 +7135,7 @@ export default function App() {
                       }`}
                       title={copied === 'md' ? t("Скопировано!") : t("Скопировать как Markdown")}
                     >
-                      {copied === 'md' ? <Check className="w-4 h-4 text-emerald-500" /> : <TableProperties className="w-4 h-4" />}
+                      {copied === 'md' ? <Check className="w-4 h-4 text-emerald-500" /> : <FileText className="w-4 h-4" />}
                     </button>
                     <button 
                       onClick={handleCopyTableAsImage}
@@ -7748,7 +7855,7 @@ export default function App() {
             <div className={`px-4 py-2 border-t flex flex-wrap items-center justify-between shrink-0 relative z-40 ${
               theme === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-slate-300/80 border-slate-400/60'
             }`}>
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3 narrow-scroll-x max-md:w-full">
                 {/* SETTINGS BUTTON */}
                 <button
                   onClick={() => setShowSettingsModal(true)}
@@ -7786,7 +7893,7 @@ export default function App() {
                         className="fixed inset-0 z-40" 
                         onClick={() => setShowPresetsDropdown(false)} 
                       />
-                      <div className={`absolute bottom-full mb-2 left-0 z-50 rounded-lg border shadow-2xl p-2 w-80 animate-in fade-in duration-150 ${
+                      <div className={`absolute bottom-full mb-2 left-0 max-md:fixed max-md:inset-x-2 max-md:bottom-2 max-md:mb-0 max-md:w-auto max-md:max-h-[70vh] max-md:overflow-y-auto z-50 rounded-lg border shadow-2xl p-2 w-80 animate-in fade-in duration-150 ${
                         theme === 'dark' ? 'bg-slate-800 border-slate-600 text-slate-200' : 'bg-white border-slate-300 text-slate-800'
                       }`}>
                         <div className="flex items-center justify-between pb-1.5 border-b border-slate-600/40 mb-1.5">

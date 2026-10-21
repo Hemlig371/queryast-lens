@@ -1,8 +1,9 @@
-import { parseMermaidSource, formatMermaidIssue, type MermaidIssue, type MermaidEdgeIR } from './mermaidParse';
+import { formatMermaidIssue, type MermaidIssue, type MermaidEdgeIR } from './mermaidParse';
+import { parseDiagram, erEntityMetrics, erCommentShown, ER_HEADER_H, ER_ROW_H } from './erParse';
 import { layoutMermaid, describeMermaidIssues, type MermaidLayoutNode } from './mermaidToGraph';
 import { escapeHtml } from './markdown';
 import { t } from './i18n';
-import { roundedPath, pathMidpoint, type Pt } from './edgePath';
+import { edgeGeometry, labelBeside, EDGE_LABEL_CHAR_W, type HeadShape, type Pt, type RoutedEdge } from './edgePath';
 
 /**
  * Статичный SVG для Mermaid-блоков внутри Markdown. Без React Flow и без анимаций:
@@ -113,11 +114,42 @@ function shapeSvg(shape: string, x: number, y: number, w: number, h: number, sty
   }
 }
 
+/** Сущность ER-диаграммы: таблица «заголовок + строки атрибутов» (тип | имя | ключи | комментарий). */
+function entitySvg(ln: MermaidLayoutNode): string {
+  const { node, x, y, width: w, height: h } = ln;
+  const attrs = node.er?.attributes || [];
+  const m = erEntityMetrics(node.label || node.id, attrs);
+  let out =
+    `<g class="mm-node mm-entity" data-id="${escapeHtml(node.id)}">` +
+    `<rect class="mm-shape" x="${r1(x)}" y="${r1(y)}" width="${r1(w)}" height="${r1(h)}" rx="6"/>` +
+    `<rect class="mm-ent-head" x="${r1(x + 0.75)}" y="${r1(y + 0.75)}" width="${r1(w - 1.5)}" height="${ER_HEADER_H - 1.5}" rx="5.5"/>` +
+    `<rect class="mm-ent-head" x="${r1(x + 0.75)}" y="${r1(y + ER_HEADER_H - 7)}" width="${r1(w - 1.5)}" height="6"/>` +
+    `<text class="mm-label mm-ent-title" text-anchor="middle" dominant-baseline="central" font-size="13" x="${r1(x + w / 2)}" y="${r1(y + ER_HEADER_H / 2)}">${escapeHtml(node.label || node.id)}</text>`;
+  if (attrs.length > 0) {
+    out += `<line class="mm-ent-sep" x1="${r1(x)}" y1="${r1(y + ER_HEADER_H)}" x2="${r1(x + w)}" y2="${r1(y + ER_HEADER_H)}"/>`;
+  }
+  attrs.forEach((a, i) => {
+    const top = y + ER_HEADER_H + i * ER_ROW_H;
+    const cy = top + ER_ROW_H / 2;
+    const text = (cls: string, col: number, value: string, extra = '') =>
+      value ? `<text class="${cls}" x="${r1(x + m.colX[col])}" y="${r1(cy)}" dominant-baseline="central" font-size="12"${extra}>${escapeHtml(value)}</text>` : '';
+    if (i % 2 === 1) out += `<rect class="mm-ent-alt" x="${r1(x + 1)}" y="${r1(top)}" width="${r1(w - 2)}" height="${ER_ROW_H}"/>`;
+    const keyCls = a.keys.includes('PK') ? 'mm-ent-pk' : a.keys.includes('FK') ? 'mm-ent-fk' : 'mm-ent-uk';
+    out +=
+      text('mm-ent-type', 0, a.type) +
+      text('mm-ent-name', 1, a.name) +
+      text(`mm-ent-key ${keyCls}`, 2, a.keys.join(', ')) +
+      (a.comment ? `<text class="mm-ent-muted" x="${r1(x + m.colX[3])}" y="${r1(cy)}" dominant-baseline="central" font-size="12">${escapeHtml(erCommentShown(a.comment))}<title>${escapeHtml(a.comment)}</title></text>` : '');
+  });
+  return out + `</g>`;
+}
+
 function nodeSvg(ln: MermaidLayoutNode): string {
+  if (ln.node.shape === 'entity') return entitySvg(ln);
   const { node, x, y, width: w, height: h } = ln;
   const style = nodeInlineStyle(node.style);
   const textColor = safeColor(node.style?.color);
-  const inner = node.shape === 'circle' || node.shape === 'double_circle' ? 0.6 : node.shape === 'rhombus' ? 0.55 : node.shape === 'hexagon' ? 0.8 : 0.9;
+  const inner = node.shape === 'circle' || node.shape === 'double_circle' ? 0.6 : node.shape === 'rhombus' ? 0.7 : node.shape === 'hexagon' ? 0.8 : 0.9;
   const maxChars = Math.max(6, Math.floor((w * inner - 8) / CHAR_W));
   const lines = labelLines(node.label || node.id, maxChars);
   const fs = Math.max(10, Math.min(FONT, (h * 0.8) / (lines.length * 1.25)));
@@ -135,103 +167,41 @@ function nodeSvg(ln: MermaidLayoutNode): string {
 }
 
 
-function clipToRect(from: Pt, to: Pt, rect: { x: number; y: number; width: number; height: number }): Pt {
-  const cx = rect.x + rect.width / 2;
-  const cy = rect.y + rect.height / 2;
-  const dx = from.x - cx;
-  const dy = from.y - cy;
-  if (dx === 0 && dy === 0) return to;
-  const sx = dx === 0 ? Infinity : rect.width / 2 / Math.abs(dx);
-  const sy = dy === 0 ? Infinity : rect.height / 2 / Math.abs(dy);
-  const s = Math.min(sx, sy);
-  return { x: cx + dx * s, y: cy + dy * s };
-}
-
-/** Точка на контуре узла на луче от центра к `toward` (ромб, круг/эллипс); для остальных форм — прямоугольник. */
-function clipToShape(node: { node: { shape: string }; x: number; y: number; width: number; height: number }, toward: Pt): Pt {
-  const cx = node.x + node.width / 2;
-  const cy = node.y + node.height / 2;
-  const dx = toward.x - cx;
-  const dy = toward.y - cy;
-  if (dx === 0 && dy === 0) return { x: cx, y: cy };
-  const hw = node.width / 2;
-  const hh = node.height / 2;
-  const shape = node.node.shape;
-  let s: number;
-  if (shape === 'rhombus' || shape === 'diamond') {
-    s = 1 / (Math.abs(dx) / hw + Math.abs(dy) / hh);
-  } else if (shape === 'circle' || shape === 'double_circle') {
-    s = 1 / Math.hypot(dx / hw, dy / hh);
-  } else {
-    return clipToRect(toward, { x: cx, y: cy }, node);
+function headToSvg(h: HeadShape): string {
+  const pt = (p: Pt) => `${r1(p.x)} ${r1(p.y)}`;
+  let out = '';
+  if (h.polygon) out += `<polygon class="mm-head" points="${h.polygon.map(p => `${r1(p.x)},${r1(p.y)}`).join(' ')}"/>`;
+  if (h.lines) out += `<path class="mm-er" d="${h.lines.map(([a, b]) => `M${pt(a)}L${pt(b)}`).join('')}"/>`;
+  if (h.circle) out += `<circle class="mm-head mm-head-open" cx="${r1(h.circle.c.x)}" cy="${r1(h.circle.c.y)}" r="${h.circle.r}"/>`;
+  if (h.cross) {
+    const [p, q, u, v] = h.cross;
+    out += `<path class="mm-cross" d="M${pt(p)}L${pt(q)}M${pt(u)}L${pt(v)}"/>`;
   }
-  return { x: cx + dx * s, y: cy + dy * s };
-}
-
-/** Голова стрелки в точке `tip`, направленная от `from` к `tip`; линия укорачивается на `inset`. */
-function headSvg(kind: 'arrow' | 'circle' | 'cross', tip: Pt, from: Pt): { svg: string; inset: number } {
-  const len = Math.hypot(tip.x - from.x, tip.y - from.y) || 1;
-  const ux = (tip.x - from.x) / len;
-  const uy = (tip.y - from.y) / len;
-  const nx = -uy;
-  const ny = ux;
-  if (kind === 'arrow') {
-    const L = 10;
-    const W = 5;
-    const bx = tip.x - ux * L;
-    const by = tip.y - uy * L;
-    return {
-      svg: `<polygon class="mm-head" points="${r1(tip.x)},${r1(tip.y)} ${r1(bx + nx * W)},${r1(by + ny * W)} ${r1(bx - nx * W)},${r1(by - ny * W)}"/>`,
-      inset: L - 1,
-    };
-  }
-  if (kind === 'circle') {
-    const R = 4.5;
-    return { svg: `<circle class="mm-head mm-head-open" cx="${r1(tip.x - ux * R)}" cy="${r1(tip.y - uy * R)}" r="${R}"/>`, inset: R * 2 };
-  }
-  const s = 5;
-  const c = { x: tip.x - ux * s, y: tip.y - uy * s };
-  return {
-    svg: `<path class="mm-cross" d="M${r1(c.x - s)} ${r1(c.y - s)}L${r1(c.x + s)} ${r1(c.y + s)}M${r1(c.x + s)} ${r1(c.y - s)}L${r1(c.x - s)} ${r1(c.y + s)}"/>`,
-    inset: s * 2,
-  };
-}
-
-function shorten(pts: Pt[], atEnd: boolean, by: number): Pt[] {
-  if (pts.length < 2 || by <= 0) return pts;
-  const out = pts.map(p => ({ ...p }));
-  const i = atEnd ? out.length - 1 : 0;
-  const j = atEnd ? out.length - 2 : 1;
-  const len = Math.hypot(out[i].x - out[j].x, out[i].y - out[j].y);
-  if (len <= by + 1) return out;
-  out[i] = { x: out[i].x - ((out[i].x - out[j].x) / len) * by, y: out[i].y - ((out[i].y - out[j].y) / len) * by };
   return out;
 }
 
-function edgeSvg(edge: MermaidEdgeIR, pts: Pt[]): string {
-  if (edge.lineType === 'invisible' || pts.length < 2) return '';
-  let line = pts;
-  let heads = '';
-  if (edge.headEnd !== 'none') {
-    const h = headSvg(edge.headEnd, pts[pts.length - 1], pts[pts.length - 2]);
-    heads += h.svg;
-    line = shorten(line, true, h.inset);
-  }
-  if (edge.headStart !== 'none') {
-    const h = headSvg(edge.headStart, pts[0], pts[1]);
-    heads += h.svg;
-    line = shorten(line, false, h.inset);
-  }
+function edgeSvg(edge: MermaidEdgeIR, route: RoutedEdge): { svg: string; sample: Pt[] } {
+  if (edge.lineType === 'invisible') return { svg: '', sample: [] };
+  const geo = edgeGeometry(
+    { start: route.start, end: route.end, startDir: route.outDir, endDir: { x: -route.inDir.x, y: -route.inDir.y }, inner: route.inner },
+    edge.headStart,
+    edge.headEnd
+  );
+  const heads = (geo.endHead ? headToSvg(geo.endHead) : '') + (geo.startHead ? headToSvg(geo.startHead) : '');
   const cls = `mm-edge${edge.lineType === 'dotted' ? ' mm-dotted' : edge.lineType === 'thick' ? ' mm-thick' : ''}`;
   const stroke = safeColor(edge.style?.stroke);
   const sw = typeof edge.style?.strokeWidth === 'number' ? edge.style.strokeWidth : null;
   const inline = [stroke ? `stroke:${stroke}` : '', sw && sw > 0 && sw < 20 ? `stroke-width:${sw}` : ''].filter(Boolean).join(';');
-  let out = `<path class="${cls}" d="${roundedPath(line)}"${inline ? ` style="${inline}"` : ''}/>${heads}`;
+  let out = `<path class="${cls}" d="${geo.d}"${inline ? ` style="${inline}"` : ''}/>${heads}`;
+  const sample = geo.sample.slice();
   if (edge.label) {
-    const m = pathMidpoint(pts);
-    out += `<text class="mm-edge-label" x="${r1(m.x)}" y="${r1(m.y)}" text-anchor="middle" dominant-baseline="central" font-size="12">${escapeHtml(edge.label.replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]*>/g, ''))}</text>`;
+    const text = edge.label.replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]*>/g, '');
+    const m = route.label ?? labelBeside([route.start, ...route.inner, route.end]);
+    out += `<text class="mm-edge-label" x="${r1(m.x)}" y="${r1(m.y)}" text-anchor="${m.anchor}" dominant-baseline="central" font-size="12">${escapeHtml(text)}</text>`;
+    const w = text.length * EDGE_LABEL_CHAR_W;
+    sample.push({ x: m.anchor === 'middle' ? m.x - w / 2 : m.anchor === 'start' ? m.x : m.x - w, y: m.y }, { x: m.anchor === 'middle' ? m.x + w / 2 : m.anchor === 'start' ? m.x + w : m.x, y: m.y });
   }
-  return out;
+  return { svg: out, sample };
 }
 
 export interface MermaidSvgResult {
@@ -242,7 +212,7 @@ export interface MermaidSvgResult {
 
 /** Строит SVG для текста Mermaid (flowchart/graph). */
 export function mermaidToSvg(code: string): MermaidSvgResult {
-  const ir = parseMermaidSource(code);
+  const ir = parseDiagram(code);
   const issues = describeMermaidIssues(ir);
   if (issues.error) return { error: issues.error, warnings: ir.warnings };
   if (ir.nodes.length === 0) return { error: t('Диаграмма пустая'), warnings: ir.warnings };
@@ -250,8 +220,7 @@ export function mermaidToSvg(code: string): MermaidSvgResult {
   if (!ir.directionExplicit) ir.direction = 'TB';
 
   const layout = layoutMermaid(ir);
-  const byId = new Map(layout.nodes.map(n => [n.node.id, n]));
-
+  
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   const grow = (x: number, y: number, w = 0, h = 0) => {
     minX = Math.min(minX, x); minY = Math.min(minY, y);
@@ -269,23 +238,11 @@ export function mermaidToSvg(code: string): MermaidSvgResult {
 
   let edgesSvg = '';
   for (const edge of ir.edges) {
-    const a = byId.get(edge.source);
-    const b = byId.get(edge.target);
-    if (!a || !b) continue;
-    let pts: Pt[] | undefined = layout.edgePoints.get(edge.id);
-    if (!pts || pts.length < 2 || pts.some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y))) {
-      const ac = { x: a.x + a.width / 2, y: a.y + a.height / 2 };
-      const bc = { x: b.x + b.width / 2, y: b.y + b.height / 2 };
-      pts = [clipToRect(bc, ac, a), clipToRect(ac, bc, b)];
-    }
-    // концы ребра — на контуре самой фигуры (dagre считает по прямоугольнику узла)
-    if (pts.length >= 2) {
-      pts = pts.slice();
-      pts[0] = clipToShape(a, pts[1]);
-      pts[pts.length - 1] = clipToShape(b, pts[pts.length - 2]);
-    }
-    for (const p of pts) grow(p.x - 20, p.y - 10, 40, 20);
-    edgesSvg += edgeSvg(edge, pts);
+    const route = layout.edgeRoutes.get(edge.id);
+    if (!route) continue;
+    const res = edgeSvg(edge, route);
+    for (const p of res.sample) grow(p.x - 20, p.y - 10, 40, 20);
+    edgesSvg += res.svg;
   }
 
   const nodesSvg = layout.nodes.map(nodeSvg).join('');
@@ -328,8 +285,8 @@ export function renderMermaidBlock(code: string, index: number): string {
 
 export function mermaidSvgCss(theme: 'dark' | 'light'): string {
   const p = theme === 'dark'
-    ? { fill: '#1e293b', stroke: '#64748b', text: '#e2e8f0', edge: '#94a3b8', halo: '#0f172a', group: 'rgba(148,163,184,0.08)', groupStroke: '#475569', groupTitle: '#94a3b8' }
-    : { fill: '#f1f5f9', stroke: '#94a3b8', text: '#0f172a', edge: '#475569', halo: '#ffffff', group: 'rgba(100,116,139,0.06)', groupStroke: '#cbd5e1', groupTitle: '#475569' };
+    ? { fill: '#1e293b', stroke: '#64748b', text: '#e2e8f0', edge: '#94a3b8', halo: '#0f172a', group: 'rgba(148,163,184,0.08)', groupStroke: '#475569', groupTitle: '#94a3b8', entHead: '#334155', entAlt: 'rgba(255,255,255,0.035)', muted: '#94a3b8', pk: '#fbbf24', fk: '#60a5fa', uk: '#c4b5fd' }
+    : { fill: '#f1f5f9', stroke: '#94a3b8', text: '#0f172a', edge: '#475569', halo: '#ffffff', group: 'rgba(100,116,139,0.06)', groupStroke: '#cbd5e1', groupTitle: '#475569', entHead: '#e2e8f0', entAlt: 'rgba(15,23,42,0.035)', muted: '#64748b', pk: '#b45309', fk: '#1d4ed8', uk: '#6d28d9' };
   return (
     `.mm-svg{max-width:100%;height:auto}` +
     `.mm-svg .mm-shape{fill:${p.fill};stroke:${p.stroke};stroke-width:1.5}` +
@@ -343,6 +300,16 @@ export function mermaidSvgCss(theme: 'dark' | 'light'): string {
     `.mm-svg .mm-head-open{fill:${p.halo};stroke:${p.edge};stroke-width:1.5}` +
     `.mm-svg .mm-cross{fill:none;stroke:${p.edge};stroke-width:2}` +
     `.mm-svg .mm-edge-label{fill:${p.text};paint-order:stroke;stroke:${p.halo};stroke-width:4px;stroke-linejoin:round}` +
+    `.mm-svg .mm-er{fill:none;stroke:${p.edge};stroke-width:1.8;stroke-linecap:round}` +
+    `.mm-svg .mm-ent-head{fill:${p.entHead};stroke:none}` +
+    `.mm-svg .mm-ent-sep{stroke:${p.stroke};stroke-width:1.2}` +
+    `.mm-svg .mm-ent-alt{fill:${p.entAlt}}` +
+    `.mm-svg .mm-ent-title{font-weight:700}` +
+    `.mm-svg .mm-ent-name{fill:${p.text}}` +
+    `.mm-svg .mm-ent-type,.mm-svg .mm-ent-muted{fill:${p.muted}}` +
+    `.mm-svg .mm-ent-muted{font-style:italic}` +
+    `.mm-svg .mm-ent-key{font-weight:700;font-size:11px}` +
+    `.mm-svg .mm-ent-pk{fill:${p.pk}}.mm-svg .mm-ent-fk{fill:${p.fk}}.mm-svg .mm-ent-uk{fill:${p.uk}}` +
     `.mm-svg .mm-group{fill:${p.group};stroke:${p.groupStroke};stroke-dasharray:4 3}` +
     `.mm-svg .mm-group-title{fill:${p.groupTitle};font-weight:600}`
   );

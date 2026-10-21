@@ -1438,6 +1438,44 @@ FROM _temp_staging;`
     D --> F["<span style='font-size: 24px'>🏆</span>"]`
   },
   {
+    id: 'mermaid-er-diagram',
+    title: 'Mermaid: ER-диаграмма (таблицы и связи)',
+    category: 'Схемы',
+    dialect: 'Mermaid',
+    description: 'Сущности с атрибутами (PK, FK, UK, комментарии) и связи в нотации «воронья лапка».',
+    sql: `erDiagram
+    CUSTOMER ||--o{ ORDER : places
+    ORDER ||--|{ LINE_ITEM : contains
+    PRODUCT ||--o{ LINE_ITEM : "is in"
+    CUSTOMER }o..o| REGION : "lives in"
+
+    CUSTOMER {
+        int id PK
+        string name
+        string email UK "логин клиента"
+        int region_id FK
+    }
+    ORDER {
+        int id PK
+        int customer_id FK
+        date created_at
+        decimal(10,2) total
+    }
+    LINE_ITEM {
+        int order_id PK, FK
+        int product_id PK, FK
+        int qty
+    }
+    PRODUCT {
+        int id PK
+        string title
+    }
+    REGION {
+        int id PK
+        string name
+    }`
+  },
+  {
     id: 'markdown-report-note',
     title: 'Markdown: заметка с таблицей, SQL и диаграммой',
     category: 'Схемы',
@@ -1542,6 +1580,8 @@ export function SqlSnippetsManager({
   useEffect(() => {
     if (!isOpen) {
       setSearchQuery('');
+      setCurrentPage(1);
+      setSelectedCategory(initialCategory || 'Все');
       setIsCreating(false);
       setEditingSnippetId(null);
       setFormTitle('');
@@ -2055,7 +2095,7 @@ export function SqlSnippetsManager({
       >
         
         {/* HEADER */}
-        <div className={`flex flex-wrap items-center justify-between gap-3 px-4 py-2 border-b shrink-0 ${
+        <div className={`flex flex-wrap max-md:flex-nowrap items-center justify-between gap-3 px-4 py-2 border-b shrink-0 ${
           theme === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-slate-200/80 border-slate-300'
         }`}>
           <div className="flex items-center gap-3">
@@ -2064,7 +2104,8 @@ export function SqlSnippetsManager({
             </div>
             <div>
               <h3 className="font-bold text-sm sm:text-base flex items-center gap-2">
-                {t('Библиотека шаблонов')}
+                <span className="max-md:hidden">{t('Библиотека шаблонов')}</span>
+                <span className="md:hidden">{t('Библиотека')}</span>
               </h3>
             </div>
           </div>
@@ -2116,7 +2157,7 @@ export function SqlSnippetsManager({
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs shadow-xs transition-all"
               >
                 <Plus className="w-4 h-4" />
-                <span>{t('Создать')}</span>
+                <span className="max-md:hidden">{t('Создать')}</span>
               </button>
             </>
             )}
@@ -2133,11 +2174,11 @@ export function SqlSnippetsManager({
         </div>
 
         {/* MAIN BODY */}
-        <div className="flex-1 flex flex-col sm:flex-row overflow-hidden">
+        <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
           
           {/* LEFT SIDEBAR: CATEGORIES & SEARCH */}
           {(uiVisibility?.showSnippetSearch !== false || uiVisibility?.showSnippetCategories !== false) && (
-          <div className={`w-full sm:w-56 max-h-[35vh] sm:max-h-none border-b sm:border-b-0 sm:border-r flex flex-col p-3 space-y-3 shrink-0 ${
+          <div className={`w-full md:w-56 max-h-[35vh] md:max-h-none border-b md:border-b-0 md:border-r flex flex-col p-3 space-y-3 shrink-0 ${
             theme === 'dark' ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-200/50 border-slate-300'
           }`}>
             
@@ -2161,8 +2202,8 @@ export function SqlSnippetsManager({
 
             {/* CATEGORY LIST */}
             {uiVisibility?.showSnippetCategories !== false && (
-            <div className="flex-1 overflow-y-auto space-y-1.5 pr-1">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-2 pt-1 pb-1">
+            <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 max-md:flex-none max-md:flex max-md:items-center max-md:gap-1.5 max-md:space-y-0 max-md:pr-0 max-md:overflow-y-hidden narrow-scroll-x">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-2 pt-1 pb-1 max-md:hidden">
                 {t('Категории')}
               </div>
               {categories.map((cat) => {
@@ -2175,7 +2216,7 @@ export function SqlSnippetsManager({
                   <button
                     key={cat}
                     onClick={() => setSelectedCategory(cat)}
-                    className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${
+                    className={`w-full max-md:w-auto max-md:gap-2 max-md:whitespace-nowrap flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${
                       isSelected
                         ? 'bg-blue-600 text-white font-semibold'
                         : theme === 'dark' ? 'text-slate-300 hover:bg-slate-700/60' : 'text-slate-700 hover:bg-slate-300/60'

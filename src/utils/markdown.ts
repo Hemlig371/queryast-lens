@@ -143,7 +143,7 @@ export function renderInline(text: string, ctx?: Ctx): string {
 
   const flush = () => {
     if (plain) {
-      out += autolinkBare(escapeHtml(plain));
+      out += autolinkBare(plain);
       plain = '';
     }
   };
@@ -292,12 +292,31 @@ export function renderInline(text: string, ctx?: Ctx): string {
   return out;
 }
 
-/** Голые http(s):// ссылки в уже экранированном тексте. */
-function autolinkBare(escaped: string): string {
-  return escaped.replace(/\bhttps?:\/\/[^\s<>"]*[^\s<>".,;:!?)'\]]/g, url => {
-    const clean = url.replace(/&amp;/g, '&');
-    return `<a href="${escapeHtml(clean)}" target="_blank" rel="noopener noreferrer">${url}</a>`;
-  });
+/**
+ * Голые http(s):// ссылки в обычном (ещё не экранированном) тексте; возвращает готовый HTML.
+ * Ссылка кончается на пробеле, `<`, `>` или кавычке; хвостовая пунктуация и «лишняя» `)` в ссылку не входят,
+ * а скобки внутри ссылки (`/wiki/A_(b)`) остаются.
+ */
+function autolinkBare(text: string): string {
+  let out = '';
+  let last = 0;
+  const re = /\bhttps?:\/\/[^\s<>"]+/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    let url = m[0];
+    for (;;) {
+      const tail = url[url.length - 1];
+      if (/[.,;:!?'\]*]/.test(tail)) { url = url.slice(0, -1); continue; }
+      if (tail === ')' && (url.match(/\)/g) || []).length > (url.match(/\(/g) || []).length) { url = url.slice(0, -1); continue; }
+      break;
+    }
+    if (!/^https?:\/\/[^/?#]+/i.test(url)) continue; // «http://» без адреса — не ссылка
+    out += escapeHtml(text.slice(last, m.index));
+    out += `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a>`;
+    last = m.index + url.length;
+    re.lastIndex = last;
+  }
+  return out + escapeHtml(text.slice(last));
 }
 
 // ---------------------------------------------------------------------------
@@ -398,8 +417,12 @@ function renderList(lines: string[], start: number, ctx: Ctx): { html: string; n
       }
       break;
     }
-    // пустая строка между пунктами делает весь список «рыхлым» (абзацы в <p>)
-    if (pendingBlank > 0 && i < lines.length && RE_LIST.test(lines[i])) loose = true;
+    // пустая строка между пунктами делает весь список «рыхлым» (абзацы в <p>);
+    // но только если дальше идёт пункт ЭТОГО ЖЕ списка, а не другой список (другой маркер или тип)
+    if (pendingBlank > 0 && i < lines.length) {
+      const nm = RE_LIST.exec(lines[i]);
+      if (nm && /\d/.test(nm[2]) === ordered && (ordered ? nm[2].slice(-1) === marker : nm[2] === marker)) loose = true;
+    }
     items.push({ lines: itemLines });
   }
 

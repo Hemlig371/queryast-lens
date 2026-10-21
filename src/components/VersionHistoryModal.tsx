@@ -135,6 +135,18 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
     }
   }, [isOpen]);
 
+  // Закрытие окна сбрасывает всё: при следующем открытии пустой поиск, первая страница, выбрана последняя версия.
+  useEffect(() => {
+    if (!isOpen) {
+      setSearchQuery('');
+      setCurrentPage(1);
+      setSelectedVersion(null);
+      setShowDiff(false);
+      setNewLabel('');
+      setRestoredId(null);
+    }
+  }, [isOpen]);
+
   const diffResult = useMemo(() => {
     if (!showDiff || !selectedVersion) return [];
     return computeLineDiff(selectedVersion.sql, currentSql);
@@ -270,7 +282,8 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
               <h2 className={`text-sm ${
                 theme === 'dark' ? 'text-slate-100' : 'text-slate-800'
               }`}>
-                {t('История версий кода')}
+                <span className="max-md:hidden">{t('История версий кода')}</span>
+                <span className="md:hidden">{t('История')}</span>
               </h2>
             </div>
           </div>
@@ -281,7 +294,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
               <button
                 onClick={handleExportZip}
                 disabled={versions.length === 0}
-                className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border transition-colors disabled:opacity-40 ${
+                className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border transition-colors disabled:opacity-40 whitespace-nowrap max-md:h-[30px] ${
                   theme === 'dark' 
                     ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200' 
                     : 'bg-white hover:bg-slate-50 border-slate-300 text-slate-800 shadow-2xs'
@@ -294,7 +307,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
               <button
                 onClick={handleExportJson}
                 disabled={versions.length === 0}
-                className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border transition-colors disabled:opacity-40 ${
+                className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border transition-colors disabled:opacity-40 whitespace-nowrap max-md:h-[30px] ${
                   theme === 'dark' 
                     ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200' 
                     : 'bg-white hover:bg-slate-50 border-slate-300 text-slate-800 shadow-2xs'
@@ -319,9 +332,9 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
         </div>
 
         {/* BODY */}
-        <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 flex max-md:flex-col overflow-hidden">
           {/* LEFT PANEL: VERSIONS LIST */}
-          <div className={`w-[340px] border-r flex flex-col shrink-0 ${
+          <div className={`w-[340px] max-md:w-full max-md:h-[45%] max-md:border-r-0 max-md:border-b border-r flex flex-col shrink-0 ${
             theme === 'dark' ? 'bg-slate-850/60 border-slate-700' : 'bg-white border-slate-300'
           }`}>
             {/* ACTIONS & SEARCH */}
@@ -473,7 +486,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
           </div>
 
           {/* RIGHT PANEL: CODE PREVIEW & RESTORE */}
-          <div className={`flex-1 flex flex-col min-w-0 transition-colors ${
+          <div className={`flex-1 flex flex-col min-w-0 max-md:min-h-0 transition-colors ${
             theme === 'dark' ? 'bg-slate-950 text-slate-200' : 'bg-slate-50 text-slate-800'
           }`}>
             {selectedVersion ? (

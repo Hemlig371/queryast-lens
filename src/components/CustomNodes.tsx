@@ -359,7 +359,7 @@ export const CollapseNode = memo(({ data, selected }: CustomNodeProps) => {
 
 CollapseNode.displayName = 'CollapseNode';
 
-import { MermaidNode, MermaidGroupNode, MermaidEdge } from './MermaidNodes';
+import { MermaidNode, MermaidEntityNode, MermaidGroupNode, MermaidEdge } from './MermaidNodes';
 
 export const nodeTypes = {
   collapseNode: CollapseNode,
@@ -374,6 +374,7 @@ export const nodeTypes = {
   constantNode: ConstantNode,
   resultNode: ResultNode,
   mermaidNode: MermaidNode,
+  mermaidEntityNode: MermaidEntityNode,
   mermaidGroupNode: MermaidGroupNode,
 };
 

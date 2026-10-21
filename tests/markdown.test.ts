@@ -172,3 +172,39 @@ describe('markdown: документ', () => {
     expect(Date.now() - t0).toBeLessThan(4000);
   });
 });
+
+describe('markdown: исправления (автоссылки, рыхлые списки)', () => {
+  it('ссылка в кавычках не захватывает &quot;', () => {
+    const html = md('смотри "https://example.com/a" тут');
+    expect(html).toContain('<a href="https://example.com/a" target="_blank" rel="noopener noreferrer">https://example.com/a</a>');
+    expect(html).not.toContain('quot;</a>');
+    expect(html).toContain('&quot;');
+  });
+  it('скобки внутри ссылки остаются, лишняя закрывающая — нет', () => {
+    expect(md('https://a.b/c_(d).')).toContain('href="https://a.b/c_(d)"');
+    expect(md('(см. https://a.b/c)')).toContain('href="https://a.b/c"');
+    expect(md('(см. https://a.b/c)')).toContain('</a>)');
+  });
+  it('пунктуация в конце ссылки не входит; & в ссылке экранируется один раз', () => {
+    const html = md('Ссылка https://a.b/?x=1&y=2, дальше.');
+    expect(html).toContain('href="https://a.b/?x=1&amp;y=2"');
+    expect(html).toContain('</a>, дальше.');
+  });
+  it('http:// без адреса — обычный текст', () => {
+    expect(md('http://')).toBe('<p>http://</p>');
+  });
+  it('список не становится рыхлым из-за пустой строки перед другим списком', () => {
+    const html = md('- a\n  - b\n- d\n\n1. x\n2. y');
+    expect(html).not.toContain('<p>');
+    expect(html).toContain('<ul><li>a');
+    expect(html).toContain('<ol><li>x</li><li>y</li></ol>');
+  });
+  it('пустая строка между пунктами одного списка по-прежнему делает его рыхлым', () => {
+    expect(md('- a\n\n- b')).toBe('<ul><li><p>a</p></li><li><p>b</p></li></ul>');
+    expect(md('1. a\n\n2. b')).toContain('<li><p>a</p></li>');
+  });
+  it('другой маркер после пустой строки — другой список без <p>', () => {
+    const html = md('- a\n\n* b');
+    expect(html).toBe('<ul><li>a</li></ul><ul><li>b</li></ul>');
+  });
+});

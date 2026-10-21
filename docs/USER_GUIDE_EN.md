@@ -31,6 +31,7 @@ QueryAST Lens is a cross-platform SQL Workbench for local and cloud analytics (D
    * [Custom Autocomplete & Quick Actions](#custom-autocomplete--quick-actions)
    * [Custom Keyboard Shortcuts (Hotkeys)](#custom-keyboard-shortcuts-hotkeys)
    * [Workspace Auto-Synchronization (Workspace Sync Path)](#workspace-auto-synchronization-workspace-sync-path)
+   * [Narrow Screens & Android](#narrow-screens--android)
 
 ---
 
@@ -231,13 +232,13 @@ To build the graph, click the **Visualize** button on the panel below the editor
   ```
   The app will automatically parse it and render an interactive node graph.
 * Supported: `flowchart` / `graph` — all node shapes (including `A@{ shape: cyl, label: "DB" }`), arrows `-->`, `---`, `-.->`, `==>`, `<-->`, `--x`, `--o`, `~~~`, labels `-->|text|` and `-- text -->`, `&`, `;`, `%%` comments, quoted labels, Unicode identifiers, `subgraph` (nested, and links to a subgraph), `classDef` / `class` / `style` / `linkStyle`.
-* Other diagram types (`sequenceDiagram`, `erDiagram`, `gantt`, ...) are not supported — the app tells you so.
+* `flowchart`/`graph` and `erDiagram` are supported (entities with attributes `type name PK, FK, UK "comment"`, `||--o{` relationships in crow's-foot notation, dotted `..` lines, labels, `direction`). Lines are orthogonal and merging edges join into a bus. `direction` inside a `subgraph` applies when its nodes have no links to outside nodes (as in Mermaid). Other diagram types (`sequenceDiagram`, `gantt`, ...) are not supported — the app tells you so.
 * Statements that cannot be parsed are skipped; the list with **line numbers** is shown above the graph while the rest of the diagram is built.
 
 ### Markdown preview
 Select a fragment (or leave the whole text) in the editor and click **Markdown** — the rendered document opens in the graph area. The graph is hidden meanwhile; use **Visualize** to return to it.
 * Supported: headings, lists (nested, numbered, task lists), tables, quotes, code, links, images (`https:` and `data:image`), `**bold**`, `*italic*`, `~~strikethrough~~`. Raw HTML is never executed — it is shown as text (only simple tags such as `<br>`, `<kbd>`, `<sub>`, `<sup>`, `<mark>` are allowed).
-* ` ```sql ` blocks are highlighted; ` ```mermaid ` blocks are drawn as diagrams (flowchart/graph). Each diagram has an **Open as graph** button in its corner that builds an interactive graph from that block.
+* ` ```sql ` blocks are highlighted; ` ```mermaid ` blocks are drawn as diagrams (flowchart/graph, erDiagram). Each diagram has an **Open as graph** button in its corner that builds an interactive graph from that block.
 * The document text can be selected with the mouse and copied. The clipboard receives HTML suitable for Word: headings, lists, tables with borders, monospaced code and diagrams as images (light palette). Buttons and language labels are not copied.
 * **Export**: the "Export" menu offers `PNG Image` and `JPEG Image` — the whole document is saved as one picture (900 px wide, colors of the current theme) regardless of the window size. The other menu items are disabled in document mode. A document that is too long (hundreds of screens) is not exported as a whole — select part of the text.
 * If the selected text is a pure Mermaid diagram, the button still builds the interactive graph as before.
@@ -346,7 +347,7 @@ When DuckDB options are enabled in **UI Elements**, additional connection parame
 ### Custom Autocomplete & Quick Actions
 * **Autocomplete Templates**: The **Formats** tab allows adding, editing, and deleting custom SQL snippets and macros that appear in the editor's autocomplete dropdown.
 * **Quick Actions**: Template actions displayed in the schema tree context menu (e.g., "Duplicate rows", "Copy table", "Export to Parquet"). They support the `{table}` placeholder for dynamic substitution.
-* **Schema and files**: the database-icon button opens a panel with a file tree at the bottom (folders are read when expanded; size shows as a badge and in the tooltip). Drag a file into the editor to insert its path in single quotes. On desktop, double-click opens text files (`sql, md, txt, py, sh, yml, yaml, toml, ini, log`) in a tab and Office/PDF documents in the external app. The root is set in Settings ("File tree root folder"), otherwise the open DB's folder, then the home folder. Browser and mobile builds show the DuckDB-WASM virtual file system list (drag only). The list refreshes via the button and when the window regains focus (at most once per 10 s); `Ctrl + R` refreshes only the database schema.
+* **Schema and files**: the database-icon button opens a panel with a file tree at the bottom (folders are read when expanded; size shows as a badge and in the tooltip). Drag a file into the editor to insert its path in single quotes. On desktop, double-click opens text files (`sql, md, txt, py, sh, yml, yaml, toml, ini, log`) in a tab and Office/PDF documents in the external app. The root is set in Settings ("File tree root folder"), otherwise the open DB's folder, then the home folder. Browser and mobile builds show the DuckDB-WASM virtual file system list (drag only). The list refreshes via the button and when the window regains focus (at most once per 10 s); `Ctrl + R` refreshes only the database schema. Above the tree are a search box and three sort buttons (by name, by modified date, by size; clicking again reverses the direction, folders always come first; the choice is remembered). Search filters only what is already loaded: it does not expand folders or read the disk, but folders that contain a match are shown expanded. On desktop, right-clicking a file or folder opens a menu: "Open with…" (files only; Windows and macOS), "Show in file manager", "Rename" (in place; Enter or leaving the field applies, Esc cancels) and "Delete (move to trash)" — to the OS trash, without confirmation. A file or folder can be dragged into another folder of the tree (dropping on a file moves it into that file's folder; dropping on empty space in the list moves it to the root folder); the target is highlighted as on hover. If the move is impossible (a folder dropped into itself or a subfolder, the name is taken, another drive), the target flashes red for 1–2 seconds, nothing changes and no message appears; dropping into the same folder does nothing. Dragging a file into the editor still inserts its path; a folder inserts nothing. Open tabs follow a rename or move; a tab of a deleted file stays as unsaved.
 
 ### Custom Keyboard Shortcuts (Hotkeys)
 The **Hotkeys** tab enables remapping all editor, tab, and graph shortcuts to match your preferred keybindings (DBeaver, DataGrip, VS Code). Click on any key binding button and press your desired shortcut.
@@ -358,3 +359,11 @@ The Desktop version (Tauri) provides background auto-synchronization across mult
 3. The newer file wins: if the synchronized file was updated from another computer after your last synchronization, local changes are not written to it and are replaced with the file contents at the next launch. Vault secrets and the ClickHouse password are not included in the file.
 4. Manual workspace backup and restoration are always accessible via the **Export** and **Import** buttons in the settings modal footer.
 
+### Narrow Screens & Android
+The narrow layout is switched on by window width (up to 767 px), not by platform, so it can be checked on desktop by narrowing the window.
+* Either the editor or the graph is shown. **Visualize** and **Markdown** show the graph; to return to the editor use the "Show/hide editor panel" button in the graph header (it is always shown on a narrow screen).
+* Headers and bottom bars are a single row scrolled by finger (no scrollbar): a button cut off at the edge means there are more buttons beyond it. The "Export" and "Connection" menus open under their buttons, and "Presets" opens as a bottom sheet.
+* In the expanded editor the "Schema and files" panel slides in from the right: the database-icon button opens it, the cross in its header closes it. On a narrow screen, line wrapping is on by default and the graph minimap is hidden.
+* The Settings, Template Library and Version History windows adapt to the width: settings tabs show icons only, the library and history have short titles, and history shows the version list above the code.
+* The Android system Back button (app only) closes, in order: open menus and confirmations → windows (settings, library, history, connections, WASM file manager) → the selected cell → the result table in the expanded editor (first shrinking it, then hiding it); when there is nothing to close, the app is minimized. Back does not cancel a running query.
+* A desktop window narrower than 768 px gets the same narrow layout.

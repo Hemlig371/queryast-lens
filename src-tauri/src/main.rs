@@ -17,7 +17,7 @@ use serde_json::{json, Value as JsonValue};
 use tauri::{State, Manager};
 use reqwest::Client;
 use tokio::fs::File;
-use fstree::{list_dir, open_path};
+use fstree::{list_dir, move_path, open_path, open_with, rename_path, reveal_path, trash_path};
 use tokio::io::AsyncWriteExt;
 use futures_util::StreamExt;
 
@@ -649,7 +649,12 @@ fn main() {
       execute_clickhouse_query_rust,
       cancel_clickhouse_query,
       list_dir,
-      open_path
+      open_path,
+      open_with,
+      reveal_path,
+      rename_path,
+      move_path,
+      trash_path
     ])
     .build(tauri::generate_context!())
     .expect("error while building tauri application")

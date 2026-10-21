@@ -124,6 +124,19 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
 
   // Search state
   const [showSearch, setShowSearch] = useState<boolean>(false);
+  // Ширина колонки номеров строк (растёт с числом цифр): панель поиска/замены выравнивается по началу текста.
+  const [gutterW, setGutterW] = useState<number>(0);
+  useEffect(() => {
+    if (!showSearch) return;
+    const g = viewRef.current?.dom.querySelector('.cm-gutters') as HTMLElement | null;
+    if (!g) return;
+    const update = () => setGutterW(g.offsetWidth);
+    update();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(update);
+    ro.observe(g);
+    return () => ro.disconnect();
+  }, [showSearch]);
   const [showReplace, setShowReplace] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [replaceQuery, setReplaceQuery] = useState<string>('');
@@ -912,13 +925,17 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
     >
       {/* INTEGRATED SEARCH & REPLACE BANNER AT TOP OF EDITOR */}
       {showSearch && (
-        <div className={`p-2 border-b shrink-0 flex flex-col gap-1.5 font-mono text-xs z-30 transition-colors animate-in slide-in-from-top-1 duration-150 ${
+        <div
+          // Значки поиска/замены стоят в колонке номеров строк (слот шириной с неё), поля ввода начинаются там же, где текст запроса.
+          className={`p-2 pl-0 border-b shrink-0 flex flex-col gap-1.5 font-mono text-xs z-30 transition-colors animate-in slide-in-from-top-1 duration-150 ${
           theme === 'dark' ? 'bg-slate-800/95 border-slate-700 text-slate-100 shadow-md' : 'bg-slate-200/90 border-slate-300 text-slate-900 shadow-sm'
         }`}>
           {/* SEARCH ROW */}
           <div className="flex flex-wrap items-center justify-between gap-1.5">
             <div className="flex items-center gap-1.5 flex-1 min-w-[180px]">
-              <Search className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+              <span className="flex items-center justify-center shrink-0" style={{ width: gutterW || 28 }}>
+                <Search className="w-3.5 h-3.5 text-blue-500" />
+              </span>
               <input
                 ref={searchInputRef}
                 type="text"
@@ -1014,7 +1031,9 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
           {/* REPLACE ROW */}
           {showReplace && (
             <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-slate-700/40 animate-in fade-in duration-100">
-              <Replace className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+              <span className="flex items-center justify-center shrink-0" style={{ width: gutterW || 28 }}>
+                <Replace className="w-3.5 h-3.5 text-emerald-500" />
+              </span>
               <input
                 type="text"
                 placeholder={t("Заменить на...")}

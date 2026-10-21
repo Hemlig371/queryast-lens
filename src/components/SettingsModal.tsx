@@ -1008,7 +1008,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           maxWidth: 'calc(96vw / var(--zoom-scale, 1))',
           maxHeight: 'calc(95vh / var(--zoom-scale, 1))',
         }}
-        className={`border rounded-xl flex flex-col shadow-2xl overflow-hidden transition-colors ${
+        className={`border rounded-xl flex flex-col shadow-2xl overflow-hidden transition-colors max-md:w-[94vw]! ${
           theme === 'dark'
             ? 'bg-slate-850 border-slate-700 text-slate-200'
             : 'bg-white border-slate-300 text-slate-800'
@@ -1020,15 +1020,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             theme === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'
           }`}
         >
-          <div className="flex items-center gap-3">
-            <Settings className="w-5 h-5 text-blue-500" />
-            <div className={`flex flex-wrap gap-1 p-1 rounded-lg border transition-colors ${
+          <div className="flex items-center gap-3 max-md:min-w-0 max-md:flex-1">
+            <Settings className="w-5 h-5 text-blue-500 shrink-0" />
+            <div className={`flex flex-wrap gap-1 p-1 rounded-lg border transition-colors narrow-scroll-x max-md:min-w-0 ${
               theme === 'dark'
                 ? 'bg-slate-900/40 border-slate-700/50'
                 : 'bg-slate-200/80 border-slate-300'
             }`}>
               <button
                 onClick={() => setActiveTab('ui')}
+                title={t('Элементы UI')}
                 className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-bold transition-all ${
                   activeTab === 'ui'
                     ? 'bg-blue-600 text-white shadow-xs'
@@ -1038,10 +1039,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 }`}
               >
                 <Eye className="w-3.5 h-3.5" />
-                <span>{t('Элементы UI')}</span>
+                <span className="max-md:hidden">{t('Элементы UI')}</span>
               </button>
               <button
                 onClick={() => setActiveTab('formatter')}
+                title={t('Форматы')}
                 className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-bold transition-all ${
                   activeTab === 'formatter'
                     ? 'bg-blue-600 text-white shadow-xs'
@@ -1051,10 +1053,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 }`}
               >
                 <AlignLeft className="w-3.5 h-3.5" />
-                <span>{t('Форматы')}</span>
+                <span className="max-md:hidden">{t('Форматы')}</span>
               </button>
               <button
                 onClick={() => setActiveTab('hotkeys')}
+                title={t('Hotkeys')}
                 className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-bold transition-all ${
                   activeTab === 'hotkeys'
                     ? 'bg-blue-600 text-white shadow-xs'
@@ -1064,11 +1067,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 }`}
               >
                 <Keyboard className="w-3.5 h-3.5" />
-                <span>{t('Hotkeys')}</span>
+                <span className="max-md:hidden">{t('Hotkeys')}</span>
               </button>
               {uiVisibility.showExcelExport !== false && (
                 <button
                   onClick={() => setActiveTab('excel')}
+                  title={t('Excel')}
                   className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-bold transition-all ${
                     activeTab === 'excel'
                       ? 'bg-emerald-600 text-white shadow-xs'
@@ -1078,7 +1082,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   }`}
                 >
                   <FileSpreadsheet className={`w-3.5 h-3.5 ${activeTab === 'excel' ? 'text-white' : 'text-emerald-500'}`} />
-                  <span>{t('Excel')}</span>
+                  <span className="max-md:hidden">{t('Excel')}</span>
                 </button>
               )}
             </div>
@@ -1858,7 +1862,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       type="button"
                       onClick={handleAddTemplate}
                       disabled={!newKeyword.trim()}
-                      className="p-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold text-xs rounded transition-colors shrink-0 flex items-center justify-center h-8 w-8"
+                      className="p-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold text-xs rounded transition-colors shrink-0 flex items-center justify-center h-8 w-8 max-sm:self-end"
                       title={t('Добавить шаблон')}
                     >
                       <Plus className="w-4 h-4" />
@@ -2023,7 +2027,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       type="button"
                       onClick={handleAddQuickAction}
                       disabled={!newQaName.trim() || !newQaTemplate.trim()}
-                      className="p-1.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-bold text-xs rounded transition-colors shrink-0 flex items-center justify-center h-8 w-8"
+                      className="p-1.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-bold text-xs rounded transition-colors shrink-0 flex items-center justify-center h-8 w-8 max-sm:self-end"
                       title={t('Добавить действие')}
                     >
                       <Plus className="w-4 h-4" />
@@ -2160,6 +2164,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           <div
                             key={item.id}
                             className={`flex items-center justify-between p-2.5 rounded-lg border transition-all ${
+                              item.id === 'tabSwitchModifier' ? 'max-md:flex-col max-md:items-stretch max-md:gap-2' : ''
+                            } ${
                               isListening
                                 ? 'border-amber-500 bg-amber-500/10'
                                 : theme === 'dark'
@@ -2191,7 +2197,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                   onUpdateHotkeys(updated);
                                   localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
                                 }}
-                                className={`px-3 py-1.5 rounded font-mono text-xs font-bold border shadow-xs outline-none transition-all cursor-pointer ${
+                                className={`px-3 py-1.5 rounded font-mono text-xs font-bold border shadow-xs outline-none transition-all cursor-pointer max-md:w-full ${
                                   theme === 'dark'
                                     ? 'bg-slate-750 border-slate-600 text-blue-400 hover:bg-slate-700'
                                     : 'bg-white border-slate-300 text-blue-800 font-bold hover:bg-slate-100'

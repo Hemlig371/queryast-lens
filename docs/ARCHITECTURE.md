@@ -9,7 +9,7 @@
 | Оболочка | Как запускается | DuckDB | ClickHouse |
 | :--- | :--- | :--- | :--- |
 | **Десктоп** (Tauri 1, Rust) | `npm run tauri dev/build` | Нативный DuckDB в Rust (`src-tauri/src/main.rs`), доступ к файлам на диске; также доступен DuckDB-WASM | HTTP-клиент на Rust (`reqwest`) |
-| **Android** (Capacitor 6) | `npx cap …` (папку `android/` создаёт CI) | DuckDB-WASM в WebView | `CapacitorHttp` (обходит CORS); `COPY FROM` недоступен |
+| **Android** (Capacitor 6) | `npx cap …` (папку `android/` создаёт CI) | DuckDB-WASM в WebView | `CapacitorHttp` (обходит CORS); `COPY FROM` недоступен. Узкая раскладка, системная кнопка «Назад» (`@capacitor/app`) |
 | **Веб, режим разработки** | `npm run dev` (`server.ts`, Express + Vite) | Пакет `duckdb` на сервере (`/api/duckdb/*`) или DuckDB-WASM | Прокси сервера (`/api/clickhouse/*`) |
 
 Определение среды: `isTauriEnvironment()` / `isCapacitorEnvironment()` (`src/lib/clickhouse.ts`) и флаг `isWasmMode` в `App.tsx`. Если ни Tauri, ни сервер Express недоступны, приложение переходит на DuckDB-WASM. Для обращений к серверу `fetchApiJson` пробует тот же адрес, затем `127.0.0.1`/`localhost` на портах 48291 и 3000.
@@ -21,6 +21,7 @@
 Особенности, о которых полезно знать при правках:
 * Редактор и панель «Меню действий» отрисовываются в двух ветках JSX (обычный и развёрнутый макет, `isMaximizedSql`), поэтому изменения интерфейса редактора нужно вносить в обе.
 * Глобальный обработчик клавиш (`keydown`, фаза перехвата) читает актуальные значения через `ref`-ы `current*`, потому что подписывается один раз (зависимость `[activeEngine]`). Новое действие добавляется: идентификатор и сочетание в `DEFAULT_HOTKEYS` (`SettingsModal.tsx`) → ветка в обработчике → обновление справочника в руководстве.
+* Узкий экран (ширина до 767 px, как `max-md:` Tailwind) определяется по ширине окна, а не по платформе: `useIsNarrow` (`src/utils/useIsNarrow.ts`, одна подписка на `matchMedia`) в компонентах и `isNarrowNow()` в обработчиках. Раскладочные правки — классы `max-md:` и `narrow-scroll-x` (`index.css`: панель кнопок в одну строку с прокруткой пальцем); на ширине от 768 px вёрстка прежняя. На узком экране на виду либо редактор, либо граф, панель схемы выезжает справа. Кнопка «Назад» Android (`backPressRef` в `App.tsx`, только Capacitor) закрывает по порядку: меню и подтверждения → окна → выбранную ячейку → таблицу результата в редакторе → иначе сворачивает приложение.
 * Единый стиль локализации: ключ — русский текст, английский вариант в `EN_DICT` (`src/utils/i18n.ts`). Язык меняется перезагрузкой страницы.
 
 ## 3. Выполнение запроса
@@ -72,6 +73,10 @@ flowchart TD
 
 `fetchDuckDbSchema` и аналог для ClickHouse читают каталоги базы (для ClickHouse — `system.*`) и строят дерево схемы для панели и автодополнения. Результат кэшируется в IndexedDB (`schemaDbCache`), записи старше 7 дней очищаются.
 
+### Дерево файлов
+
+Нижняя часть панели «Схема и файлы» — `FileTreePanel.tsx`. Чистая логика — `src/utils/fileTree.ts` (сортировка, фильтр, проверка имён, `planMove`, пересчёт путей `remapPath`). Источник списка — `FileTreeProvider`: в Tauri (`createTauriProvider`, `fileTreeProviders.ts`) папки читает Rust-команда `list_dir`; в браузере и на Android (`createVfsProvider`) — виртуальная ФС DuckDB-WASM, без операций над файлами. Операции (`ops`: «Показать в проводнике», «Открыть с помощью…», переименование, перенос в папку, удаление в корзину) есть только у провайдера Tauri и реализованы командами `src-tauri/src/fstree.rs`: `reveal_path`, `open_with`, `rename_path`, `move_path`, `trash_path`. После переименования и переноса `App.handleTreePathChanged` переписывает `filePath` вкладок, открытых из этих файлов. Перетаскивание файла в редактор передаёт `text/plain` (путь в кавычках), перенос внутри дерева использует отдельный тип данных `application/x-queryast-path`; цель переноса — папка (для файла — его папка, для пустого места — корень), неудача показывается кратким красным выделением цели. Порядок сортировки хранится в сессии (`SavedSession.filesSort`).
+
 ## 6. SQL-граф
 
 ```
@@ -88,8 +93,8 @@ SQL (выделение или весь текст)
 
 ## 7. Mermaid и Markdown
 
-* Кнопка **Markdown**: если текст похож на чистый Mermaid (`looksLikeMermaid`), строится интерактивный граф (`mermaidParse.ts` → `mermaidToGraph.ts` с раскладкой dagre → узлы `MermaidNodes.tsx`, рёбра по маршруту раскладки). Иначе открывается документ.
-* Документ: собственный рендерер `markdown.ts` (без внешних библиотек Markdown) → очистка DOMPurify → `MarkdownPreview.tsx`. Блоки ` ```mermaid ` рисуются статичным SVG (`mermaidSvg.ts`) на том же разборе; поддерживаются только `flowchart`/`graph`.
+* Кнопка **Markdown**: если текст похож на чистый Mermaid (`looksLikeMermaid`), строится интерактивный граф (`mermaidParse.ts` или `erParse.ts` для `erDiagram` → `mermaidToGraph.ts` с раскладкой dagre → `edgePath.ts`: порты на сторонах узлов и ортогональные линии: изломы в зазорах между колонками, шина слияний, коридоры обратных рёбер, подписи рядом с линией; `direction` в подграфе — отдельная раскладка → узлы и рёбра `MermaidNodes.tsx`). Иначе открывается документ.
+* Документ: собственный рендерер `markdown.ts` (без внешних библиотек Markdown) → очистка DOMPurify → `MarkdownPreview.tsx`. Блоки ` ```mermaid ` рисуются статичным SVG (`mermaidSvg.ts`) на том же разборе; поддерживаются `flowchart`/`graph` и `erDiagram`; геометрия рёбер (`edgePath.ts`) общая с интерактивным графом.
 * Копирование в Word: обработчик `copy` формирует HTML (диаграммы — PNG в `data:`-адресах). Экспорт документа картинкой: `documentExport.ts` с ограничением размера холста `canvasLimits.ts`.
 * Документ и граф в области графа не показываются одновременно: открытый документ скрывает граф.
 
