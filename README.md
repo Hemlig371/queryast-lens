@@ -6,10 +6,10 @@ Cross-platform SQL Query Workbench and analytical database client (DuckDB, Click
 
 | Platform | Type / Arch | Package / Download |
 | :--- | :--- | :--- |
-| **Windows** | x64 | [Windows: Native Desktop (`.msi` / `.exe`)](https://github.com/Hemlig371/queryast-lens/releases/download/v8.3.1/QueryAST.Lens_8.3.1_x64-setup.exe) |
-| **macOS** | Apple Silicon (arm64) | [macOS: Desktop (`.dmg`)](https://github.com/Hemlig371/queryast-lens/releases/download/v8.3.1/QueryAST.Lens_8.3.1_aarch64.dmg) |
-| **Linux** | x86_64 / Wayland & X11 | [Linux: Standalone (`.AppImage` / `.deb`)](https://github.com/Hemlig371/queryast-lens/releases/download/v8.3.1/query-ast-lens_8.3.1_amd64.AppImage) |
-| **Android** | APK (debug build) | [Android APK: Mobile Application (`.apk`)](https://github.com/Hemlig371/queryast-lens/releases/download/v8.3.1/QueryAST-Lens-v8.3.1-android.apk) |
+| **Windows** | x64 | [Windows: Native Desktop (`.msi` / `.exe`)](https://github.com/Hemlig371/queryast-lens/releases/download/v8.4.0/QueryAST.Lens_8.4.0_x64-setup.exe) |
+| **macOS** | Apple Silicon (arm64) | [macOS: Desktop (`.dmg`)](https://github.com/Hemlig371/queryast-lens/releases/download/v8.4.0/QueryAST.Lens_8.4.0_aarch64.dmg) |
+| **Linux** | x86_64 / Wayland & X11 | [Linux: Standalone (`.AppImage` / `.deb`)](https://github.com/Hemlig371/queryast-lens/releases/download/v8.4.0/query-ast-lens_8.4.0_amd64.AppImage) |
+| **Android** | APK (debug build) | [Android APK: Mobile Application (`.apk`)](https://github.com/Hemlig371/queryast-lens/releases/download/v8.4.0/QueryAST-Lens-v8.4.0-android.apk) |
 
 <p align="center">
   <img src="https://github.com/user-attachments/assets/b6d62bb3-5282-4539-85f3-157314eab3a6" alt="Interactive AST & Data Lineage Graph" width="100%" />
@@ -67,7 +67,6 @@ Cross-platform SQL Query Workbench and analytical database client (DuckDB, Click
 * **Encrypted Vault (AES-256 GCM)**: Client-side connection secret encryption using Web Crypto API with PIN-code protection; the vault stays unlocked for 12 hours after the PIN is entered. Supports dynamic macro substitution (`{{SECRET_NAME}}`) directly inside queries.
 * **WASM VFS File Manager**: Visual GUI modal for DuckDB WebAssembly to drag-and-drop, inspect, delete, and upload `.parquet`, `.csv`, `.json`, and `.duckdb` files.
 * **File Tree (Desktop)**: the files panel under the schema shows folders on disk with search, sorting by name, date or size, a context menu (open with, show in file manager, rename, move to trash) and moving files and folders between folders by drag and drop. Dragging a file into the editor inserts its path.
-* **Narrow Screens & Android**: in windows up to 767 px wide and on Android, the editor and the graph are shown one at a time, toolbars scroll horizontally, and the system Back button closes dialogs first.
 * **Workspace Synchronization**: Automatic background import/export of workspace sessions and tabs via a shared directory or cloud storage path (Dropbox, local NAS) in Desktop mode.
 * **Version History & Schema Cache**: Automatic query snapshot tracking and IndexedDB schema caching with automated stale record cleanup.
 * **Localization & UI Zoom**: Built-in interface language toggling (RU/EN) and adjustable UI scaling (70%–150%).
@@ -156,7 +155,6 @@ rm -f squashfs-root/usr/lib/libwayland-*.so*
 * **Защищённый Vault (AES-256 GCM)**: Шифрование параметров подключения и секретов в браузере с защитой пин-кодом; после ввода PIN хранилище остаётся разблокированным 12 часов. Подстановка секретов в SQL-запросы в формате `{{SECRET_NAME}}`.
 * **Файловый менеджер WASM VFS**: Графический интерфейс для управления виртуальной файловой системой DuckDB WASM (Drag & Drop загрузка, инспекция и удаление `.parquet`, `.csv`, `.json`, `.duckdb`).
 * **Дерево файлов (десктоп)**: панель файлов под схемой показывает папки на диске с поиском, сортировкой по имени, дате или размеру, контекстным меню (открыть с помощью, показать в проводнике, переименовать, в корзину) и переносом файлов и папок между папками перетаскиванием. Перетаскивание файла в редактор вставляет его путь.
-* **Узкие экраны и Android**: в окнах шириной до 767 px и на Android редактор и граф показываются по очереди, панели кнопок прокручиваются по горизонтали, а системная кнопка «Назад» сначала закрывает окна.
 * **Синхронизация рабочего пространства**: Фоновый автоматический обмен сессиями, вкладками и настройками через общий файл/папку (Dropbox, сетевой диск) в десктоп-версии (Tauri).
 * **История версий и кэш**: Автоматическое сохранение снимков запросов и кэширование схем в IndexedDB с процедурами автоочистки устаревших записей.
 * **Мультиязычный интерфейс и зум**: Поддержка переключения языков интерфейса (RU/EN) и масштабирование интерфейса (70%–150%).
