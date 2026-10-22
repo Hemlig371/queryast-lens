@@ -64,7 +64,7 @@ Switching between engines is done via the top control panel (selector **DuckDB**
 * **Built-in Result Limit**: To protect the browser and system from memory overflow during accidental `SELECT *` without filters, the application caps the page size by default (typically **100 rows**).
 * **Overriding the Limit**:
   1. **Via SQL Query**: If the query text contains `LIMIT` followed by a number (e.g., `LIMIT 500`), the engine assumes the limit is yours and does not append `LIMIT 100` on the first page. The check is simple: `LIMIT <number>` is searched anywhere in the query, including inside a CTE, subquery or comment. If `LIMIT` appears only inside a CTE, the outer query stays unrestricted. The table still shows one page of the configured size (100 rows by default).
-  2. **Via UI Settings**: In **Settings**, you can change the global page size / max rows separately for DuckDB and ClickHouse, or set `0` to disable auto-capping.
+  2. **Via UI Settings**: In **Settings**, you can change the global page size / max rows separately for DuckDB and ClickHouse.
   3. When navigating pagination pages (`> 1`), the engine automatically wraps the query into a safe subquery with `OFFSET` to prevent syntax conflicts.
   4. At most 500,000 rows per query are passed to the interface (desktop DuckDB, WASM, ClickHouse); above that the query ends with an error (add a LIMIT or save the result with COPY).
 
