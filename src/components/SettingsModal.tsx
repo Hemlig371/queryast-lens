@@ -17,7 +17,7 @@ import { ExcelSettingsTab } from './ExcelSettingsTab';
 import { t, changeLanguage, currentLang } from '../utils/i18n';
 
 import { buildComboString, findHotkeyConflict } from '../editor/hotkeysMatch';
-import { MAX_RESULT_ROWS } from '../utils/rowLimit';
+import { MAX_PAGE_ROWS, clampPageRows } from '../utils/rowLimit';
 import { DEFAULT_QUICK_ACTIONS, getQuickActionTemplates, type QuickActionTemplate } from '../utils/quickActionTemplates';
 export { DEFAULT_QUICK_ACTIONS, getQuickActionTemplates };
 export type { QuickActionTemplate };
@@ -307,7 +307,7 @@ export const DEFAULT_HOTKEYS: HotkeyBinding[] = [
     label: 'Преобразовать в ВЕРХНИЙ регистр',
     description: 'Перевести выделенный текст или слово в верхний регистр',
     category: 'Редактор',
-    defaultKey: 'Ctrl+Shift+U'
+    defaultKey: 'Alt+Shift+U'
   },
   {
     id: 'toLowerCase',
@@ -962,7 +962,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const updateDuckDbMaxRows = (val: number) => {
-    const updated = { ...uiVisibility, duckDbMaxRows: Math.min(val, MAX_RESULT_ROWS) };
+    const updated = { ...uiVisibility, duckDbMaxRows: clampPageRows(val) };
     onUpdateUiVisibility(updated);
     localStorage.setItem(UI_VISIBILITY_STORAGE_KEY, JSON.stringify(updated));
   };
@@ -974,7 +974,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const updateClickhouseMaxRows = (val: number) => {
-    const updated = { ...uiVisibility, clickhouseMaxRows: Math.min(val, MAX_RESULT_ROWS) };
+    const updated = { ...uiVisibility, clickhouseMaxRows: clampPageRows(val) };
     onUpdateUiVisibility(updated);
     localStorage.setItem(UI_VISIBILITY_STORAGE_KEY, JSON.stringify(updated));
   };
@@ -1181,9 +1181,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                   <input 
                                     type="number" 
                                     min="1" 
-                                    max={MAX_RESULT_ROWS}
+                                    max={MAX_PAGE_ROWS}
                                     step="10"
-                                    value={uiVisibility.duckDbMaxRows ?? 100} 
+                                    value={clampPageRows(uiVisibility.duckDbMaxRows)} 
                                     onChange={e => {
                                       const val = parseInt(e.target.value);
                                       if (!isNaN(val) && val > 0) updateDuckDbMaxRows(val);
@@ -1267,9 +1267,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 <input 
                                   type="number" 
                                   min="1" 
-                                  max={MAX_RESULT_ROWS}
+                                  max={MAX_PAGE_ROWS}
                                   step="10"
-                                  value={uiVisibility.clickhouseMaxRows ?? 100} 
+                                  value={clampPageRows(uiVisibility.clickhouseMaxRows)} 
                                   onChange={e => {
                                     const val = parseInt(e.target.value);
                                     if (!isNaN(val) && val > 0) updateClickhouseMaxRows(val);

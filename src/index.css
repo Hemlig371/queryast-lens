@@ -97,15 +97,12 @@
 .md-preview .md-mermaid-open { position: absolute; top: 6px; right: 8px; z-index: 1; font-size: 11px; padding: 1px 8px; border-radius: 4px; border: 1px solid var(--md-border); background: var(--md-bar-bg); color: var(--md-fg); opacity: 0.55; cursor: pointer; user-select: none; -webkit-user-select: none; }
 .md-preview .md-mermaid:hover .md-mermaid-open, .md-preview .md-mermaid-open:hover, .md-preview .md-mermaid-open:focus-visible { opacity: 1; }
 .md-preview .md-mermaid-body { padding: 12px; overflow-x: auto; text-align: center; }
-/* широкая диаграмма сжимается под панель не меньше чем до 60% натурального размера, дальше — прокрутка */
 .md-preview .md-mermaid-body svg { display: inline-block; max-width: 100%; min-width: calc(var(--mm-w, 0) * 0.6px); height: auto; }
 .md-preview .md-mermaid-error, .md-preview .md-mermaid-warn { font-size: 12px; padding: 6px 10px; }
 .md-preview .md-mermaid-error { color: #f87171; }
 .md-preview .md-mermaid-warn { color: #f59e0b; border-top: 1px solid var(--md-border); }
 .md-preview .md-mermaid-failed pre { margin: 0; padding: 8px 12px; overflow-x: auto; }
 
-/* Узкий экран: панель кнопок в одну строку, двигается пальцем (без полосы прокрутки).
-   Выпадающие меню внутри таких панелей на узком экране — fixed (иначе их обрежет прокрутка). */
 @media (max-width: 767px) {
   .narrow-scroll-x {
     flex-wrap: nowrap;
@@ -120,4 +117,22 @@
   .narrow-scroll-x > * {
     flex-shrink: 0;
   }
+}
+
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.4rem center;
+  background-size: 0.75rem;
+  padding-right: 1.5rem;
+}
+.dark select {
+  color-scheme: dark;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+.dark select option {
+  background-color: #1e293b;
+  color: #e2e8f0;
 }

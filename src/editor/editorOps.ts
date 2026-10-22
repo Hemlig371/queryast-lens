@@ -179,7 +179,7 @@ export const computeMoveLines = (text: string, start: number, end: number, dir: 
   };
 };
 
-/** Смена регистра выделения или слова под курсором (Ctrl+Shift+U / L). */
+/** Смена регистра выделения или слова под курсором (Alt+Shift+U / Ctrl+Shift+L). */
 export const computeChangeCase = (text: string, start: number, end: number, target: 'upper' | 'lower'): TextEdit | null => {
   const conv = (s: string) => (target === 'upper' ? s.toUpperCase() : s.toLowerCase());
   if (start !== end) {

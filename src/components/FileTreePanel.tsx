@@ -3,7 +3,7 @@ import {
   ArrowDownAZ, ArrowDownWideNarrow, ArrowDownZA, ArrowUpNarrowWide, CalendarArrowDown, CalendarArrowUp,
   ChevronDown, ChevronRight, ChevronUp, File as FileIcon, Folder, FolderOpen, Maximize2, Minimize2, RefreshCw, Search, X,
 } from 'lucide-react';
-import { t } from '../utils/i18n';
+import { t, currentLang, localeForLang } from '../utils/i18n';
 import { getTableSizeBadge } from '../utils/tableSize';
 import {
   buildEntryTooltip, defaultSortDir, dropPathKeys, filterEntries, foldersToReload, getDoubleClickAction, hasMatchingDescendant,
@@ -35,7 +35,7 @@ interface Props {
 }
 
 const fmtBytes = (n: number) => getTableSizeBadge([{ table_bytes: n }]);
-const fmtDate = (ms: number) => new Date(ms).toLocaleString();
+const fmtDate = (ms: number) => new Date(ms).toLocaleString(localeForLang(currentLang));
 
 interface MenuState { x: number; y: number; entry: FileEntry; parentKey: string }
 interface RenameState { path: string; parentKey: string }
@@ -458,10 +458,10 @@ export const FileTreePanel: React.FC<Props> = ({
   // Контекстное меню: те же размеры, фон и отступы, что у меню таблиц схемы БД, но без значков.
   const menuEl = menu && ops && (() => {
     const scale = uiScale / 100;
-    const itemCls = `w-full text-left px-3 py-1.5 whitespace-nowrap transition-colors ${dark ? 'hover:bg-slate-700' : 'hover:bg-slate-100'}`;
+    const itemCls = `text-left px-3 py-1.5 whitespace-nowrap transition-colors ${dark ? 'hover:bg-slate-700' : 'hover:bg-slate-100'}`;
     return (
       <div
-        className={`fixed z-50 min-w-[10rem] rounded-lg border shadow-xl py-1 text-xs select-none ${dark ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-white border-slate-200 text-slate-800'}`}
+        className={`fixed z-50 flex flex-col w-max min-w-[10rem] max-w-[calc(100vw-16px)] rounded-lg border shadow-xl py-1 text-xs select-none ${dark ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-white border-slate-200 text-slate-800'}`}
         style={{
           left: Math.max(8, Math.min(menu.x / scale, (window.innerWidth / scale) - 200)),
           top: Math.max(8, Math.min(menu.y / scale, (window.innerHeight / scale) - 150)),

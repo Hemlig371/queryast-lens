@@ -876,7 +876,7 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
       if (matchHotkeyCombo(e, savedHotkeys.pasteAtStart || 'Ctrl+Alt+V')) { consume(); handleMultiLinePaste(false); return; }
       if (matchHotkeyCombo(e, savedHotkeys.moveLinesUp || 'Alt+Up')) { consume(); handleMoveLines('up'); return; }
       if (matchHotkeyCombo(e, savedHotkeys.moveLinesDown || 'Alt+Down')) { consume(); handleMoveLines('down'); return; }
-      if (matchHotkeyCombo(e, savedHotkeys.toUpperCase || 'Ctrl+Shift+U')) { consume(); handleChangeCase('upper'); return; }
+      if (matchHotkeyCombo(e, savedHotkeys.toUpperCase || 'Alt+Shift+U')) { consume(); handleChangeCase('upper'); return; }
       if (matchHotkeyCombo(e, savedHotkeys.toLowerCase || 'Ctrl+Shift+L')) { consume(); handleChangeCase('lower'); return; }
 
       const targetSearchCombo = savedHotkeys.searchSql || 'Ctrl+F';

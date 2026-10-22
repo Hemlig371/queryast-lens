@@ -105,7 +105,7 @@ import { VersionHistoryModal } from './components/VersionHistoryModal';
 import { saveVersion, getVersions, getLatestVersion } from './utils/versionHistory';
 import { formatColumnType, replaceVariablesInSql, buildQuickActionSource, findUnresolvedVariables } from './lib/sqlUtils';
 import { formatSqlText, compactSql } from './utils/sqlFormat';
-import { MAX_RESULT_ROWS } from './utils/rowLimit';
+import { clampPageRows } from './utils/rowLimit';
 import { buildPagedSql, splitStatements, type ExecutionMode } from './utils/pagedSql';
 import { rowsFromColumns, getResultColumns, columnsFromMeta } from './utils/resultRows';
 import { resultRowsToTsv } from './utils/resultTsv';
@@ -873,9 +873,9 @@ export default function App() {
   const [formatterSettings, setFormatterSettings] = useState<FormatterSettings>(() => getSavedFormatterSettings());
   const [uiVisibility, setUiVisibility] = useState<UiVisibilitySettings>(() => getSavedUiVisibilitySettings());
 
-  const effectiveMaxRows = Math.min(activeEngine === 'clickhouse'
-    ? (uiVisibility.clickhouseMaxRows ?? 100)
-    : (uiVisibility.duckDbMaxRows ?? 100), MAX_RESULT_ROWS);
+  const effectiveMaxRows = clampPageRows(activeEngine === 'clickhouse'
+    ? uiVisibility.clickhouseMaxRows
+    : uiVisibility.duckDbMaxRows);
 
   useEffect(() => {
     const scale = (uiVisibility.uiScale ?? 100) / 100;
