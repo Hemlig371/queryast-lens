@@ -5993,7 +5993,7 @@ export default function App() {
                   {/* STATIC ACTION MENU TAB BUTTON */}
                   <div
                     onClick={() => handleSelectTab(ACTION_MENU_TAB_ID)}
-                    className={`group flex items-center justify-end w-[35.5px] py-1.5 pr-2 rounded-tr-lg border-t border-r cursor-pointer transition-all shrink-0 select-none ${
+                    className={`group flex items-center justify-end py-1.5 pr-2 rounded-tr-lg border-t border-r cursor-pointer transition-all shrink-0 select-none ${
                       activeTabId === ACTION_MENU_TAB_ID
                         ? theme === 'dark'
                           ? 'bg-slate-850 border-slate-700 text-amber-400 font-semibold shadow-2xs'
@@ -6002,6 +6002,7 @@ export default function App() {
                           ? 'bg-slate-800/40 border-transparent text-slate-400 font-semibold hover:text-slate-200 hover:bg-slate-750'
                           : 'bg-slate-200/40 border-transparent text-slate-600 font-semibold hover:text-slate-900 hover:bg-slate-200/80'
                     }`}
+                    style={{ width: 'calc(var(--lens-gutter-w, 41px) - 5px)' }}
                     title={t('Меню действий и no-code пайплайнов')}
                   >
                     <Code 
@@ -6192,7 +6193,7 @@ export default function App() {
                   className={`${isSchemaZoomed ? 'w-[50vw]' : 'w-[30vw] min-w-[220px]'} max-md:fixed max-md:inset-y-0 max-md:right-0 max-md:z-50 max-md:w-[85vw] max-md:min-w-0 max-md:shadow-2xl flex flex-col shrink-0 border-l min-h-0 ${theme === 'dark' ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-300'}`}
                 >
                   {(duckDbConnectedPath || clickhouseConfig) && (
-                  <div className={filesSectionMode === 'max' ? 'hidden' : `flex flex-col min-h-0 ${filesSectionMode === 'collapsed' ? 'flex-1' : 'flex-1 basis-0'}`}>
+                  <div className={filesSectionMode === 'max' ? 'hidden' : `flex flex-col min-h-0 overflow-hidden ${filesSectionMode === 'collapsed' ? 'flex-1' : 'flex-1 basis-0'}`}>
                   <div className={`px-3 h-[37px] border-b flex items-center justify-between shrink-0 transition-colors ${theme === 'dark' ? 'border-slate-700 bg-slate-800' : 'border-slate-300 bg-slate-100'}`}>
                     <span className={`text-xs font-semibold flex items-center gap-2 text-sm truncate shrink-0 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>
                       <Database className="w-3.5 h-3.5 text-teal-500" />
@@ -6695,7 +6696,7 @@ export default function App() {
                   theme === 'dark' ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300'
                 } ${
                   isDuckDbResultExpanded 
-                    ? 'border-t flex flex-col shrink-0 h-[calc(100%-175px)]' 
+                    ? 'border-t flex flex-col shrink-0 h-[calc(100%-228px)]' 
                     : 'border-t flex flex-col shrink-0 h-[40%]'
                 }`}
               >

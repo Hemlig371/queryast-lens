@@ -137,6 +137,20 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
     ro.observe(g);
     return () => ro.disconnect();
   }, [showSearch]);
+  // Ширина колонки номеров строк в CSS-переменную: кнопка «<>» над редактором (App.tsx) берёт от неё ширину,
+  // чтобы граница первой вкладки совпадала с границей колонки при любом масштабе.
+  useEffect(() => {
+    const g = viewRef.current?.dom.querySelector('.cm-gutters') as HTMLElement | null;
+    if (!g) return;
+    const root = document.documentElement;
+    // Скрытый редактор (display:none) даёт ширину 0 — её не записываем, иначе кнопка «<>» схлопнется.
+    const update = () => { const w = g.offsetWidth; if (w > 0) root.style.setProperty('--lens-gutter-w', `${w}px`); };
+    update();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(update);
+    ro.observe(g);
+    return () => ro.disconnect();
+  }, []);
   const [showReplace, setShowReplace] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [replaceQuery, setReplaceQuery] = useState<string>('');
