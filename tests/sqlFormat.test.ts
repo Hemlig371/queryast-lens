@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { compactSql, convertInlineDashComments } from '../src/utils/sqlFormat';
+import { compactSql, convertInlineDashComments, formatSqlText } from '../src/utils/sqlFormat';
 
 describe('sqlFormat', () => {
   it('convertInlineDashComments превращает хвостовой -- в /* */', () => {
@@ -96,3 +96,68 @@ describe('sqlFormat', () => {
     });
   });
 });
+
+// ---- F-26: форматтер и «в одну строку» не меняют содержимое литералов ----
+describe('F-26: литералы и //', () => {
+  const cfg = { keywordCase: 'upper' as const, tabWidth: 2, useTabs: false, expressionWidth: 120, denseOperators: false, leadingCommas: false };
+  const fmt = (sql: string, dialect = 'DuckDB') => formatSqlText(sql, dialect, cfg);
+
+  it('многострочный литерал: пустые строки и отступы внутри сохраняются', async () => {
+    const out = await fmt("select a, 'x\n\n   y\n\n\n  z' as s from t where b = 1");
+    expect(out).toContain("'x\n\n   y\n\n\n  z'");
+    expect(out).toBe("SELECT a, 'x\n\n   y\n\n\n  z' AS s\nFROM t\nWHERE b = 1");
+  });
+
+  it('CRLF внутри литерала сохраняется', async () => {
+    expect(await fmt("select 'a\r\n\r\nb' as s from t")).toContain("'a\r\n\r\nb'");
+  });
+
+  it('$$…$$ и $тег$…$тег$: апострофы, --, ; и пустые строки внутри не меняются', async () => {
+    const body = "line 1\n\n  it's -- not a comment; ok";
+    const out = await fmt(`select $$${body}$$ as a, $t$ $$ ${body} $t$ as b from x`);
+    expect(out).toContain(`$$${body}$$`);
+    expect(out).toContain(`$t$ $$ ${body} $t$`);
+    expect(out).toMatch(/^SELECT /);
+    expect(out).toMatch(/\nFROM x$/);
+  });
+
+  it('// остаётся целочисленным делением, а не превращается в / /', async () => {
+    expect(await fmt('select 7 // 2 as a, 9//4 as b')).toBe('SELECT 7 // 2 AS a, 9 // 4 AS b');
+  });
+
+  it('// внутри строки, идентификатора и комментария не трогается', async () => {
+    const out = await fmt("select '//' as a, \"c//d\" from t /* x // y */");
+    expect(out).toContain("'//'");
+    expect(out).toContain('"c//d"');
+    expect(out).toContain('/* x // y */');
+  });
+
+  it('строки с ; и -- внутри и удвоенные кавычки возвращаются как были', async () => {
+    const out = await fmt("select 'a;b' as x, '--not comment' as y, 'it''s' as z from t; select 2");
+    expect(out).toContain("'a;b'");
+    expect(out).toContain("'--not comment'");
+    expect(out).toContain("'it''s'");
+    expect(out).toContain('SELECT 2');
+  });
+
+  it('текст пользователя, похожий на плейсхолдер, не портится', async () => {
+    const out = await fmt("select __qs0__, 'lit' as y from __qs1__");
+    expect(out).toBe("SELECT __qs0__, 'lit' AS y\nFROM __qs1__");
+  });
+
+  it('незакрытая строка по-прежнему даёт ошибку форматирования', async () => {
+    await expect(fmt("select 'abc from t")).rejects.toThrow();
+  });
+
+  it('форматирование без литералов не изменилось', async () => {
+    expect(await fmt('select a,b from t where x=1 and y=2 order by a desc')).toBe(
+      'SELECT a, b\nFROM t\nWHERE x = 1\n  AND y = 2\nORDER BY a DESC'
+    );
+  });
+
+  it('compactSql: $$-блок с переводами строк, апострофом и -- внутри остаётся как есть, код вокруг схлопывается', () => {
+    const body = "line1\n\n   it's -- keep ; me";
+    expect(compactSql(`select a,\n   b from t where x = $$${body}$$ and y = 1`)).toBe(`select a, b from t where x = $$${body}$$ and y = 1`);
+  });
+});
+

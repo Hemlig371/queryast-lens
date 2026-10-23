@@ -1,6 +1,7 @@
 import { t } from './i18n';
 import { splitBySemicolonIgnoringQuotes } from '../lib/sqlUtils';
 import { splitSqlSegments, type SqlSegment } from './sqlTokens';
+import { protectLiterals } from './sqlLiterals';
 import type { FormatterSettings } from '../components/SettingsModal';
 
 // Чистые функции форматирования/сжатия SQL. Вынесены из App.tsx (этап A1) без изменения логики.
@@ -43,6 +44,9 @@ export const convertInlineDashComments = (sql: string): string => {
 export const compactSql = (text: string): string => {
   if (!text) return text;
 
+  // `$$…$$` и `$тег$…$тег$` токенайзер не знает: `'` и `--` внутри такого блока сломали бы разбор, поэтому блок прячется целиком
+  const protectedSql = protectLiterals(text, { backslashEscapes: true, dollarOnly: true });
+
   const resultLines: string[] = [];
   let buf = '';
   let lineBlank = true;
@@ -52,7 +56,7 @@ export const compactSql = (text: string): string => {
     buf = '';
   };
 
-  for (const seg of splitSqlSegments(text)) {
+  for (const seg of splitSqlSegments(protectedSql.text)) {
     if (seg.type === 'line-comment') {
       if (lineBlank) {
         flush();
@@ -69,7 +73,7 @@ export const compactSql = (text: string): string => {
   }
   flush();
 
-  return resultLines.join('\n');
+  return protectedSql.restore(resultLines.join('\n'));
 };
 
 export const formatSqlText = async (text: string, dialect: string, cfg: FormatterSettings): Promise<string> => {
@@ -146,7 +150,10 @@ export const formatSqlText = async (text: string, dialect: string, cfg: Formatte
     return cleanedStatements.join(';\n\n') + (hasSemicolon ? ';' : '');
   };
 
-  let preprocessedText = convertInlineDashComments(text);
+  // F-26: строковые литералы (в том числе многострочные и `$$…$$`) и `//` не должны попадать в форматтер и в регулярные
+  // подстановки ниже: они заменяются плейсхолдерами и возвращаются точным исходным текстом после всех подстановок.
+  const protectedSql = protectLiterals(text, { backslashEscapes: dialect === 'Clickhouse', protectDivision: true });
+  let preprocessedText = convertInlineDashComments(protectedSql.text);
   
   // sql-formatter doesn't support queries starting with FROM properly.
   // Hack: if query starts with FROM, prepend 'SELECT * ' and strip it after formatting.
@@ -358,7 +365,7 @@ export const formatSqlText = async (text: string, dialect: string, cfg: Formatte
           }
         );
       }
-      return cleanFormattedSql(formatted);
+      return protectedSql.restore(cleanFormattedSql(formatted));
     } catch (e) {
       // Ignore syntax errors, try next dialect
     }

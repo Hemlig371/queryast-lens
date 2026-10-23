@@ -16,7 +16,8 @@ export const DEFAULT_QUICK_ACTIONS: QuickActionTemplate[] = [
   {
     id: 'qa-2',
     name: 'Структура таблицы',
-    template: 'DESCRIBE {table};',
+    // DESCRIBE (SELECT …) допускает подзапрос, а `DESCRIBE (…) AS _sub` — нет (источник {table} приходит как `(…) AS _sub`)
+    template: 'DESCRIBE (SELECT * FROM {table})',
   },
 ];
 

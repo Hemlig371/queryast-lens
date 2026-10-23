@@ -47,10 +47,21 @@ export function splitStatements(sql: string): string[] {
 const FORMAT_AT_END = /\bFORMAT\s+(?!(?:ASC|DESC|ASCENDING|DESCENDING)\b)([A-Za-z_]\w*)(?:\s+SETTINGS\b[\s\S]*)?$/i;
 const SETTINGS_CLAUSE = /\bSETTINGS\s+[A-Za-z_]\w*\s*=/i;
 const PAGEABLE_HEAD = /^\s*\(?\s*(SELECT|WITH|FROM)\b/i;
+// F-06: в DuckDB `TABLE t`, `VALUES (…)` и `PIVOT …` тоже запросы на чтение. Дописанный в конец LIMIT они принимают не везде
+// (после PIVOT … GROUP BY, внутри VALUES со скобками), поэтому такие запросы всегда оборачиваются в подзапрос (проверено в DuckDB 1.5.5).
+const DUCKDB_EXTRA_HEAD = /^\s*\(?\s*(TABLE|VALUES|PIVOT)\b/i;
+// F-01: оператор начинается с WITH — после списка CTE (в `topLevelOnly` скобки уже пусты) идёт `[имя] AS [NOT] [MATERIALIZED] [,]`,
+// затем ключевое слово основного оператора.
+const WITH_CTE_LIST = /^\s*WITH\b\s*(?:RECURSIVE\b\s*)?(?:(?:[A-Za-z_]\w*\s+)?AS\b\s*(?:NOT\b\s*)?(?:MATERIALIZED\b\s*)?,?\s*)*/i;
+const WITH_WRITE_KEYWORD = /^(INSERT|UPDATE|DELETE|MERGE|COPY|CREATE)\b/i;
+// F-04: `FETCH FIRST n ROWS ONLY` / `FETCH NEXT …` — собственное ограничение числа строк, как LIMIT.
+const FETCH_LIMIT = /\bFETCH\s+(?:FIRST|NEXT)\b/i;
 const LIMIT_BY_TAIL = /^\s*(?:\d+\s*)?(?:(?:,|OFFSET)\s*\d+\s*)?BY\b/i;
 
 interface StatementInfo {
   pageable: boolean;
+  /** Запрос всегда оборачивается в подзапрос (TABLE / VALUES / PIVOT в DuckDB). */
+  alwaysWrap: boolean;
   hasLimit: boolean;
   hasOffset: boolean;
   hasSetOp: boolean;
@@ -94,10 +105,14 @@ function analyzeStatement(stmt: string, dialect: SqlDialect): StatementInfo {
   const codeEnd = codeEndIndex(stmt, dialect);
   const code = flat.slice(0, codeEnd);
 
-  let hasLimit = false;
+  // F-01: `WITH … INSERT/UPDATE/DELETE/…` читает не данные, а меняет их; дописанный LIMIT здесь недопустим или обрезает вставку
+  const afterWith = WITH_CTE_LIST.exec(flat);
+  const withWrites = afterWith !== null && WITH_WRITE_KEYWORD.test(flat.slice(afterWith[0].length));
+
+  let hasLimit = FETCH_LIMIT.test(code);
   const limitRe = /\bLIMIT\b/gi;
   let m: RegExpExecArray | null;
-  while ((m = limitRe.exec(code)) !== null) {
+  while (!hasLimit && (m = limitRe.exec(code)) !== null) {
     // ClickHouse: `LIMIT n BY col` — не ограничение числа строк
     if (dialect === 'clickhouse' && LIMIT_BY_TAIL.test(code.slice(m.index + m[0].length))) continue;
     hasLimit = true;
@@ -112,8 +127,10 @@ function analyzeStatement(stmt: string, dialect: SqlDialect): StatementInfo {
     if (candidates.length > 0) clauseTail = Math.min(...candidates);
   }
 
+  const extraHead = dialect === 'duckdb' && DUCKDB_EXTRA_HEAD.test(masked);
   return {
-    pageable: PAGEABLE_HEAD.test(masked),
+    pageable: (PAGEABLE_HEAD.test(masked) || extraHead) && !withWrites,
+    alwaysWrap: extraHead,
     hasLimit,
     hasOffset: /\bOFFSET\b/i.test(code),
     hasSetOp: /\b(UNION|EXCEPT|INTERSECT)\b/i.test(code),
@@ -133,7 +150,7 @@ export function hasOwnRowLimit(sql: string, dialect: SqlDialect): boolean {
 function pageStatement(stmt: string, info: StatementInfo, page: number, pageSize: number): string {
   if (info.hasLimit && page === 1) return stmt;
 
-  const wrap = info.hasSetOp || (page > 1 && (info.hasLimit || info.hasOffset));
+  const wrap = info.alwaysWrap || info.hasSetOp || (page > 1 && (info.hasLimit || info.hasOffset));
   const code = stmt.slice(0, info.codeEnd);
   const trailing = stmt.slice(info.codeEnd); // пробелы и комментарии после кода
   const inner = info.clauseTail >= 0 ? code.slice(0, info.clauseTail).trimEnd() : code;

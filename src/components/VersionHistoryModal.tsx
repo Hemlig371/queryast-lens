@@ -1,4 +1,4 @@
-import { t } from '../utils/i18n';
+import { t, linesSuffix } from '../utils/i18n';
 import React, { useState, useEffect, useMemo } from 'react';
 import { downloadFileWithFallback } from '../utils/exportUtils';
 import { 
@@ -430,7 +430,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
                         <span>{ver.formattedTime}</span>
                         <div className="flex items-center gap-2 font-mono text-[10px]">
                           <span className={theme === 'dark' ? 'text-blue-400' : 'text-blue-700'}></span>
-                          <span className={theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}>{ver.lineCount}{t(" строк")}</span>
+                          <span className={theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}>{ver.lineCount}{linesSuffix(ver.lineCount)}</span>
                         </div>
                       </div>
 

@@ -3,10 +3,10 @@
 // Приложение держит результат как массив объектов `{имя_столбца: значение}`. У такого представления два изъяна:
 //  1. одинаковые имена (`SELECT 1 AS a, 2 AS a`) схлопываются в один ключ — значения пропадают;
 //  2. JS перечисляет целочисленные ключи ('1', '2') по возрастанию и раньше остальных, порядок столбцов теряется.
-// Компромисс: имена столбцов делаются уникальными (`a`, `a_2`, …), а настоящий порядок передаётся отдельным списком `columns`.
+// Компромисс: имена столбцов делаются уникальными (`a`, `a_1`, …), а настоящий порядок передаётся отдельным списком `columns`.
 // Потребители (таблица, TSV, Markdown, Excel, статистика) берут порядок через `getResultColumns`.
 
-/** Делает имена уникальными: повтор получает суффикс `_2`, `_3`, … (не совпадающий ни с одним настоящим именем). */
+/** Делает имена уникальными: повтор получает суффикс `_1`, `_2`, … (не совпадающий ни с одним настоящим именем). */
 export function uniqueColumnNames(names: readonly unknown[]): string[] {
   const original = names.map((n) => String(n));
   const reserved = new Set(original);
@@ -16,7 +16,8 @@ export function uniqueColumnNames(names: readonly unknown[]): string[] {
       used.add(name);
       return name;
     }
-    let k = 2;
+    // F-17: нумерация с `_1`, как в DuckDB для `SELECT * FROM (SELECT 1 a, 2 a)` (`a, a_1`): иначе после сортировки/фильтра имена столбцов меняются
+    let k = 1;
     let candidate = `${name}_${k}`;
     while (reserved.has(candidate) || used.has(candidate)) {
       k++;
@@ -25,6 +26,15 @@ export function uniqueColumnNames(names: readonly unknown[]): string[] {
     used.add(candidate);
     return candidate;
   });
+}
+
+/**
+ * Запись `obj[key] = value`, безопасная для ключа `__proto__` (F-15): обычное присваивание ему не создаёт свойство,
+ * и потом `obj['__proto__']` возвращает Object.prototype вместо значения.
+ */
+export function setOwnKey<T>(obj: Record<string, T>, key: string, value: T): void {
+  if (key === '__proto__') Object.defineProperty(obj, key, { value, enumerable: true, writable: true, configurable: true });
+  else obj[key] = value;
 }
 
 /** Строки-массивы (Tauri: `columns` + `rows`) → объекты с уникальными ключами и список столбцов в порядке выдачи. */
@@ -37,11 +47,7 @@ export function rowsFromColumns(
     const obj: Record<string, any> = {};
     for (let i = 0; i < columns.length; i++) {
       const key = columns[i];
-      if (key === '__proto__') {
-        Object.defineProperty(obj, key, { value: row[i], enumerable: true, writable: true, configurable: true });
-      } else {
-        obj[key] = row[i];
-      }
+      setOwnKey(obj, key, row[i]);
     }
     return obj;
   });

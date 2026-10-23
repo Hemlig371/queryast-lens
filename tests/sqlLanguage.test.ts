@@ -30,11 +30,41 @@ describe('sqlLanguage: строки', () => {
   it('косая черта перед другим символом — обычный символ строки', () => {
     expect(named("select 'C:\\data\\file' from t", 'lensString')).toEqual(["'C:\\data\\file'"]);
   });
-  it('CM-03: $$ … $$ — одна строка, в том числе многострочная', () => {
+  it("CM-03: $$ … $$ в одной строке — зелёная строка как раньше", () => {
     expect(named("select $$ it's 'x' $$ from t", 'lensString')).toEqual(["$$ it's 'x' $$"]);
-    // токены потокового парсера не пересекают границу строки: многострочная строка — по узлу на строку
-    expect(named('do $$\nselect 1\n$$ ;', 'lensString')).toEqual(['$$', 'select 1', '$$']);
-    expect(named('do $$\nselect 1\n$$ ;', 'lensKeyword')).toEqual(['do']);
+    expect(named('select $$a$$, $$b$$ from t', 'lensString')).toEqual(['$$a$$', '$$b$$']);
+  });
+  it('многострочный $$ … $$ не зелёный: внутри обычная подсветка SQL', () => {
+    const text = "do $$\nselect 1, 'x' from t -- c\n$$ ;";
+    expect(named(text, 'lensString')).toEqual(["'x'"]);
+    expect(named(text, 'lensKeyword')).toEqual(['do', 'select', 'from']);
+    expect(named(text, 'lensNumber')).toEqual(['1']);
+    expect(named(text, 'lensComment')).toEqual(['-- c']);
+  });
+  it('многострочный $$: после закрытия подсветка продолжается как обычно', () => {
+    const text = 'create macro f() as $$\nselect 1\n$$;\nselect 2 from t';
+    expect(named(text, 'lensKeyword')).toEqual(['create', 'as', 'select', 'select', 'from']);
+    expect(named(text, 'lensString')).toEqual([]);
+    expect(named(text, 'lensNumber')).toEqual(['1', '2']);
+  });
+  it('многострочный $$: апостроф и комментарий внутри не «съедают» закрывающую пару', () => {
+    expect(named("do $$\nit's text\n$$ select 1", 'lensKeyword')).toEqual(['do', 'select']);
+    expect(named("do $$\nit's text\n$$ select 1", 'lensNumber')).toEqual(['1']);
+    expect(named('do $$\nselect 1 -- note $$ select 2', 'lensKeyword')).toEqual(['do', 'select', 'select']);
+    expect(named('do $$\n/* a\nb $$ select 3', 'lensKeyword')).toEqual(['do', 'select']);
+  });
+  it('многострочный $$ после однострочной строки в той же строке', () => {
+    const text = "select $$a$$, $$\nx\n$$ from t";
+    expect(named(text, 'lensString')).toEqual(['$$a$$']);
+    expect(named(text, 'lensKeyword')).toEqual(['select', 'from']);
+  });
+  it('незакрытый $$: дальше обычная подсветка, а не зелёный текст до конца', () => {
+    expect(named('select $$\nselect 1', 'lensString')).toEqual([]);
+    expect(named('select $$\nselect 1', 'lensKeyword')).toEqual(['select', 'select']);
+  });
+  it("в обычных кавычках и комментариях $$ не открывает литерал", () => {
+    expect(named("select '$$' from t\nwhere 1", 'lensKeyword')).toEqual(['select', 'from', 'where']);
+    expect(named('-- $$\nselect 1', 'lensKeyword')).toEqual(['select']);
   });
   it('после закрытия $$ подсветка продолжается как обычно', () => {
     const toks = tokens('select $$a$$ from t');

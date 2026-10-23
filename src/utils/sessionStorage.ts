@@ -46,7 +46,8 @@ export async function saveSessionTabs(tabs: EditorTab[]): Promise<void> {
       filePath: tab.filePath,
       savedContent: tab.savedContent,
       isModified: tab.isModified,
-      lastExecutedSql: tab.lastExecutedSql
+      lastExecutedSql: tab.lastExecutedSql,
+      tableBlock: tab.tableBlock
     }));
     
     try {

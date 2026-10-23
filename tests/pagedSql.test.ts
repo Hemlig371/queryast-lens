@@ -298,6 +298,107 @@ describe('H: режим parallel и устойчивость', () => {
   });
 });
 
+describe('I: WITH … DML, FETCH FIRST, TABLE / VALUES / PIVOT (F-01, F-04, F-06)', () => {
+  it('F-01: WITH … INSERT/UPDATE/DELETE/MERGE/COPY/CREATE не листается и не получает LIMIT', () => {
+    const cases = [
+      'WITH s AS (SELECT range FROM range(1000)) INSERT INTO sink SELECT * FROM s',
+      'WITH s AS (SELECT 1 x) DELETE FROM t WHERE x IN (SELECT x FROM s)',
+      'WITH s AS (SELECT 1 x) UPDATE t SET y = 1 WHERE x IN (SELECT x FROM s)',
+      'WITH RECURSIVE r(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM r WHERE n < 5) INSERT INTO sink SELECT n FROM r',
+      'WITH a AS (SELECT 1 x), b AS MATERIALIZED (SELECT 2 y) INSERT INTO sink SELECT * FROM a, b',
+      'WITH a AS NOT MATERIALIZED (SELECT 1 x) INSERT INTO sink SELECT * FROM a',
+      'WITH "copy" AS (SELECT 1 x) INSERT INTO sink SELECT * FROM "copy"',
+      'with s as (select 1) insert into sink select * from s;',
+      'WITH s AS (SELECT 1 x) MERGE INTO t USING s ON t.x = s.x WHEN MATCHED THEN DELETE',
+      'WITH s AS (SELECT 1 x) CREATE TABLE c AS SELECT * FROM s',
+    ];
+    for (const sql of cases) {
+      const r1 = buildPagedSql(sql, P(1));
+      expect(r1.pageable, sql).toBe(false);
+      expect(r1.main, sql).toBe(sql.trim());
+      expect(buildPagedSql(sql, P(2)).skip, sql).toBe(true);
+    }
+  });
+
+  it('F-01: WITH … SELECT (в том числе слова insert/update в CTE, строках и столбцах) по-прежнему листается', () => {
+    const cases = [
+      'WITH s AS (SELECT 1 x) SELECT * FROM s',
+      'WITH s AS (INSERT INTO t VALUES (1) RETURNING *) SELECT * FROM s',
+      "WITH s AS (SELECT 'insert' AS update) SELECT * FROM s",
+      'WITH a AS (SELECT 1), b AS (SELECT 2) SELECT * FROM a, b',
+      'WITH s AS (SELECT 1) TABLE s',
+      'WITH s AS (SELECT 1) -- insert\nSELECT * FROM s',
+    ];
+    for (const sql of cases) {
+      const r = buildPagedSql(sql, P(1));
+      expect(r.pageable, sql).toBe(true);
+      expect(r.main.endsWith('\nLIMIT 50'), sql).toBe(true);
+    }
+  });
+
+  it('F-01: в скрипте WITH … INSERT последним оператором: подготовка выполняется как есть, страница 2 ничего не запускает', () => {
+    const sql = 'CREATE TABLE sink(x INT);\nWITH s AS (SELECT 1 x) INSERT INTO sink SELECT * FROM s';
+    expect(buildPagedSql(sql, P(1)).main).toBe(sql);
+    expect(buildPagedSql(sql, P(2)).skip).toBe(true);
+    const seq = buildPagedSql(sql, P(1, { mode: 'sequential' }));
+    expect(seq.setup).toEqual(['CREATE TABLE sink(x INT)']);
+    expect(seq.main).toBe('WITH s AS (SELECT 1 x) INSERT INTO sink SELECT * FROM s');
+  });
+
+  it('F-04: FETCH FIRST/NEXT — собственный лимит: страница 1 без изменений, страница 2 оборачивает', () => {
+    const sql = 'SELECT * FROM t ORDER BY x FETCH FIRST 5 ROWS ONLY';
+    expect(buildPagedSql(sql, P(1)).main).toBe(sql);
+    expect(hasOwnRowLimit(sql, 'duckdb')).toBe(true);
+    expect(mainOf(sql, 2)).toBe(`SELECT * FROM (\n${sql}\n) AS _limited_subquery LIMIT 50 OFFSET 50`);
+    const sql2 = 'select * from t offset 2 rows fetch next 3 rows only';
+    expect(buildPagedSql(sql2, P(1)).main).toBe(sql2);
+    expect(mainOf(sql2, 2)).toBe(`SELECT * FROM (\n${sql2}\n) AS _limited_subquery LIMIT 50 OFFSET 50`);
+  });
+
+  it('F-04: FETCH в подзапросе, строке, комментарии и как имя столбца не считается лимитом', () => {
+    for (const sql of [
+      'SELECT * FROM (SELECT * FROM t FETCH FIRST 1 ROWS ONLY) q',
+      "SELECT 'FETCH FIRST 1 ROWS ONLY' AS x",
+      'SELECT * FROM t -- FETCH FIRST 1 ROWS ONLY',
+      'SELECT fetch, first FROM t',
+    ]) {
+      expect(hasOwnRowLimit(sql, 'duckdb'), sql).toBe(false);
+      expect(buildPagedSql(sql, P(1)).main.includes('\nLIMIT 50'), sql).toBe(true);
+    }
+  });
+
+  it('F-06: TABLE / VALUES / PIVOT (DuckDB) листаются и всегда оборачиваются в подзапрос', () => {
+    for (const sql of ['TABLE t', 'table t', 'VALUES (1), (2), (3)', 'PIVOT t ON g USING sum(x)', 'PIVOT t ON g USING sum(x) GROUP BY x', '(TABLE t)']) {
+      const r1 = buildPagedSql(sql, P(1));
+      expect(r1.pageable, sql).toBe(true);
+      expect(r1.main, sql).toBe(`SELECT * FROM (\n${sql}\n) AS _limited_subquery LIMIT 50`);
+      expect(mainOf(sql, 3), sql).toBe(`SELECT * FROM (\n${sql}\n) AS _limited_subquery LIMIT 50 OFFSET 100`);
+    }
+  });
+
+  it('F-06: собственный LIMIT у TABLE/VALUES — страница 1 без изменений', () => {
+    expect(buildPagedSql('TABLE t LIMIT 5', P(1)).main).toBe('TABLE t LIMIT 5');
+    expect(mainOf('VALUES (1), (2) LIMIT 1', 2)).toBe('SELECT * FROM (\nVALUES (1), (2) LIMIT 1\n) AS _limited_subquery LIMIT 50 OFFSET 50');
+  });
+
+  it('F-06: в скрипте TABLE последним оператором листается, подготовка не повторяется', () => {
+    const sql = 'CREATE TABLE t AS SELECT 1 x;\nTABLE t';
+    expect(buildPagedSql(sql, P(1)).main).toBe('CREATE TABLE t AS SELECT 1 x;\nSELECT * FROM (\nTABLE t\n) AS _limited_subquery LIMIT 50');
+    expect(mainOf(sql, 2)).toBe('SELECT * FROM (\nTABLE t\n) AS _limited_subquery LIMIT 50 OFFSET 50');
+  });
+
+  it('F-06: для ClickHouse и для CREATE TABLE/VALUES внутри других операторов ничего не меняется', () => {
+    for (const sql of ['TABLE t', 'VALUES (1)', 'PIVOT t ON g USING sum(x)']) {
+      const r = buildPagedSql(sql, P(1, { dialect: 'clickhouse' }));
+      expect(r.pageable, sql).toBe(false);
+      expect(r.main, sql).toBe(sql);
+    }
+    for (const sql of ['CREATE TABLE t AS SELECT 1', 'INSERT INTO t VALUES (1)', 'DROP TABLE t', 'TABLESAMPLE', 'PIVOTED x']) {
+      expect(buildPagedSql(sql, P(1)).pageable, sql).toBe(false);
+    }
+  });
+});
+
 describe('согласованность с признаком FORMAT из clickhouseFormat', () => {
   const samples = [
     'SELECT * FROM t FORMAT JSON',

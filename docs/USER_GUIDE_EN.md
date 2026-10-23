@@ -100,7 +100,7 @@ FROM orders
 WHERE status = {{$status}}
 LIMIT {{$limit}};
 ```
-Before execution, the editor automatically performs safe variable substitution. The system variable `{{$timestamp}}` inserts the current time in Unix milliseconds. If a variable is not defined, the text `{{$name}}` stays in the query as is and the database returns a syntax error. A variable value cannot contain the `}` character.
+Before execution, the editor automatically performs safe variable substitution. The system variable `{{$timestamp}}` inserts the current time in Unix milliseconds, and `{{$now}}` inserts the computer's local time as `YYYY-MM-DD HH:MM:SS` (no quotes added: `'{{$now}}'`). A value defined with `{{$now=…}}` takes priority. If a variable is not defined, the text `{{$name}}` stays in the query as is and the database returns a syntax error. A variable value cannot contain the `}` character.
 
 ### SQL Compression & Encodings
 * **Single-line Compression**: The SQL compacting feature in the editor automatically converts single-line comments `--` into block comments `/* */` so your code doesn't break when merged into a single line.

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatColumnType, splitBySemicolonIgnoringQuotes, replaceVariablesInSql, getLastSelectStatement, buildQuickActionSource, findUnresolvedVariables } from '../src/lib/sqlUtils';
+import { formatColumnType, splitBySemicolonIgnoringQuotes, replaceVariablesInSql, getLastSelectStatement, buildQuickActionSource, findUnresolvedVariables, formatLocalNow } from '../src/lib/sqlUtils';
 
 describe('sqlUtils', () => {
   describe('formatColumnType', () => {
@@ -165,5 +165,25 @@ describe('findUnresolvedVariables (B-10)', () => {
   });
   it('без переменных', () => {
     expect(findUnresolvedVariables('SELECT 1')).toEqual([]);
+  });
+});
+
+describe('{{$now}} (этап E плана 32)', () => {
+  it('formatLocalNow: локальное время YYYY-MM-DD HH:MM:SS с ведущими нулями', () => {
+    expect(formatLocalNow(new Date(2024, 0, 5, 3, 4, 9))).toBe('2024-01-05 03:04:09');
+    expect(formatLocalNow(new Date(2026, 11, 31, 23, 59, 59))).toBe('2026-12-31 23:59:59');
+  });
+  it('{{$now}} заменяется на локальное время без кавычек', () => {
+    const out = replaceVariablesInSql("SELECT '{{$now}}'::TIMESTAMP");
+    expect(out).toMatch(/^SELECT '\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}'::TIMESTAMP$/);
+    const d = new Date(out.slice(8, 27).replace(' ', 'T'));
+    expect(Math.abs(d.getTime() - Date.now())).toBeLessThan(5000);
+  });
+  it('пользовательское {{$now=…}} имеет приоритет', () => {
+    expect(replaceVariablesInSql("-- {{$now=2020-02-02 02:02:02}}\nSELECT '{{$now}}'", undefined)).toContain("SELECT '2020-02-02 02:02:02'");
+    expect(replaceVariablesInSql("SELECT '{{$now}}'", "-- {{$now=X}}")).toBe("SELECT 'X'");
+  });
+  it('{{$now}} считается определённой', () => {
+    expect(findUnresolvedVariables('SELECT {{$now}}')).toEqual([]);
   });
 });

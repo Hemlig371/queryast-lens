@@ -188,12 +188,12 @@ describe('normalizeWasmTable', () => {
     expect(r.truncated).toBe(false);
   });
 
-  it('одинаковые имена столбцов не схлопываются: a, a_2; типы по уникальным именам', () => {
+  it('одинаковые имена столбцов не схлопываются: a, a_1; типы по уникальным именам', () => {
     const t = table([field('a', 'Int32'), field('a', 'Utf8'), field('b', 'Int32')], [[1, 2], ['x', 'y'], [10, 20]]);
     const r = normalizeWasmTable(t);
-    expect(r.columns).toEqual(['a', 'a_2', 'b']);
-    expect(r.rows).toEqual([{ a: 1, a_2: 'x', b: 10 }, { a: 2, a_2: 'y', b: 20 }]);
-    expect(r.columnTypes).toEqual({ a: 'Int32', a_2: 'Utf8', b: 'Int32' });
+    expect(r.columns).toEqual(['a', 'a_1', 'b']);
+    expect(r.rows).toEqual([{ a: 1, a_1: 'x', b: 10 }, { a: 2, a_1: 'y', b: 20 }]);
+    expect(r.columnTypes).toEqual({ a: 'Int32', a_1: 'Utf8', b: 'Int32' });
   });
 
   it('числовые имена: порядок столбцов хранится в columns, а не в объекте', () => {

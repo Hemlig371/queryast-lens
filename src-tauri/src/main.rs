@@ -4,6 +4,7 @@
 )]
 
 mod chcancel;
+mod dircheck;
 mod fstree;
 mod sqlscript;
 mod timefmt;
@@ -92,7 +93,12 @@ fn apply_duckdb_options(conn: &Connection, opts: &DuckDbConfigOptions) {
     }
     if let Some(ref temp_dir) = opts.temp_directory {
         if !temp_dir.trim().is_empty() {
-            let clean = temp_dir.trim().replace('\'', "").replace('"', "").replace(';', "");
+            let mut clean = temp_dir.trim().replace('\'', "").replace('"', "").replace(';', "");
+            // F-14: относительный путь (по умолчанию `./tmp`) в read-only рабочей папке (AppImage) ломает любой запрос со сбросом
+            // на диск; тогда временные файлы идут в системную временную папку. Абсолютные пути пользователя не трогаем.
+            if dircheck::is_plain_relative(&clean) && !dircheck::dir_is_usable(&clean) {
+                clean = dircheck::fallback_temp_dir().replace('\'', "").replace('"', "").replace(';', "");
+            }
             let sql = format!("PRAGMA temp_directory = '{}';", clean);
             let _ = conn.execute_batch(&sql);
         }
@@ -100,8 +106,11 @@ fn apply_duckdb_options(conn: &Connection, opts: &DuckDbConfigOptions) {
     if let Some(ref ext_dir) = opts.extension_directory {
         if !ext_dir.trim().is_empty() {
             let clean = ext_dir.trim().replace('\'', "").replace('"', "").replace(';', "");
-            let sql = format!("PRAGMA extension_directory = '{}';", clean);
-            let _ = conn.execute_batch(&sql);
+            // F-14: недоступную на запись относительную папку расширений не задаём — работает стандартная папка DuckDB
+            if !dircheck::is_plain_relative(&clean) || dircheck::dir_is_usable(&clean) {
+                let sql = format!("PRAGMA extension_directory = '{}';", clean);
+                let _ = conn.execute_batch(&sql);
+            }
         }
     }
     if let Some(ref init_sql) = opts.init_sql {
@@ -238,6 +247,10 @@ async fn execute_query(
                             }
                         }
                         conn.prepare(last).map_err(|err| format!("Оператор {} из {}: {}", parts.len(), parts.len(), err))?
+                    } else if sqlscript::split_statements(&sql).len() > 1 {
+                        // F-23: duckdb-rs уже выполнил все операторы, кроме последнего, и упал на разборе последнего.
+                        // Повторный execute_batch выполнил бы их второй раз (INSERT дал бы дубли): возвращаем исходную ошибку.
+                        return Err(e.to_string());
                     } else {
                         // Fallback for multi-statement scripts (e.g., CREATE ...; COPY ...)
                         match conn.execute_batch(&sql) {
@@ -293,23 +306,18 @@ async fn execute_query(
                             ValueRef::USmallInt(n) => json!(n),
                             ValueRef::UInt(n) => json!(n),
                             ValueRef::UBigInt(n) => json!(n.to_string()),
-                            ValueRef::Float(n) => json!(n),
-                            ValueRef::Double(n) => json!(n),
+                            // FLOAT остаётся 0.1 (не 0.10000000149011612), NaN и ±Infinity — строки, а не null (F-07)
+                            ValueRef::Float(n) => valjson::float_json(n.to_string(), f64::from(n)),
+                            ValueRef::Double(n) => valjson::float_json(n.to_string(), n),
                             ValueRef::Decimal(n) => json!(n.to_string()),
                             ValueRef::Text(t) => {
                                 let s = String::from_utf8_lossy(t).to_string();
                                 JsonValue::String(s)
                             }
                             ValueRef::Blob(b) => JsonValue::String(format!("<blob {} bytes>", b.len())),
-                            ValueRef::Date32(_) => {
-                                if let Ok(d) = row.get::<_, chrono::NaiveDate>(col_idx) {
-                                    JsonValue::String(d.to_string())
-                                } else if let Ok(s) = row.get::<_, String>(col_idx) {
-                                    JsonValue::String(s)
-                                } else {
-                                    JsonValue::Null
-                                }
-                            }
+                            // F-02: даты и время без chrono: `NaiveDateTime` для моментов до 1970 года с долей секунды и для
+                            // `infinity` давал None, и unwrap внутри duckdb-rs ронял весь запрос. Формат строки прежний.
+                            ValueRef::Date32(days) => valjson::date_cell(days),
                             ValueRef::Time64(_, _) => {
                                 if let Ok(t) = row.get::<_, chrono::NaiveTime>(col_idx) {
                                     JsonValue::String(t.to_string())
@@ -319,17 +327,7 @@ async fn execute_query(
                                     JsonValue::Null
                                 }
                             }
-                            ValueRef::Timestamp(_, _) => {
-                                if let Ok(dt) = row.get::<_, chrono::NaiveDateTime>(col_idx) {
-                                    JsonValue::String(dt.to_string())
-                                } else if let Ok(dt) = row.get::<_, chrono::DateTime<chrono::Utc>>(col_idx) {
-                                    JsonValue::String(dt.to_string())
-                                } else if let Ok(s) = row.get::<_, String>(col_idx) {
-                                    JsonValue::String(s)
-                                } else {
-                                    JsonValue::Null
-                                }
-                            }
+                            ValueRef::Timestamp(unit, t) => valjson::timestamp_cell(&unit, t),
                             ValueRef::Interval { months, days, nanos } => {
                                 JsonValue::String(format!("{}m {}d {}ns", months, days, nanos))
                             }

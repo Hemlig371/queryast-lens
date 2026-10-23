@@ -1,12 +1,12 @@
 
-> queryast-lens@8.3.1 test
+> queryast-lens@8.4.2 test
 > vitest run
 
 
  RUN  v3.2.7 /app/applet
 
- ✓ tests/markdown.test.ts (37 tests) 1289ms
-   ✓ markdown: документ > патологический ввод обрабатывается быстро  1258ms
+ ✓ tests/markdown.test.ts (37 tests) 1027ms
+   ✓ markdown: документ > патологический ввод обрабатывается быстро  968ms
 stderr | tests/excelExporter.test.ts > excelExporter utils > exportToExcel with formatting features > parses @preset directive from comments and applies preset settings
 Failed to load Excel presets from localStorage ReferenceError: localStorage is not defined
     at getSavedExcelPresets (/app/applet/src/utils/excelSettingsStorage.ts:48:17)
@@ -22,10 +22,11 @@ Failed to load Excel presets from localStorage ReferenceError: localStorage is n
     at /app/applet/tests/excelExporter.test.ts:190:13
     at file:///app/applet/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20
 
- ✓ tests/excelExporter.test.ts (8 tests) 1022ms
-   ✓ excelExporter utils > exportToExcel with formatting features > runs exportToExcel without crashing when formatExistingRowAsTotal and formatExistingColumnAsTotal are enabled  763ms
- ✓ tests/arrowRows.test.ts (4 tests) 604ms
-   ✓ takeTableRows > усекает до предела и обращается только к нужным строкам (WS-05)  596ms
+ ✓ tests/excelExporter.test.ts (8 tests) 690ms
+   ✓ excelExporter utils > exportToExcel with formatting features > runs exportToExcel without crashing when formatExistingRowAsTotal and formatExistingColumnAsTotal are enabled  503ms
+ ✓ tests/arrowRows.test.ts (4 tests) 579ms
+   ✓ takeTableRows > усекает до предела и обращается только к нужным строкам (WS-05)  574ms
+ ✓ tests/sqlFormat.test.ts (29 tests) 239ms
 stderr | tests/wasmResult.test.ts > normalizeWasmTable > значение, которое не удалось привести, не роняет весь результат
 WASM value normalization failed Error: boom
     at Object.toJSON (/app/applet/tests/wasmResult.test.ts:239:77)
@@ -39,15 +40,14 @@ WASM value normalization failed Error: boom
     at new Promise (<anonymous>)
     at runWithTimeout (file:///app/applet/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)
 
- ✓ tests/wasmResult.test.ts (29 tests) 385ms
- ✓ tests/errorBoundary.test.ts (9 tests) 292ms
- ✓ tests/astToGraph.test.ts (30 tests) 217ms
- ✓ tests/edgePath.test.ts (14 tests) 150ms
- ✓ tests/mermaidSvg.test.ts (13 tests) 125ms
- ✓ tests/sourceGuards.test.ts (28 tests) 112ms
- ✓ tests/mermaidToGraph.test.ts (8 tests) 96ms
- ✓ tests/pagedSql.test.ts (43 tests) 74ms
- ✓ tests/erParse.test.ts (15 tests) 93ms
+ ✓ tests/wasmResult.test.ts (29 tests) 153ms
+ ✓ tests/errorBoundary.test.ts (9 tests) 205ms
+ ✓ tests/astToGraph.test.ts (30 tests) 128ms
+ ✓ tests/edgePath.test.ts (14 tests) 90ms
+ ✓ tests/mermaidSvg.test.ts (13 tests) 123ms
+ ✓ tests/sourceGuards.test.ts (28 tests) 74ms
+ ✓ tests/mermaidToGraph.test.ts (8 tests) 56ms
+ ✓ tests/pagedSql.test.ts (52 tests) 53ms
 stderr | tests/snippetsMigration.test.ts > loadSnippetsFromDBStrict > прежняя loadSnippetsFromDB при неоткрывшейся базе по-прежнему возвращает []
 Failed to load snippets from IndexedDB Error: blocked
     at Object.open (/app/applet/tests/snippetsMigration.test.ts:33:77)
@@ -89,15 +89,19 @@ Snippets migration skipped: IndexedDB is not readable Error: blocked
     at /app/applet/tests/snippetsMigration.test.ts:163:21
     at file:///app/applet/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20
 
- ✓ tests/snippetsMigration.test.ts (21 tests) 81ms
- ✓ tests/versionHistory.test.ts (10 tests) 90ms
- ✓ tests/fileTree.test.ts (37 tests) 35ms
- ✓ tests/editorOps.test.ts (50 tests) 60ms
- ✓ tests/mermaidParse.test.ts (35 tests) 46ms
- ✓ tests/statFormat.test.ts (13 tests) 39ms
- ✓ tests/hotkeysMatch.test.ts (36 tests) 38ms
- ✓ tests/snippetsStorage.test.ts (14 tests) 23ms
- ✓ tests/graphExport.test.ts (19 tests) 20ms
+ ✓ tests/snippetsMigration.test.ts (21 tests) 49ms
+ ✓ tests/erParse.test.ts (15 tests) 49ms
+ ✓ tests/versionHistory.test.ts (10 tests) 56ms
+ ✓ tests/columnActionsSql.test.ts (16 tests) 8ms
+ ✓ tests/hotkeysMatch.test.ts (36 tests) 25ms
+ ✓ tests/tableActionBlock.test.ts (10 tests) 8ms
+ ✓ tests/excelSaveDirective.test.ts (7 tests) 5ms
+ ✓ tests/editorOps.test.ts (50 tests) 29ms
+ ✓ tests/mermaidParse.test.ts (35 tests) 31ms
+ ✓ tests/statFormat.test.ts (13 tests) 27ms
+ ✓ tests/fileTree.test.ts (37 tests) 26ms
+ ✓ tests/sqlHighlight.test.ts (9 tests) 10ms
+ ✓ tests/snippetsStorage.test.ts (14 tests) 33ms
 stderr | tests/connectionSwitch.test.ts > switchConnection > ошибка закрытия старого не мешает открыть новое
 Closing the previous DuckDB connection failed Error: close failed
     at Object.closeCurrent (/app/applet/tests/connectionSwitch.test.ts:101:117)
@@ -111,47 +115,49 @@ Closing the previous DuckDB connection failed Error: close failed
     at runTest (file:///app/applet/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)
     at processTicksAndRejections (node:internal/process/task_queues:103:5)
 
- ✓ tests/connectionSwitch.test.ts (15 tests) 25ms
- ✓ tests/sqlLanguage.test.ts (21 tests) 22ms
- ✓ tests/schemaDbCache.test.ts (4 tests) 20ms
- ✓ tests/clickhouse.test.ts (23 tests) 21ms
- ✓ tests/queryRun.test.ts (13 tests) 17ms
- ✓ tests/sqlUtils.test.ts (31 tests) 18ms
- ✓ tests/appHotkeys.test.ts (25 tests) 19ms
- ✓ tests/clickhouseFormat.test.ts (26 tests) 18ms
- ✓ tests/resultStorage.test.ts (3 tests) 14ms
+ ✓ tests/connectionSwitch.test.ts (15 tests) 16ms
+ ✓ tests/graphExport.test.ts (19 tests) 15ms
+ ✓ tests/sqlUtils.test.ts (35 tests) 14ms
+ ✓ tests/sqlLanguage.test.ts (27 tests) 17ms
+ ✓ tests/clickhouseFormat.test.ts (26 tests) 12ms
+ ✓ tests/appHotkeys.test.ts (25 tests) 13ms
+ ✓ tests/clickhouse.test.ts (23 tests) 14ms
+ ✓ tests/queryRun.test.ts (13 tests) 11ms
+ ✓ tests/resultRows.test.ts (20 tests) 29ms
+ ✓ tests/schemaDbCache.test.ts (4 tests) 13ms
+ ✓ tests/schemaKeys.test.ts (6 tests) 8ms
+ ✓ tests/resultStorage.test.ts (3 tests) 13ms
+ ✓ tests/sqlLiterals.test.ts (12 tests) 11ms
+ ✓ tests/excelParse.test.ts (16 tests) 10ms
  ✓ tests/excelSettingsStorage.test.ts (8 tests) 13ms
- ✓ tests/templateStorage.test.ts (11 tests) 13ms
- ✓ tests/formatCellValue.test.ts (13 tests) 16ms
- ✓ tests/resultRows.test.ts (16 tests) 16ms
- ✓ tests/sqlHighlight.test.ts (9 tests) 13ms
- ✓ tests/columnActionsSql.test.ts (16 tests) 11ms
- ✓ tests/workspaceBundle.test.ts (9 tests) 10ms
- ✓ tests/clipboard.test.ts (6 tests) 12ms
- ✓ tests/excelParse.test.ts (16 tests) 12ms
- ✓ tests/wasmFiles.test.ts (17 tests) 12ms
- ✓ tests/sqlFormat.test.ts (19 tests) 11ms
- ✓ tests/tabResultState.test.ts (8 tests) 11ms
- ✓ tests/sessionStorage.test.ts (4 tests) 11ms
- ✓ tests/markdownTable.test.ts (12 tests) 12ms
- ✓ tests/tabModified.test.ts (13 tests) 11ms
- ✓ tests/snippetTrash.test.ts (10 tests) 11ms
- ✓ tests/columnSelection.test.ts (14 tests) 9ms
- ✓ tests/sqlTokens.test.ts (7 tests) 10ms
- ✓ tests/vaultStorage.test.ts (6 tests) 8ms
- ✓ tests/pagination.test.ts (6 tests) 6ms
- ✓ tests/graphSelection.test.ts (9 tests) 7ms
- ✓ tests/excelSaveDirective.test.ts (7 tests) 8ms
- ✓ tests/filteredSql.test.ts (5 tests) 5ms
- ✓ tests/nodePropsEqual.test.ts (8 tests) 8ms
- ✓ tests/openFile.test.ts (8 tests) 9ms
- ✓ tests/resultTsv.test.ts (7 tests) 7ms
- ✓ tests/schemaKeys.test.ts (6 tests) 7ms
- ✓ tests/tabNames.test.ts (8 tests) 7ms
- ✓ tests/canvasLimits.test.ts (4 tests) 5ms
- ✓ tests/copyGuard.test.ts (7 tests) 7ms
+ ✓ tests/clipboard.test.ts (6 tests) 9ms
+ ✓ tests/formatCellValue.test.ts (13 tests) 10ms
+ ✓ tests/templateStorage.test.ts (11 tests) 29ms
+ ✓ tests/workspaceBundle.test.ts (9 tests) 7ms
+ ✓ tests/wasmFiles.test.ts (17 tests) 36ms
+ ✓ tests/snippetTrash.test.ts (10 tests) 18ms
+ ✓ tests/markdownTable.test.ts (12 tests) 7ms
+ ✓ tests/tabModified.test.ts (13 tests) 8ms
+ ✓ tests/sqlTokens.test.ts (7 tests) 7ms
+ ✓ tests/sessionStorage.test.ts (4 tests) 7ms
+ ✓ tests/tabResultState.test.ts (8 tests) 8ms
+ ✓ tests/columnSelection.test.ts (14 tests) 7ms
+ ✓ tests/vaultStorage.test.ts (6 tests) 6ms
+ ✓ tests/filteredSql.test.ts (8 tests) 6ms
+ ✓ tests/graphSelection.test.ts (9 tests) 5ms
+ ✓ tests/tabNames.test.ts (8 tests) 5ms
+ ✓ tests/copyGuard.test.ts (7 tests) 4ms
+ ✓ tests/resultTsv.test.ts (7 tests) 5ms
+ ✓ tests/pageRowsLimit.test.ts (5 tests) 4ms
+ ✓ tests/openFile.test.ts (8 tests) 5ms
+ ✓ tests/nodePropsEqual.test.ts (8 tests) 5ms
+ ✓ tests/pagination.test.ts (6 tests) 4ms
+ ✓ tests/quickActionDefaults.test.ts (3 tests) 5ms
+ ✓ tests/linesSuffix.test.ts (2 tests) 25ms
+ ✓ tests/canvasLimits.test.ts (4 tests) 3ms
 
- Test Files  60 passed (60)
-      Tests  923 passed (923)
-   Start at  19:45:58
-   Duration  37.20s (transform 1.67s, setup 0ms, collect 4.51s, tests 5.36s, environment 20ms, prepare 7.55s)
+ Test Files  65 passed (65)
+      Tests  991 passed (991)
+   Start at  19:29:48
+   Duration  28.69s (transform 1.34s, setup 0ms, collect 3.57s, tests 4.22s, environment 15ms, prepare 5.57s)
+

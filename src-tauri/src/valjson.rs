@@ -6,8 +6,10 @@
 //! и как делает WASM-нормализация (src/utils/wasmResult.ts): для таблицы, сортировки и Excel ячейка остаётся примитивом.
 //!
 //! Внутри вложенных значений: BIGINT, HUGEINT, UBIGINT и DECIMAL — строки (JS не держит их без потерь), даты и время — текст
-//! как у chrono, NaN и ±Inf — null (в JSON их нет), BLOB — `"<blob N bytes>"`, ключи MAP — строки (не-строковый ключ записывается
-//! как его JSON-текст). Float, Interval, NaN и TIMESTAMPTZ на верхнем уровне по-прежнему не трогаются (B-14 отложен).
+//! как у chrono, NaN и ±Inf — строки `"NaN"`, `"Infinity"`, `"-Infinity"` (числом в JSON их записать нельзя; раньше были null),
+//! BLOB — `"<blob N bytes>"`, ключи MAP — строки (не-строковый ключ записывается как его JSON-текст).
+//! Те же функции (`float_json`, `date_cell`, `timestamp_cell`) используются для DATE, TIMESTAMP, FLOAT и DOUBLE на верхнем уровне
+//! (F-02, F-07): даты до 1970 года и `infinity` больше не роняют запрос. Interval и TIMESTAMPTZ по-прежнему не трогаются.
 
 use crate::timefmt;
 use duckdb::types::{TimeUnit, Value};
@@ -22,10 +24,30 @@ fn per_second(unit: &TimeUnit) -> i64 {
     }
 }
 
-fn float_json(text_of_number: String, as_f64: f64) -> JsonValue {
+/// Число с плавающей точкой как JSON. NaN и ±Infinity числом не записать — они строки (раньше были null, и в таблице
+/// терялось, что это не NULL).
+pub fn float_json(text_of_number: String, as_f64: f64) -> JsonValue {
+    if as_f64.is_nan() {
+        return JsonValue::String("NaN".to_string());
+    }
+    if as_f64.is_infinite() {
+        return JsonValue::String(if as_f64 > 0.0 { "Infinity" } else { "-Infinity" }.to_string());
+    }
     // f32 разворачивается через его собственную запись: 0.1f32 остаётся 0.1, а не 0.10000000149011612
     let parsed = text_of_number.parse::<f64>().unwrap_or(as_f64);
     Number::from_f64(parsed).map(JsonValue::Number).unwrap_or(JsonValue::Null)
+}
+
+/// DATE верхнего уровня по числу суток от 1970-01-01 (отрицательное — до 1970 года). Не использует chrono: `row.get::<NaiveDate>`
+/// и `NaiveDateTime` для дат до 1970 с долей секунды и для `infinity` возвращали None и роняли запрос (F-02).
+pub fn date_cell(days_since_epoch: i32) -> JsonValue {
+    JsonValue::String(timefmt::format_date(i64::from(days_since_epoch)))
+}
+
+/// TIMESTAMP верхнего уровня (единица времени и значение от 1970-01-01 00:00:00), формат как у chrono: дробная часть 3/6/9 знаков.
+pub fn timestamp_cell(unit: &TimeUnit, value: i64) -> JsonValue {
+    let (secs, nanos) = timefmt::split_units(value, per_second(unit));
+    JsonValue::String(timefmt::format_timestamp(secs, nanos))
 }
 
 /// Скалярное значение как JSON. Составные значения сюда не попадают (см. `write_json`); неизвестный тип — запасной текст.
@@ -48,15 +70,12 @@ fn scalar_to_json(v: &Value) -> JsonValue {
         Value::Text(s) => JsonValue::String(s.clone()),
         Value::Enum(s) => JsonValue::String(s.clone()),
         Value::Blob(b) => JsonValue::String(format!("<blob {} bytes>", b.len())),
-        Value::Date32(days) => JsonValue::String(timefmt::format_date(i64::from(*days))),
+        Value::Date32(days) => date_cell(*days),
         Value::Time64(unit, t) => {
             let (secs, nanos) = timefmt::split_units(*t, per_second(unit));
             JsonValue::String(timefmt::format_time(secs, nanos))
         }
-        Value::Timestamp(unit, t) => {
-            let (secs, nanos) = timefmt::split_units(*t, per_second(unit));
-            JsonValue::String(timefmt::format_timestamp(secs, nanos))
-        }
+        Value::Timestamp(unit, t) => timestamp_cell(unit, *t),
         Value::Interval { months, days, nanos } => JsonValue::String(format!("{}m {}d {}ns", months, days, nanos)),
         // Типы, которых здесь нет, и составные значения: безопасный запасной вариант, чтобы не терять значение.
         #[allow(unreachable_patterns)]
@@ -188,9 +207,36 @@ mod tests {
     }
 
     #[test]
-    fn nan_and_inf_become_null() {
+    fn nan_and_inf_become_strings() {
         let v = Value::List(vec![Value::Double(f64::NAN), Value::Double(f64::INFINITY), Value::Float(f32::NEG_INFINITY)]);
-        assert_eq!(text(&v), "[null,null,null]");
+        assert_eq!(text(&v), "[\"NaN\",\"Infinity\",\"-Infinity\"]");
+    }
+
+    #[test]
+    fn top_level_float_double_nan_inf() {
+        assert_eq!(float_json(f64::NAN.to_string(), f64::NAN), JsonValue::String("NaN".into()));
+        assert_eq!(float_json(f32::INFINITY.to_string(), f64::from(f32::INFINITY)), JsonValue::String("Infinity".into()));
+        assert_eq!(float_json(f64::NEG_INFINITY.to_string(), f64::NEG_INFINITY), JsonValue::String("-Infinity".into()));
+        // обычные значения: FLOAT 0.1 остаётся 0.1, а не 0.10000000149011612
+        assert_eq!(float_json(0.1f32.to_string(), f64::from(0.1f32)).to_string(), "0.1");
+        assert_eq!(float_json(1.5f64.to_string(), 1.5).to_string(), "1.5");
+        assert_eq!(float_json(0.0f64.to_string(), 0.0).to_string(), "0.0");
+    }
+
+    #[test]
+    fn top_level_dates_before_epoch_and_infinity_do_not_panic() {
+        assert_eq!(date_cell(-1), JsonValue::String("1969-12-31".into()));
+        assert_eq!(date_cell(19_723), JsonValue::String("2024-01-01".into()));
+        // `infinity` у DATE — i32::MAX суток; главное, что есть текст, а не паника
+        assert!(matches!(date_cell(i32::MAX), JsonValue::String(_)));
+        // 1969-12-31 23:59:59.500
+        assert_eq!(timestamp_cell(&TimeUnit::Millisecond, -500), JsonValue::String("1969-12-31 23:59:59.500".into()));
+        // 1899-12-31 23:59:59.999999 (на микросекунду раньше 1900-01-01)
+        assert_eq!(timestamp_cell(&TimeUnit::Microsecond, -2_208_988_800_000_001), JsonValue::String("1899-12-31 23:59:59.999999".into()));
+        assert_eq!(timestamp_cell(&TimeUnit::Second, 1_706_704_496), JsonValue::String("2024-01-31 12:34:56".into()));
+        assert_eq!(timestamp_cell(&TimeUnit::Nanosecond, 1), JsonValue::String("1970-01-01 00:00:00.000000001".into()));
+        assert!(matches!(timestamp_cell(&TimeUnit::Microsecond, i64::MAX), JsonValue::String(_)));
+        assert!(matches!(timestamp_cell(&TimeUnit::Microsecond, i64::MIN), JsonValue::String(_)));
     }
 
     #[test]

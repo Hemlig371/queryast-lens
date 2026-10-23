@@ -37,7 +37,8 @@ export const buildEditorTheme = (theme: 'dark' | 'light'): Extension => {
           backgroundColor: dark ? 'rgba(59,130,246,0.42)' : 'rgba(59,130,246,0.36)',
         },
         '.cm-gutters': {
-          backgroundColor: dark ? 'rgba(30,41,59,0.8)' : '#e2e8f0',
+          // непрозрачный (раньше rgba(30,41,59,0.8) поверх #172033): прокручиваемый текст не просвечивает под номерами строк
+          backgroundColor: dark ? '#1d2739' : '#e2e8f0',
           color: '#64748b',
           border: 'none',
           borderRight: `1px solid ${dark ? '#334155' : '#cbd5e1'}`,

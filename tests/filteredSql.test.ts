@@ -34,4 +34,24 @@ describe('generateFilteredSortedSql', () => {
     expect(second.match(/_filtered_query/g)?.length).toBe(1);
     expect(second).toContain('"a" = 2');
   });
+
+  it('F-05: из скрипта в обёртку берётся только последний оператор', () => {
+    const sql = 'CREATE TABLE t AS SELECT 1 a;\nINSERT INTO t VALUES (2);\nSELECT * FROM t;';
+    expect(generateFilteredSortedSql('duckdb', sql, [], [])).toBe('SELECT * FROM t');
+    expect(generateFilteredSortedSql('duckdb', sql, [{ colKey: 'a', op: '=', val: 1 }], [{ colKey: 'a', dir: 'DESC' }])).toBe(
+      'SELECT * FROM (\nSELECT * FROM t\n) AS _filtered_query\nWHERE "a" = 1\nORDER BY "a" DESC'
+    );
+  });
+
+  it('F-05: комментарий после последней ; не становится оператором и не прячет скобку', () => {
+    const sql = 'SELECT * FROM t; -- итог';
+    const out = generateFilteredSortedSql('duckdb', sql, [], [{ colKey: 'a', dir: 'ASC' }]);
+    expect(out).toBe('SELECT * FROM (\nSELECT * FROM t\n) AS _filtered_query\nORDER BY "a" ASC');
+    expect(generateFilteredSortedSql('duckdb', '-- только комментарий\n;', [], [{ colKey: 'a', dir: 'ASC' }])).toBe('');
+  });
+
+  it('F-05: ; внутри строки не делит оператор, а хвостовой -- комментарий внутри оператора остаётся (скобка на новой строке)', () => {
+    const out = generateFilteredSortedSql('duckdb', "SELECT ';' AS a -- c", [], [{ colKey: 'a', dir: 'ASC' }]);
+    expect(out).toBe("SELECT * FROM (\nSELECT ';' AS a -- c\n) AS _filtered_query\nORDER BY \"a\" ASC");
+  });
 });

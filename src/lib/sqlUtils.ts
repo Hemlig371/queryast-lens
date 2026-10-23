@@ -58,6 +58,12 @@ export const splitBySemicolonIgnoringQuotes = (str: string): string[] => {
   return statements;
 };
 
+const pad2 = (n: number): string => String(n).padStart(2, '0');
+
+/** Локальное время (часовой пояс системы) строкой `YYYY-MM-DD HH:MM:SS`. */
+export const formatLocalNow = (d: Date): string =>
+  `${String(d.getFullYear()).padStart(4, '0')}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+
 /**
  * Zero-overhead SQL variable replacer.
  * 
@@ -112,6 +118,9 @@ export const replaceVariablesInSql = (sql: string, contextSql?: string): string 
     }
     if (key === 'timestamp') {
       return Date.now().toString(); // Системное значение по умолчанию
+    }
+    if (key === 'now') {
+      return formatLocalNow(new Date()); // Локальное время ОС, как есть (без кавычек: '{{$now}}')
     }
     return match;
   });

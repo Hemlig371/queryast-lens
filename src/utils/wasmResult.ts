@@ -9,7 +9,7 @@
 // НЕ ПРОВЕРЕНО на реальных значениях WASM-сборки: вид значений Arrow взят из описания библиотеки, а не из живого запроса.
 // Для проверки есть tools/wasm-diagnostics.html.
 
-import { uniqueColumnNames } from './resultRows';
+import { uniqueColumnNames, setOwnKey } from './resultRows';
 import { takeTableRows } from './arrowRows';
 
 export const WASM_MAX_ROWS = 500000;
@@ -231,7 +231,7 @@ export function normalizeWasmTable(table: ArrowTableLike, maxRows: number = WASM
   const columnTypes: Record<string, string> = {};
   fields.forEach((f, i) => {
     const text = typeText(f.type);
-    if (names[i] && text) columnTypes[names[i]] = text;
+    if (names[i] && text) setOwnKey(columnTypes, names[i], text);
   });
   const total = table?.numRows ?? 0;
   const count = Math.min(total, maxRows);

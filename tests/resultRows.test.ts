@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { uniqueColumnNames, rowsFromColumns, getResultColumns, columnsFromMeta } from '../src/utils/resultRows';
+import { uniqueColumnNames, rowsFromColumns, getResultColumns, columnsFromMeta, setOwnKey } from '../src/utils/resultRows';
 
 // п. 3.2 (B-05, XL-09): строки результата — объекты; одинаковые имена не должны схлопываться, порядок — не зависеть от числовых имён.
 
@@ -9,30 +9,34 @@ describe('uniqueColumnNames', () => {
     expect(uniqueColumnNames([])).toEqual([]);
   });
 
-  it('повторы получают суффикс _2, _3, … по порядку появления', () => {
-    expect(uniqueColumnNames(['a', 'a', 'b', 'a'])).toEqual(['a', 'a_2', 'b', 'a_3']);
+  it('повторы получают суффикс _1, _2, … по порядку появления (как в обёртке DuckDB)', () => {
+    expect(uniqueColumnNames(['a', 'a', 'b', 'a'])).toEqual(['a', 'a_1', 'b', 'a_2']);
   });
 
   it('суффикс не совпадает с настоящим именем другого столбца', () => {
-    expect(uniqueColumnNames(['a', 'a', 'a_2'])).toEqual(['a', 'a_3', 'a_2']);
-    expect(uniqueColumnNames(['a_2', 'a', 'a'])).toEqual(['a_2', 'a', 'a_3']);
+    expect(uniqueColumnNames(['a', 'a', 'a_1'])).toEqual(['a', 'a_2', 'a_1']);
+    expect(uniqueColumnNames(['a_1', 'a', 'a'])).toEqual(['a_1', 'a', 'a_2']);
   });
 
   it('регистр различает имена; пустое имя тоже уникализируется', () => {
     expect(uniqueColumnNames(['A', 'a'])).toEqual(['A', 'a']);
-    expect(uniqueColumnNames(['', ''])).toEqual(['', '_2']);
+    expect(uniqueColumnNames(['', ''])).toEqual(['', '_1']);
+  });
+
+  it('F-17: три одинаковых имени дают a, a_1, a_2 — как DuckDB в SELECT * FROM (SELECT 1 a, 2 a, 3 a)', () => {
+    expect(uniqueColumnNames(['a', 'a', 'a'])).toEqual(['a', 'a_1', 'a_2']);
   });
 
   it('не строки приводятся к строкам', () => {
-    expect(uniqueColumnNames([1, 1, null as unknown as string])).toEqual(['1', '1_2', 'null']);
+    expect(uniqueColumnNames([1, 1, null as unknown as string])).toEqual(['1', '1_1', 'null']);
   });
 });
 
 describe('rowsFromColumns', () => {
   it('дубли имён не схлопываются, значения сохраняются по позициям', () => {
     const { columns, rows } = rowsFromColumns(['a', 'a', 'b'], [[1, 2, 3], [4, 5, 6]]);
-    expect(columns).toEqual(['a', 'a_2', 'b']);
-    expect(rows).toEqual([{ a: 1, a_2: 2, b: 3 }, { a: 4, a_2: 5, b: 6 }]);
+    expect(columns).toEqual(['a', 'a_1', 'b']);
+    expect(rows).toEqual([{ a: 1, a_1: 2, b: 3 }, { a: 4, a_1: 5, b: 6 }]);
   });
 
   it('числовые имена: порядок хранится в columns, а не в объекте', () => {
@@ -100,5 +104,28 @@ describe('columnsFromMeta', () => {
     expect(columnsFromMeta([])).toBeNull();
     expect(columnsFromMeta([{ type: 'x' }])).toBeNull();
     expect(columnsFromMeta('x')).toBeNull();
+  });
+});
+
+describe('setOwnKey (F-15)', () => {
+  it('обычный ключ записывается как obj[key]', () => {
+    const o: Record<string, string> = {};
+    setOwnKey(o, 'a', 'Int32');
+    expect(o).toEqual({ a: 'Int32' });
+  });
+
+  it('ключ __proto__ становится собственным свойством, а не теряется и не возвращает Object.prototype', () => {
+    const o: Record<string, string> = {};
+    setOwnKey(o, '__proto__', 'VARCHAR');
+    expect(Object.getPrototypeOf(o)).toBe(Object.prototype);
+    expect(o['__proto__']).toBe('VARCHAR');
+    expect(typeof o['__proto__'].trim).toBe('function');
+    expect(Object.keys(o)).toEqual(['__proto__']);
+  });
+
+  it('rowsFromColumns по-прежнему кладёт значение в столбец __proto__', () => {
+    const { columns, rows } = rowsFromColumns(['__proto__', 'x'], [['p', 1]]);
+    expect(columns).toEqual(['__proto__', 'x']);
+    expect(rows[0]['__proto__']).toBe('p');
   });
 });

@@ -53,11 +53,20 @@ const VARIABLE_AT_START = new RegExp('^(?:' + VARIABLE_PATTERN + ')');
 interface SqlState {
   inBlock: boolean;
   inDollar: boolean;
+  /** Внутри многострочного `$$ … $$`: зелёная подсветка строки отключена, текст подсвечивается как обычный SQL. */
+  inDollarBody: boolean;
   quote: "'" | '"' | '`' | null;
 }
 
+/** Внутри тела многострочного `$$ … $$` первая же пара `$$` закрывает его — и внутри комментария, и внутри кавычек. */
+const atBodyEnd = (stream: StringStream, state: SqlState): boolean => state.inDollarBody && Boolean(stream.match('$$', false));
+
 const readBlockComment = (stream: StringStream, state: SqlState): string => {
   while (!stream.eol()) {
+    if (atBodyEnd(stream, state)) {
+      state.inBlock = false;
+      break;
+    }
     if (stream.match('*/')) {
       state.inBlock = false;
       break;
@@ -67,7 +76,7 @@ const readBlockComment = (stream: StringStream, state: SqlState): string => {
   return 'lensComment';
 };
 
-/** Строка PostgreSQL в долларовых кавычках: $$ … $$ (может занимать несколько строк). */
+/** Однострочная строка в долларовых кавычках: $$ … $$ (закрывающая пара на той же строке). */
 const readDollarString = (stream: StringStream, state: SqlState): string => {
   while (!stream.eol()) {
     if (stream.match('$$')) {
@@ -82,6 +91,10 @@ const readDollarString = (stream: StringStream, state: SqlState): string => {
 const readQuoted = (stream: StringStream, state: SqlState): string => {
   const q = state.quote as string;
   while (!stream.eol()) {
+    if (atBodyEnd(stream, state)) {
+      state.quote = null;
+      break;
+    }
     const ch = stream.next();
     // ClickHouse/MySQL: \' и \\ внутри одинарных кавычек; обратная косая перед другим символом — обычный символ
     if (ch === '\\' && q === "'" && (stream.peek() === "'" || stream.peek() === '\\')) {
@@ -102,9 +115,15 @@ const readQuoted = (stream: StringStream, state: SqlState): string => {
 
 const sqlParser = {
   name: 'sql-lens',
-  startState: (): SqlState => ({ inBlock: false, inDollar: false, quote: null }),
-  copyState: (s: SqlState): SqlState => ({ inBlock: s.inBlock, inDollar: s.inDollar, quote: s.quote }),
+  startState: (): SqlState => ({ inBlock: false, inDollar: false, inDollarBody: false, quote: null }),
+  copyState: (s: SqlState): SqlState => ({ inBlock: s.inBlock, inDollar: s.inDollar, inDollarBody: s.inDollarBody, quote: s.quote }),
   token(stream: StringStream, state: SqlState): string | null {
+    if (state.inDollarBody && stream.match('$$')) {
+      state.inDollarBody = false; // закрытие многострочного $$ … $$: границы без цвета строки
+      state.inBlock = false;
+      state.quote = null;
+      return null;
+    }
     if (state.inBlock) return readBlockComment(stream, state);
     if (state.inDollar) return readDollarString(stream, state);
     if (state.quote) return readQuoted(stream, state);
@@ -112,7 +131,11 @@ const sqlParser = {
     if (stream.eatSpace()) return null;
 
     if (stream.match('--')) {
-      stream.skipToEnd();
+      if (state.inDollarBody) {
+        while (!stream.eol() && !stream.match('$$', false)) stream.next();
+      } else {
+        stream.skipToEnd();
+      }
       return 'lensComment';
     }
     if (stream.match('/*')) {
@@ -121,8 +144,14 @@ const sqlParser = {
     }
 
     if (stream.match('$$')) {
-      state.inDollar = true;
-      return readDollarString(stream, state);
+      if (stream.string.indexOf('$$', stream.pos) >= 0) {
+        // закрывающая пара на этой же строке: однострочный литерал, строка как раньше
+        state.inDollar = true;
+        return readDollarString(stream, state);
+      }
+      // закрытие на следующих строках (или нет вовсе): многострочный литерал подсвечивается как обычный SQL
+      state.inDollarBody = true;
+      return null;
     }
 
     const ch = stream.peek();

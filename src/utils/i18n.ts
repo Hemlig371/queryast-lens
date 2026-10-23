@@ -19,6 +19,17 @@ export function localeForLang(lang: string): string {
 
 export const currentLocale = localeForLang(currentLang);
 
+/** Слово «строка» после числа: RU — строка / строки / строк, EN — lines (как раньше). */
+export function linesSuffix(n: number, lang: string = currentLang): string {
+  if (lang === 'en') return ' lines';
+  const abs = Math.abs(Math.trunc(n));
+  const m10 = abs % 10;
+  const m100 = abs % 100;
+  if (m10 === 1 && m100 !== 11) return ' строка';
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return ' строки';
+  return ' строк';
+}
+
 export const EN_DICT: Record<string, string> = {
   " для построения логического графа.": " to build logical graph.",
   " дн назад": " d ago",
@@ -371,6 +382,7 @@ export const EN_DICT: Record<string, string> = {
   "Развернуть детали": "Expand Details",
   "Свернуть": "Collapse",
   "Блок запроса": "Query block",
+  "Ошибка приложения": "Application Error",
   "Ошибка отображения": "Display Error",
   "Произошла ошибка при отображении этого модуля.": "An error occurred while displaying this module.",
   "Перезапустить модуль": "Restart module",

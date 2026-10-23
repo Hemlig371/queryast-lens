@@ -107,7 +107,7 @@ import { formatColumnType, replaceVariablesInSql, buildQuickActionSource, findUn
 import { formatSqlText, compactSql } from './utils/sqlFormat';
 import { clampPageRows } from './utils/rowLimit';
 import { buildPagedSql, splitStatements, type ExecutionMode } from './utils/pagedSql';
-import { rowsFromColumns, getResultColumns, columnsFromMeta } from './utils/resultRows';
+import { rowsFromColumns, getResultColumns, columnsFromMeta, setOwnKey } from './utils/resultRows';
 import { resultRowsToTsv } from './utils/resultTsv';
 import { getTableSizeBadge } from './utils/tableSize';
 import { getSavedSession, SESSION_STORAGE_KEY } from './utils/appSession';
@@ -133,6 +133,7 @@ import { copyResultRows, type CopyResultInput } from './utils/copyResult';
 import { hasExcelSaveDirective } from './utils/excelParse';
 import { shouldLeaveCopyToBrowser, isSelectionInEditor } from './utils/copyGuard';
 import { reconcileSelectedNodeId, findSelectedNode } from './utils/graphSelection';
+import { appendTableActionBlock, type TableActionKind } from './utils/tableActionBlock';
 import { nextIsModified, setTabSql, shouldConfirmClose, formatWithFeedback } from './utils/tabModified';
 import { switchConnection, stateAfterSwitch, type ConnState } from './utils/connectionSwitch';
 import { resolveHotkeyAction, classifyHotkeyTarget, hotkeyHint } from './utils/appHotkeys';
@@ -1089,7 +1090,8 @@ export default function App() {
 
   const sqlRef = useRef<string>(tabs.find(t => t.id === activeTabId)?.sql || '');
   const isResultTableHoveredRef = useRef<boolean>(false);
-  const isCreatingFilterTabRef = useRef<boolean>(false);
+  // Запуск из действия над таблицей: версия истории не создаётся (п. E плана 32)
+  const isTableActionRunRef = useRef<boolean>(false);
 
   useLayoutEffect(() => {
     if (!isMaximizedSql && activeTabId === ACTION_MENU_TAB_ID) {
@@ -1182,12 +1184,8 @@ export default function App() {
   useEffect(() => {
     setResultTableContextMenu(null);
     setMultiSelectedCols([]);
-    if (isCreatingFilterTabRef.current) {
-      isCreatingFilterTabRef.current = false;
-    } else {
-      setActiveSqlFilters([]);
-      setActiveSqlSorts([]);
-    }
+    setActiveSqlFilters([]);
+    setActiveSqlSorts([]);
     if (activeTabId === ACTION_MENU_TAB_ID) {
       sqlRef.current = '';
     } else {
@@ -1204,36 +1202,33 @@ export default function App() {
     sorts: Array<{ colKey: string; dir: 'ASC' | 'DESC' }>
   ) => generateFilteredSortedSqlPure(activeEngine, baseSql, filters, sorts), [activeEngine]);
 
-  const handleApplyTableSort = (colKey: string, dir: 'ASC' | 'DESC') => {
-    const updatedSorts = [{ colKey, dir }, ...activeSqlSorts.filter(s => s.colKey !== colKey)];
-    setActiveSqlSorts(updatedSorts);
+  // Действия над таблицей результата дописывают блок SQL в конец активной вкладки и выполняют только его.
+  // Сортировка и фильтр подряд заменяют друг друга (если блок не тронут), остальные действия каждый раз дают новый блок.
+  const runTableAction = (kind: TableActionKind, newSql: string, originalSql: string) => {
+    const tabId = activeTabId;
+    const tab = tabs.find(t => t.id === tabId);
+    if (!tab || tabId === ACTION_MENU_TAB_ID || !newSql) return;
+    if (handleSqlChangeTimeoutRef.current) {
+      clearTimeout(handleSqlChangeTimeoutRef.current); // отложенная запись набранного текста не должна затереть дописанный блок
+      handleSqlChangeTimeoutRef.current = null;
+    }
+    const currentSql = sqlRef.current;
+    const appended = appendTableActionBlock(currentSql, newSql, kind, tab.tableBlock);
+    sqlRef.current = appended.sql;
+    setTabs(prev => setTabSql(prev, tabId, appended.sql).map(t => t.id === tabId ? { ...t, originalSql, tableBlock: appended.block } : t));
+    isTableActionRunRef.current = true;
+    handleExecuteCurrentEngineQuery(newSql, 1);
+  };
 
+  const handleApplyTableSort = (colKey: string, dir: 'ASC' | 'DESC') => {
+    if (isAnyQueryRunning) return;
     const activeTab = tabs.find(t => t.id === activeTabId);
     const rootBaseSql = activeTab?.originalSql || lastExecutedSql || activeTab?.sql || '';
+    const updatedSorts = [{ colKey, dir }, ...activeSqlSorts.filter(s => s.colKey !== colKey)];
     const newSql = generateFilteredSortedSql(rootBaseSql, activeSqlFilters, updatedSorts);
-
-    if (newSql) {
-      sqlRef.current = newSql;
-      if (activeTab?.originalSql || tabs.length >= 9) {
-        setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: newSql, originalSql: rootBaseSql } : t));
-        handleExecuteCurrentEngineQuery(newSql, 1);
-      } else {
-        const newTabId = `tab_${Date.now()}`;
-        const newTabTitle = `${activeTab?.title || t('Запрос')} (Filter)`;
-        const newTab: EditorTab = {
-          id: newTabId,
-          title: newTabTitle,
-          sql: newSql,
-          originalSql: rootBaseSql,
-        };
-        isCreatingFilterTabRef.current = true;
-        setTabs(prev => [...prev.map(t => t.id === activeTabId ? { ...t, sql: activeTab?.sql || '' } : t), newTab]);
-        setActiveTabId(newTabId);
-        setTimeout(() => {
-          handleExecuteCurrentEngineQuery(newSql, 1, undefined, false, undefined, newTabId);
-        }, 50);
-      }
-    }
+    if (!newSql) return;
+    setActiveSqlSorts(updatedSorts);
+    runTableAction('sort', newSql, rootBaseSql);
   };
 
   const handleApplyTableFilter = (
@@ -1241,81 +1236,42 @@ export default function App() {
     cellValue: any,
     customOp?: '=' | 'IS' | 'LIKE' | '!=' | '<>' | 'IS NULL' | 'IS NOT NULL'
   ) => {
+    if (isAnyQueryRunning) return;
     let op = customOp;
     if (!op) {
       op = cellValue === null || cellValue === undefined ? 'IS' : '=';
     }
-    const updatedFilters = [...activeSqlFilters.filter(f => !(f.colKey === colKey && f.op === op)), { colKey, op, val: cellValue }];
-    setActiveSqlFilters(updatedFilters);
-
     const activeTab = tabs.find(t => t.id === activeTabId);
     const rootBaseSql = activeTab?.originalSql || lastExecutedSql || activeTab?.sql || '';
+    const updatedFilters = [...activeSqlFilters.filter(f => !(f.colKey === colKey && f.op === op)), { colKey, op, val: cellValue }];
     const newSql = generateFilteredSortedSql(rootBaseSql, updatedFilters, activeSqlSorts);
-
-    if (newSql) {
-      sqlRef.current = newSql;
-      if (activeTab?.originalSql || tabs.length >= 9) {
-        setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: newSql, originalSql: rootBaseSql } : t));
-        handleExecuteCurrentEngineQuery(newSql, 1);
-      } else {
-        const newTabId = `tab_${Date.now()}`;
-        const newTabTitle = `${activeTab?.title || t('Запрос')} (Filter)`;
-        const newTab: EditorTab = {
-          id: newTabId,
-          title: newTabTitle,
-          sql: newSql,
-          originalSql: rootBaseSql,
-        };
-        isCreatingFilterTabRef.current = true;
-        setTabs(prev => [...prev.map(t => t.id === activeTabId ? { ...t, sql: activeTab?.sql || '' } : t), newTab]);
-        setActiveTabId(newTabId);
-        setTimeout(() => {
-          handleExecuteCurrentEngineQuery(newSql, 1, undefined, false, undefined, newTabId);
-        }, 50);
-      }
-    }
+    if (!newSql) return;
+    setActiveSqlFilters(updatedFilters);
+    runTableAction('filter', newSql, rootBaseSql);
   };
 
   // Действия над столбцами из меню шапки: GROUP BY / KEEP / REMOVE / DISTINCT.
-  // Оборачивают текущий запрос (с применёнными фильтрами таблицы) подзапросом и открывают результат во вкладке
-  // по той же схеме, что и прежний GROUP BY (сортировка и фильтры таблицы сбрасываются).
+  // Оборачивают текущий запрос (с применёнными фильтрами таблицы) подзапросом и дописывают блок в активную вкладку
+  // (сортировка и фильтры таблицы сбрасываются, новый блок — исходный запрос для следующих действий).
   const handleApplyColumnAction = (kind: 'group' | 'keep' | 'remove' | 'distinct', cols: string[]) => {
+    if (isAnyQueryRunning) return;
     const activeTab = tabs.find(t => t.id === activeTabId);
     const rootBaseSql = activeTab?.originalSql || lastExecutedSql || activeTab?.sql || '';
     const cleanSql = rootBaseSql.trim().replace(/;+$/, '');
     if (!cleanSql) return;
 
     const baseFilteredSql = generateFilteredSortedSql(rootBaseSql, activeSqlFilters, []);
+    if (!baseFilteredSql) return;
     const newSql =
       kind === 'group' ? buildGroupBySql(baseFilteredSql, cols)
       : kind === 'keep' ? buildKeepColumnsSql(baseFilteredSql, cols)
       : kind === 'remove' ? buildRemoveColumnsSql(baseFilteredSql, resultColumnKeys, cols)
       : buildDistinctSql(baseFilteredSql, cols);
     if (!newSql) return;
-    const tabSuffix = kind === 'group' ? 'Group' : kind === 'keep' ? 'Keep' : kind === 'remove' ? 'Remove' : 'Distinct';
 
-    sqlRef.current = newSql;
     setActiveSqlFilters([]);
     setActiveSqlSorts([]);
-
-    if (activeTab?.originalSql || tabs.length >= 9) {
-      setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: newSql, originalSql: newSql } : t));
-      handleExecuteCurrentEngineQuery(newSql, 1);
-    } else {
-      const newTabId = `tab_${Date.now()}`;
-      const newTabTitle = `${activeTab?.title || t('Запрос')} (${tabSuffix})`;
-      const newTab: EditorTab = {
-        id: newTabId,
-        title: newTabTitle,
-        sql: newSql,
-        originalSql: newSql,
-      };
-      setTabs(prev => [...prev.map(t => t.id === activeTabId ? { ...t, sql: activeTab?.sql || '' } : t), newTab]);
-      setActiveTabId(newTabId);
-      setTimeout(() => {
-        handleExecuteCurrentEngineQuery(newSql, 1, undefined, false, undefined, newTabId);
-      }, 50);
-    }
+    runTableAction(kind, newSql, newSql);
   };
 
   useEffect(() => {
@@ -2287,9 +2243,8 @@ export default function App() {
   // Режим, в котором скрипт запущен на странице 1 (по вкладкам): страницы ≥ 2 не должны заново выполнять подготовительные операторы (п. 3.1)
   const executionModeByTabRef = useRef<Record<string, ExecutionMode | undefined>>({});
 
-  const handleCancelDuckDbQuery = () => {
-    runTrackerRef.current.cancelAll();
-    
+  // Остановка запроса на стороне бэкенда (ClickHouse и/или встроенный DuckDB)
+  const cancelBackendQueries = () => {
     // Also cancel Clickhouse Tauri query if running
     if (isTauriEnvironment() && activeEngine === 'clickhouse') {
       cancelClickhouseQueryTauri().catch(console.error);
@@ -2301,6 +2256,11 @@ export default function App() {
         tauriInvoke('cancel_query').catch(() => {});
       });
     }
+  };
+
+  const handleCancelDuckDbQuery = () => {
+    runTrackerRef.current.cancelAll();
+    cancelBackendQueries();
     
     setIsDuckDbRunning(false);
     // ошибка записывается в состояние вкладки (и в хранилище), а не только на экран
@@ -2563,7 +2523,7 @@ export default function App() {
           if (res?.columns && res?.column_types) {
             const typesDict: Record<string, string> = {};
             parsedColumns.forEach((col, idx) => {
-              typesDict[col] = res.column_types![idx] || 'UNKNOWN';
+              setOwnKey(typesDict, col, res.column_types![idx] || 'UNKNOWN');
             });
             finalColTypes = typesDict;
           }
@@ -2607,7 +2567,7 @@ export default function App() {
             const typesDict: Record<string, string> = {};
             data.meta.forEach((col: any) => {
               if (col.name && col.type) {
-                typesDict[col.name] = col.type;
+                setOwnKey(typesDict, col.name, col.type);
               }
             });
             finalColTypes = typesDict;
@@ -2897,7 +2857,7 @@ export default function App() {
           const typesDict: Record<string, string> = {};
           data.meta.forEach((col: any) => {
             if (col.name && col.type) {
-              typesDict[col.name] = col.type;
+              setOwnKey(typesDict, col.name, col.type);
             }
           });
           finalColTypes = typesDict;
@@ -2923,9 +2883,12 @@ export default function App() {
   const handleExecuteCurrentEngineQuery = (queryToExec: string, page: number = 1, pageSizeToUse?: number, isQuickAction?: boolean, executionMode?: 'sequential' | 'parallel', targetTabId?: string) => {
     if (isAnyQueryRunning) return;
     
+    const isTableActionRun = isTableActionRunRef.current; // действие над таблицей: версия истории не создаётся
+    isTableActionRunRef.current = false;
+
     // Create a version history checkpoint (fire-and-forget, non-blocking)
     (async () => {
-      if (page !== 1 || activeTabIdRef.current === ACTION_MENU_TAB_ID) return;
+      if (page !== 1 || isTableActionRun || activeTabIdRef.current === ACTION_MENU_TAB_ID) return;
       const currentSql = sqlRef.current;
       if (!currentSql.trim()) return;
       const latestVersion = await getLatestVersion();
@@ -2975,7 +2938,7 @@ export default function App() {
     setDuckDbSelectedCell(null);
     setColumnSearchTerm('');
     setValueSearchTerm('');
-    setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, originalSql: undefined } : t));
+    setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, originalSql: undefined, tableBlock: undefined } : t));
     handleExecuteCurrentEngineQuery(queryToExecute, 1);
   };
 
@@ -2988,7 +2951,7 @@ export default function App() {
     setColumnSearchTerm('');
     setValueSearchTerm('');
     if (!isQuickAction) {
-      setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, originalSql: undefined } : t));
+      setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, originalSql: undefined, tableBlock: undefined } : t));
     }
     handleExecuteCurrentEngineQuery(queryToExec, 1, undefined, isQuickAction);
   };
@@ -3140,6 +3103,12 @@ export default function App() {
 
   const confirmCloseTab = (idToClose: string) => {
     if (idToClose === ACTION_MENU_TAB_ID) return;
+    // F-03: запрос закрываемой вкладки отменяется; без этого флаг «выполняется» оставался навсегда, а запрос — на бэкенде.
+    // Если идут запуски других вкладок, бэкенд не трогаем: отмена остановила бы и их.
+    if (runTrackerRef.current.cancelScope(idToClose) > 0 && runTrackerRef.current.activeCount() === 0) {
+      cancelBackendQueries();
+      setIsDuckDbRunning(false);
+    }
     const nextTabs = tabs.filter(t => t.id !== idToClose);
     if (activeTabId === idToClose) {
       const closedIndex = tabs.findIndex(t => t.id === idToClose);
