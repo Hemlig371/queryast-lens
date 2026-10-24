@@ -1,5 +1,5 @@
 /**
- * Разбор строк для Excel-экспорта (вынесено из excelExporter.ts, чтобы тестировать без exceljs).
+ * Разбор строк для Excel-экспорта (отдельно от excelExporter.ts, чтобы тестировать без exceljs).
  */
 
 import { splitSqlSegments } from './sqlTokens';
@@ -55,8 +55,7 @@ export function sanitizeExportFileBase(name: string, fallback: string): string {
 
 /**
  * В запросе есть директива автоэкспорта `@excel_save: <путь>` в блочном комментарии.
- * Упоминание в строке (`WHERE x = '@excel_save'`), в `-- комментарии` или директива без пути не считаются (п. 3.5):
- * раньше автоэкспорт включался по простому поиску подстроки по всему тексту запроса.
+ * Упоминание в строке (`WHERE x = '@excel_save'`), в `-- комментарии` или директива без пути не считаются.
  */
 export function hasExcelSaveDirective(sqlQuery: string): boolean {
   if (!sqlQuery || !sqlQuery.includes('@excel_save')) return false;

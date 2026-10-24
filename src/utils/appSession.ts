@@ -1,7 +1,7 @@
 import type { ClickhouseConfig } from '../lib/clickhouse';
 import type { EditorTab } from '../types/editorTab';
 
-// Снимок сессии в localStorage (ключ sql_visualizer_session_v2). Вынесено из App.tsx без изменений логики.
+// Снимок сессии в localStorage (ключ sql_visualizer_session_v2).
 export const SESSION_STORAGE_KEY = 'sql_visualizer_session_v2';
 
 export interface SavedSession {

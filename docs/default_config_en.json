@@ -948,7 +948,6 @@
       "showCopySql": false,
       "showMaximizeButton": false,
       "showLayoutDirection": true,
-      "showSortLimitToggle": true,
       "showLineageFocus": true,
       "showMiniMapButton": true,
       "showThemeToggle": true,

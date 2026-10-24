@@ -1,15 +1,14 @@
-//! Значение DuckDB (`duckdb::types::Value`) → JSON (п. 3.11, находка RS-02).
+//! Значение DuckDB (`duckdb::types::Value`) → JSON.
 //!
-//! Раньше вложенные значения выводились как Rust Debug: `List([Int(1), Int(2)])`, `Struct(OrderedMap([("a", Int(1))]))`.
-//! Теперь LIST, ARRAY, STRUCT, MAP, UNION и ENUM переводятся рекурсивно в `serde_json::Value`, а ячейка верхнего уровня
+//! LIST, ARRAY, STRUCT, MAP, UNION и ENUM переводятся рекурсивно в `serde_json::Value` (а не в Rust Debug вроде `List([Int(1), Int(2)])`), а ячейка верхнего уровня
 //! получает JSON-ТЕКСТ (`[1,2]`, `{"a":1}`) — строкой, как и остальные составные значения Tauri-режима (BIGINT, DECIMAL, даты),
 //! и как делает WASM-нормализация (src/utils/wasmResult.ts): для таблицы, сортировки и Excel ячейка остаётся примитивом.
 //!
 //! Внутри вложенных значений: BIGINT, HUGEINT, UBIGINT и DECIMAL — строки (JS не держит их без потерь), даты и время — текст
-//! как у chrono, NaN и ±Inf — строки `"NaN"`, `"Infinity"`, `"-Infinity"` (числом в JSON их записать нельзя; раньше были null),
+//! как у chrono, NaN и ±Inf — строки `"NaN"`, `"Infinity"`, `"-Infinity"` (числом в JSON их записать нельзя),
 //! BLOB — `"<blob N bytes>"`, ключи MAP — строки (не-строковый ключ записывается как его JSON-текст).
-//! Те же функции (`float_json`, `date_cell`, `timestamp_cell`) используются для DATE, TIMESTAMP, FLOAT и DOUBLE на верхнем уровне
-//! (F-02, F-07): даты до 1970 года и `infinity` больше не роняют запрос. Interval и TIMESTAMPTZ по-прежнему не трогаются.
+//! Те же функции (`float_json`, `date_cell`, `timestamp_cell`) используются для DATE, TIMESTAMP, FLOAT и DOUBLE на верхнем уровне:
+//! даты до 1970 года и `infinity` не роняют запрос. Interval и TIMESTAMPTZ не затрагиваются.
 
 use crate::timefmt;
 use duckdb::types::{TimeUnit, Value};
@@ -24,8 +23,7 @@ fn per_second(unit: &TimeUnit) -> i64 {
     }
 }
 
-/// Число с плавающей точкой как JSON. NaN и ±Infinity числом не записать — они строки (раньше были null, и в таблице
-/// терялось, что это не NULL).
+/// Число с плавающей точкой как JSON. NaN и ±Infinity числом не записать — они строки (null не отличался бы в таблице от NULL).
 pub fn float_json(text_of_number: String, as_f64: f64) -> JsonValue {
     if as_f64.is_nan() {
         return JsonValue::String("NaN".to_string());
@@ -39,7 +37,7 @@ pub fn float_json(text_of_number: String, as_f64: f64) -> JsonValue {
 }
 
 /// DATE верхнего уровня по числу суток от 1970-01-01 (отрицательное — до 1970 года). Не использует chrono: `row.get::<NaiveDate>`
-/// и `NaiveDateTime` для дат до 1970 с долей секунды и для `infinity` возвращали None и роняли запрос (F-02).
+/// и `NaiveDateTime` для дат до 1970 с долей секунды и для `infinity` возвращали None и роняли запрос.
 pub fn date_cell(days_since_epoch: i32) -> JsonValue {
     JsonValue::String(timefmt::format_date(i64::from(days_since_epoch)))
 }

@@ -60,7 +60,7 @@ describe('appendJsonFormat', () => {
   });
 });
 
-// п. 2.20: единый признак «в конце оператора есть FORMAT»
+// единый признак «в конце оператора есть FORMAT»
 describe('hasFormatClause / getFormatClause', () => {
   it('FORMAT в конце оператора (регистр, ;, перевод строки, SETTINGS после)', () => {
     expect(getFormatClause('SELECT 1 FORMAT CSV')).toBe('CSV');
@@ -74,7 +74,7 @@ describe('hasFormatClause / getFormatClause', () => {
     expect(hasFormatClause("SELECT 'x FORMAT CSV'")).toBe(false);
     expect(hasFormatClause('SELECT 1 /* FORMAT CSV */')).toBe(false);
   });
-  it('столбец с именем format формата не задаёт (B-09)', () => {
+  it('столбец с именем format формата не задаёт', () => {
     expect(hasFormatClause('SELECT format FROM t')).toBe(false);
     expect(hasFormatClause('SELECT x AS format FROM t')).toBe(false);
     expect(hasFormatClause('SELECT a FROM t ORDER BY format DESC')).toBe(false);
@@ -86,7 +86,7 @@ describe('hasFormatClause / getFormatClause', () => {
   });
 });
 
-describe('needsJsonFormat: столбец format (B-09)', () => {
+describe('needsJsonFormat: столбец format', () => {
   it('SELECT format FROM t и SELECT x AS format получают FORMAT JSON', () => {
     expect(needsJsonFormat('SELECT format FROM t')).toBe(true);
     expect(needsJsonFormat('SELECT x AS format FROM t')).toBe(true);
@@ -120,7 +120,7 @@ describe('copyFormatForPath / appendCopyFormat', () => {
   it('FORMAT дописывается с новой строки и убирает ; в конце', () => {
     expect(appendCopyFormat('SELECT 1;', 'x.csv')).toBe('SELECT 1\nFORMAT CSVWithNames');
   });
-  it('хвостовой -- комментарий не съедает FORMAT (CK-01)', () => {
+  it('хвостовой -- комментарий не съедает FORMAT', () => {
     const out = appendCopyFormat('SELECT 1 -- выгрузка', 'x.csv');
     expect(out).toBe('SELECT 1 -- выгрузка\nFORMAT CSVWithNames');
     expect(hasFormatClause(out)).toBe(true);

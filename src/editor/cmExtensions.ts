@@ -8,7 +8,7 @@ import { findMatchingBrackets, wordOccurrenceRegExp } from './editorOps';
 export const EDITOR_FONT_FAMILY =
   'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
 
-/** Тема оформления редактора (цвета совпадают с прежним textarea-редактором). */
+/** Тема оформления редактора. */
 export const buildEditorTheme = (theme: 'dark' | 'light'): Extension => {
   const dark = theme === 'dark';
   const colors = SQL_COLORS[theme];
@@ -37,7 +37,7 @@ export const buildEditorTheme = (theme: 'dark' | 'light'): Extension => {
           backgroundColor: dark ? 'rgba(59,130,246,0.42)' : 'rgba(59,130,246,0.36)',
         },
         '.cm-gutters': {
-          // непрозрачный (раньше rgba(30,41,59,0.8) поверх #172033): прокручиваемый текст не просвечивает под номерами строк
+          // непрозрачный фон: прокручиваемый текст не просвечивает под номерами строк
           backgroundColor: dark ? '#1d2739' : '#e2e8f0',
           color: '#64748b',
           border: 'none',

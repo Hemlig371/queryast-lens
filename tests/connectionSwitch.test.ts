@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { switchConnection, stateAfterSwitch, type ConnState } from '../src/utils/connectionSwitch';
 
-// п. 3.7 (A-01, A-04): состояние подключения меняется только после успеха; при сбое прежнее подключение
+// состояние подключения меняется только после успеха; при сбое прежнее подключение
 // остаётся или восстанавливается. Бэкенд — управляемая заглушка (порядок вызовов записывается в журнал).
 
 interface Conn { path: string; wasm: boolean }

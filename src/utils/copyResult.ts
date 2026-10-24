@@ -1,4 +1,4 @@
-// Строка результата COPY ClickHouse (п. 3.4): та же форма, что раньше собиралась в четырёх местах App.tsx.
+// Строка результата COPY ClickHouse.
 
 export interface CopyResultInput {
   kind: 'TO' | 'FROM';

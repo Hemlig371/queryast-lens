@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { isSystemVfsFile, detectCopyTarget, describeRegisterResult } from '../src/utils/wasmFiles';
 
-// п. 3.15 (WS-06, WS-07, WM-01): фильтр «системных файлов», COPY-детектор и честный статус загрузки в менеджере файлов.
+// фильтр «системных файлов», COPY-детектор и честный статус загрузки в менеджере файлов.
 
-describe('isSystemVfsFile (WS-06)', () => {
+describe('isSystemVfsFile', () => {
   it('пользовательские файлы с именами, начинающимися на src/dist/public, видны', () => {
     for (const name of ['source.parquet', 'distance.csv', 'public_2024.csv', 'srcdata.json', 'distribution.parquet', 'node_modules_stats.csv']) {
       expect(isSystemVfsFile(name), name).toBe(false);
@@ -31,7 +31,7 @@ describe('isSystemVfsFile (WS-06)', () => {
   });
 });
 
-describe('detectCopyTarget (WS-07)', () => {
+describe('detectCopyTarget', () => {
   it('простой COPY ... TO', () => {
     expect(detectCopyTarget("COPY t TO 'out.csv'")).toBe('out.csv');
     expect(detectCopyTarget("copy (select 1) to 'out.parquet' (format parquet)")).toBe('out.parquet');
@@ -68,7 +68,7 @@ describe('detectCopyTarget (WS-07)', () => {
   });
 });
 
-describe('describeRegisterResult (WM-01)', () => {
+describe('describeRegisterResult', () => {
   it('зарегистрирован сразу', () => {
     const r = describeRegisterResult({ status: 'registered', serverSync: 'skipped' });
     expect(r.kind).toBe('ok');

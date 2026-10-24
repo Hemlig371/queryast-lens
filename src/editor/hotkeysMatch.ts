@@ -70,7 +70,7 @@ export const normalizeCombo = (combo: string): string => {
   let c = (combo || '').trim();
   if (!c) return '';
   if (c === '+') return 'PLUS';
-  if (c.endsWith('++')) c = `${c.slice(0, -2)}+Plus`; // прежняя запись «Ctrl++»
+  if (c.endsWith('++')) c = `${c.slice(0, -2)}+Plus`; // запись «Ctrl++»: плюс как клавиша
   return c.split('+').map(normalizeToken).filter(Boolean).sort().join('+');
 };
 

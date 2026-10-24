@@ -19,7 +19,7 @@ export function localeForLang(lang: string): string {
 
 export const currentLocale = localeForLang(currentLang);
 
-/** Слово «строка» после числа: RU — строка / строки / строк, EN — lines (как раньше). */
+/** Слово «строка» после числа: RU — строка / строки / строк, EN — lines. */
 export function linesSuffix(n: number, lang: string = currentLang): string {
   if (lang === 'en') return ' lines';
   const abs = Math.abs(Math.trunc(n));
@@ -31,6 +31,12 @@ export function linesSuffix(n: number, lang: string = currentLang): string {
 }
 
 export const EN_DICT: Record<string, string> = {
+  "Соединение без условия — каждая строка с каждой (декартово произведение)": "Join without a condition — every row with every row (Cartesian product)",
+  "LEFT JOIN работает как INNER: условие WHERE по этой таблице отбрасывает строки без пары": "LEFT JOIN acts as INNER: the WHERE condition on this table drops rows with no match",
+  "SELECT * — состав колонок результата зависит от таблицы": "SELECT * — the result columns depend on the table definition",
+  "Оконная функция в WHERE недопустима — используйте QUALIFY или подзапрос": "A window function is not allowed in WHERE — use QUALIFY or a subquery",
+  "Предупреждение": "Warning",
+  "Источник колонки": "Column source",
   " для построения логического графа.": " to build logical graph.",
   " дн назад": " d ago",
   " и автозаполнение ClickHouse (ключи с префиксом ": " and ClickHouse autocomplete (keys with prefix ",
@@ -239,7 +245,6 @@ export const EN_DICT: Record<string, string> = {
   "Кнопка Миникарты": "Minimap Button",
   "Кнопка скрытия левой панели": "Left panel collapse button",
   "Кнопка сохранения всех снимков в JSON": "Button to save all snapshots as JSON",
-  "Кнопки Sort / Limit Nodes": "Sort / Limit Nodes Buttons",
   "Кнопки «Развернуть»": "«Expand» buttons",
   "Кнопки подключения и выполнения Clickhouse HTTP(S) запросов": "Connection and execution buttons for ClickHouse HTTP(S) queries",
   "Кнопки подключения и выполнения кода": "Connection and code execution buttons",
@@ -372,10 +377,7 @@ export const EN_DICT: Record<string, string> = {
   "Ошибка выполнения SQL запроса": "SQL query execution error",
   "Ошибка выполнения запроса": "Query execution error",
   "Ошибка отображения графа": "Graph Display Error",
-  "Подзапрос": "Subquery",
-  "Псевдоним": "Alias",
   "Источники:": "Sources:",
-  "Колонки / Поля вставки:": "Columns / Insert fields:",
   "Только константные выражения": "Constant Expressions Only",
   "Нет столбцов в результате": "No columns projected",
   "Выполнение сложного запроса": "Complex query execution",
@@ -440,6 +442,13 @@ export const EN_DICT: Record<string, string> = {
   "Подключить Clickhouse": "Connect Clickhouse",
   "Подключиться": "Connect",
   "Подсветка взаимосвязей (Data Lineage) выделенного узла": "Highlight relationships (Data Lineage) of selected node",
+  "Монохромный режим: граф в оттенках серого": "Monochrome mode: grayscale graph",
+  "@excel_save указывает на сам шаблон: выберите другой путь для результата": "@excel_save points to the template itself: choose another path for the result",
+  "Экспорт по шаблону (@template) работает только в десктопной версии приложения": "Template export (@template) is only available in the desktop version of the app",
+  "Не удалось прочитать шаблон «{path}»: {msg}": "Could not read the template “{path}”: {msg}",
+  "Файл «{path}» не удалось открыть как .xlsx: {msg}": "The file “{path}” could not be opened as .xlsx: {msg}",
+  "В шаблоне нет листа «{name}»": "The template has no sheet “{name}”",
+  "В шаблоне не найден маркер [[table]] или [[rows]] (в одной клетке, без другого текста)": "No [[table]] or [[rows]] marker found in the template (it must be alone in a cell)",
   "Подсветка связей выделенного узла": "Highlight connections of the selected node",
   "Подсказка пути": "\\n\\n💡 Hint: Windows paths in SQL strings contain backslashes '\\\\', which are treated as special characters. Replace '\\\\' with forward slashes '/' (e.g. 'C:/Users/...') or double them '\\\\\\\\'.",
   "Подсчет уникальных значений": "Count distinct values",

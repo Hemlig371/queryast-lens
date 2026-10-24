@@ -28,13 +28,13 @@ pub struct DuckDbCancelState {
     pub interrupt_handle: Arc<Mutex<Option<Arc<duckdb::InterruptHandle>>>>,
 }
 
-/// Отмена запросов ClickHouse: у каждого запроса своя запись (п. 3.13, RS-06), см. chcancel.rs.
+/// Отмена запросов ClickHouse: у каждого запроса своя запись, см. chcancel.rs.
 pub struct ClickhouseState {
     pub cancel: chcancel::CancelRegistry<tokio::sync::oneshot::Sender<()>>,
 }
 
 const CANCELLED_BY_USER: &str = "Запрос отменен пользователем";
-/// Ожидание соединения с сервером ClickHouse (RS-07). Общего тайм-аута нет: долгие запросы законны, их отменяет пользователь.
+/// Ожидание соединения с сервером ClickHouse. Общего тайм-аута нет: долгие запросы законны, их отменяет пользователь.
 const CLICKHOUSE_CONNECT_TIMEOUT_SECS: u64 = 15;
 
 fn clickhouse_client() -> Result<Client, String> {
@@ -44,16 +44,15 @@ fn clickhouse_client() -> Result<Client, String> {
         .map_err(|e| e.to_string())
 }
 
-/// Ждёт ЯВНОЙ отмены. Если отправитель просто уничтожен (запись снята), отмены не было — ждём вечно (RS-06).
+/// Ждёт ЯВНОЙ отмены. Если отправитель просто уничтожен (запись снята), отмены не было — ждём вечно.
 async fn wait_cancel(rx: tokio::sync::oneshot::Receiver<()>) {
     if rx.await.is_err() {
         std::future::pending::<()>().await;
     }
 }
 
-/// Гипотезы аудита, которые в песочнице проверить нельзя (нет сборки Rust с зависимостями). Включать после воспроизведения
-/// на сборке Tauri; при `false` поведение точно прежнее. Подробности — CHANGES-stage-3.md, п. 3.10.
-/// RS-01: многооператорный скрипт — выполнить операторы по очереди, результат последнего вернуть (раньше: execute_batch, результат пуст).
+/// Многооператорный скрипт: выполнять операторы по очереди и возвращать результат последнего (при `false` — `execute_batch`,
+/// результат пуст). Включать после проверки на сборке Tauri.
 const SPLIT_MULTI_STATEMENT_SCRIPTS: bool = false;
 /// Предел строк результата: больше — ошибка, а не молча усечённый результат (то же значение в `src/utils/rowLimit.ts`).
 const MAX_UI_ROWS: usize = 500_000;
@@ -94,7 +93,7 @@ fn apply_duckdb_options(conn: &Connection, opts: &DuckDbConfigOptions) {
     if let Some(ref temp_dir) = opts.temp_directory {
         if !temp_dir.trim().is_empty() {
             let mut clean = temp_dir.trim().replace('\'', "").replace('"', "").replace(';', "");
-            // F-14: относительный путь (по умолчанию `./tmp`) в read-only рабочей папке (AppImage) ломает любой запрос со сбросом
+            // относительный путь (по умолчанию `./tmp`) в read-only рабочей папке (AppImage) ломает любой запрос со сбросом
             // на диск; тогда временные файлы идут в системную временную папку. Абсолютные пути пользователя не трогаем.
             if dircheck::is_plain_relative(&clean) && !dircheck::dir_is_usable(&clean) {
                 clean = dircheck::fallback_temp_dir().replace('\'', "").replace('"', "").replace(';', "");
@@ -106,7 +105,7 @@ fn apply_duckdb_options(conn: &Connection, opts: &DuckDbConfigOptions) {
     if let Some(ref ext_dir) = opts.extension_directory {
         if !ext_dir.trim().is_empty() {
             let clean = ext_dir.trim().replace('\'', "").replace('"', "").replace(';', "");
-            // F-14: недоступную на запись относительную папку расширений не задаём — работает стандартная папка DuckDB
+            // недоступную на запись относительную папку расширений не задаём — работает стандартная папка DuckDB
             if !dircheck::is_plain_relative(&clean) || dircheck::dir_is_usable(&clean) {
                 let sql = format!("PRAGMA extension_directory = '{}';", clean);
                 let _ = conn.execute_batch(&sql);
@@ -240,7 +239,7 @@ async fn execute_query(
                 Err(e) => {
                     let parts = if SPLIT_MULTI_STATEMENT_SCRIPTS { sqlscript::split_statements(&sql) } else { Vec::new() };
                     if let Some((last, head)) = parts.split_last().filter(|_| parts.len() > 1) {
-                        // RS-01: ранние операторы по одному (настоящая ошибка с номером оператора), результат даёт последний
+                        // ранние операторы по одному (настоящая ошибка с номером оператора), результат даёт последний
                         for (i, part) in head.iter().enumerate() {
                             if let Err(err) = conn.execute_batch(part) {
                                 return Err(format!("Оператор {} из {}: {}", i + 1, parts.len(), err));
@@ -248,7 +247,7 @@ async fn execute_query(
                         }
                         conn.prepare(last).map_err(|err| format!("Оператор {} из {}: {}", parts.len(), parts.len(), err))?
                     } else if sqlscript::split_statements(&sql).len() > 1 {
-                        // F-23: duckdb-rs уже выполнил все операторы, кроме последнего, и упал на разборе последнего.
+                        // duckdb-rs уже выполнил все операторы, кроме последнего, и упал на разборе последнего.
                         // Повторный execute_batch выполнил бы их второй раз (INSERT дал бы дубли): возвращаем исходную ошибку.
                         return Err(e.to_string());
                     } else {
@@ -285,7 +284,7 @@ async fn execute_query(
                 let row = match rows_iter.next() {
                     Ok(Some(row)) => row,
                     Ok(None) => break,
-                    // Ошибка чтения посреди выборки (в том числе отмена) — ошибка, а не «успешный» неполный результат (B-13)
+                    // Ошибка чтения посреди выборки (в том числе отмена) — ошибка, а не «успешный» неполный результат
                     Err(e) => return Err(e.to_string()),
                 };
                 if rows.len() >= MAX_UI_ROWS {
@@ -306,7 +305,7 @@ async fn execute_query(
                             ValueRef::USmallInt(n) => json!(n),
                             ValueRef::UInt(n) => json!(n),
                             ValueRef::UBigInt(n) => json!(n.to_string()),
-                            // FLOAT остаётся 0.1 (не 0.10000000149011612), NaN и ±Infinity — строки, а не null (F-07)
+                            // FLOAT остаётся 0.1 (не 0.10000000149011612), NaN и ±Infinity — строки, а не null
                             ValueRef::Float(n) => valjson::float_json(n.to_string(), f64::from(n)),
                             ValueRef::Double(n) => valjson::float_json(n.to_string(), n),
                             ValueRef::Decimal(n) => json!(n.to_string()),
@@ -315,8 +314,8 @@ async fn execute_query(
                                 JsonValue::String(s)
                             }
                             ValueRef::Blob(b) => JsonValue::String(format!("<blob {} bytes>", b.len())),
-                            // F-02: даты и время без chrono: `NaiveDateTime` для моментов до 1970 года с долей секунды и для
-                            // `infinity` давал None, и unwrap внутри duckdb-rs ронял весь запрос. Формат строки прежний.
+                            // даты и время без chrono: `NaiveDateTime` для моментов до 1970 года с долей секунды и для
+                            // `infinity` давал None, и unwrap внутри duckdb-rs ронял весь запрос.
                             ValueRef::Date32(days) => valjson::date_cell(days),
                             ValueRef::Time64(_, _) => {
                                 if let Ok(t) = row.get::<_, chrono::NaiveTime>(col_idx) {
@@ -333,7 +332,7 @@ async fn execute_query(
                             }
                             _ => {
                                 if let Ok(val) = row.get::<_, Value>(col_idx) {
-                                    // LIST, ARRAY, STRUCT, MAP, UNION, ENUM и прочее: JSON-текст вместо Rust Debug (п. 3.11, RS-02)
+                                    // LIST, ARRAY, STRUCT, MAP, UNION, ENUM и прочее: JSON-текст вместо Rust Debug
                                     valjson::top_level_cell(&val)
                                 } else if let Ok(s) = row.get::<_, String>(col_idx) {
                                     JsonValue::String(s)
@@ -440,7 +439,7 @@ async fn clickhouse_copy_to(
         return Err(text);
     }
 
-    // RS-08: пишем во временный файл рядом и переименовываем после успеха. Прежний файл не затирается ни при ошибке сети,
+    // пишем во временный файл рядом и переименовываем после успеха. Прежний файл не затирается ни при ошибке сети,
     // ни при отмене, а частичный файл не остаётся. (Предупреждения о перезаписи нет: нужен новый параметр команды, см. отчёт.)
     let tmp_path = format!("{}.part", file_path);
     let outcome: Result<u64, String> = async {
@@ -613,7 +612,7 @@ async fn execute_clickhouse_query_rust(
 
 #[tauri::command]
 fn cancel_clickhouse_query(state: State<'_, ClickhouseState>) -> Result<(), String> {
-    // Отменяется самый поздний из идущих запросов (как и раньше); запросы, которые уже закончились, в реестре не остаются
+    // Отменяется самый поздний из идущих запросов; запросы, которые уже закончились, в реестре не остаются
     if let Some(tx) = state.cancel.take_latest() {
         let _ = tx.send(());
     }
@@ -657,7 +656,7 @@ fn main() {
     .build(tauri::generate_context!())
     .expect("error while building tauri application")
     .run(|app_handle, event| {
-        // RS-10: при выходе закрываем соединение DuckDB, чтобы WAL был сведён в основной файл (checkpoint при закрытии)
+        // при выходе закрываем соединение DuckDB, чтобы WAL был сведён в основной файл (checkpoint при закрытии)
         if let tauri::RunEvent::Exit = event {
             let state = app_handle.state::<DbState>();
             // try_lock: если запрос ещё держит соединение, выход не ждёт его

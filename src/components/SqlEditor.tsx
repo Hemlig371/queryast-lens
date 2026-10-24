@@ -36,7 +36,7 @@ import {
 } from '../editor/editorOps';
 import { matchHotkeyCombo } from '../editor/hotkeysMatch';
 
-// Реэкспорт прежнего публичного API модуля (на него завязаны App, SettingsModal, SqlSnippetsManager).
+// Реэкспорт публичного API модуля (на него завязаны App, SettingsModal, SqlSnippetsManager).
 export { DEFAULT_AUTOCOMPLETE_TEMPLATES, getCustomAutocompleteTemplates } from '../editor/templates';
 export type { AutocompleteTemplate } from '../editor/templates';
 export { getBaseHighlight, getChunkedHighlight, applySelectionToHtml, highlightSqlHtml } from '../utils/sqlHighlight';

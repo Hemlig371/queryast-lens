@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { linesSuffix } from '../src/utils/i18n';
 
-// «1 строк» → «1 строка» (VersionHistoryModal): склонение для RU, EN без изменений.
+// Склонение «строка» для RU (VersionHistoryModal); EN без изменений.
 describe('linesSuffix', () => {
   it('RU: строка / строки / строк', () => {
     const word = (n: number) => `${n}${linesSuffix(n, 'ru')}`;

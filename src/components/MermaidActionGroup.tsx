@@ -1,8 +1,7 @@
 import React from 'react';
 import { t } from '../utils/i18n';
 
-// Кнопка «Markdown» (предпросмотр Markdown или граф Mermaid). Вынесено из App.tsx.
-// Выбор цвета и копирование HEX убраны: те же селекторы есть в пресетах Excel.
+// Кнопка «Markdown» (предпросмотр Markdown или граф Mermaid).
 export const MermaidActionGroup = ({ theme, onVisualize }: { theme: 'dark'|'light', onVisualize: () => void }) => {
   return (
     <button

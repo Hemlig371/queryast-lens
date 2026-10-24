@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { reconcileSelectedNodeId, findSelectedNode, defaultSelectedNodeId } from '../src/utils/graphSelection';
 
-// п. 3.8 (D-01): выбранный узел хранится как id и ищется в актуальном списке узлов.
+// выбранный узел хранится как id и ищется в актуальном списке узлов.
 
 const n = (id: string, label = id) => ({ id, type: 'tableNode', data: { label } });
 

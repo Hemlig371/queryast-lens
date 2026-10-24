@@ -12,7 +12,7 @@ import {
 } from '../src/utils/snippetsStorage';
 import type { Snippet } from '../src/components/SqlSnippetsManager';
 
-// п. 3.16 (SN-02, SN-03): кэш не опережает базу, миграция из старого ключа localStorage не стирает и не воскрешает данные.
+// кэш не опережает базу, миграция из старого ключа localStorage не стирает и не воскрешает данные.
 // Все сбои базы подставляются прямой заменой globalThis.indexedDB (восстанавливается в afterEach).
 
 class MemoryStorage {
@@ -59,7 +59,7 @@ beforeEach(async () => {
 });
 afterEach(() => { setIndexedDB(realIndexedDB); });
 
-describe('saveSnippetsToDB: кэш (SN-02)', () => {
+describe('saveSnippetsToDB: кэш', () => {
   it('после успешной записи кэш равен записанному списку', async () => {
     await saveSnippetsToDB([snip('a'), snip('b')]);
     expect(storage.cachedSnippets?.map((s) => s.id)).toEqual(['a', 'b']);

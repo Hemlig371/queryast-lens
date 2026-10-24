@@ -5,7 +5,7 @@ import path from 'node:path';
 
 const readJson = (rel: string) => JSON.parse(fs.readFileSync(path.join(process.cwd(), rel), 'utf8'));
 
-describe('isWorkspaceBundle (ST-01, SM-02)', () => {
+describe('isWorkspaceBundle', () => {
   it('пакет в том виде, в каком его создаёт generateWorkspaceBundleObject', () => {
     expect(isWorkspaceBundle({
       version: 1,

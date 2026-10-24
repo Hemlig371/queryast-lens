@@ -366,7 +366,7 @@ export const FileTreePanel: React.FC<Props> = ({
                 // Папка в редактор ничего не вставляет: text/plain не задаём.
                 e.dataTransfer.effectAllowed = 'move';
               } else {
-                e.dataTransfer.setData('text/plain', quotePathForSql(entry.path)); // вставка пути в редактор — как раньше
+                e.dataTransfer.setData('text/plain', quotePathForSql(entry.path)); // вставка пути в редактор
                 e.dataTransfer.effectAllowed = 'copyMove';
               }
             }}

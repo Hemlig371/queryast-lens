@@ -4,7 +4,7 @@ import { copyResultRows } from '../src/utils/copyResult';
 import type { TabResultData } from '../src/utils/resultStorage';
 
 // Обновление результата вкладки, которая не активна (executeX → updateEngineState, ветка «другая вкладка»).
-// Первая группа — характеризующая (поведение до п. 3.4), вторая — COPY ClickHouse в исходную вкладку (B-08).
+// Первая группа — обычное обновление, вторая — COPY ClickHouse в исходную вкладку.
 
 const baseTab = (over: Partial<TabResultData> = {}): TabResultData => ({
   duckDbResults: [{ old: 1 }],
@@ -61,7 +61,7 @@ describe('mergeTabResult: прежнее поведение', () => {
   });
 });
 
-describe('mergeTabResult: порядок столбцов (п. 3.2)', () => {
+describe('mergeTabResult: порядок столбцов', () => {
   it('columns сохраняются вместе с результатом и сбрасываются, если новый результат пришёл без них', () => {
     const withCols = mergeTabResult(baseTab(), { results: [{ b: 1, a: 2 }], columns: ['b', 'a'] }, { queryToExec: 'q', page: 1 });
     expect(withCols.resultColumns).toEqual(['b', 'a']);
@@ -72,7 +72,7 @@ describe('mergeTabResult: порядок столбцов (п. 3.2)', () => {
   });
 });
 
-describe('B-08: COPY ClickHouse пишет результат в исходную вкладку', () => {
+describe('COPY ClickHouse пишет результат в исходную вкладку', () => {
   it('строки результата COPY TO / FROM (форма как раньше)', () => {
     expect(copyResultRows({ kind: 'TO', filePath: 'out.csv', message: 'ok', bytes: 12 })).toEqual([
       { Status: 'Success (COPY TO)', File: 'out.csv', Message: 'ok', Bytes: '12 bytes' },

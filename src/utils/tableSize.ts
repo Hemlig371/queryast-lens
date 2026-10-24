@@ -1,6 +1,6 @@
 import { t } from './i18n';
 
-// Бейдж размера таблицы в дереве схемы (байты или оценка строк). Вынесено из App.tsx.
+// Бейдж размера таблицы в дереве схемы (байты или оценка строк).
 export function getTableSizeBadge(columns: any[]): string | null {
   const firstCol = columns?.[0];
   if (firstCol?.table_bytes !== undefined && firstCol?.table_bytes !== null) {

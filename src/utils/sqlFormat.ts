@@ -4,8 +4,7 @@ import { splitSqlSegments, type SqlSegment } from './sqlTokens';
 import { protectLiterals } from './sqlLiterals';
 import type { FormatterSettings } from '../components/SettingsModal';
 
-// Чистые функции форматирования/сжатия SQL. Вынесены из App.tsx (этап A1) без изменения логики.
-// Настройки форматтера и диалект теперь передаются параметрами, а не берутся из замыкания App.
+// Чистые функции форматирования/сжатия SQL. Настройки форматтера и диалект передаются параметрами.
 
 // Хвостовой `-- текст` превращается в `/* текст */`; комментарий на отдельной строке остаётся как есть.
 // Разбор идёт по всему тексту (splitSqlSegments), а не построчно: `--` внутри многострочной строки или блочного комментария не трогается.
@@ -150,7 +149,7 @@ export const formatSqlText = async (text: string, dialect: string, cfg: Formatte
     return cleanedStatements.join(';\n\n') + (hasSemicolon ? ';' : '');
   };
 
-  // F-26: строковые литералы (в том числе многострочные и `$$…$$`) и `//` не должны попадать в форматтер и в регулярные
+  // строковые литералы (в том числе многострочные и `$$…$$`) и `//` не должны попадать в форматтер и в регулярные
   // подстановки ниже: они заменяются плейсхолдерами и возвращаются точным исходным текстом после всех подстановок.
   const protectedSql = protectLiterals(text, { backslashEscapes: dialect === 'Clickhouse', protectDivision: true });
   let preprocessedText = convertInlineDashComments(protectedSql.text);

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { formatCellValue } from '../src/utils/formatCellValue';
 import { computeColumnStats } from '../src/utils/columnStats';
 
-describe('formatCellValue (S-07)', () => {
+describe('formatCellValue', () => {
   it('массив — JSON со скобками', () => {
     expect(formatCellValue([1, 2])).toBe('[1,2]');
     expect(formatCellValue([])).toBe('[]');
@@ -63,7 +63,7 @@ describe('formatCellValue (S-07)', () => {
   });
 });
 
-describe('computeColumnStats на вложенных значениях (S-07)', () => {
+describe('computeColumnStats на вложенных значениях', () => {
   it('одинаковые массивы считаются одним значением, разные — разными', () => {
     const rows = [{ v: [1, 2] }, { v: [1, 2] }, { v: [2, 1] }, { v: { a: 1 } }, { v: { a: 2 } }];
     const text = computeColumnStats('v', rows);

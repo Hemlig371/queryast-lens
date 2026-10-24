@@ -31,21 +31,21 @@ const readQueryCdata = (xml: string): string => {
 /** Правило XML: «]]>» не может встречаться в тексте вне CDATA. */
 const hasStrayCdataEnd = (xml: string): boolean => xml.replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, '').includes(']]>');
 
-describe('buildGraphTextExport: xml (GE-01)', () => {
+describe('buildGraphTextExport: xml', () => {
   it('обычный SQL лежит в CDATA как есть', () => {
     const { content, filename } = buildGraphTextExport('xml', input({ sql: 'select 1 from t' }));
     expect(filename).toBe('sql-graph-export.xml');
     expect(readQueryCdata(content)).toBe('select 1 from t');
   });
 
-  it('GE-01: индекс вложенного массива a[b[1]]>0 не ломает CDATA', () => {
+  it('индекс вложенного массива a[b[1]]>0 не ломает CDATA', () => {
     const sql = 'select a[b[1]]>0 from t';
     const { content } = buildGraphTextExport('xml', input({ sql }));
     expect(hasStrayCdataEnd(content)).toBe(false);
     expect(readQueryCdata(content)).toBe(sql);
   });
 
-  it('GE-01: ]]> в комментарии, в начале и в конце SQL', () => {
+  it(']]> в комментарии, в начале и в конце SQL', () => {
     for (const sql of ['select 1 -- конец ]]> тут', ']]>select 1', 'select 1]]>', ']]>]]>', 'a]]>b]]>c']) {
       const { content } = buildGraphTextExport('xml', input({ sql }));
       expect(hasStrayCdataEnd(content)).toBe(false);
@@ -69,7 +69,7 @@ describe('buildGraphTextExport: xml (GE-01)', () => {
   });
 });
 
-describe('buildGraphTextExport: json (GE-05)', () => {
+describe('buildGraphTextExport: json', () => {
   const nodes = [
     { id: 'n1', type: 'collapseNode', data: { label: 'Q1', onToggle: () => 1, nested: { cb() { return 1; }, ok: 2 } }, position: { x: 1, y: 2 } },
   ];
@@ -97,7 +97,7 @@ describe('buildGraphTextExport: json (GE-05)', () => {
   });
 });
 
-describe('buildGraphTextExport: mermaid (GE-03)', () => {
+describe('buildGraphTextExport: mermaid', () => {
   const idsOf = (content: string) => [...content.matchAll(/^ {2}(\S+?)\["/gm)].map(m => m[1]);
 
   it('идентификаторы a-b и a_b различаются, рёбра ведут к своим узлам', () => {
@@ -147,7 +147,7 @@ describe('buildGraphTextExport: mermaid (GE-03)', () => {
   });
 });
 
-describe('buildGraphTextExport: drawio (GE-02, D-08)', () => {
+describe('buildGraphTextExport: drawio', () => {
   const cells = (content: string) =>
     [...content.matchAll(/<mxCell id="([^"]*)" value="[^"]*" style="([^"]*)" vertex="1" parent="1">\s*<mxGeometry x="(-?\d+)" y="(-?\d+)" width="(\d+)" height="(\d+)"/g)].map(m => ({
       id: m[1], style: m[2], x: Number(m[3]), y: Number(m[4]), width: Number(m[5]), height: Number(m[6]),
@@ -159,7 +159,7 @@ describe('buildGraphTextExport: drawio (GE-02, D-08)', () => {
       nodes: [
         { id: 't', type: 'tableNode', data: { columns: cols(3) }, position: { x: 10, y: 20 } },
         { id: 'r', type: 'resultNode', data: { columns: cols(2) }, position: { x: 400, y: 20 } },
-        { id: 'l', type: 'limitNode', data: {}, position: { x: 800, y: 20 } },
+        { id: 'l', type: 'constantNode', data: {}, position: { x: 800, y: 20 } },
         { id: 'j', type: 'joinNode', data: {}, position: { x: 1200, y: 20 } },
         { id: 'c', type: 'collapseNode', data: {}, position: { x: 1600, y: 20 } },
       ],
@@ -167,10 +167,10 @@ describe('buildGraphTextExport: drawio (GE-02, D-08)', () => {
     expect(filename).toBe('sql-graph-export.drawio.xml');
     const bySize = Object.fromEntries(cells(content).map(c => [c.id, [c.width, c.height]]));
     expect(bySize).toEqual({
-      t: [256, 180],
-      r: [256, 160],
-      l: [256, 70],
-      j: [256, 100],
+      t: [256, 188],
+      r: [256, 120],
+      l: [256, 89],
+      j: [256, 112],
       c: [220, 32],
     });
   });
@@ -222,7 +222,7 @@ describe('buildGraphTextExport: drawio (GE-02, D-08)', () => {
   });
 });
 
-describe('scopedHideScrollbarsCss (GE-04)', () => {
+describe('scopedHideScrollbarsCss', () => {
   const scope = '.react-flow__viewport';
 
   it('все правила действуют только внутри заданной области', () => {

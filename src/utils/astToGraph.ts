@@ -1,13 +1,28 @@
 import pkg from 'node-sql-parser';
 const { Parser } = pkg;
-import dagre from 'dagre';
 import { getNodeDimensions } from './graphNodeSize';
+import { layoutTreeBlock, shiftRoute } from './treeLayout';
+import type { RoutedEdge } from './edgePath';
+import {
+  pickJoinParent,
+  qualifiersIn,
+  firstKnownQualifier,
+  joinEdgeLabel,
+  columnsByAlias,
+  conditionChipTexts,
+  countSources,
+} from './joinTree';
 
 export interface GraphNode {
   id: string;
   type: string;
   data: any;
   position: { x: number; y: number };
+  // Заполняются раскладкой
+  targetPosition?: 'left' | 'right' | 'top' | 'bottom';
+  sourcePosition?: 'left' | 'right' | 'top' | 'bottom';
+  className?: string;
+  zIndex?: number;
 }
 
 export interface GraphEdge {
@@ -18,6 +33,7 @@ export interface GraphEdge {
   label?: string;
   style?: any;
   type?: string;
+  data?: any;
 }
 
 const parser = new Parser();
@@ -160,6 +176,53 @@ export function stripCommentsSafely(sql: string): string {
 
 // --- 2. EXPRESSION FORMATTER ---
 
+// --- Оконные функции: форма AST у node-sql-parser (over.as_window_specification.window_specification) и упрощённая (over.partitionby) ---
+
+function formatFrameBody(e: any): string {
+  if (e === null || e === undefined) return '';
+  if (typeof e === 'string') return e.toUpperCase();
+  if (typeof e === 'number') return String(e);
+  if (e.type === 'origin') return String(e.value ?? '').toUpperCase();
+  if (e.type === 'binary_expr' && /^between$/i.test(String(e.operator))) {
+    const right = e.right && Array.isArray(e.right.value) ? e.right.value.map(formatFrameBody).join(' AND ') : formatFrameBody(e.right);
+    return `BETWEEN ${formatFrameBody(e.left)} AND ${right}`;
+  }
+  if (e.type === 'expr_list' && Array.isArray(e.value)) return e.value.map(formatFrameBody).join(' AND ');
+  if (e.type === 'binary_expr') return `${formatFrameBody(e.left)} ${String(e.operator ?? '').toUpperCase()} ${formatFrameBody(e.right)}`.trim();
+  return formatExpr(e);
+}
+
+function formatFrame(f: any): string {
+  if (!f) return '';
+  if (typeof f === 'string') return f.toUpperCase();
+  const kind = typeof f.type === 'string' && /^(rows|range|groups)$/i.test(f.type) ? `${f.type.toUpperCase()} ` : '';
+  return `${kind}${formatFrameBody(f.expr !== undefined ? f.expr : f)}`.trim();
+}
+
+/** Текст « OVER (...)» или « OVER w» для окна любой из форм AST. */
+function formatOver(over: any): string {
+  if (!over) return '';
+  if (typeof over === 'string') return ` OVER ${over}`;
+  const spec0 = over.as_window_specification !== undefined ? over.as_window_specification : over;
+  if (typeof spec0 === 'string') return ` OVER ${spec0}`;
+  const spec = spec0 && spec0.window_specification ? spec0.window_specification : spec0;
+  if (typeof spec === 'string') return ` OVER ${spec}`;
+  const partitionby = spec?.partitionby ?? over.partitionby;
+  const orderby = spec?.orderby ?? over.orderby;
+  const frame = spec?.window_frame_clause ?? spec?.window_frame ?? over.window_frame_clause ?? over.window_frame;
+  const name = typeof spec?.name === 'string' ? spec.name : '';
+  const partitionStr = partitionby && (!Array.isArray(partitionby) || partitionby.length > 0)
+    ? 'PARTITION BY ' + (Array.isArray(partitionby) ? partitionby.map(formatExpr).join(', ') : formatExpr(partitionby)) : '';
+  const orderStr = orderby && (!Array.isArray(orderby) || orderby.length > 0)
+    ? 'ORDER BY ' + (Array.isArray(orderby) ? orderby.map((o: any) => {
+        const oExpr = formatExpr(o.expr !== undefined ? o.expr : o);
+        const oType = typeof o.type === 'string' && /^(asc|desc)$/i.test(o.type) ? ` ${o.type.toUpperCase()}` : '';
+        return oExpr + oType;
+      }).join(', ') : formatExpr(orderby)) : '';
+  const frameStr = formatFrame(frame);
+  return ` OVER (${[name, partitionStr, orderStr, frameStr].filter(Boolean).join(' ')})`;
+}
+
 export function formatExpr(expr: any): string {
   if (expr === null || expr === undefined) return '';
   if (typeof expr === 'string') return expr;
@@ -170,27 +233,7 @@ export function formatExpr(expr: any): string {
   if (expr.expr !== undefined) return formatExpr(expr.expr);
   if (Array.isArray(expr)) return expr.map(formatExpr).join(', ');
 
-  let overStr = '';
-  if (expr && expr.over) {
-    let partitionStr = '';
-    if (expr.over.partitionby) {
-      partitionStr = 'PARTITION BY ' + (Array.isArray(expr.over.partitionby) ? expr.over.partitionby.map(formatExpr).join(', ') : formatExpr(expr.over.partitionby));
-    }
-    let orderStr = '';
-    if (expr.over.orderby) {
-      orderStr = 'ORDER BY ' + (Array.isArray(expr.over.orderby) ? expr.over.orderby.map((o: any) => {
-        const oExpr = formatExpr(o.expr || o);
-        const oType = o.type ? ` ${o.type.toUpperCase()}` : '';
-        return oExpr + oType;
-      }).join(', ') : formatExpr(expr.over.orderby));
-    }
-    let frameStr = '';
-    if (expr.over.window_frame) {
-      frameStr = 'ROWS/RANGE BETWEEN ...';
-    }
-    const innerOver = [partitionStr, orderStr, frameStr].filter(Boolean).join(' ');
-    overStr = ` OVER (${innerOver})`;
-  }
+  const overStr = expr && expr.over ? formatOver(expr.over) : '';
 
   let filterStr = '';
   if (expr && expr.filter) {
@@ -199,7 +242,8 @@ export function formatExpr(expr: any): string {
 
   if (expr.type === 'select' || expr.type === 'union') {
     try {
-      return `(${parser.sqlify(expr)})`;
+      // sqlify оборачивает имена в `…`; для чтения и повторного разбора кавычки не нужны
+      return `(${parser.sqlify(expr).replace(/`([^`]+)`/g, (m: string, id: string) => (/^[\w$\u0400-\u04FF]+$/.test(id) ? id : m))})`;
     } catch (e) {
       const tables = expr.from ? (Array.isArray(expr.from) ? expr.from.map((f: any) => {
         if (typeof f === 'string') return f;
@@ -251,6 +295,12 @@ export function formatExpr(expr: any): string {
       return typeof expr.value === 'string' ? `'${expr.value}'` : String(expr.value);
     case 'double_quote_string':
       return `"${expr.value}"`;
+    case 'window_func': {
+      const wName = typeof expr.name === 'object' ? formatExpr(expr.name) : expr.name;
+      const wArgs = expr.args ? formatExpr(expr.args) : '';
+      const wNulls = typeof expr.consider_nulls === 'string' ? ` ${expr.consider_nulls.toUpperCase()}` : '';
+      return `${wName}(${wArgs}${wNulls})${filterStr}${overStr}`;
+    }
     case 'aggr_func':
       const aggrName = typeof expr.name === 'object' ? formatExpr(expr.name) : expr.name;
       const aggrArgs = expr.args?.expr ? formatExpr(expr.args.expr) : (expr.args ? formatExpr(expr.args) : '*');
@@ -405,6 +455,7 @@ function splitConditions(text: string): { name: string }[] {
   const parts: { name: string }[] = [];
   let currentStart = 0;
   let parenDepth = 0;
+  let pendingBetween = false; // «x BETWEEN a AND b»: этот AND — часть условия, а не разделитель
 
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i];
@@ -413,6 +464,8 @@ function splitConditions(text: string): { name: string }[] {
       else if (t.value === ')') parenDepth = Math.max(0, parenDepth - 1);
     } else if (t.type === 'word' && parenDepth === 0) {
       const upper = String(t.value || '').toUpperCase();
+      if (upper === 'BETWEEN') { pendingBetween = true; continue; }
+      if (upper === 'AND' && pendingBetween) { pendingBetween = false; continue; }
       if (upper === 'AND' || upper === 'OR') {
         const chunk = text.substring(currentStart, t.start).trim();
         if (chunk) {
@@ -471,7 +524,11 @@ function parseHeuristicColumn(colStr: string): any {
     const isQuoted = /^["'`].*["'`]$/.test(potentialAlias);
     const isIdentifier = /^[A-Za-z0-9_\u0400-\u04FFёЁ]+$/.test(potentialAlias);
     
-    if ((isQuoted || isIdentifier) && potentialExpr && !potentialAlias.includes(')') && !potentialAlias.includes(']')) {
+    // «o.lvl + 1», «x AND y», «INTERVAL 7 DAY» — хвост выражения, а не алиас
+    const endsInOperator = /[+\-*/%|&<>=!^~,(]\s*$/.test(potentialExpr) || /\b(AND|OR|NOT|IS|IN|LIKE|ILIKE|BETWEEN|THEN|ELSE|WHEN|CASE|DISTINCT|INTERVAL|ON)\s*$/i.test(potentialExpr) || /\bINTERVAL\s+\S+$/i.test(potentialExpr);
+    const isNumber = /^\d+(\.\d+)?$/.test(potentialAlias);
+
+    if ((isQuoted || isIdentifier) && !isNumber && !endsInOperator && potentialExpr && !potentialAlias.includes(')') && !potentialAlias.includes(']')) {
       exprStr = potentialExpr;
       alias = potentialAlias.replace(/^["'`]|["'`]$/g, '').trim();
     }
@@ -752,72 +809,96 @@ export function parseHeuristicDml(sql: string, dialect: string): any {
   }
   
   if (upperSql.startsWith('UPDATE')) {
-    const tableMatch = cleanSql.match(/UPDATE\s+([A-Za-z0-9_".\u0400-\u04FFёЁ]+)/i);
-    const tableName = tableMatch ? tableMatch[1] : 'TARGET_TABLE';
-    
-    const setIdx = upperSql.indexOf('SET');
-    const whereIdx = upperSql.indexOf('WHERE');
-    
-    let setStr = '';
-    let whereStr = '';
-    
-    if (setIdx !== -1) {
-      const setEnd = whereIdx !== -1 ? whereIdx : cleanSql.length;
-      setStr = cleanSql.substring(setIdx + 3, setEnd).trim();
+    const head = cleanSql.match(/^UPDATE\s+([A-Za-z0-9_".Ѐ-ӿёЁ]+)(?:\s+(?:AS\s+)?(?!SET\b)([A-Za-z0-9_"Ѐ-ӿёЁ]+))?\s+SET\b/i);
+    const tableName = head ? head[1] : 'TARGET_TABLE';
+    const alias = head && head[2] ? head[2] : undefined;
+    const afterSet = head ? cleanSql.slice(head[0].length) : '';
+
+    // FROM и WHERE ищем только на верхнем уровне: подзапросы в SET/WHERE их не ломают
+    const fromKw = findTopLevelKeyword(afterSet, ['FROM']);
+    const whereKw = findTopLevelKeyword(afterSet, ['WHERE']);
+    const setEnd = fromKw ? fromKw.index : (whereKw ? whereKw.index : afterSet.length);
+    const setStr = afterSet.slice(0, setEnd).trim();
+    let fromSql = '';
+    if (fromKw) {
+      const fromEnd = whereKw && whereKw.index > fromKw.index ? whereKw.index : afterSet.length;
+      fromSql = afterSet.slice(fromKw.index + fromKw.length, fromEnd).trim();
     }
-    if (whereIdx !== -1) {
-      whereStr = cleanSql.substring(whereIdx + 5).trim();
-    }
-    
+    const whereStr = whereKw ? afterSet.slice(whereKw.index + whereKw.length).trim() : '';
+
     const setPairs: any[] = [];
-    if (setStr) {
-      const parts = splitByTopLevelCommas(setStr);
-      parts.forEach(part => {
-        const eqIdx = part.indexOf('=');
-        if (eqIdx !== -1) {
-          const colName = part.substring(0, eqIdx).trim();
-          const valExpr = part.substring(eqIdx + 1).trim();
-          setPairs.push({
-            column: colName,
-            value: { type: 'column_ref', column: valExpr }
-          });
-        }
-      });
-    }
-    
+    splitByTopLevelCommas(setStr).forEach(part => {
+      const eqIdx = part.indexOf('=');
+      if (eqIdx !== -1) {
+        setPairs.push({
+          column: part.substring(0, eqIdx).trim(),
+          value: { type: 'column_ref', column: part.substring(eqIdx + 1).trim() }
+        });
+      }
+    });
+
     return {
       type: 'update',
-      table: { table: tableName },
+      table: { table: tableName, ...(alias ? { as: alias } : {}) },
       set: setPairs,
+      fromSql: fromSql || undefined,
       where: whereStr ? { type: 'column_ref', column: whereStr } : null
     };
   }
-  
+
   if (upperSql.startsWith('DELETE')) {
-    const tableMatch = cleanSql.match(/DELETE\s+FROM\s+([A-Za-z0-9_".\u0400-\u04FFёЁ]+)/i);
-    const tableName = tableMatch ? tableMatch[1] : 'TARGET_TABLE';
-    
-    const whereIdx = upperSql.indexOf('WHERE');
-    let whereStr = '';
-    if (whereIdx !== -1) {
-      whereStr = cleanSql.substring(whereIdx + 5).trim();
+    const head = cleanSql.match(/^DELETE\s+FROM\s+([A-Za-z0-9_".Ѐ-ӿёЁ]+)(?:\s+(?:AS\s+)?(?!USING\b|WHERE\b)([A-Za-z0-9_"Ѐ-ӿёЁ]+))?/i);
+    const tableName = head ? head[1] : 'TARGET_TABLE';
+    const alias = head && head[2] ? head[2] : undefined;
+    const rest = head ? cleanSql.slice(head[0].length) : '';
+    const usingKw = findTopLevelKeyword(rest, ['USING']);
+    const whereKw = findTopLevelKeyword(rest, ['WHERE']);
+    let usingSql = '';
+    if (usingKw) {
+      const end = whereKw && whereKw.index > usingKw.index ? whereKw.index : rest.length;
+      usingSql = rest.slice(usingKw.index + usingKw.length, end).trim();
     }
-    
+    const whereStr = whereKw ? rest.slice(whereKw.index + whereKw.length).trim() : '';
+
     return {
       type: 'delete',
-      table: { table: tableName },
+      table: { table: tableName, ...(alias ? { as: alias } : {}) },
+      fromSql: usingSql || undefined,
       where: whereStr ? { type: 'column_ref', column: whereStr } : null
     };
   }
 
   if (upperSql.startsWith('MERGE')) {
-      const mergeMatch = cleanSql.match(/MERGE\s+INTO\s+([A-Za-z0-9_".\u0400-\u04FFёЁ]+)/i);
-      const tableName = mergeMatch ? mergeMatch[1] : 'TARGET_TABLE';
-      return {
-          type: 'merge',
-          table: { table: tableName },
-          text: cleanSql
-      };
+    const mergeMatch = cleanSql.match(/^MERGE\s+INTO\s+([A-Za-z0-9_".Ѐ-ӿёЁ]+)(?:\s+(?:AS\s+)?(?!USING\b)([A-Za-z0-9_"Ѐ-ӿёЁ]+))?/i);
+    const tableName = mergeMatch ? mergeMatch[1] : 'TARGET_TABLE';
+    const alias = mergeMatch && mergeMatch[2] ? mergeMatch[2] : undefined;
+    const rest = mergeMatch ? cleanSql.slice(mergeMatch[0].length) : '';
+    const out: any = { type: 'merge', table: { table: tableName, ...(alias ? { as: alias } : {}) }, text: cleanSql };
+
+    const usingKw = findTopLevelKeyword(rest, ['USING']);
+    if (usingKw) {
+      const afterUsing = rest.slice(usingKw.index + usingKw.length);
+      const onKw = findTopLevelKeyword(afterUsing, ['ON']);
+      if (onKw) {
+        out.usingSql = afterUsing.slice(0, onKw.index).trim();
+        const afterOn = afterUsing.slice(onKw.index + onKw.length);
+        // ветки WHEN … THEN … (верхний уровень)
+        const starts: number[] = [];
+        scanTopLevel(afterOn, (i) => {
+          if (/^WHEN\b/i.test(afterOn.slice(i, i + 5))) { starts.push(i); return 4; }
+          return 0;
+        });
+        out.onText = (starts.length ? afterOn.slice(0, starts[0]) : afterOn).trim();
+        out.whens = starts.map((st, k) => {
+          const chunk = afterOn.slice(st + 4, k + 1 < starts.length ? starts[k + 1] : afterOn.length).trim();
+          const thenKw = findTopLevelKeyword(chunk, ['THEN']);
+          const head2 = (thenKw ? chunk.slice(0, thenKw.index) : chunk).replace(/\s+/g, ' ').trim();
+          const action = (thenKw ? chunk.slice(thenKw.index + thenKw.length) : '').replace(/\s+/g, ' ').trim();
+          return { head: head2, action };
+        });
+      }
+    }
+    return out;
   }
   
   return null;
@@ -872,6 +953,24 @@ export function transformNodeSqlParserUnion(ast: any): any {
 }
 
 function parseTableOrSubquery(str: string, dialect: string): any {
+  // JOIN LATERAL (подзапрос) алиас — LATERAL относится к соединению
+  const lat = str.trim().match(/^LATERAL\s+([\s\S]+)$/i);
+  if (lat) {
+    const r = parseTableOrSubquery(lat[1], dialect);
+    if (r) r.lateral = true;
+    return r;
+  }
+  // ClickHouse: «таблица [AS алиас] FINAL» — берётся актуальная версия строк
+  const fin = str.trim().match(/^([\s\S]*?)\s+FINAL$/i);
+  if (fin && fin[1].trim()) {
+    const r = parseTableOrSubqueryCore(fin[1], dialect);
+    if (r) r.final = true;
+    return r;
+  }
+  return parseTableOrSubqueryCore(str, dialect);
+}
+
+function parseTableOrSubqueryCore(str: string, dialect: string): any {
   str = str.trim();
   if (!str) return null;
 
@@ -942,6 +1041,65 @@ function parseTableOrSubquery(str: string, dialect: string): any {
   return { table: str, as: null };
 }
 
+// Ключевое слово соединения (с ClickHouse-модификаторами: GLOBAL, ANY/ALL/ASOF/SEMI/ANTI, ARRAY JOIN)
+const JOIN_KEYWORD_RE = /(?:GLOBAL\s+)?(?:(?:ANY|ALL|ASOF|SEMI|ANTI)\s+)?(?:(?:LEFT|RIGHT|FULL)\s+(?:OUTER\s+)?(?:ARRAY\s+)?|INNER\s+|CROSS\s+|NATURAL\s+(?:(?:LEFT|RIGHT|FULL)\s+)?|LATERAL\s+|ARRAY\s+)?JOIN\b/iy;
+
+/**
+ * Обход текста только на верхнем уровне: вне скобок и кавычек. onWord вызывается в начале каждого слова
+ * и возвращает длину найденного совпадения (тогда обход продолжается после него) или 0.
+ */
+function scanTopLevel(text: string, onWord: (i: number) => number): void {
+  let depth = 0;
+  let quote = '';
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quote) {
+      if (ch === '\\') i++;
+      else if (ch === quote) { if (text[i + 1] === quote) i++; else quote = ''; }
+      continue;
+    }
+    if (ch === "'" || ch === '"' || ch === '`') { quote = ch; continue; }
+    if (ch === '(') { depth++; continue; }
+    if (ch === ')') { depth--; continue; }
+    if (depth === 0 && /[A-Za-z]/.test(ch) && (i === 0 || !/[\w$.]/.test(text[i - 1]))) {
+      const len = onWord(i);
+      if (len > 0) i += len - 1;
+    }
+  }
+}
+
+/** Делит текст по ключевым словам JOIN верхнего уровня: [текст, JOIN, текст, JOIN, текст…]. JOIN внутри подзапросов не затрагивается. */
+function splitTopLevelJoins(text: string): string[] {
+  const out: string[] = [];
+  let last = 0;
+  scanTopLevel(text, (i) => {
+    JOIN_KEYWORD_RE.lastIndex = i;
+    const m = JOIN_KEYWORD_RE.exec(text);
+    if (!m) return 0;
+    out.push(text.slice(last, i), m[0].replace(/\s+/g, ' '));
+    last = i + m[0].length;
+    return m[0].length;
+  });
+  out.push(text.slice(last));
+  return out;
+}
+
+/** Первое слово из списка (ON / USING) на верхнем уровне: позиция и длина слова. */
+function findTopLevelKeyword(text: string, words: string[]): { index: number; length: number } | null {
+  let found: { index: number; length: number } | null = null;
+  scanTopLevel(text, (i) => {
+    if (found) return 0;
+    for (const w of words) {
+      if (text.substr(i, w.length).toUpperCase() === w && !/[\w$]/.test(text[i + w.length] ?? '')) {
+        found = { index: i, length: w.length };
+        return w.length;
+      }
+    }
+    return 0;
+  });
+  return found;
+}
+
 function parseHeuristicFromAndJoins(fromBlock: string, dialect: string): any[] {
   const fromList: any[] = [];
   if (!fromBlock) return fromList;
@@ -949,8 +1107,7 @@ function parseHeuristicFromAndJoins(fromBlock: string, dialect: string): any[] {
   const commaParts = splitByTopLevelCommas(fromBlock);
   
   commaParts.forEach((commaPart, commaIdx) => {
-    const joinRegex = /\b((?:GLOBAL\s+)?(?:LEFT\s+ARRAY\s+JOIN|ARRAY\s+JOIN|LEFT\s+OUTER\s+JOIN|RIGHT\s+OUTER\s+JOIN|FULL\s+OUTER\s+JOIN|INNER\s+JOIN|LEFT\s+JOIN|RIGHT\s+JOIN|FULL\s+JOIN|CROSS\s+JOIN|LATERAL\s+JOIN|JOIN))\b/i;
-    const parts = commaPart.split(joinRegex);
+    const parts = splitTopLevelJoins(commaPart);
     
     const firstPart = parts[0].trim();
     const baseTable = parseTableOrSubquery(firstPart, dialect);
@@ -966,30 +1123,18 @@ function parseHeuristicFromAndJoins(fromBlock: string, dialect: string): any[] {
       const joinKeyword = String(parts[i] || '').trim().toUpperCase();
       const tableAndCondition = parts[i + 1]?.trim() || '';
 
-      const onIndex = tableAndCondition.search(/\bON\b/i);
-      const usingIndex = tableAndCondition.search(/\bUSING\b/i);
-
       let tablePart = tableAndCondition;
       let onCondition = '';
-
-      let splitIndex = -1;
-      let splitOffset = 0;
-      if (onIndex !== -1 && (usingIndex === -1 || onIndex < usingIndex)) {
-        splitIndex = onIndex;
-        splitOffset = 2;
-      } else if (usingIndex !== -1) {
-        splitIndex = usingIndex;
-        splitOffset = 5;
-      }
-
-      if (splitIndex !== -1) {
-        tablePart = tableAndCondition.substring(0, splitIndex).trim();
-        onCondition = tableAndCondition.substring(splitIndex + splitOffset).trim();
+      // ON / USING ищем только на верхнем уровне: в подзапросе-источнике могут быть свои соединения
+      const kw = findTopLevelKeyword(tableAndCondition, ['ON', 'USING']);
+      if (kw) {
+        tablePart = tableAndCondition.substring(0, kw.index).trim();
+        onCondition = tableAndCondition.substring(kw.index + kw.length).trim();
       }
 
       const joinTable = parseTableOrSubquery(tablePart, dialect);
       if (joinTable) {
-        joinTable.join = joinKeyword;
+        joinTable.join = joinKeyword + (joinTable.lateral && !/\bLATERAL\b/i.test(joinKeyword) ? ' LATERAL' : '');
         joinTable.on = onCondition ? { type: 'column_ref', column: onCondition } : null;
         fromList.push(joinTable);
       }
@@ -999,21 +1144,59 @@ function parseHeuristicFromAndJoins(fromBlock: string, dialect: string): any[] {
   return fromList;
 }
 
-function extractCtes(sql: string, dialect: string): { ctes: any[], mainSql: string } {
+/** Упоминается ли имя CTE в тексте само по себе (не как часть схема.имя: `hr.salaries` — другая таблица). */
+function mentionsName(text: string, name: string): boolean {
+  const clean = String(text ?? '').replace(/'(?:[^']|'')*'/g, "''");
+  const re = new RegExp(`(^|[^\\w$.])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w$])`, 'i');
+  return re.test(clean);
+}
+
+function extractCtes(sql: string, dialect: string): { ctes: any[], mainSql: string, withValues: string[] } {
   const ctes: any[] = [];
+  const withValues: string[] = [];
   let workingSql = sql.trim();
   
   // Необязательное RECURSIVE после WITH (если за ним не сразу AS: так называется сам CTE)
   const withMatch = workingSql.match(/^\s*WITH\s+(?:RECURSIVE\s+(?!AS\b))?/i);
   if (!withMatch) {
-    return { ctes, mainSql: workingSql };
+    return { ctes, mainSql: workingSql, withValues };
   }
 
   workingSql = workingSql.substring(withMatch[0].length).trim();
 
   while (true) {
-    const cteHeaderMatch = workingSql.match(/^([A-Za-z0-9_\u0400-\u04FFёЁ]+)(?:\s*\([^)]+\))?\s+AS\s*(?:(?:NOT\s+)?MATERIALIZED\s*)?\(/i);
-    if (!cteHeaderMatch) break;
+    const cteHeaderMatch = workingSql.match(/^([A-Za-z0-9_\u0400-\u04FFёЁ]+)(?:\s*\([^)]+\))?\s+AS\s*(?:((?:NOT\s+)?MATERIALIZED)\s*)?\(/i);
+    if (!cteHeaderMatch) {
+      // ClickHouse: в WITH бывают и «выражение AS псевдоним» (константы, скалярные подзапросы) — пропускаем такой элемент
+      let itemEnd = -1;
+      let hitSelect = false;
+      scanTopLevel(workingSql, (i) => {
+        if (itemEnd >= 0) return 0;
+        if (/^SELECT\b/i.test(workingSql.substr(i, 7))) { itemEnd = i; hitSelect = true; return 6; }
+        return 0;
+      });
+      let commaEnd = -1;
+      {
+        let depth = 0, quote = '';
+        for (let i = 0; i < workingSql.length && (itemEnd < 0 || i < itemEnd); i++) {
+          const ch = workingSql[i];
+          if (quote) { if (ch === '\\') i++; else if (ch === quote) { if (workingSql[i + 1] === quote) i++; else quote = ''; } continue; }
+          if (ch === "'" || ch === '"' || ch === '`') { quote = ch; continue; }
+          if (ch === '(' || ch === '[') depth++;
+          else if (ch === ')' || ch === ']') depth--;
+          else if (ch === ',' && depth === 0) { commaEnd = i; break; }
+        }
+      }
+      const end = commaEnd >= 0 ? commaEnd : itemEnd;
+      if (end < 0) break;
+      const item = workingSql.substring(0, end).trim();
+      if (!/\bAS\s+[A-Za-z_][\w$]*\s*$/i.test(item)) break;
+      // «выражение AS имя» → «имя = выражение»
+      withValues.push(item.replace(/^([\s\S]*?)\s+AS\s+([A-Za-z_][\w$]*)\s*$/i, '$2 = $1').replace(/\s+/g, ' '));
+      workingSql = workingSql.substring(end + (commaEnd >= 0 ? 1 : 0)).trim();
+      if (commaEnd < 0 && hitSelect) break;
+      continue;
+    }
 
     const cteName = cteHeaderMatch[1];
     const startIndex = cteHeaderMatch[0].length - 1;
@@ -1023,9 +1206,14 @@ function extractCtes(sql: string, dialect: string): { ctes: any[], mainSql: stri
 
     const cteBody = workingSql.substring(startIndex + 1, closingIndex).trim();
     const cteAst = parseSingleSqlToAst(cteBody, dialect).ast;
+    // RECURSIVE относится ко всему WITH; на карточке он показывается у CTE, который обращается к самому себе
+    const isRecursive = /\bRECURSIVE\b/i.test(withMatch[0]) && mentionsName(cteBody, cteName);
+    const materialized = cteHeaderMatch[2] ? cteHeaderMatch[2].replace(/\s+/g, ' ').toUpperCase() : '';
     ctes.push({
       name: cteName,
-      ast: cteAst
+      ast: cteAst,
+      ...(isRecursive ? { recursive: true } : {}),
+      ...(materialized ? { materialized } : {})
     });
 
     workingSql = workingSql.substring(closingIndex + 1).trim();
@@ -1037,7 +1225,7 @@ function extractCtes(sql: string, dialect: string): { ctes: any[], mainSql: stri
     }
   }
 
-  return { ctes, mainSql: workingSql };
+  return { ctes, mainSql: workingSql, withValues };
 }
 
 function parseHeuristicSelect(sql: string, dialect: string): any {
@@ -1046,10 +1234,16 @@ function parseHeuristicSelect(sql: string, dialect: string): any {
     start_with: null, connect_by: null, groupby: null, having: null, qualify: null, distinct: null, orderby: null, limit: null
   };
 
-  const { ctes, mainSql } = extractCtes(sql, dialect);
+  const { ctes, mainSql, withValues } = extractCtes(sql, dialect);
   ast.ctes = ctes;
+  if (withValues.length > 0) ast.withValues = withValues;
 
-  const lowerSql = mainSql.trim();
+  let lowerSql = mainSql.trim();
+  // ClickHouse: SETTINGS … и FORMAT … в конце запроса управляют выполнением, а не логикой — в разбор не берутся
+  const settingsIdx = findTopLevelKeywordIndex(lowerSql, /^\bSETTINGS\b/i);
+  if (settingsIdx > 0) lowerSql = lowerSql.substring(0, settingsIdx).trim();
+  const formatIdx = findTopLevelKeywordIndex(lowerSql, /^\bFORMAT\s+[A-Za-z]\w*\s*$/i);
+  if (formatIdx > 0) lowerSql = lowerSql.substring(0, formatIdx).trim();
 
   const selectIdx = findTopLevelKeywordIndex(lowerSql, /^\bSELECT\b/i);
   const fromIdx = findTopLevelKeywordIndex(lowerSql, /^\bFROM\b/i);
@@ -1060,7 +1254,7 @@ function parseHeuristicSelect(sql: string, dialect: string): any {
   const groupbyIdx = findTopLevelKeywordIndex(lowerSql, /^\bGROUP\s+BY\b/i);
   const havingIdx = findTopLevelKeywordIndex(lowerSql, /^\bHAVING\b/i);
   const qualifyIdx = findTopLevelKeywordIndex(lowerSql, /^\bQUALIFY\b/i);
-  const orderbyIdx = findTopLevelKeywordIndex(lowerSql, /^\bORDER\s+BY\b/i); 
+  const orderbyIdx = findTopLevelKeywordIndex(lowerSql, /^\bORDER\s+(?:SIBLINGS\s+)?BY\b/i); 
   const limitIdx = findTopLevelKeywordIndex(lowerSql, /^\bLIMIT\b/i);
 
   if (selectIdx === -1 && fromIdx === -1 && ctes.length === 0) {
@@ -1153,24 +1347,29 @@ function parseHeuristicSelect(sql: string, dialect: string): any {
   }
 
   if (orderbyIdx !== -1) {
-    const orderbyBlock = getBlock(orderbyIdx + 8, getNextIdx('orderby'));
+    const orderbyHead = /^ORDER\s+(?:SIBLINGS\s+)?BY\b/i.exec(lowerSql.substring(orderbyIdx));
+    const orderbyBlock = getBlock(orderbyIdx + (orderbyHead ? orderbyHead[0].length : 8), getNextIdx('orderby'));
     const cols = splitByTopLevelCommas(orderbyBlock);
     ast.orderby = cols.map(c => {
-      const parts = c.split(/\s+/);
-      const isDesc = parts[parts.length - 1]?.toUpperCase() === 'DESC';
-      const expr = isDesc ? c.replace(/\s+DESC/i, '') : c.replace(/\s+ASC/i, '');
-      return { expr: { type: 'column_ref', column: expr.trim() }, type: isDesc ? 'DESC' : 'ASC' };
+      // «выражение [ASC|DESC] [NULLS FIRST|LAST]»
+      const m = c.trim().match(/^([\s\S]*?)(?:\s+(ASC|DESC))?(?:\s+(NULLS\s+(?:FIRST|LAST)))?$/i);
+      const expr = m ? m[1] : c;
+      const dir = (m && m[2] ? m[2] : 'ASC').toUpperCase();
+      const nulls = m && m[3] ? ` ${m[3].replace(/\s+/g, ' ').toUpperCase()}` : '';
+      return { expr: { type: 'column_ref', column: expr.trim() }, type: dir + nulls };
     });
   }
 
   if (limitIdx !== -1) {
     const limitBlock = getBlock(limitIdx + 5, getNextIdx('limit'));
+    // ClickHouse: LIMIT [offset,] n BY выражение — ограничение по группам, а не по всему результату
+    const limitBy = limitBlock.match(/^([\s\S]*?)\bBY\b([\s\S]*)$/i);
     const parts = limitBlock.split(/\s*,|\s+OFFSET\s+/i);
     const limitVal = parts[0]?.trim() || '10';
     const offsetVal = parts[1]?.trim() || '0';
-    ast.limit = {
-      value: [ { type: 'number', value: parseInt(limitVal) || limitVal }, { type: 'number', value: parseInt(offsetVal) || offsetVal } ]
-    };
+    ast.limit = limitBy
+      ? { raw: `LIMIT ${limitBy[1].trim()} BY ${limitBy[2].trim().replace(/\s+/g, ' ')}` }
+      : { value: [ { type: 'number', value: parseInt(limitVal) || limitVal }, { type: 'number', value: parseInt(offsetVal) || offsetVal } ] };
   }
 
   return ast;
@@ -1410,12 +1609,14 @@ function parseCreateAsStatement(sql: string, dialect: string): any | null {
 }
 
 export function parseSingleSqlToAst(sql: string, dialect = 'PostgreSQL'): any {
-  const cleanSql = sql.trim(); 
+  let cleanSql = sql.trim(); 
   const upperSql = cleanSql.toUpperCase();
   const isProcedure = /^\s*(?:CREATE\s+(?:OR\s+REPLACE\s+)?(?:PROCEDURE|FUNCTION|PACKAGE|TYPE|TRIGGER)|PROCEDURE\b|FUNCTION\b|DECLARE\b|BEGIN\b)/i.test(upperSql);
   if (isProcedure) {
     return { ast: parseHeuristicProcedure(cleanSql, dialect), error: null };
   }
+  // завершающая «;» не часть запроса (у процедур она нужна — END;)
+  cleanSql = cleanSql.replace(/[;\s]+$/, '');
 
   const truncateMatch = cleanSql.match(/^\s*TRUNCATE\s+(?:TABLE\s+)?([A-Za-z0-9_".\u0400-\u04FFёЁ\s,]+)/i);
   if (truncateMatch) {
@@ -1522,24 +1723,103 @@ export function parseSqlToAst(sql: string, dialect = 'PostgreSQL'): any {
 }
 
 // --- 6. GRAPH VISUALIZATION ENGINE ---
+/** Рамка вокруг CTE / подзапроса / производной таблицы с несколькими источниками. */
+export interface FrameInfo {
+  id: string;
+  kind: 'cte' | 'sub' | 'derived';
+  name: string;
+  /** все узлы блока, включая вложенные рамки (прямое членство считается при добавлении узлов-рамок) */
+  nodeIds: string[];
+}
+
 export interface GraphContext {
   nodes: GraphNode[];
   edges: GraphEdge[];
   cteOutputIds: Record<string, string>;
   options: { 
-    showSort?: boolean; 
-    showLimit?: boolean; 
     collapsedQueries?: Set<string>; 
     onToggleExpand?: (id: string) => void;
   };
+  frames?: FrameInfo[];
 }
 
-function addEdge(ctx: GraphContext, source: string, target: string, label?: string, style?: any) {
+// Все стрелки идут по маршрутам раскладки (treeLayout.ts, MermaidEdge) и не анимируются:
+// пунктир означает ссылку (на CTE, производную таблицу, подзапрос), сплошная линия — поток данных и соединение.
+function addEdge(ctx: GraphContext, source: string, target: string, label?: string, style?: any, data?: any) {
   if (!source || !target) return;
   ctx.edges.push({
     id: `edge_${source}_to_${target}_${Math.random().toString(36).substring(2, 7)}`,
-    source, target, label, animated: true, style
+    source, target, label, animated: false, style,
+    type: 'mermaidEdge',
+    ...(data ? { data } : {}),
   });
+}
+
+/** Предупреждение на карточке: значок ⚠ в шапке, текст во всплывающей подсказке. key — фраза из словаря i18n, detail — фрагмент запроса. */
+function addWarning(ctx: GraphContext, nodeId: string, key: string, detail?: string) {
+  const node = nodeId ? findNode(ctx, nodeId) : undefined;
+  if (!node) return;
+  if (!Array.isArray(node.data.warnings)) node.data.warnings = [];
+  const d = detail ? String(detail).replace(/\s+/g, ' ').trim().slice(0, 90) : undefined;
+  if (node.data.warnings.some((w: any) => w.key === key && w.detail === d)) return;
+  node.data.warnings.push(d ? { key, detail: d } : { key });
+}
+
+const WARN_CROSS_JOIN = 'Соединение без условия — каждая строка с каждой (декартово произведение)';
+const WARN_LEFT_TO_INNER = 'LEFT JOIN работает как INNER: условие WHERE по этой таблице отбрасывает строки без пары';
+const WARN_SELECT_STAR = 'SELECT * — состав колонок результата зависит от таблицы';
+const WARN_WINDOW_IN_WHERE = 'Оконная функция в WHERE недопустима — используйте QUALIFY или подзапрос';
+const WINDOW_TEXT_RE = /\bOVER\s*(\(|[A-Za-z_"`])/i;
+const withoutLiterals = (t: string) => String(t ?? '').replace(/'(?:[^']|'')*'/g, "''");
+
+/** Итоговая карточка запроса (результат основного SELECT, а не CTE или подзапроса) — на ней показывается метка RESULT. */
+function markFinal(ctx: GraphContext, id: string) {
+  const node = id ? findNode(ctx, id) : undefined;
+  if (node && node.type === 'resultNode') {
+    node.data.final = true;
+    const cols: any[] = Array.isArray(node.data.columns) ? node.data.columns : [];
+    if (cols.some(c => /^(?:[\w$"`]+\.)?\*$/.test(String(typeof c === 'string' ? c : c?.name ?? '').trim()))) {
+      addWarning(ctx, id, WARN_SELECT_STAR);
+    }
+  }
+}
+
+function findNode(ctx: GraphContext, id: string): GraphNode | undefined {
+  for (let i = ctx.nodes.length - 1; i >= 0; i--) if (ctx.nodes[i].id === id) return ctx.nodes[i];
+  return undefined;
+}
+
+/** Чип на карточке: kind задаёт цвет, text — содержимое. */
+function addChip(ctx: GraphContext, nodeId: string, kind: string, text: string) {
+  const node = findNode(ctx, nodeId);
+  if (!node) return;
+  if (!Array.isArray(node.data.chips)) node.data.chips = [];
+  node.data.chips.push({ kind, text });
+}
+
+/**
+ * Строит конвейер вложенного SELECT. Если у блока ≥2 источников, регистрирует для него рамку.
+ * Возвращает id выходного узла и признак, что рамка создана.
+ */
+function buildBlock(
+  ast: any,
+  prefix: string,
+  dialect: string,
+  ctx: GraphContext,
+  frame: { kind: FrameInfo['kind']; name: string }
+): { out: string; framed: boolean } {
+  const start = ctx.nodes.length;
+  const out = buildDataPipeline(ast, prefix, dialect, ctx);
+  let framed = false;
+  if (countSources(ast) >= 2) {
+    const nodeIds = ctx.nodes.slice(start).map(n => n.id);
+    if (nodeIds.length > 0) {
+      if (!ctx.frames) ctx.frames = [];
+      ctx.frames.push({ id: `${prefix}frame`, kind: frame.kind, name: frame.name, nodeIds });
+      framed = true;
+    }
+  }
+  return { out, framed };
 }
 
 function processNestedQueries(text: string, targetNodeId: string, prefix: string, dialect: string, ctx: GraphContext) {
@@ -1548,11 +1828,49 @@ function processNestedQueries(text: string, targetNodeId: string, prefix: string
     try {
       const subPrefix = `${prefix}subq_${idx}_`;
       const parsedSub = parseSingleSqlToAst(item.subquerySql, dialect).ast;
-      const subOutputId = buildDataPipeline(parsedSub, subPrefix, dialect, ctx);
+      const subOutputId = buildBlock(parsedSub, subPrefix, dialect, ctx, { kind: 'sub', name: '' }).out;
       if (subOutputId) {
-        addEdge(ctx, subOutputId, targetNodeId, 'scalar / constraint', { strokeDasharray: '4 4' });
+        addEdge(ctx, subOutputId, targetNodeId, 'subquery', { strokeDasharray: '4 4' });
       }
     } catch (e) {}
+  });
+}
+
+/**
+ * Добавляет в граф узлы-рамки: у каждой рамки — прямые члены и внешняя рамка.
+ * Размер и положение задаёт раскладка (treeLayout.ts).
+ */
+function appendFrameNodes(ctx: GraphContext) {
+  const frames = ctx.frames;
+  if (!frames || frames.length === 0) return;
+  const sets = frames.map(f => new Set(f.nodeIds));
+  // внешняя рамка — наименьшая из рамок, целиком содержащих эту
+  const parentOf = (i: number): number => {
+    let best = -1;
+    for (let j = 0; j < frames.length; j++) {
+      if (j === i || sets[j].size <= sets[i].size) continue;
+      let all = true;
+      for (const id of sets[i]) if (!sets[j].has(id)) { all = false; break; }
+      if (all && (best === -1 || sets[j].size < sets[best].size)) best = j;
+    }
+    return best;
+  };
+  const parents = frames.map((_, i) => parentOf(i));
+  const childIds = frames.map(() => new Set<string>());
+  // узлы вложенных рамок не считаются прямыми членами внешней
+  frames.forEach((_, i) => {
+    const p = parents[i];
+    if (p >= 0) for (const id of sets[i]) childIds[p].add(id);
+  });
+  frames.forEach((f, i) => {
+    const members = f.nodeIds.filter(id => !childIds[i].has(id));
+    ctx.nodes.push({
+      id: f.id,
+      type: 'frameNode',
+      data: { kind: f.kind, name: f.name, members, parentFrame: parents[i] >= 0 ? frames[parents[i]].id : undefined },
+      position: { x: 0, y: 0 },
+      zIndex: -1,
+    });
   });
 }
 
@@ -1561,6 +1879,13 @@ function buildDataPipeline(ast: any, prefix: string, dialect: string, ctx: Graph
   if (Array.isArray(ast)) ast = ast[0];
 
   const queryType = ast.type || 'select';
+
+  // 0. Константы из WITH (ClickHouse: `expr AS имя`) — отдельная карточка, чтобы имена в условиях были понятны
+  if (Array.isArray(ast.withValues) && ast.withValues.length > 0) {
+    const wvId = `${prefix}with_values`;
+    ctx.nodes.push({ id: wvId, type: 'filterNode', data: { title: 'WITH', iconType: 'edit', condition: ast.withValues.join('; '), columns: ast.withValues }, position: { x: 0, y: 0 }});
+    ast.withValues.forEach((txt: string, i: number) => processNestedQueries(txt, wvId, `${prefix}wv_${i}_`, dialect, ctx));
+  }
 
   // 1. CTEs (Common Table Expressions)
   const ctesList = ast.ctes || ast.with || [];
@@ -1576,17 +1901,27 @@ function buildDataPipeline(ast: any, prefix: string, dialect: string, ctx: Graph
       
       if (cteAst) {
         const ctePrefix = `${prefix}cte_${cteName}_`;
-        const cteOutputId = buildDataPipeline(cteAst, ctePrefix, dialect, ctx);
-        
-        const cteWrapId = `${prefix}cte_wrap_${cteName}`;
-        ctx.nodes.push({
-          id: cteWrapId, type: 'tableNode',
-          data: { label: cteName, title: 'CTE (With Statement)', isSubquery: true }, position: { x: 0, y: 0 }
-        });
-        
-        addEdge(ctx, cteOutputId, cteWrapId, 'defines CTE', { strokeDasharray: '4 4' });
-        
-        ctx.cteOutputIds[cteName.toLowerCase()] = cteWrapId;
+        const { out: cteOutputId, framed: cteFramed } = buildBlock(cteAst, ctePrefix, dialect, ctx, { kind: 'cte', name: cteName });
+
+        const cteOutNode = findNode(ctx, cteOutputId);
+        if (cteOutNode && cteOutNode.type === 'resultNode') {
+          // отдельной карточки-обёртки нет — на CTE ссылаются прямо от «Projection» его блока
+          if (!cteFramed) cteOutNode.data.title = `CTE · ${cteName}`;
+          const tags = [cte.recursive ? 'RECURSIVE' : '', cte.materialized || ''].filter(Boolean);
+          if (tags.length > 0) cteOutNode.data.tags = tags;
+          ctx.cteOutputIds[cteName.toLowerCase()] = cteOutputId;
+        } else {
+          const cteWrapId = `${prefix}cte_wrap_${cteName}`;
+          const wrapTags = [cte.recursive ? 'RECURSIVE' : '', cte.materialized || ''].filter(Boolean);
+          ctx.nodes.push({
+            id: cteWrapId, type: 'tableNode',
+            data: { label: cteName, title: 'CTE (With Statement)', isSubquery: true, ...(wrapTags.length > 0 ? { tags: wrapTags } : {}) }, position: { x: 0, y: 0 }
+          });
+
+          addEdge(ctx, cteOutputId, cteWrapId, 'defines CTE');
+
+          ctx.cteOutputIds[cteName.toLowerCase()] = cteWrapId;
+        }
       }
     });
   }
@@ -1658,16 +1993,46 @@ function buildDataPipeline(ast: any, prefix: string, dialect: string, ctx: Graph
 
   // 3. DML / Procedures
   if (['insert', 'update', 'delete', 'merge', 'truncate', 'refresh_view'].includes(queryType)) {
-    const targetTables = ast.table ? (Array.isArray(ast.table) ? ast.table : [ast.table]) : [{ table: 'TARGET_TABLE' }];
+    const opName = String(queryType || '').toUpperCase();
+    // реальный разбор DELETE кладёт целевую таблицу в from, а не в table
+    const rawTargets = ast.table ? (Array.isArray(ast.table) ? ast.table : [ast.table])
+      : (queryType === 'delete' && Array.isArray(ast.from) && ast.from.length > 0 ? ast.from.slice(0, 1) : [{ table: 'TARGET_TABLE' }]);
     const targetIds: string[] = [];
-    
-    targetTables.forEach((t: any, tIdx: number) => {
+
+    rawTargets.forEach((t: any, tIdx: number) => {
       const tId = `${prefix}target_${tIdx}`;
-      ctx.nodes.push({ id: tId, type: 'tableNode', data: { label: t.table || 'TARGET', title: `Target (${String(queryType || '').toUpperCase()})` }, position: { x: 0, y: 0 }});
+      const alias = t.as ? String(t.as) : undefined;
+      const tData: any = { label: t.table || 'TARGET', title: `Target (${opName})`, ...(alias ? { alias } : {}) };
+      // INSERT INTO t (a, b, c): список колонок показываем на карточке цели
+      if (queryType === 'insert' && tIdx === 0 && Array.isArray(ast.columns) && ast.columns.length > 0) {
+        tData.columns = ast.columns
+          .map((c: any) => (typeof c === 'string' ? c : String(c?.column?.expr?.value ?? c?.column ?? c?.name ?? formatExpr(c))))
+          .filter(Boolean)
+          .map((name: string) => ({ name }));
+      }
+      ctx.nodes.push({ id: tId, type: 'tableNode', data: tData, position: { x: 0, y: 0 }});
       targetIds.push(tId);
     });
 
     let currentInputId = targetIds[0];
+
+    // источники UPDATE ... FROM / DELETE ... USING / MERGE ... USING строим обычным конвейером SELECT * FROM …
+    const buildDmlSources = (sqlText: string | undefined, realFrom: any, where: any, pfx: string): string | null => {
+      let synthetic: any = null;
+      if (sqlText) {
+        synthetic = parseSingleSqlToAst(`SELECT * FROM ${sqlText}${where ? ` WHERE ${formatExpr(where)}` : ''}`, dialect).ast;
+      } else if (Array.isArray(realFrom) && realFrom.length > 0 && queryType !== 'delete') {
+        synthetic = { type: 'select', ctes: [], columns: '*', from: realFrom, prewhere: null, where: where || null,
+          start_with: null, connect_by: null, groupby: null, having: null, qualify: null, distinct: null, orderby: null, limit: null };
+      }
+      if (!synthetic || synthetic.type !== 'select') return null;
+      return buildDataPipeline(synthetic, pfx, dialect, ctx);
+    };
+    // служебная проекция «SELECT *» пуста: убираем её, стрелки источников идут прямо к получателю
+    const absorbSources = (srcId: string, destId: string) => {
+      ctx.edges.forEach((e: any) => { if (e.target === srcId) e.target = destId; });
+      ctx.nodes = ctx.nodes.filter((n: any) => n.id !== srcId);
+    };
 
     if (queryType === 'insert') {
       if (ast.values && (ast.values.type === 'select' || ast.values.type === 'union')) {
@@ -1679,28 +2044,64 @@ function buildDataPipeline(ast: any, prefix: string, dialect: string, ctx: Graph
         targetIds.forEach(tId => addEdge(ctx, srcId, tId, 'INSERT INTO'));
       }
     } else if (queryType === 'update' || queryType === 'delete') {
-       if (ast.where) {
+      const srcId = buildDmlSources(ast.fromSql, ast.from, ast.where, `${prefix}dml_src_`);
+      let setId = '';
+      if (queryType === 'update') {
+        const pairs: string[] = (Array.isArray(ast.set) ? ast.set : [])
+          .map((it: any) => `${typeof it.column === 'string' ? it.column : formatExpr(it.column)} = ${formatExpr(it.value)}`);
+        setId = `${prefix}update_action`;
+        ctx.nodes.push({ id: setId, type: 'filterNode', data: { title: 'SET', iconType: 'edit', condition: pairs.join(', '), ...(pairs.length > 0 ? { columns: pairs } : {}) }, position: { x: 0, y: 0 }});
+        pairs.forEach((pr, i) => processNestedQueries(pr, setId, `${prefix}set_${i}_`, dialect, ctx));
+      }
+
+      if (srcId) {
+        // WHERE уже учтён внутри конвейера источников; цель участвует как читаемая таблица
+        if (setId) {
+          targetIds.forEach(tId => addEdge(ctx, tId, setId, 'target rows'));
+          absorbSources(srcId, setId);
+          currentInputId = setId;
+        } else {
+          // DELETE … USING: источники и целевая таблица сходятся в карточке результата
+          const delId = `${prefix}dml_result`;
+          absorbSources(srcId, delId);
+          targetIds.forEach(tId => addEdge(ctx, tId, delId, 'target rows'));
+          currentInputId = '';
+        }
+      } else {
+        if (ast.where) {
           const filterId = `${prefix}dml_where`;
           const cond = formatExpr(ast.where);
-          const condColumns = splitConditions(cond); // Передача строк
-
+          const condColumns = splitConditions(cond);
           ctx.nodes.push({ id: filterId, type: 'filterNode', data: { title: 'WHERE', condition: cond, columns: condColumns }, position: { x: 0, y: 0 }});
           targetIds.forEach(tId => addEdge(ctx, tId, filterId, 'reads from'));
           processNestedQueries(cond, filterId, `${prefix}dml_`, dialect, ctx);
           currentInputId = filterId;
-          
-          if (queryType === 'update') {
-            const updateActionId = `${prefix}update_action`;
-            ctx.nodes.push({ id: updateActionId, type: 'filterNode', data: { title: 'SET', iconType: 'edit' }, position: { x: 0, y: 0 }});
-            addEdge(ctx, currentInputId, updateActionId);
-            currentInputId = updateActionId;
-          }
-       }
+        }
+        if (setId) { addEdge(ctx, currentInputId, setId); currentInputId = setId; }
+      }
+    } else if (queryType === 'merge' && Array.isArray(ast.whens)) {
+      const srcId = buildDmlSources(ast.usingSql, null, null, `${prefix}dml_src_`);
+      const onId = `${prefix}merge_on`;
+      const onText = String(ast.onText || '');
+      ctx.nodes.push({ id: onId, type: 'filterNode', data: { title: 'ON', condition: onText, columns: splitConditions(onText) }, position: { x: 0, y: 0 }});
+      targetIds.forEach(tId => addEdge(ctx, tId, onId, 'target'));
+      if (srcId) absorbSources(srcId, onId);
+
+      const whenId = `${prefix}merge_when`;
+      const lines = ast.whens.map((w: any) => `${w.head}${w.action ? ` → ${w.action}` : ''}`);
+      ctx.nodes.push({ id: whenId, type: 'filterNode', data: { title: 'WHEN', iconType: 'edit', condition: lines.join('; '), columns: lines }, position: { x: 0, y: 0 }});
+      addEdge(ctx, onId, whenId);
+      currentInputId = whenId;
     }
 
     const resId = `${prefix}dml_result`;
-    ctx.nodes.push({ id: resId, type: 'resultNode', data: { title: `Operation: ${String(queryType || '').toUpperCase()}` }, position: { x: 0, y: 0 }});
-    addEdge(ctx, currentInputId, resId);
+    const tLabel = rawTargets.map((t: any) => `${t.table || 'TARGET'}${t.as ? ` ${t.as}` : ''}`).join(', ');
+    const summary = queryType === 'insert' ? `INSERT INTO ${tLabel}${Array.isArray(ast.columns) && ast.columns.length > 0 ? ` (${ast.columns.length} cols)` : ''}`
+      : queryType === 'delete' ? `DELETE FROM ${tLabel}`
+      : queryType === 'merge' ? `MERGE INTO ${tLabel}`
+      : `${opName} ${tLabel}`;
+    ctx.nodes.push({ id: resId, type: 'resultNode', data: { title: `Operation: ${opName}`, columns: [{ name: summary }] }, position: { x: 0, y: 0 }});
+    if (currentInputId) addEdge(ctx, currentInputId, resId);
     return resId;
   }
 
@@ -1721,13 +2122,23 @@ function buildDataPipeline(ast: any, prefix: string, dialect: string, ctx: Graph
   
   // 4. MAIN SELECT PIPELINE
   let currentOutputId = '';
+  // алиас (или имя) источника -> id его карточки; по нему JOIN находит, к чему присоединён, а условия — свою карточку
+  const aliasNodes = new Map<string, string>();
+  let rootId = '';
+  // тексты, в которых ищутся колонки источников (alias.колонка)
+  const usedTexts: string[] = [];
+  // чипы для карточки «Projection» (GROUP BY, HAVING, QUALIFY, ORDER BY, LIMIT)
+  const resultChips: { kind: string; text: string }[] = [];
+  // LEFT JOIN-источники: если WHERE фильтрует только их, соединение фактически внутреннее
+  const leftJoins: { key: string; id: string }[] = [];
+  const whereTexts = [ast.prewhere, ast.where].filter(Boolean).map((w: any) => formatExpr(w));
 
-  // 4.1 FROM & JOINS
+  // 4.1 FROM & JOINS: JOIN — стрелка от присоединяемого источника к тому, к чему он присоединён (по алиасам из ON);
+  // без ON, с USING или с неизвестным алиасом — к первому источнику FROM
   if (ast.from && ast.from.length > 0) {
-    const fromIds: string[] = [];
-    
     ast.from.forEach((fromItem: any, idx: number) => {
       let srcId = '';
+      let aliasKey = '';
       
       let subqueryAst = null;
       if (fromItem.expr) {
@@ -1739,54 +2150,70 @@ function buildDataPipeline(ast: any, prefix: string, dialect: string, ctx: Graph
       }
       
       if (subqueryAst) {
-        srcId = buildDataPipeline(subqueryAst, `${prefix}from_${idx}_`, dialect, ctx);
+        srcId = buildBlock(subqueryAst, `${prefix}from_${idx}_`, dialect, ctx, { kind: 'derived', name: fromItem.as || '' }).out;
         const wrapperId = `${prefix}from_wrap_${idx}`;
         ctx.nodes.push({ id: wrapperId, type: 'tableNode', data: { label: fromItem.as || 'Subquery', isSubquery: true }, position: { x: 0, y: 0 }});
-        addEdge(ctx, srcId, wrapperId, 'derived table', { strokeDasharray: '4 4' });
+        // подписи нет: карточка-приёмник сама помечена «subquery»
+        addEdge(ctx, srcId, wrapperId);
         srcId = wrapperId;
+        aliasKey = fromItem.as ? String(fromItem.as) : '';
       } else {
         let tName = fromItem.table;
         if (tName && typeof tName === 'object' && tName.value) tName = tName.value;
-        tName = String(tName || 'UNKNOWN').replace(/^["'`]|["'`]$/g, '').trim();
+        // источник без имени таблицы (read_parquet('…'), file(…), numbers(10), unnest(…)) — показываем его текст как написан
+        if (!tName && fromItem.expr) tName = formatExpr(fromItem.expr);
+        tName = String(tName || 'UNKNOWN').replace(/^["'`]|["'`]$/g, '').replace(/`/g, '').trim();
+        aliasKey = fromItem.as ? String(fromItem.as) : tName;
         
         const cteId = ctx.cteOutputIds[tName.toLowerCase()];
         
         if (cteId) {
-          srcId = cteId;
+          // обращение к CTE — своя карточка: свой алиас и свои условия
+          srcId = `${prefix}ref_${idx}`;
+          ctx.nodes.push({ id: srcId, type: 'tableNode', data: { label: tName, alias: fromItem.as, title: 'CTE' }, position: { x: 0, y: 0 }});
+          addEdge(ctx, cteId, srcId, undefined, { stroke: '#6366f1' });
         } else {
           srcId = `${prefix}base_table_${idx}`;
-          ctx.nodes.push({ id: srcId, type: 'tableNode', data: { label: tName, alias: fromItem.as }, position: { x: 0, y: 0 }});
+          ctx.nodes.push({ id: srcId, type: 'tableNode', data: { label: tName, alias: fromItem.as, ...(fromItem.final ? { tags: ['FINAL'] } : {}) }, position: { x: 0, y: 0 }});
         }
       }
       
       if (idx === 0) {
-        fromIds.push(srcId);
         currentOutputId = srcId;
+        rootId = srcId;
       } else {
-        const joinId = `${prefix}join_${idx}`;
-        
         let joinTypeStr = fromItem.join ? String(fromItem.join).toUpperCase() : 'COMMA JOIN';
+        const usingCols = Array.isArray(fromItem.using) ? fromItem.using.map((u: any) => formatExpr(u)).join(', ') : '';
         
-        if (joinTypeStr === 'INNER JOIN' && !fromItem.on) {
+        if (joinTypeStr === 'INNER JOIN' && !fromItem.on && !usingCols) {
           joinTypeStr = 'COMMA JOIN';
         }
+        if (joinTypeStr === 'JOIN') joinTypeStr = 'INNER JOIN';
         
-        const conditionStr = fromItem.on ? formatExpr(fromItem.on) : 'NO CONDITION (CROSS)';
-        
-        ctx.nodes.push({ 
-          id: joinId, 
-          type: 'joinNode', 
-          data: { 
-            joinType: joinTypeStr, 
-            condition: conditionStr 
-          }, 
-          position: { x: 0, y: 0 }
-        });
-        
-        addEdge(ctx, currentOutputId, joinId, 'left');
-        addEdge(ctx, srcId, joinId, 'right');
-        currentOutputId = joinId;
+        const onText = fromItem.on ? formatExpr(fromItem.on) : (usingCols ? `USING (${usingCols})` : '');
+        let parentId = pickJoinParent(onText, [aliasKey], aliasNodes, rootId);
+        if (parentId === srcId) parentId = rootId;
+        if (parentId && parentId !== srcId) {
+          addEdge(
+            ctx, srcId, parentId,
+            joinEdgeLabel(joinTypeStr, onText),
+            { stroke: '#a855f7' },
+            { join: true, joinType: joinTypeStr, condition: onText }
+          );
+        }
+        if (onText) usedTexts.push(onText);
+        // соединение без условия: запятая / CROSS JOIN (ARRAY JOIN и LATERAL — не соединения в этом смысле)
+        if (!onText && !/ARRAY|LATERAL/.test(joinTypeStr) && (joinTypeStr === 'COMMA JOIN' || /\bCROSS\b/.test(joinTypeStr))) {
+          // старый стиль «FROM a, b WHERE a.id = b.id» — условие связи стоит в WHERE
+          const linkedInWhere = aliasKey && whereTexts.some(txt => {
+            const q = qualifiersIn(txt).map(x => x.toLowerCase());
+            return q.includes(aliasKey.toLowerCase()) && q.some(x => x !== aliasKey.toLowerCase() && aliasNodes.has(x));
+          });
+          if (!linkedInWhere) addWarning(ctx, srcId, WARN_CROSS_JOIN, aliasKey ? `${joinTypeStr} ${aliasKey}` : joinTypeStr);
+        }
+        if (/\bLEFT\b/.test(joinTypeStr) && !/ARRAY|ANTI|SEMI/.test(joinTypeStr) && aliasKey) leftJoins.push({ key: aliasKey.toLowerCase(), id: srcId });
       }
+      if (aliasKey) aliasNodes.set(aliasKey.toLowerCase(), srcId);
     });
   } else {
     currentOutputId = `${prefix}const_src`;
@@ -1801,7 +2228,25 @@ function buildDataPipeline(ast: any, prefix: string, dialect: string, ctx: Graph
       const condText = formatExpr(f.val);
       const condColumns = splitConditions(condText); // Передаем разбитый массив в свойство columns
       
-      // Тип остается filterNode, но передаются columns для вашего UI
+      if (rootId) {
+        // условие — чипы на карточке источника, чей алиас упомянут первым (без алиаса — на первом источнике FROM)
+        usedTexts.push(condText);
+        conditionChipTexts(condColumns, condText).forEach((chipText, pi) => {
+          const owner = firstKnownQualifier(chipText, aliasNodes)?.nodeId || rootId;
+          addChip(ctx, owner, f.t === 'PREWHERE' ? 'prewhere' : 'filter', chipText);
+          if (WINDOW_TEXT_RE.test(withoutLiterals(chipText))) addWarning(ctx, owner, WARN_WINDOW_IN_WHERE, chipText);
+          // условие только по правой таблице LEFT JOIN (кроме IS NULL — приём «нет пары» и COALESCE-подобных) делает соединение внутренним
+          const qs = qualifiersIn(withoutLiterals(chipText)).map(x => x.toLowerCase());
+          if (qs.length > 0 && !/\bIS\s+NULL\b|\bCOALESCE\b|\bIFNULL\b|\bNVL\b/i.test(chipText)) {
+            const lj = leftJoins.find(j => qs.every(q => q === j.key));
+            if (lj) addWarning(ctx, lj.id, WARN_LEFT_TO_INNER, chipText);
+          }
+          processNestedQueries(chipText, owner, `${prefix}${f.t}_p${pi}_`, dialect, ctx);
+        });
+        return;
+      }
+      
+      // Запрос без FROM: чипу не на чем держаться — условие остаётся узлом
       ctx.nodes.push({ id: fId, type: 'filterNode', data: { title: f.t, condition: condText, columns: condColumns }, position: { x: 0, y: 0 }});
       addEdge(ctx, currentOutputId, fId);
       processNestedQueries(condText, fId, `${prefix}${f.t}_`, dialect, ctx);
@@ -1812,63 +2257,80 @@ function buildDataPipeline(ast: any, prefix: string, dialect: string, ctx: Graph
   // 4.3 Hierarchical
   if (ast.start_with || ast.connect_by) {
     const hId = `${prefix}hierarchy`;
-    ctx.nodes.push({ id: hId, type: 'filterNode', data: { title: 'Hierarchical Query' }, position: { x: 0, y: 0 }});
+    const hierarchyParts = [
+      ast.start_with ? `START WITH ${formatExpr(ast.start_with)}` : '',
+      ast.connect_by ? `CONNECT BY ${formatExpr(ast.connect_by)}` : '',
+    ].filter(Boolean);
+    ctx.nodes.push({
+      id: hId, type: 'filterNode',
+      data: { title: 'Hierarchical Query', ...(hierarchyParts.length > 0 ? { condition: hierarchyParts.join(' '), columns: hierarchyParts.map(name => ({ name })) } : {}) },
+      position: { x: 0, y: 0 }
+    });
     addEdge(ctx, currentOutputId, hId);
     currentOutputId = hId;
   }
 
+  const resId = `${prefix}projection`;
+
   // 4.4 GROUP BY
-  if (ast.groupby && ast.groupby.length > 0) {
-    const gId = `${prefix}groupby`;
-    ctx.nodes.push({ id: gId, type: 'groupByNode', data: { columns: ast.groupby.map((c: any) => formatExpr(c)).join(', ') }, position: { x: 0, y: 0 }});
-    addEdge(ctx, currentOutputId, gId);
-    currentOutputId = gId;
+  // node-sql-parser 5.x отдаёт GROUP BY объектом { columns, modifiers }, встроенный разбор — массивом
+  const groupCols: any[] = Array.isArray(ast.groupby) ? ast.groupby : (Array.isArray(ast.groupby?.columns) ? ast.groupby.columns : []);
+  if (groupCols.length > 0) {
+    const groupText = groupCols.map((c: any) => formatExpr(c)).join(', ');
+    usedTexts.push(groupText);
+    resultChips.push({ kind: 'group', text: `GROUP BY ${groupText}` });
   }
 
   // 4.5 HAVING
   if (ast.having) {
-    const hId = `${prefix}having`;
     const condText = formatExpr(ast.having);
-    const condColumns = splitConditions(condText); // Передача строк
-
-    ctx.nodes.push({ id: hId, type: 'havingNode', data: { condition: condText, columns: condColumns }, position: { x: 0, y: 0 }});
-    addEdge(ctx, currentOutputId, hId);
-    processNestedQueries(condText, hId, `${prefix}having_`, dialect, ctx);
-    currentOutputId = hId;
+    usedTexts.push(condText);
+    conditionChipTexts(splitConditions(condText), condText).forEach((chipText, pi) => {
+      resultChips.push({ kind: 'having', text: `HAVING ${chipText}` });
+      processNestedQueries(chipText, resId, `${prefix}having_p${pi}_`, dialect, ctx);
+    });
   }
 
   // 4.5.1 QUALIFY (DuckDB / ClickHouse: фильтр по результату оконных функций)
   if (ast.qualify) {
-    const qId = `${prefix}qualify`;
     const condText = formatExpr(ast.qualify);
-    ctx.nodes.push({ id: qId, type: 'filterNode', data: { title: 'QUALIFY', condition: condText, columns: splitConditions(condText) }, position: { x: 0, y: 0 }});
-    addEdge(ctx, currentOutputId, qId);
-    processNestedQueries(condText, qId, `${prefix}qualify_`, dialect, ctx);
-    currentOutputId = qId;
+    usedTexts.push(condText);
+    resultChips.push({ kind: 'having', text: `QUALIFY ${condText}` });
+    processNestedQueries(condText, resId, `${prefix}qualify_`, dialect, ctx);
   }
 
   // 4.6 ORDER BY & LIMIT
-  if (ast.orderby && ctx.options.showSort !== false) {
-    const oId = `${prefix}orderby`;
-    ctx.nodes.push({ id: oId, type: 'sortNode', data: { details: ast.orderby.map((i: any) => `${formatExpr(i.expr)} ${i.type || 'ASC'}`).join(', ') }, position: { x: 0, y: 0 }});
-    addEdge(ctx, currentOutputId, oId);
-    currentOutputId = oId;
+  if (ast.orderby) {
+    const orderText = ast.orderby.map((i: any) => `${formatExpr(i.expr)} ${i.type || 'ASC'}`).join(', ');
+    usedTexts.push(orderText);
+    resultChips.push({ kind: 'order', text: `ORDER BY ${orderText}` });
   }
-  if (ast.limit && ctx.options.showLimit !== false) {
-    const lId = `${prefix}limit`;
+  // node-sql-parser для запроса без LIMIT отдаёт `limit: { value: [] }` — это не LIMIT 0
+  if (ast.limit && (!Array.isArray(ast.limit.value) || ast.limit.value.length > 0)) {
     const lVal = ast.limit.value?.[0]?.value || '0';
-    ctx.nodes.push({ id: lId, type: 'limitNode', data: { details: `Limit: ${lVal}` }, position: { x: 0, y: 0 }});
-    addEdge(ctx, currentOutputId, lId);
-    currentOutputId = lId;
+    const oVal = ast.limit.value?.[1]?.value;
+    const hasOffset = Array.isArray(ast.limit.value) && ast.limit.seperator !== ',' && oVal !== undefined && String(oVal) !== '0' && String(oVal) !== '';
+    resultChips.push({ kind: 'limit', text: ast.limit.raw ? String(ast.limit.raw) : `LIMIT ${lVal}${hasOffset ? ` OFFSET ${oVal}` : ''}` });
   }
 
   // 4.7 PROJECTION (SELECT Columns)
-  const resId = `${prefix}projection`;
-  const resultCols = ast.columns === '*' ? [{ name: '*' }] : (Array.isArray(ast.columns) ? ast.columns.map((col: any) => ({ name: formatExpr(col.expr), alias: col.as })) : [{ name: '*' }]);
+  const resultCols = ast.columns === '*' ? [{ name: '*' }] : (Array.isArray(ast.columns) ? ast.columns.map((col: any) => {
+    const name = formatExpr(col.expr);
+    // у колонки результата — метка источника (первый известный алиас в выражении)
+    const src = firstKnownQualifier(name, aliasNodes)?.alias;
+    usedTexts.push(name);
+    // оконная колонка: на карточке выделяется (полный текст с PARTITION BY / ORDER BY остаётся в имени)
+    const isWindow = /\bOVER\s*(\(|[A-Za-z_"`])/i.test(name.replace(/'(?:[^']|'')*'/g, "''"));
+    return { name, alias: col.as, ...(src ? { src } : {}), ...(isWindow ? { window: true } : {}) };
+  }) : [{ name: '*' }]);
   
   const distinctText = distinctLabel(ast.distinct);
   const projectionTitle = distinctText ? `Projection (${distinctText})` : 'Projection';
-  ctx.nodes.push({ id: resId, type: 'resultNode', data: { title: projectionTitle, columns: resultCols }, position: { x: 0, y: 0 }});
+  ctx.nodes.push({
+    id: resId, type: 'resultNode',
+    data: { title: projectionTitle, columns: resultCols, ...(resultChips.length > 0 ? { chips: resultChips } : {}) },
+    position: { x: 0, y: 0 }
+  });
   addEdge(ctx, currentOutputId, resId);
 
   if (Array.isArray(ast.columns)) {
@@ -1878,13 +2340,21 @@ function buildDataPipeline(ast: any, prefix: string, dialect: string, ctx: Graph
     });
   }
 
+  // колонки на карточках источников — те, что запрос упоминает как alias.колонка (схема не нужна)
+  if (aliasNodes.size > 0) {
+    columnsByAlias(usedTexts, aliasNodes).forEach((list, nodeId) => {
+      const node = findNode(ctx, nodeId);
+      if (node && node.type === 'tableNode') node.data.columns = list;
+    });
+  }
+
   return resId;
 }
 
 /**
  * Текст для заголовка проекции: 'DISTINCT' / 'DISTINCT ON (выражение)' или null.
  * node-sql-parser для запроса без DISTINCT может вернуть не null, а объект `{ type: null }` —
- * такой объект DISTINCT не означает (раньше из-за него подпись появлялась у любого SELECT).
+ * такой объект DISTINCT не означает.
  */
 export function distinctLabel(d: any): string | null {
   if (!d) return null;
@@ -1899,7 +2369,7 @@ export function astToGraph(
   prefix = 'main_',
   dialect = 'PostgreSQL',
   cteTableNodeIds: Record<string, string> = {},
-  options: { showSort?: boolean; showLimit?: boolean; collapsedQueries?: Set<string>; onToggleExpand?: (id: string) => void } = { showSort: true, showLimit: true }
+  options: { collapsedQueries?: Set<string>; onToggleExpand?: (id: string) => void } = {}
 ): { nodes: GraphNode[]; edges: GraphEdge[]; outputId: string } {
   
   const ctx: GraphContext = { nodes: [], edges: [], cteOutputIds: { ...cteTableNodeIds }, options };
@@ -1924,11 +2394,11 @@ export function astToGraph(
         });
         lastId = qId;
       } else {
-        // Запросы файла независимы: между ними нет рёбер (раньше «Next» выдумывал связь и тянул подсветку lineage
-        // из одного запроса в другой); раскладка ставит блоки запросов друг под другом (getLayoutedElements).
+        // Запросы файла независимы: между ними нет рёбер (иначе подсветка lineage тянулась бы из одного запроса в другой); раскладка ставит блоки запросов друг под другом (getLayoutedElements).
         // CTE живёт только внутри своего запроса: не переносим их в следующие запросы файла
         ctx.cteOutputIds = { ...cteTableNodeIds };
         const outId = buildDataPipeline(qAst, `${prefix}q${qIdx}_`, dialect, ctx);
+        markFinal(ctx, outId);
         
         const collapseId = `${qId}_collapse`;
         ctx.nodes.push({
@@ -1944,6 +2414,7 @@ export function astToGraph(
         lastId = outId || collapseId;
       }
     });
+    appendFrameNodes(ctx);
     return { nodes: ctx.nodes, edges: ctx.edges, outputId: lastId };
   }
 
@@ -1956,6 +2427,7 @@ export function astToGraph(
         if (step.parsedQuery) {
            ctx.cteOutputIds = { ...cteTableNodeIds };
            const stepOut = buildDataPipeline(step.parsedQuery, `${prefix}pstep_${sIdx}_`, dialect, ctx);
+           markFinal(ctx, stepOut);
            addEdge(ctx, lastStepId, stepOut, 'executes');
            lastStepId = stepOut;
         } else {
@@ -1966,12 +2438,14 @@ export function astToGraph(
         }
      });
 
+     appendFrameNodes(ctx);
      const cleanNodes = ctx.nodes.map(n => {
        const data = n.data || {};
        return {
          id: n.id,
          type: n.type,
          position: n.position || { x: 0, y: 0 },
+         ...(n.zIndex !== undefined ? { zIndex: n.zIndex } : {}),
          data: {
            label: data.label,
            title: data.title,
@@ -1985,7 +2459,15 @@ export function astToGraph(
            queryId: data.queryId,
            isSubquery: data.isSubquery,
            subqueryTables: data.subqueryTables,
-           onToggle: data.onToggle
+           onToggle: data.onToggle,
+           chips: data.chips,
+           final: data.final,
+           tags: data.tags,
+           warnings: data.warnings,
+           kind: data.kind,
+           name: data.name,
+           members: data.members,
+           parentFrame: data.parentFrame
          }
        };
      });
@@ -1997,13 +2479,16 @@ export function astToGraph(
        label: e.label,
        type: e.type,
        animated: e.animated,
-       style: e.style
+       style: e.style,
+       ...(e.data ? { data: e.data } : {})
      }));
 
      return { nodes: cleanNodes, edges: cleanEdges, outputId: lastStepId };
   }
 
   const finalId = buildDataPipeline(ast, prefix, dialect, ctx);
+  markFinal(ctx, finalId);
+  appendFrameNodes(ctx);
 
   const cleanNodes = ctx.nodes.map(n => {
     const data = n.data || {};
@@ -2011,6 +2496,7 @@ export function astToGraph(
       id: n.id,
       type: n.type,
       position: n.position || { x: 0, y: 0 },
+      ...(n.zIndex !== undefined ? { zIndex: n.zIndex } : {}),
       data: {
         label: data.label,
         title: data.title,
@@ -2024,7 +2510,15 @@ export function astToGraph(
         queryId: data.queryId,
         isSubquery: data.isSubquery,
         subqueryTables: data.subqueryTables,
-        onToggle: data.onToggle
+        onToggle: data.onToggle,
+        chips: data.chips,
+           final: data.final,
+           tags: data.tags,
+           warnings: data.warnings,
+        kind: data.kind,
+        name: data.name,
+        members: data.members,
+        parentFrame: data.parentFrame
       }
     };
   });
@@ -2036,66 +2530,24 @@ export function astToGraph(
     label: e.label,
     type: e.type,
     animated: e.animated,
-    style: e.style
+    style: e.style,
+    ...(e.data ? { data: e.data } : {})
   }));
 
   return { nodes: cleanNodes, edges: cleanEdges, outputId: finalId };
 }
 
-// Dagre layout cache to prevent recalculations when topology hasn't changed
-const layoutPositionCache = new Map<string, Record<string, { x: number; y: number }>>();
-const MAX_LAYOUT_CACHE_SIZE = 50;
-
+/**
+ * Раскладка графа: составной dagre (рамки — кластеры) и ортогональные маршруты стрелок (treeLayout.ts).
+ * Файл из нескольких запросов раскладывается по блокам: каждый запрос отдельно.
+ */
 export function getLayoutedElements(nodes: GraphNode[], edges: GraphEdge[], direction = 'LR') {
   const isHorizontal = direction === 'LR';
+  const layoutBlockTree = (blockNodes: GraphNode[], blockEdges: GraphEdge[]) =>
+    layoutTreeBlock(blockNodes, blockEdges, direction === 'TB' ? 'TB' : 'LR', n => getNodeDimensions(n));
 
-  // Build topology key based on node IDs, types, edges, and direction
-  const nodeKey = nodes.map(n => `${n.id}:${n.type}`).join('|');
-  const edgeKey = edges.map(e => `${e.source}->${e.target}`).join('|');
-  const topologyKey = `${direction}_${nodeKey}_${edgeKey}`;
-
-  const cachedPositions = layoutPositionCache.get(topologyKey);
-
-  if (cachedPositions) {
-    const newNodes = nodes.map((node) => {
-      const pos = cachedPositions[node.id] || node.position || { x: 0, y: 0 };
-      return {
-        ...node,
-        targetPosition: isHorizontal ? 'left' as const : 'top' as const,
-        sourcePosition: isHorizontal ? 'right' as const : 'bottom' as const,
-        position: pos
-      };
-    });
-    return { nodes: newNodes, edges };
-  }
-  
-  // Раскладка одного связного блока: центры узлов по dagre, возвращает левый верхний угол каждого узла
-  const layoutBlock = (blockNodes: GraphNode[], blockEdges: GraphEdge[]) => {
-    const dagreGraph = new dagre.graphlib.Graph();
-    dagreGraph.setDefaultEdgeLabel(() => ({}));
-    dagreGraph.setGraph({
-      rankdir: direction,
-      nodesep: 30,
-      ranksep: 80,
-      ranker: 'tight-tree'
-    });
-    blockNodes.forEach((node) => {
-      const { width, height } = getNodeDimensions(node);
-      dagreGraph.setNode(node.id, { width, height });
-    });
-    blockEdges.forEach((edge) => {
-      dagreGraph.setEdge(edge.source, edge.target);
-    });
-    dagre.layout(dagreGraph);
-    const out: Record<string, { x: number; y: number }> = {};
-    blockNodes.forEach((node) => {
-      const p = dagreGraph.node(node.id);
-      if (!p) return;
-      const { width, height } = getNodeDimensions(node);
-      out[node.id] = { x: p.x - width / 2, y: p.y - height / 2 };
-    });
-    return out;
-  };
+  const treeRoutes = new Map<string, RoutedEdge>();
+  const treeFrames: Record<string, { x: number; y: number; width: number; height: number }> = {};
 
   // Файл из нескольких запросов (есть узлы-заголовки запросов): каждый запрос раскладывается отдельно,
   // при LR блоки идут друг под другом (общий левый край), при TB — друг за другом вправо (общий верхний край).
@@ -2114,7 +2566,6 @@ export function getLayoutedElements(nodes: GraphNode[], edges: GraphEdge[], dire
       if (!blocks.has(k)) blocks.set(k, []);
       blocks.get(k)!.push(n);
     }
-    // LR: блоки друг под другом (общий левый край). TB: блоки друг за другом вправо (общий верхний край).
     let cursorY = 0;
     let cursorX = 0;
     for (const k of [...blocks.keys()].sort((a, b) => a - b)) {
@@ -2123,9 +2574,12 @@ export function getLayoutedElements(nodes: GraphNode[], edges: GraphEdge[], dire
       const headers = allBlockNodes.filter(n => n.type === 'collapseNode');
       const blockNodes = allBlockNodes.filter(n => n.type !== 'collapseNode');
       const ids = new Set(blockNodes.map(n => n.id));
-      const pos = layoutBlock(blockNodes, edges.filter(e => ids.has(e.source) && ids.has(e.target)));
+      const blockEdges = edges.filter(e => ids.has(e.source) && ids.has(e.target));
+      const treeLay = layoutBlockTree(blockNodes, blockEdges);
+      const pos = treeLay.positions;
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
       for (const n of blockNodes) {
+        if (n.type === 'frameNode') continue;
         const p = pos[n.id];
         if (!p) continue;
         const d = getNodeDimensions(n);
@@ -2133,6 +2587,13 @@ export function getLayoutedElements(nodes: GraphNode[], edges: GraphEdge[], dire
         minY = Math.min(minY, p.y);
         maxX = Math.max(maxX, p.x + d.width);
         maxY = Math.max(maxY, p.y + d.height);
+      }
+      // рамки выступают за карточки: учитываем их в границах блока
+      for (const r of Object.values(treeLay.frames)) {
+        minX = Math.min(minX, r.x);
+        minY = Math.min(minY, r.y);
+        maxX = Math.max(maxX, r.x + r.width);
+        maxY = Math.max(maxY, r.y + r.height);
       }
       if (!Number.isFinite(minX)) continue;
       const HEADER_GAP = 12;
@@ -2146,33 +2607,56 @@ export function getLayoutedElements(nodes: GraphNode[], edges: GraphEdge[], dire
         headerH += hd.height + HEADER_GAP;
         headerW = Math.max(headerW, hd.width);
       }
+      const dx = baseX - minX;
+      const dy = baseY + headerH - minY;
       for (const n of blockNodes) {
         const p = pos[n.id];
-        if (p) newPositions[n.id] = { x: p.x - minX + baseX, y: p.y - minY + baseY + headerH };
+        if (p) newPositions[n.id] = { x: p.x + dx, y: p.y + dy };
       }
+      for (const [fid, r] of Object.entries(treeLay.frames)) treeFrames[fid] = { ...r, x: r.x + dx, y: r.y + dy };
+      for (const [eid, route] of treeLay.routes) treeRoutes.set(eid, shiftRoute(route, dx, dy));
       if (isHorizontal) cursorY += headerH + (maxY - minY) + QUERY_GAP;
       else cursorX += Math.max(headerW, maxX - minX) + QUERY_GAP;
     }
   } else {
-    Object.assign(newPositions, layoutBlock(nodes, edges));
+    const treeLay = layoutBlockTree(nodes, edges);
+    Object.assign(newPositions, treeLay.positions);
+    Object.assign(treeFrames, treeLay.frames);
+    for (const [eid, route] of treeLay.routes) treeRoutes.set(eid, route);
   }
 
-  const newNodes = nodes.map((node) => {
+  const newNodes: any[] = [];
+  for (const node of nodes) {
+    if (node.type === 'frameNode') {
+      const r = treeFrames[node.id];
+      if (!r) continue; // пустая рамка не рисуется
+      newNodes.push({
+        ...node,
+        position: { x: r.x, y: r.y },
+        data: { ...node.data, width: r.width, height: r.height },
+        zIndex: -1,
+        selectable: false,
+        draggable: false,
+        focusable: false,
+      });
+      continue;
+    }
     const pos = newPositions[node.id];
-    if (!pos) return node;
-    return {
+    if (!pos) { newNodes.push(node); continue; }
+    newNodes.push({
       ...node,
       targetPosition: isHorizontal ? 'left' as const : 'top' as const,
       sourcePosition: isHorizontal ? 'right' as const : 'bottom' as const,
       position: pos,
-    };
-  });
-
-  if (layoutPositionCache.size >= MAX_LAYOUT_CACHE_SIZE) {
-    const firstKey = layoutPositionCache.keys().next().value;
-    if (firstKey) layoutPositionCache.delete(firstKey);
+      // стрелки сами выбирают точки на сторонах карточки: точки подключения прячутся (см. index.css)
+      className: 'tree-node',
+    });
   }
-  layoutPositionCache.set(topologyKey, newPositions);
 
-  return { nodes: newNodes, edges };
+  const newEdges = edges.map(e => ({
+    ...e,
+    type: 'mermaidEdge',
+    data: { ...(e.data || {}), route: treeRoutes.get(e.id) },
+  }));
+  return { nodes: newNodes, edges: newEdges };
 }

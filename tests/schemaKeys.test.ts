@@ -19,7 +19,7 @@ describe('buildSchemaDbKey', () => {
 });
 
 describe('buildTableColumnsKey', () => {
-  it('одинаковое имя таблицы в DuckDB и ClickHouse — разные ключи (A-07)', () => {
+  it('одинаковое имя таблицы в DuckDB и ClickHouse — разные ключи', () => {
     const duck = buildTableColumnsKey('duckdb', 'default', 'default', 'events');
     const ch = buildTableColumnsKey('clickhouse', 'default', 'default', 'events');
     expect(duck).not.toBe(ch);

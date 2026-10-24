@@ -1,5 +1,4 @@
-// Текстовые форматы экспорта графа (json / xml / drawio / mermaid). Чистые функции без DOM:
-// вынесено из graphExport.ts без изменения логики, чтобы покрывать тестами.
+// Текстовые форматы экспорта графа (json / xml / drawio / mermaid). Чистые функции без DOM.
 
 import { getNodeDimensions } from './graphNodeSize';
 
@@ -13,10 +12,6 @@ const DRAWIO_COLORS: Record<string, { fill: string; stroke: string }> = {
   tableNode: { fill: '#eff6ff', stroke: '#3b82f6' },
   joinNode: { fill: '#faf5ff', stroke: '#a855f7' },
   filterNode: { fill: '#fff7ed', stroke: '#f97316' },
-  groupByNode: { fill: '#fdf2f8', stroke: '#ec4899' },
-  havingNode: { fill: '#fff1f2', stroke: '#f43f5e' },
-  sortNode: { fill: '#f0fdfa', stroke: '#14b8a6' },
-  limitNode: { fill: '#ecfeff', stroke: '#06b6d4' },
   resultNode: { fill: '#ecfdf5', stroke: '#10b981' },
   queryGroupNode: { fill: '#eef2ff', stroke: '#6366f1' },
 };
@@ -75,8 +70,10 @@ export interface GraphTextExportResult {
 /** Строит текстовое представление графа (json/xml/drawio/mermaid). Без побочных эффектов. */
 export function buildGraphTextExport(
   format: GraphTextFormat,
-  { nodes, edges, dialect, direction, sql }: GraphTextExportInput
+  { nodes: allNodes, edges, dialect, direction, sql }: GraphTextExportInput
 ): GraphTextExportResult {
+  // рамки CTE/подзапросов — оформление экрана, не данные графа
+  const nodes = allNodes.filter((n: any) => n?.type !== 'frameNode');
   let content = '';
   let filename = '';
   let mimeType = 'text/plain;charset=utf-8';

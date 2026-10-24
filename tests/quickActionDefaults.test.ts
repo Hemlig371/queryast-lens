@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { DEFAULT_QUICK_ACTIONS } from '../src/utils/quickActionTemplates';
 import { buildQuickActionSource } from '../src/lib/sqlUtils';
 
-// F-25: «Структура таблицы» после запроса падала: `DESCRIBE (…) AS _sub` недопустим в DuckDB.
+// «Структура таблицы» после запроса падала: `DESCRIBE (…) AS _sub` недопустим в DuckDB.
 describe('шаблоны быстрых действий по умолчанию', () => {
   const describeTpl = DEFAULT_QUICK_ACTIONS.find((a) => a.id === 'qa-2')!.template;
 

@@ -7,7 +7,7 @@ import {
   buildDistinctSql,
 } from '../src/utils/columnActionsSql';
 
-// Копия прежнего шаблона из App.tsx (handleApplyTableGroupBy до шага 34) — эталон для одного столбца.
+// Эталонный шаблон GROUP BY для одного столбца.
 const legacyGroupBy = (colKey: string, baseFilteredSql: string) =>
   `SELECT "${colKey.replace(/"/g, '""')}", COUNT(*) AS count\nFROM (\n  ${baseFilteredSql}\n) AS _sub\nGROUP BY 1\nORDER BY 2 DESC`;
 

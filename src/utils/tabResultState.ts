@@ -1,4 +1,4 @@
-// Обновление записи результата вкладки (вынесено из updateEngineState, ветка «вкладка не активна»; п. 3.4, B-08).
+// Обновление записи результата вкладки (ветка updateEngineState «вкладка не активна»).
 import type { TabResultData } from './resultStorage';
 
 export interface EngineUpdates {
@@ -6,7 +6,7 @@ export interface EngineUpdates {
   error?: string | null;
   duration?: string | null;
   colTypes?: any;
-  /** Порядок столбцов результата (п. 3.2). Относится к results: пришли результаты без columns — прежний порядок сбрасывается. */
+  /** Порядок столбцов результата. Относится к results: пришли результаты без columns — прежний порядок сбрасывается. */
   columns?: string[] | null;
 }
 

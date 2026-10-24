@@ -1,5 +1,4 @@
 // HTML-подсветка SQL для статических представлений (просмотр ячейки, превью сниппетов).
-// Вынесено из SqlEditor.tsx (сам редактор теперь на CodeMirror 6 и этим не пользуется).
 
 export const getBaseHighlight = (sqlText: string, theme: 'dark' | 'light') => {
   if (!sqlText) return '';

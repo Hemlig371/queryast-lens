@@ -82,8 +82,8 @@ The lower part of the "Schema and files" panel is `FileTreePanel.tsx`. The pure 
 ```
 SQL (selection or whole text)
   → parseSqlToAst            (astToGraph.ts: query splitting, node-sql-parser + heuristics)
-  → astToGraph               (nodes and edges: tables, CTEs, subqueries, JOIN, SELECT, Sort, Limit)
-  → getLayoutedElements      (dagre; LR or TB)
+  → astToGraph               (cards for sources (table, CTE, subquery) and the result; JOIN as labeled arrows; WHERE, GROUP BY, HAVING, ORDER BY, LIMIT as chips on cards; frames around CTEs and subqueries)
+  → getLayoutedElements      (dagre per block + orthogonal arrow routes: treeLayout.ts, edgePath.ts; LR or TB)
   → React Flow               (CustomNodes.tsx; lineage highlighting in App.tsx)
 ```
 
@@ -104,7 +104,7 @@ SQL (selection or whole text)
 
 ## 9. Excel
 
-`exportToExcel` (`excelExporter.ts`): settings → overrides from directives → sheets (splitting, column exclusion) → styling, grouping, totals → writing with `exceljs` → saving (`exportUtils.downloadFileWithFallback`: a dialog or a given path in Tauri, "Share" on Android, a download in the browser). See [EXCEL_DIRECTIVES_EN](./EXCEL_DIRECTIVES_EN.md) for details.
+`exportToExcel` (`excelExporter.ts`): settings → overrides from directives → sheets (splitting, column exclusion) → styling, grouping, totals → writing with `exceljs` → saving (`exportUtils.downloadFileWithFallback`: a dialog or a given path in Tauri, "Share" on Android, a download in the browser). With `@template` / `@template_values` (desktop) an existing `.xlsx` is read and filled at the `[[table]]` / `[[rows]]` marker instead (`excelTemplate.ts`). See [EXCEL_DIRECTIVES_EN](./EXCEL_DIRECTIVES_EN.md) for details.
 
 ## 10. Data storage
 

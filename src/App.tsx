@@ -65,6 +65,7 @@ import {
   FileCode,
   FileSpreadsheet,
   Workflow,
+  Contrast,
   History,
   ChevronUp,
   Folder,
@@ -147,8 +148,6 @@ export default function App() {
   const [dialect, setDialect] = useState<'PostgreSQL' | 'Oracle' | 'Clickhouse' | 'DuckDB' | ''>(() => (savedSession?.dialect as any) || 'PostgreSQL');
   const [direction, setDirection] = useState<'LR' | 'TB'>(() => savedSession?.direction || 'LR');
   const [activePresetId, setActivePresetId] = useState<string>(sqlPresets[0].id);
-  const [showSortNodes, setShowSortNodes] = useState<boolean>(false);
-  const [showLimitNodes, setShowLimitNodes] = useState<boolean>(false);
   const [isWrapSql, setIsWrapSql] = useState<boolean>(() => savedSession?.isWrapSql ?? isNarrowNow());
   const [isMaximizedSql, setIsMaximizedSql] = useState<boolean>(() => savedSession?.isMaximizedSql ?? true);
   
@@ -162,7 +161,7 @@ export default function App() {
   const [duckDbResults, setDuckDbResults] = useState<any[] | null>(null);
   const [queryExecutionDuration, setQueryExecutionDuration] = useState<string | null>(null);
   const [resultColumnTypes, setResultColumnTypes] = useState<Record<string, string>>({});
-  // Порядок столбцов результата (п. 3.2): объект строки не хранит порядок числовых имён; null — брать ключи первой строки
+  // Порядок столбцов результата: объект строки не хранит порядок числовых имён; null — брать ключи первой строки
   const [resultColumns, setResultColumns] = useState<string[] | null>(null);
   const [duckDbError, setDuckDbError] = useState<string | null>(null);
   const [runningTabId, setRunningTabId] = useState<string | null>(null);
@@ -870,6 +869,17 @@ export default function App() {
   const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
   const [showHistoryModal, setShowHistoryModal] = useState<boolean>(false);
   const [lineageHighlightMode, setLineageHighlightMode] = useState<boolean>(false);
+  // Монохромный граф (оттенки серого); запоминается в браузере
+  const [monochrome, setMonochrome] = useState<boolean>(() => {
+    try { return localStorage.getItem('graphMonochrome') === '1'; } catch { return false; }
+  });
+  const toggleMonochrome = () => {
+    setMonochrome((prev: boolean) => {
+      const next = !prev;
+      try { localStorage.setItem('graphMonochrome', next ? '1' : '0'); } catch { /* хранилище недоступно */ }
+      return next;
+    });
+  };
   const [hotkeys, setHotkeys] = useState<Record<string, string>>(() => getSavedHotkeys());
   const [formatterSettings, setFormatterSettings] = useState<FormatterSettings>(() => getSavedFormatterSettings());
   const [uiVisibility, setUiVisibility] = useState<UiVisibilitySettings>(() => getSavedUiVisibilitySettings());
@@ -919,7 +929,7 @@ export default function App() {
     [duckDbResults, resultColumns]
   );
 
-  // Подсветка столбца: при мультивыборе — по списку, иначе как раньше — по выбранной ячейке/столбцу.
+  // Подсветка столбца: при мультивыборе — по списку, иначе — по выбранной ячейке/столбцу.
   const isColHighlighted = (colKey: string) =>
     multiSelectedCols.length > 0 ? multiSelectedCols.includes(colKey) : selectedResultCell?.colKey === colKey;
 
@@ -964,7 +974,7 @@ export default function App() {
   ) => {
     e.preventDefault();
     e.stopPropagation();
-    // ПКМ внутри мультивыбора сохраняет его; вне его — выбор сводится к одному столбцу, как раньше.
+    // ПКМ внутри мультивыбора сохраняет его; вне его — выбор сводится к одному столбцу.
     if (!(multiSelectedCols.length >= 2 && multiSelectedCols.includes(colKey))) {
       setMultiSelectedCols([]);
       setSelectedResultCell({ rowIndex: -1, colKey });
@@ -1090,7 +1100,7 @@ export default function App() {
 
   const sqlRef = useRef<string>(tabs.find(t => t.id === activeTabId)?.sql || '');
   const isResultTableHoveredRef = useRef<boolean>(false);
-  // Запуск из действия над таблицей: версия истории не создаётся (п. E плана 32)
+  // Запуск из действия над таблицей: версия истории не создаётся
   const isTableActionRunRef = useRef<boolean>(false);
 
   useLayoutEffect(() => {
@@ -1446,7 +1456,7 @@ export default function App() {
       setIsDuckDbRunning(true);
       try {
         // В десктопе (Tauri) локальный Express-сервер не используется: не опрашиваем чужие порты.
-        // Конфигурация DuckDB передаётся и в запасном пути (раньше терялась).
+        // Конфигурация DuckDB передаётся и в запасном пути.
         const conn = await openDuckDbConnection(dbPath, { tryExpress: !isTauriEnv, allowWasm: true });
         setDuckDbConnectedPath(conn.path);
         setIsWasmMode(conn.wasm);
@@ -1454,7 +1464,7 @@ export default function App() {
         setShowDuckDbSchemaPanel(true);
       } catch (err: any) {
         console.warn("DuckDB auto-reconnect error:", err);
-        // сбой автопереподключения виден пользователю (раньше был только console.warn)
+        // сбой автопереподключения виден пользователю
         setDuckDbError(t("Не удалось переподключиться к DuckDB: ") + (err?.message || String(err)));
         setIsDuckDbResultVisible(true);
       } finally {
@@ -1600,7 +1610,7 @@ export default function App() {
     setShowDuckDbSchemaPanel(true);
   };
 
-  // ---- Подключение DuckDB (п. 3.7) ----
+  // ---- Подключение DuckDB ----
   // Состояние интерфейса (ClickHouse, движок, путь, результаты) меняется только после успешного подключения.
   // Если подключиться не удалось, прежнее подключение остаётся или открывается заново, а ошибка показывается.
   type DuckDbConn = { path: string; wasm: boolean };
@@ -2235,12 +2245,12 @@ export default function App() {
     }
   }, [uiVisibility.showDuckDbConfig, uiVisibility.showClickhouseConfig, duckDbConnectedPath, clickhouseConfig, activeEngine]);
 
-  // Учёт запусков: у каждого запуска свой AbortController; отменённый запуск считается устаревшим и не пишет результат (п. 3.3)
+  // Учёт запусков: у каждого запуска свой AbortController; отменённый запуск считается устаревшим и не пишет результат
   const runTrackerRef = useRef(createRunTracker());
-  // Следующий запуск инициирован кнопками листания страниц результата (п. 3.5)
+  // Следующий запуск инициирован кнопками листания страниц результата
   const isPagingRunRef = useRef<boolean>(false);
-  // Ошибка автоэкспорта в Excel (@excel_save) — отдельно от ошибки запроса, чтобы не подменять таблицу результата (п. 3.5)
-  // Режим, в котором скрипт запущен на странице 1 (по вкладкам): страницы ≥ 2 не должны заново выполнять подготовительные операторы (п. 3.1)
+  // Ошибка автоэкспорта в Excel (@excel_save) — отдельно от ошибки запроса, чтобы не подменять таблицу результата
+  // Режим, в котором скрипт запущен на странице 1 (по вкладкам): страницы ≥ 2 не должны заново выполнять подготовительные операторы
   const executionModeByTabRef = useRef<Record<string, ExecutionMode | undefined>>({});
 
   // Остановка запроса на стороне бэкенда (ClickHouse и/или встроенный DuckDB)
@@ -2343,7 +2353,7 @@ export default function App() {
           maybeAutoSelectFirstCell(updates.results, queryToExec);
 
           // Autonomous Excel export (only in Tauri, only for a real `@excel_save: path` directive in a block comment;
-          // not when paging through an already exported result, п. 3.5)
+          // not when paging through an already exported result)
           if (isTauriEnv && page === 1 && !opts?.skipAutoExport && hasExcelSaveDirective(queryToExec)) {
             (async () => {
               try {
@@ -2483,7 +2493,7 @@ export default function App() {
         return;
       }
 
-      // Запрос страницы: LIMIT/OFFSET у последнего оператора, подготовительные операторы — только на странице 1 (п. 3.1)
+      // Запрос страницы: LIMIT/OFFSET у последнего оператора, подготовительные операторы — только на странице 1
       const paged = buildPagedSql(finalQuery, { page, pageSize: maxRows, dialect: 'duckdb', mode: runMode });
       if (paged.skip) {
         finishRun();
@@ -2516,7 +2526,7 @@ export default function App() {
             sql: queryWithLimit
           });
           if (run.signal.aborted) throw new Error(t("Запрос отменен пользователем"));
-          // уникальные имена столбцов + отдельный порядок (п. 3.2): дубли `a, a` и числовые имена не теряются
+          // уникальные имена столбцов + отдельный порядок: дубли `a, a` и числовые имена не теряются
           const { rows: parsed, columns: parsedColumns } = rowsFromColumns(res?.columns || [], res?.rows || []);
           
           let finalColTypes = {};
@@ -2603,7 +2613,7 @@ export default function App() {
       return;
     }
 
-    // режим запуска и пропуск страницы ≥ 2 без листаемого запроса — как в executeDuckDbQueryWithPagination (п. 3.1)
+    // режим запуска и пропуск страницы ≥ 2 без листаемого запроса — как в executeDuckDbQueryWithPagination
     const runMode: ExecutionMode | undefined = executionMode ?? (page > 1 ? executionModeByTabRef.current[originTabId] : undefined);
     if (page > 1 && buildPagedSql(queryToExec, { page, pageSize: pageSizeToUse ?? effectiveMaxRows, dialect: 'clickhouse', mode: runMode }).skip) {
       return;
@@ -2688,7 +2698,7 @@ export default function App() {
         return;
       }
 
-      // Запрос страницы: LIMIT перед SETTINGS/FORMAT, подготовительные операторы — только на странице 1 (п. 3.1)
+      // Запрос страницы: LIMIT перед SETTINGS/FORMAT, подготовительные операторы — только на странице 1
       const paged = buildPagedSql(finalQuery, { page, pageSize: maxRows, dialect: 'clickhouse', mode: runMode });
       if (paged.skip) {
         finishRun();
@@ -2715,8 +2725,7 @@ export default function App() {
         .replace(/^(\s*(--[^\n]*\n|\/\*[\s\S]*?\*\/))*/g, '')
         .trim();
 
-      // Результат COPY записывается в исходную вкладку через updateEngineState (п. 3.4): раньше setDuckDbResults менял экран
-      // активной вкладки, а в хранилище вкладки результат не попадал
+      // Результат COPY записывается в исходную вкладку через updateEngineState (а не в экран активной вкладки)
       const finishCopy = (input: CopyResultInput) => {
         const rows = copyResultRows(input);
         updateRun({ results: rows, duration: ((performance.now() - queryStartTime) / 1000).toFixed(2), colTypes: {}, columns: Object.keys(rows[0]) });
@@ -2917,7 +2926,7 @@ export default function App() {
     }
   };
 
-  // Листание страниц результата: запрос выполняется заново, но автоэкспорт Excel (@excel_save) не повторяется (п. 3.5)
+  // Листание страниц результата: запрос выполняется заново, но автоэкспорт Excel (@excel_save) не повторяется
   const handleChangeResultPage = (newPage: number) => {
     if (isAnyQueryRunning) return;
     isPagingRunRef.current = true;
@@ -2975,7 +2984,7 @@ export default function App() {
   }, [extractedTableName]);
 
   // Служебные запросы статистики (SUMMARIZE, распределения, ATTACH/USE). Перед выполнением подставляются {{$переменные}} и секреты —
-  // как в основном запросе (п. 3.3); отмена и «выполняется» — общие с основным запросом через runTrackerRef.
+  // как в основном запросе; отмена и «выполняется» — общие с основным запросом через runTrackerRef.
   const handleExecuteRawQueryForStats = useCallback(async (sqlToRun: string): Promise<any[]> => {
     const executeRaw = async (sql: string, signal: AbortSignal): Promise<any[]> => {
       const isClickhouse = activeEngine === 'clickhouse' || (!duckDbConnectedPath && !!clickhouseConfig);
@@ -3008,7 +3017,7 @@ export default function App() {
       }
       if (isTauriEnvironment() && !isWasmMode) {
         const res = await tauriInvoke<{ columns: string[]; rows: any[][] }>('execute_query', { sql });
-        // одинаковые имена столбцов не должны терять значения (п. 3.2)
+        // одинаковые имена столбцов не должны терять значения
         return rowsFromColumns(res?.columns || [], res?.rows || []).rows;
       } else if (isWasmMode) {
         return await queryDuckDbWasm(sql);
@@ -3103,7 +3112,7 @@ export default function App() {
 
   const confirmCloseTab = (idToClose: string) => {
     if (idToClose === ACTION_MENU_TAB_ID) return;
-    // F-03: запрос закрываемой вкладки отменяется; без этого флаг «выполняется» оставался навсегда, а запрос — на бэкенде.
+    // запрос закрываемой вкладки отменяется; без этого флаг «выполняется» оставался навсегда, а запрос — на бэкенде.
     // Если идут запуски других вкладок, бэкенд не трогаем: отмена остановила бы и их.
     if (runTrackerRef.current.cancelScope(idToClose) > 0 && runTrackerRef.current.activeCount() === 0) {
       cancelBackendQueries();
@@ -3502,7 +3511,7 @@ export default function App() {
     }));
   };
 
-  // Ctrl+Enter / Ctrl+S / Ctrl+Shift+S обрабатываются только глобальным настраиваемым обработчиком ниже (п. 3.9, H-01)
+  // Ctrl+Enter / Ctrl+S / Ctrl+Shift+S обрабатываются только глобальным настраиваемым обработчиком ниже
 
 
 
@@ -3565,7 +3574,7 @@ export default function App() {
   }, [activeEngine]);
 
   
-  // Выбранный узел хранится как id; объект берётся из актуального списка узлов (п. 3.8)
+  // Выбранный узел хранится как id; объект берётся из актуального списка узлов
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const selectedNode = useMemo(() => findSelectedNode(nodes as any[], selectedNodeId) as any, [nodes, selectedNodeId]);
 
@@ -3620,7 +3629,7 @@ export default function App() {
     if (!lineageHighlightMode || !lineageNodeIds) return nodes;
     return nodes.map((n) => {
       // заголовок запроса («Query N» с кнопкой) не часть графа данных: не гасим его при подсветке lineage
-      const isLineage = lineageNodeIds.has(n.id) || n.type === 'collapseNode';
+      const isLineage = lineageNodeIds.has(n.id) || n.type === 'collapseNode' || n.type === 'frameNode';
       return {
         ...n,
         style: {
@@ -3644,7 +3653,7 @@ export default function App() {
           ...(e.style || {}),
           opacity: isLineageModeActive ? (isLineage ? 1 : 0.15) : 1,
           strokeWidth: isLineage ? 3 : 2,
-          stroke: isLineage ? '#3b82f6' : (e.style?.stroke || (theme === 'dark' ? '#f8fafc' : '#334155')),
+          stroke: isLineage ? '#3b82f6' : (e.style?.stroke || (theme === 'dark' ? '#f8fafc' : '#64748b')),
           transition: 'opacity 0.2s ease-in-out'
         }
       };
@@ -3901,7 +3910,7 @@ export default function App() {
         isResultTableHoveredRef: currentIsResultTableHoveredRef,
       } = hotkeysStateRef.current;
 
-      // Что вызывает это нажатие: сочетания только из настроек, не в полях ввода, при открытом окне — только Esc (п. 3.9)
+      // Что вызывает это нажатие: сочетания только из настроек, не в полях ввода, при открытом окне — только Esc
       const anyModalOpen = !!(currentShowSettingsModal || currentShowSnippetsModal || currentShowHistoryModal || currentShowClickhouseModal);
       const resolved = resolveHotkeyAction(e, currentHotkeys, {
         target: classifyHotkeyTarget(e.target as any),
@@ -4246,8 +4255,6 @@ export default function App() {
           dialect,
           {},
           {
-            showSort: showSortNodes,
-            showLimit: showLimitNodes,
             collapsedQueries,
             onToggleExpand: handleToggleExpand
           }
@@ -4256,7 +4263,7 @@ export default function App() {
         setNodes(layouted.nodes);
         setEdges(layouted.edges);
         
-        // Выбор сохраняется, если узел остался в новом графе; иначе — узел результата / первый (п. 3.8)
+        // Выбор сохраняется, если узел остался в новом графе; иначе — узел результата / первый
         setSelectedNodeId((prev: string | null) => reconcileSelectedNodeId(prev, layouted.nodes));
       } catch (err: any) {
         const errMsg = err.message || String(err);
@@ -4271,7 +4278,7 @@ export default function App() {
         setSelectedNodeId(null);
       }
     }
-  }, [astResult, dialect, direction, showSortNodes, showLimitNodes, collapsedQueries, handleToggleExpand, setNodes, setEdges]);
+  }, [astResult, dialect, direction, collapsedQueries, handleToggleExpand, setNodes, setEdges]);
 
   const handlePresetChange = (presetId: string) => {
     const preset = sqlPresets.find(p => p.id === presetId);
@@ -4280,14 +4287,6 @@ export default function App() {
       sqlRef.current = preset.sql; setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: preset.sql } : t));
       setDialect(preset.dialect);
     }
-  };
-
-  const handleSortToggle = () => {
-    setShowSortNodes(!showSortNodes);
-  };
-
-  const handleLimitToggle = () => {
-    setShowLimitNodes(!showLimitNodes);
   };
 
   const handleDirectionChange = (newDir: 'LR' | 'TB') => {
@@ -4522,7 +4521,7 @@ export default function App() {
     formatSqlText(text, dialect, formatterSettingsRef.current || formatterSettings);
 
   const handleFormatSql = async () => {
-    // «Отформатировано» показывается только после успешного форматирования (п. 3.17)
+    // «Отформатировано» показывается только после успешного форматирования
     const flashFormatted = () => {
       setIsFormatted(true);
       setTimeout(() => setIsFormatted(false), 1500);
@@ -4986,39 +4985,12 @@ export default function App() {
               </>
               )}
 
-              {(uiVisibility.showSortLimitToggle || uiVisibility.showLineageFocus) && (
               <>
                 <div className={`h-4 w-px ${theme === 'dark' ? 'bg-slate-600' : 'bg-slate-300'}`} />
 
                 <div className={`flex p-0.5 rounded-md border text-sm truncate ${
                   theme === 'dark' ? 'bg-slate-850 border-slate-600' : 'bg-slate-100 border-slate-300 shadow-sm'
                 }`}>
-                  {uiVisibility.showSortLimitToggle && (
-                  <>
-                    <button
-                      onClick={handleSortToggle}
-                      className={`px-2.5 py-1 rounded text-xs transition-all ${
-                        showSortNodes 
-                          ? 'bg-emerald-600 text-white font-bold' 
-                          : theme === 'dark' ? 'text-slate-300 hover:text-slate-100 font-normal' : 'text-slate-700 hover:text-slate-900 font-normal'
-                      }`}
-                      title="Toggle visualization of ORDER BY (Sort) nodes"
-                    >
-                      Sort Node
-                    </button>
-                    <button
-                      onClick={handleLimitToggle}
-                      className={`px-2.5 py-1 rounded text-xs transition-all ${
-                        showLimitNodes 
-                          ? 'bg-emerald-600 text-white font-bold' 
-                          : theme === 'dark' ? 'text-slate-300 hover:text-slate-100 font-normal' : 'text-slate-700 hover:text-slate-900 font-normal'
-                      }`}
-                      title="Toggle visualization of LIMIT / OFFSET nodes"
-                    >
-                      Limit Node
-                    </button>
-                  </>
-                  )}
                   {uiVisibility.showLineageFocus && (
                   <button
                     onClick={() => setLineageHighlightMode(!lineageHighlightMode)}
@@ -5033,9 +5005,20 @@ export default function App() {
                     <span>Focus</span>
                   </button>
                   )}
+                  <button
+                    onClick={toggleMonochrome}
+                    className={`px-2.5 py-1 rounded text-xs transition-all flex items-center gap-1 ${
+                      monochrome
+                        ? 'bg-slate-600 text-white font-bold shadow-xs'
+                        : theme === 'dark' ? 'text-slate-300 hover:text-slate-100 font-normal' : 'text-slate-700 hover:text-slate-900 font-normal'
+                    }`}
+                    title={t('Монохромный режим: граф в оттенках серого')}
+                  >
+                    <Contrast className="w-3 h-3" />
+                    <span>Monochrome</span>
+                  </button>
                 </div>
               </>
-              )}
             </div>
 
             {/* AST Preview toggle and Info labels */}
@@ -5342,7 +5325,7 @@ export default function App() {
                 fitViewOptions={{ padding: 0.2 }}
                 minZoom={0.2}
                 maxZoom={2}
-                className="sql-flow-canvas"
+                className={`sql-flow-canvas${monochrome ? ' graph-mono' : ''}`}
                 onlyRenderVisibleElements={!isExporting}
                 proOptions={{ hideAttribution: true }}
                 defaultEdgeOptions={{
@@ -5373,7 +5356,7 @@ export default function App() {
                       if (n.type === 'resultNode') return theme === 'dark' ? '#10b981' : '#059669';
                       if (n.type === 'filterNode') return theme === 'dark' ? '#f59e0b' : '#d97706';
                       if (n.type === 'mermaidNode' || n.type === 'mermaidEntityNode') return theme === 'dark' ? '#64748b' : '#94a3b8';
-                      if (n.type === 'mermaidGroupNode') return 'transparent';
+                      if (n.type === 'mermaidGroupNode' || n.type === 'frameNode') return 'transparent';
                       return theme === 'dark' ? '#475569' : '#94a3b8';
                     }}
                     maskColor={theme === 'dark' ? 'rgba(15, 23, 42, 0.7)' : 'rgba(226, 232, 240, 0.6)'}
@@ -5426,7 +5409,6 @@ export default function App() {
                       selectedNode.type === 'tableNode' ? 'bg-blue-500' :
                       selectedNode.type === 'joinNode' ? 'bg-purple-500' :
                       selectedNode.type === 'filterNode' ? 'bg-amber-500' :
-                      selectedNode.type === 'groupByNode' || selectedNode.type === 'havingNode' ? 'bg-pink-500' :
                       selectedNode.type === 'resultNode' ? 'bg-emerald-500' : 'bg-cyan-500'
                     }`} />
                     <h4 className={`text-sm font-bold ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>
@@ -5472,48 +5454,6 @@ export default function App() {
                         }`}>
                           <span className="text-amber-500 font-semibold">Condition:</span>{' '}
                           <code>{selectedNode.data.condition}</code>
-                        </div>
-                        
-                      </div>
-                    )}
-
-                    {selectedNode.type === 'groupByNode' && (
-                      <div>
-                        <div>
-                          <span className={theme === 'dark' ? 'text-slate-300' : 'text-slate-600'}>Grouping Columns:</span>{' '}
-                          <span className="text-pink-500 font-bold">{selectedNode.data.columns}</span>
-                        </div>
-                        
-                      </div>
-                    )}
-
-                    {selectedNode.type === 'havingNode' && (
-                      <div className="space-y-1">
-                        <div className={`p-2 rounded border ${
-                          theme === 'dark' ? 'bg-slate-850 border-slate-700 text-slate-200' : 'bg-slate-50 border-slate-200 text-slate-800'
-                        }`}>
-                          <span className="text-rose-500 font-semibold">HAVING Expression:</span>{' '}
-                          <code>{selectedNode.data.condition}</code>
-                        </div>
-                        
-                      </div>
-                    )}
-
-                    {selectedNode.type === 'sortNode' && (
-                      <div>
-                        <div>
-                          <span className={theme === 'dark' ? 'text-slate-300' : 'text-slate-600'}>Order By:</span>{' '}
-                          <span className="text-teal-500 font-bold">{selectedNode.data.details}</span>
-                        </div>
-                        
-                      </div>
-                    )}
-
-                    {selectedNode.type === 'limitNode' && (
-                      <div>
-                        <div>
-                          <span className={theme === 'dark' ? 'text-slate-300' : 'text-slate-600'}>Parameters:</span>{' '}
-                          <span className="text-cyan-500 font-bold">{selectedNode.data.details}</span>
                         </div>
                         
                       </div>
@@ -5803,7 +5743,7 @@ export default function App() {
                             <button
                               onClick={() => {
                                 setShowDuckDbConnMenu(false);
-                                // подключение меняется только по кнопке «Подключить» в окне (onConnect), отмена окна ничего не отключает (п. 3.7)
+                                // подключение меняется только по кнопке «Подключить» в окне (onConnect), отмена окна ничего не отключает
                                 setShowClickhouseModal(true);
                               }}
                               className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center gap-2 transition-colors ${

@@ -1,4 +1,4 @@
-// Приведение результата DuckDB-WASM к виду, который отдаёт Tauri (п. 3.14, WS-04).
+// Приведение результата DuckDB-WASM к виду, который отдаёт Tauri.
 //
 // В Tauri (main.rs, execute_query) значения такие: BIGINT/HUGEINT/UBIGINT — строка; DECIMAL — строка с масштабом;
 // DATE — `YYYY-MM-DD`; TIMESTAMP — `YYYY-MM-DD HH:MM:SS[.дробь]`; TIMESTAMPTZ — то же с суффиксом ` UTC`;

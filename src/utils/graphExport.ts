@@ -3,7 +3,7 @@ import { downloadFileWithFallback } from './exportUtils';
 import { safePixelRatio } from './canvasLimits';
 import { scopedHideScrollbarsCss } from './graphExportStyle';
 
-// Экспорт графа AST/Lineage. Вынесено из App.tsx (этап A2) без изменения логики.
+// Экспорт графа AST/Lineage.
 // Состояние (isExporting, error, меню) остаётся в App; здесь только работа с графом и DOM.
 
 export type GraphImageFormat = 'png' | 'svg' | 'jpeg';
@@ -99,7 +99,8 @@ export async function exportGraphImage(
   const styleEl = document.createElement('style');
   styleEl.id = 'export-hide-scrollbars-style';
   // только внутри графа: полосы прокрутки редактора и таблицы на время экспорта не пропадают
-  styleEl.textContent = scopedHideScrollbarsCss('.react-flow__viewport');
+  // точки подключения карточек в картинку не попадают (фильтр по классу не всегда срабатывает на полупрозрачных элементах)
+  styleEl.textContent = scopedHideScrollbarsCss('.react-flow__viewport') + '\n.react-flow__viewport .react-flow__handle { display: none !important; }';
   document.head.appendChild(styleEl);
   cleanupTasks.push(() => styleEl.remove());
 
@@ -163,6 +164,25 @@ export async function exportGraphImage(
       } else {
          pathEl.style.removeProperty('stroke-width');
       }
+    });
+  });
+
+  // 2.1 Наконечники стрелок (<polygon>, ER-засечки) красятся через currentColor — CSS страницы в картинку не переносится,
+  // и наконечник без своего цвета выходит прозрачным или чёрным на тёмном фоне. Берём цвет у линии той же стрелки.
+  viewportElement.querySelectorAll('.react-flow__edge').forEach((edgeEl) => {
+    const line = (edgeEl.querySelector('path.react-flow__edge-path') || edgeEl.querySelector('path')) as SVGElement | null;
+    const stroke = line?.getAttribute('stroke');
+    if (!stroke) return;
+    edgeEl.querySelectorAll('polygon').forEach((h) => {
+      const orig = h.getAttribute('fill');
+      h.setAttribute('fill', stroke);
+      cleanupTasks.push(() => { if (orig !== null) h.setAttribute('fill', orig); else h.removeAttribute('fill'); });
+    });
+    edgeEl.querySelectorAll('g path, g circle').forEach((h) => {
+      const orig = h.getAttribute('stroke');
+      if (orig && orig !== 'currentColor') return; // свой цвет у наконечника уже есть
+      h.setAttribute('stroke', stroke);
+      cleanupTasks.push(() => { if (orig !== null) h.setAttribute('stroke', orig); else h.removeAttribute('stroke'); });
     });
   });
 

@@ -3,9 +3,8 @@ import type { StringStream } from '@codemirror/language';
 import { Tag } from '@lezer/highlight';
 import type { Extension } from '@codemirror/state';
 
-// Токенизатор SQL для CodeMirror 6. Словари и правила повторяют прежнюю regex-подсветку
-// (utils/sqlHighlight.ts), но работают инкрементально: многострочные комментарии и строки
-// корректно переносятся между строками, без хаков с «чанками» и отключением подсветки на больших файлах.
+// Токенизатор SQL для CodeMirror 6. Словари и правила повторяют utils/sqlHighlight.ts, но токенизатор инкрементальный:
+// многострочные комментарии и строки корректно переносятся между строками.
 
 export const lensTags = {
   comment: Tag.define(),
@@ -34,7 +33,7 @@ const KEYWORD_WORDS = new Set((
   'MATCHED USING RETURNING LATERAL CONNECT PRIOR START FINAL UPSERT CONFLICT DO BEGIN TRANSACTION COMMIT ROLLBACK ABORT'
 ).split(' '));
 
-/** Классификация слова: engine > function/type > keyword (порядок как в прежней regex). */
+/** Классификация слова: engine > function/type > keyword (порядок как в utils/sqlHighlight.ts). */
 export const classifyWord = (word: string): 'engine' | 'fn' | 'keyword' | null => {
   const up = word.toUpperCase();
   if (ENGINE_WORDS.has(up)) return 'engine';
@@ -45,7 +44,7 @@ export const classifyWord = (word: string): 'engine' | 'fn' | 'keyword' | null =
 
 /** Переменные и секреты: {{$name}}, {{$name=значение}}, {{$имя с пробелами=значение}}, {{SECRET_NAME}}.
  *  Значение — цепочка взаимоисключающих односимвольных альтернатив: нет вложенных квантификаторов,
- *  поэтому незакрытая «{{$q=...» не вызывает экспоненциального отката (раньше висло на ~30+ символах). */
+ *  поэтому незакрытая «{{$q=...» не вызывает экспоненциального отката. */
 export const VARIABLE_PATTERN =
   "\\{\\{\\$[a-zA-Z0-9_\\u0400-\\u04FF]+(?: [a-zA-Z0-9_\\u0400-\\u04FF]+)*(?:=(?:[^}\\n]|\\}(?!\\}))*)?\\}\\}|\\{\\{[a-zA-Z0-9_]+\\}\\}";
 const VARIABLE_AT_START = new RegExp('^(?:' + VARIABLE_PATTERN + ')');
@@ -145,7 +144,7 @@ const sqlParser = {
 
     if (stream.match('$$')) {
       if (stream.string.indexOf('$$', stream.pos) >= 0) {
-        // закрывающая пара на этой же строке: однострочный литерал, строка как раньше
+        // закрывающая пара на этой же строке: однострочный литерал
         state.inDollar = true;
         return readDollarString(stream, state);
       }

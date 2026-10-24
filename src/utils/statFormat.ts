@@ -4,7 +4,7 @@ export type StatSortMode = 'alphabet' | 'desc' | 'asc';
 
 /**
  * Текст значения в карточках статистики. Форматируются только настоящие числа (`typeof number`):
- * строки вроде "00123", "0x10" или "12345678901234567890" остаются как есть (раньше приводились к Number и портились).
+ * строки вроде "00123", "0x10" или "12345678901234567890" остаются как есть.
  * Пусто / NaN → null.
  */
 export function formatStatVal(val: unknown, locale?: string): string | null {

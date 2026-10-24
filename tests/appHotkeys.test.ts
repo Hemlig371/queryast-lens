@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { resolveHotkeyAction, classifyHotkeyTarget, hotkeyHint, APP_HOTKEY_DEFAULTS, type HotkeyEventLike } from '../src/utils/appHotkeys';
 
-// п. 3.9 (H-01, H-02, H-04): одна точка разбора сочетаний, не перехватывать поля ввода и окна, подсказки из настроек.
+// одна точка разбора сочетаний, не перехватывать поля ввода и окна, подсказки из настроек.
 
 const ev = (over: Partial<HotkeyEventLike> = {}): HotkeyEventLike => ({
   key: '', code: '', ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, ...over,
@@ -31,7 +31,7 @@ describe('resolveHotkeyAction: сочетания по умолчанию', () =
   });
 });
 
-describe('H-01: переназначенное сочетание заменяет прежнее, а не дополняет', () => {
+describe('переназначенное сочетание заменяет прежнее, а не дополняет', () => {
   it('visualize переназначен на Alt+R: Ctrl+Enter больше ничего не делает, Alt+R срабатывает', () => {
     const hk = { visualize: 'Alt+R' };
     expect(resolveHotkeyAction(ctrl('Enter', 'Enter'), hk, ctx())).toBeNull();
@@ -47,7 +47,7 @@ describe('H-01: переназначенное сочетание заменяе
   });
 });
 
-describe('H-02: поля ввода и окна', () => {
+describe('поля ввода и окна', () => {
   it('в обычном поле ввода (input/textarea) сочетания приложения не перехватываются, включая Esc', () => {
     expect(resolveHotkeyAction(ctrl('/', 'Slash'), {}, ctx({ target: 'field' }))).toBeNull();
     expect(resolveHotkeyAction(ctrl('r', 'KeyR'), {}, ctx({ target: 'field' }))).toBeNull();
@@ -105,7 +105,7 @@ describe('classifyHotkeyTarget', () => {
   });
 });
 
-describe('H-04: подсказки берут сочетание из настроек', () => {
+describe('подсказки берут сочетание из настроек', () => {
   it('сочетание по умолчанию', () => {
     expect(hotkeyHint('Форматировать SQL', {}, 'formatSql')).toBe('Форматировать SQL (Ctrl+Shift+F)');
     expect(hotkeyHint('Обновить схему', {}, 'refreshSchema')).toBe('Обновить схему (Ctrl+R)');

@@ -8,7 +8,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('copyTextWith (CL-01)', () => {
+describe('copyTextWith', () => {
   it('веб-путь удался → true, текст передан как есть', async () => {
     const web = vi.fn(ok);
     expect(await copyTextWith('привет', { isTauri: false, tauriWrite: fail('не должен вызываться'), webWrite: web })).toBe(true);

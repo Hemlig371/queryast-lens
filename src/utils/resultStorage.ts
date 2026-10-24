@@ -31,7 +31,7 @@ export interface TabResultData {
   duckDbResults: any[] | null;
   queryExecutionDuration: string | null;
   resultColumnTypes: Record<string, string>;
-  /** Порядок столбцов результата (п. 3.2); нет в записях старых версий. */
+  /** Порядок столбцов результата; нет в записях старых версий. */
   resultColumns?: string[] | null;
   isDuckDbResultVisible: boolean;
   duckDbPage: number;

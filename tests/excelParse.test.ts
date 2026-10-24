@@ -51,7 +51,7 @@ describe('excelParse', () => {
     });
   });
 
-  // п. 2.19 (EP-01): короткое смещение часового пояса без минут
+  // короткое смещение часового пояса без минут
   describe('parseExcelDate: короткое смещение (+03)', () => {
     it('«+03» даёт валидную дату с учётом пояса', () => {
       const d = parseExcelDate('2024-05-01 10:00:00+03');
@@ -68,7 +68,7 @@ describe('excelParse', () => {
     });
   });
 
-  // п. 2.19 (E-02, XL-07): имя файла из @file
+  // имя файла из @file
   describe('sanitizeExportFileBase', () => {
     it('расширение .xlsx убирается (без двойного расширения)', () => {
       expect(sanitizeExportFileBase('отчёт.xlsx', 'report')).toBe('отчёт');

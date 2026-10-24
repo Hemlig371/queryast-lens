@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { resultRowsToTsv } from '../src/utils/resultTsv';
 
-// Копирование результата как TSV для Excel (кнопка «Копировать»). Формат не менялся (B-16 оставлен): null → `null`, без кавычек.
-// Первая группа — как было до п. 3.2 (имена столбцов из ключей первой строки); вторая — с явным списком columns.
+// Копирование результата как TSV для Excel (кнопка «Копировать»): null → `null`, без кавычек.
+// Первая группа — имена столбцов из ключей первой строки; вторая — с явным списком columns.
 
 const opts = { firstRowNumber: 1, fieldLabel: 'Field' };
 
@@ -26,7 +26,7 @@ describe('resultRowsToTsv: прежнее поведение', () => {
   });
 });
 
-describe('resultRowsToTsv: порядок из columns (п. 3.2)', () => {
+describe('resultRowsToTsv: порядок из columns', () => {
   const rows = [{ '1': 'y', '2': 'x', b: 'z' }];
 
   it('числовые имена идут в порядке выдачи, а не по возрастанию ключей', () => {

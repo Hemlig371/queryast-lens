@@ -7,7 +7,7 @@ import './index.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    {/* F-27: сбой отрисовки App показывает сообщение и кнопку перезапуска, а не белый экран. */}
+    {/* сбой отрисовки App показывает сообщение и кнопку перезапуска, а не белый экран. */}
     <ErrorBoundary
       title={t('Ошибка приложения')}
       theme={document.documentElement.classList.contains('dark') ? 'dark' : 'light'}

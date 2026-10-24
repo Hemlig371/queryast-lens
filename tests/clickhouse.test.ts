@@ -87,7 +87,7 @@ describe('clickhouse utils', () => {
     });
   });
 
-  // п. 2.20 (CK-02): хвост после пути файла
+  // хвост после пути файла
   describe('parseClickhouseCopy: хвостовой ; и комментарий', () => {
     it("COPY … TO 'x.csv'; -- готово распознаётся", () => {
       const r = parseClickhouseCopy("COPY (SELECT 1) TO 'x.csv'; -- готово");
@@ -110,7 +110,7 @@ describe('clickhouse utils', () => {
     });
   });
 
-  // п. 2.20 (CK-04): в URL остаётся единственный механизм default_format только как защита пустой строки параметров
+  // в URL остаётся единственный механизм default_format только как защита пустой строки параметров
   describe('getClickhouseUrl: default_format', () => {
     it('без БД и параметров ставится default_format=JSON (защита от маршрутизации на сайт)', () => {
       expect(getClickhouseUrl({ ...dummyConfig, database: '' })).toBe('https://example.com:8443/?default_format=JSON');
@@ -120,7 +120,7 @@ describe('clickhouse utils', () => {
     });
   });
 
-  // п. 2.20 (CK-03): не-JSON ответ на запрос с FORMAT JSON — ошибка
+  // не-JSON ответ на запрос с FORMAT JSON — ошибка
   describe('parseClickhouseResponse', () => {
     it('JSON с data и meta разбирается', () => {
       const r = parseClickhouseResponse('{"meta":[{"name":"a","type":"UInt8"}],"data":[{"a":1}]}', 'SELECT 1\nFORMAT JSON');

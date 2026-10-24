@@ -23,7 +23,7 @@ import { getResultColumns } from '../utils/resultRows';
 
 interface DataStatsViewerProps {
   data: Record<string, any>[];
-  /** Порядок столбцов результата (п. 3.2); для других данных (SUMMARIZE) игнорируется. */
+  /** Порядок столбцов результата; для других данных (SUMMARIZE) игнорируется. */
   columns?: string[] | null;
   theme: 'dark' | 'light';
   columnTypes?: Record<string, string>;

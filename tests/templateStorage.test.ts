@@ -67,7 +67,7 @@ describe('template storage (quick actions and autocomplete)', () => {
       expect(getQuickActionTemplates()).toEqual(saved);
     });
 
-    // Новое поведение (п. 1.12): сохранённый пустой список остаётся пустым
+    // Новое поведение: сохранённый пустой список остаётся пустым
     it('returns an empty list when an empty array is saved', () => {
       setStorage({ [QUICK_KEY]: '[]' });
       expect(getQuickActionTemplates()).toEqual([]);
@@ -105,7 +105,7 @@ describe('template storage (quick actions and autocomplete)', () => {
       expect(getCustomAutocompleteTemplates()).toEqual([{ id: 'c1', keyword: 'SEL' }]);
     });
 
-    // Новое поведение (п. 1.12): сохранённый пустой список остаётся пустым
+    // Новое поведение: сохранённый пустой список остаётся пустым
     it('returns an empty list when an empty array is saved', () => {
       setStorage({ [AUTOCOMPLETE_KEY]: '[]' });
       expect(getCustomAutocompleteTemplates()).toEqual([]);

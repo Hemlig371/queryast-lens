@@ -105,9 +105,10 @@ describe('astToGraph utils', () => {
       expect(distinctLabel({ type: 'DISTINCT ON', on: 'a, b' })).toBe('DISTINCT ON (a, b)');
     });
 
-    it('QUALIFY становится отдельным узлом-фильтром', () => {
+    it('QUALIFY становится чипом на карточке Projection', () => {
       const g = build('SELECT id, ROW_NUMBER() OVER (PARTITION BY g ORDER BY ts) rn FROM e QUALIFY rn = 1');
-      expect(titles(g)).toContain('QUALIFY');
+      const chips = g.nodes.flatMap((n: any) => n.data?.chips ?? []);
+      expect(chips.some((c: any) => /^QUALIFY /.test(c.text))).toBe(true);
       expect(labels(g)).toContain('e');
     });
 
@@ -118,7 +119,7 @@ describe('astToGraph utils', () => {
     });
   });
 
-  describe('CTE: RECURSIVE и [NOT] MATERIALIZED (D-06)', () => {
+  describe('CTE: RECURSIVE и [NOT] MATERIALIZED', () => {
     const cteNames = (sql: string) => (parseSqlToAst(sql, 'PostgreSQL').ast.ctes ?? []).map((c: any) => c.name);
     const graphIds = (sql: string) => {
       const r = parseSqlToAst(sql, 'PostgreSQL');
@@ -133,7 +134,7 @@ describe('astToGraph utils', () => {
     it('WITH RECURSIVE даёт CTE-узел', () => {
       const sql = 'WITH RECURSIVE r AS (SELECT 1 AS n FROM seed) SELECT * FROM r';
       expect(cteNames(sql)).toEqual(['r']);
-      expect(graphIds(sql).some(id => id.includes('cte_wrap_r'))).toBe(true);
+      expect(graphIds(sql).some(id => id.includes('cte_r_'))).toBe(true);
     });
 
     it('WITH RECURSIVE со списком столбцов и несколькими CTE', () => {
@@ -143,7 +144,7 @@ describe('astToGraph utils', () => {
     it('AS MATERIALIZED (...) даёт CTE-узел', () => {
       const sql = 'WITH m AS MATERIALIZED (SELECT 1 a FROM base1) SELECT * FROM m';
       expect(cteNames(sql)).toEqual(['m']);
-      expect(graphIds(sql).some(id => id.includes('cte_wrap_m'))).toBe(true);
+      expect(graphIds(sql).some(id => id.includes('cte_m_'))).toBe(true);
     });
 
     it('AS NOT MATERIALIZED (...) даёт CTE-узел', () => {
@@ -160,7 +161,7 @@ describe('astToGraph utils', () => {
     });
   });
 
-  describe('tokenizeSql: # (D-05)', () => {
+  describe('tokenizeSql: #', () => {
     const comments = (sql: string) => tokenizeSql(sql).filter(t => t.type === 'comment').map(t => t.value);
 
     it('# в начале слова — по-прежнему комментарий до конца строки (MySQL)', () => {
@@ -186,7 +187,7 @@ describe('astToGraph utils', () => {
   describe('несколько запросов в файле', () => {
     const build = (sql: string, collapsed?: Set<string>) => {
       const r = parseSqlToAst(sql, 'DuckDB');
-      return astToGraph(r.ast, 'main_', 'DuckDB', {}, { showSort: true, showLimit: true, collapsedQueries: collapsed });
+      return astToGraph(r.ast, 'main_', 'DuckDB', {}, { collapsedQueries: collapsed });
     };
     const inQuery = (id: string, i: number) => id.startsWith(`main_q${i}_`) || id === `main_q_${i}` || id.startsWith(`main_q_${i}_`);
 

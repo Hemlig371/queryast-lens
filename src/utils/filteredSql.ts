@@ -1,5 +1,5 @@
 // Построение SQL-обёртки с фильтрами/сортировкой для таблицы результатов.
-// Вынесено из App.tsx (этап A2) без изменения логики; activeEngine передаётся параметром.
+// activeEngine передаётся параметром.
 
 import { splitStatements } from './pagedSql';
 
@@ -13,7 +13,7 @@ export function generateFilteredSortedSql(
   filters: SqlFilter[],
   sorts: SqlSort[]
 ): string {
-  // F-05: в обёртку идёт только последний непустой оператор (подготовительные CREATE/INSERT/SET не выполняются повторно,
+  // в обёртку идёт только последний непустой оператор (подготовительные CREATE/INSERT/SET не выполняются повторно,
   // комментарий после последней `;` оператором не считается — иначе `)` оказывался бы внутри комментария).
   const statements = splitStatements(baseSql);
   let cleanSql = statements.length > 0 ? statements[statements.length - 1] : '';

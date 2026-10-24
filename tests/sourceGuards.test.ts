@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { EN_DICT } from '../src/utils/i18n';
 
-// Проверки текста исходников (не логики): страхуют пункты этапа 1 от случайного возврата.
+// Проверки текста исходников (не логики): страхуют исправления от случайного возврата.
 // Пути берутся от корня проекта (bun test запускается из него).
 
 const ROOT = process.cwd();
@@ -26,7 +26,7 @@ function listSourceFiles(dirRel: string): string[] {
 }
 
 describe('source guards', () => {
-  // п. 2.4: «Корзина» шаблонов не попадает ни в какой экспорт
+  // «Корзина» шаблонов не попадает ни в какой экспорт
   describe('snippet trash is never exported', () => {
     it('файл настроек и синхронизации: generateWorkspaceBundleObject фильтрует «Корзину»', () => {
       expect(read('src/components/SettingsModal.tsx')).toMatch(/backupData\['sql_visualizer_snippets'\]\s*=\s*withoutTrash\(snippets\)/);
@@ -37,7 +37,7 @@ describe('source guards', () => {
     });
   });
 
-  // п. 2.1: запись в буфер обмена только через copyToClipboard (иначе нет признака успеха и запасного пути)
+  // запись в буфер обмена только через copyToClipboard (иначе нет признака успеха и запасного пути)
   describe('clipboard access', () => {
     it('navigator.clipboard.writeText встречается только в src/utils/exportUtils.ts', () => {
       const found: string[] = [];
@@ -53,15 +53,15 @@ describe('source guards', () => {
     });
   });
 
-  // п. 1.8: двойной перевод t(t(...)) в поиске редактора
+  // двойной перевод t(t(...)) в поиске редактора
   describe('no nested t(t(...))', () => {
     // Идентификатор t не должен быть окончанием другого имени (alert(t(...)) — это обычный вызов)
     const NESTED_T = /(^|[^\w$.])t\(\s*t\(/;
-    // Известное исключение: S-05 в реестре аудита («оставить» по решению владельца)
+    // Известное исключение (оставлено намеренно)
     const isKnownException = (file: string, line: string) =>
       file.endsWith('src/App.tsx') && line.includes("t(t('Значение'))");
 
-    it('has no nested t(t(...)) calls in src (except the S-05 exception)', () => {
+    it('has no nested t(t(...)) calls in src (except the known exception)', () => {
       const found: string[] = [];
       for (const file of listSourceFiles('src')) {
         read(file)
@@ -80,7 +80,7 @@ describe('source guards', () => {
     });
   });
 
-  // п. 1.3: неиспользуемые зависимости удалены и не импортируются
+  // неиспользуемые зависимости удалены и не импортируются
   describe('unused dependencies', () => {
     const pkg = JSON.parse(read('package.json'));
     const allDeps = {
@@ -108,9 +108,9 @@ describe('source guards', () => {
     });
   });
 
-  // п. 1.9: постоянные анимации и тени узлов графа убраны (transition-all остаётся)
+  // постоянные анимации и тени узлов графа убраны (transition-all остаётся)
   describe('graph node styles', () => {
-    // любой класс shadow-* (xl, 2xl, lg, md, sm, цветовые) и drop-shadow; решение владельца 18.10: узлы без теней
+    // любой класс shadow-* (xl, 2xl, lg, md, sm, цветовые) и drop-shadow: узлы графа без теней
     const FORBIDDEN = /animate-pulse|drop-shadow|(?<![\w-])shadow-/;
 
     for (const file of ['src/components/CustomNodes.tsx', 'src/components/MermaidNodes.tsx']) {
@@ -129,7 +129,7 @@ describe('source guards', () => {
     }
   });
 
-  // п. 1.2: в CI lint запускается до сборки
+  // в CI lint запускается до сборки
   describe('CI workflow', () => {
     const lines = read('.github/workflows/build.yml').split('\n');
     const indexesOf = (cmd: string) =>
@@ -150,7 +150,7 @@ describe('source guards', () => {
       }
     });
   });
-  // п. 2.2: все узлы CustomNodes мемоизируются общим сравнением; выделенный Mermaid-узел масштабируется целиком
+  // все узлы CustomNodes мемоизируются общим сравнением; выделенный Mermaid-узел масштабируется целиком
   describe('graph nodes (2.2)', () => {
     const src = read('src/components/CustomNodes.tsx');
 
@@ -170,8 +170,8 @@ describe('source guards', () => {
     });
   });
 
-  // п. 2.3 (информационный страж): подписи узлов графа проходят через t() и есть в EN_DICT
-  describe('CustomNodes labels (2.3)', () => {
+  // Информационный страж: подписи узлов графа проходят через t() и есть в EN_DICT
+  describe('CustomNodes labels', () => {
     const src = read('src/components/CustomNodes.tsx');
     const keys = [...src.matchAll(/\bt\(\s*(['"])(.*?)\1\s*\)/g)].map((m) => m[2]);
 
@@ -192,7 +192,7 @@ describe('source guards', () => {
     });
   });
 
-  // п. 2.13: сборка dev-сервера отдельно, в dist/ его нет (иначе он попадает в пакеты Tauri и APK)
+  // сборка dev-сервера отдельно, в dist/ его нет (иначе он попадает в пакеты Tauri и APK)
   describe('server build (2.13)', () => {
     const pkg = JSON.parse(read('package.json'));
 
@@ -212,20 +212,20 @@ describe('source guards', () => {
     });
   });
 
-  // п. 2.28: dev-сервер
+  // dev-сервер
   describe('dev server (2.28)', () => {
     const src = read('server.ts');
 
-    it('нет общего express.json() без исключения для /api/vfs/upload (SV-01)', () => {
+    it('нет общего express.json() без исключения для /api/vfs/upload', () => {
       expect(src).not.toMatch(/app\.use\(express\.json\(\)\)/);
       expect(src).toContain('"/api/vfs/upload" ? next()');
     });
 
-    it('SQL запроса ClickHouse не пишется в консоль (SV-02)', () => {
+    it('SQL запроса ClickHouse не пишется в консоль', () => {
       expect(src).not.toContain('CH QUERY');
     });
 
-    it('PRAGMA и Init SQL выполняются с ожиданием, без пустых колбэков (SV-04)', () => {
+    it('PRAGMA и Init SQL выполняются с ожиданием, без пустых колбэков', () => {
       expect(src).not.toMatch(/dbObj\.run\([^\n]*\(\) => \{\}\)/);
       expect(src).toMatch(/await applyDuckDbPragmas\(db, config\)/);
       expect(src).toMatch(/await applyDuckDbPragmas\(db, req\.body\)/);
@@ -239,7 +239,7 @@ describe('source guards', () => {
       expect(wasm).toMatch(/options\.threads > 0/);
     });
 
-    it('подготовленный оператор освобождается (SV-05)', () => {
+    it('подготовленный оператор освобождается', () => {
       expect(src).toContain('stmt.finalize()');
     });
   });

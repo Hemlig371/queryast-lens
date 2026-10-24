@@ -63,7 +63,7 @@ describe('computeChangeCase', () => {
     expect(r.text).toBe('select COL');
     expect(r.sel).toEqual([8, 8]);
   });
-  it('ED-04: слово под курсором на кириллице меняет регистр целиком', () => {
+  it('слово под курсором на кириллице меняет регистр целиком', () => {
     const text = 'select выбрать from';
     const up = apply(text, computeChangeCase(text, 10, 10, 'upper')!);
     expect(up.text).toBe('select ВЫБРАТЬ from');
@@ -71,7 +71,7 @@ describe('computeChangeCase', () => {
     const low = apply('SELECT ВЫБРАТЬ FROM', computeChangeCase('SELECT ВЫБРАТЬ FROM', 10, 10, 'lower')!);
     expect(low.text).toBe('SELECT выбрать FROM');
   });
-  it('ED-04: имя_col и ёжик — одно слово', () => {
+  it('имя_col и ёжик — одно слово', () => {
     expect(apply('имя_col', computeChangeCase('имя_col', 2, 2, 'upper')!).text).toBe('ИМЯ_COL');
     expect(apply('a ёжик b', computeChangeCase('a ёжик b', 3, 3, 'upper')!).text).toBe('a ЁЖИК b');
   });
@@ -173,33 +173,33 @@ describe('поиск и замена', () => {
   it('processEscapeSequences', () => {
     expect(processEscapeSequences('a\\nb\\\\n')).toBe('a\nb\\n');
   });
-  it('ED-01: в regex-режиме \\\\. ищет обратный слэш и любой символ', () => {
+  it('в regex-режиме \\\\. ищет обратный слэш и любой символ', () => {
     // текст: a\b.c ; запрос (4 символа в regex): \\.
     expect(findAllMatches('a\\b.c', '\\\\.', false, true)).toEqual([{ start: 1, length: 2 }]);
   });
-  it('ED-01: \\n и \\t в regex-режиме по-прежнему означают перенос и табуляцию', () => {
+  it('\\n и \\t в regex-режиме по-прежнему означают перенос и табуляцию', () => {
     expect(findAllMatches('a\tb', '\\t', false, true)).toEqual([{ start: 1, length: 1 }]);
     expect(findAllMatches('a\nb', '\\n', false, true)).toEqual([{ start: 1, length: 1 }]);
   });
-  it('ED-02: replaceAllInText без regex вставляет $$, $& и $1 буквально', () => {
+  it('replaceAllInText без regex вставляет $$, $& и $1 буквально', () => {
     expect(replaceAllInText('a b', 'a', '$$x', false, false)).toBe('$$x b');
     expect(replaceAllInText('a b', 'a', '[$&]', false, false)).toBe('[$&] b');
     expect(replaceAllInText('a b', 'a', '$1', false, false)).toBe('$1 b');
   });
-  it('ED-02: в regex-режиме $1 по-прежнему работает', () => {
+  it('в regex-режиме $1 по-прежнему работает', () => {
     expect(replaceAllInText('a b', '(a)', '<$1>', false, true)).toBe('<a> b');
   });
-  it('ED-03: Replace one в regex-режиме видит контекст (lookbehind)', () => {
+  it('Replace one в regex-режиме видит контекст (lookbehind)', () => {
     expect(computeReplacementText('b', '(?<=a)b', 'X', false, true, { text: 'ab', start: 1 })).toBe('X');
   });
-  it('ED-03: Replace one в regex-режиме — группы и якоря с контекстом', () => {
+  it('Replace one в regex-режиме — группы и якоря с контекстом', () => {
     expect(computeReplacementText('1', '(?<==)(\\d)', '[$1]', false, true, { text: 'foo=1', start: 4 })).toBe('[1]');
     expect(computeReplacementText('b', '^b', 'X', false, true, { text: 'b b', start: 0 })).toBe('X');
   });
-  it('ED-03: без контекста поведение прежнее', () => {
+  it('без контекста поведение прежнее', () => {
     expect(computeReplacementText('a1', '([a-z])(\\d)', '$2$1', false, true)).toBe('1a');
   });
-  it('ED-05: поиск без учёта регистра не сдвигает позиции после İ', () => {
+  it('поиск без учёта регистра не сдвигает позиции после İ', () => {
     // 'İ'.toLowerCase() занимает два символа и раньше сдвигал позиции
     expect(findAllMatches('İa a', 'a', false, false)).toEqual([{ start: 1, length: 1 }, { start: 3, length: 1 }]);
     expect(findAllMatches('İİ x', 'x', false, false)).toEqual([{ start: 3, length: 1 }]);
@@ -242,30 +242,30 @@ describe('findMatchingBrackets', () => {
     expect(findMatchingBrackets('f(a(b))', 7)).toEqual([1, 6]);
     expect(findMatchingBrackets('abc', 1)).toBeNull();
   });
-  it('ED-06: скобка внутри строкового литерала пропускается', () => {
+  it('скобка внутри строкового литерала пропускается', () => {
     expect(findMatchingBrackets("f(')')", 2)).toEqual([1, 5]);
     expect(findMatchingBrackets("f(')')", 6)).toEqual([1, 5]);
     expect(findMatchingBrackets('f(")")', 2)).toEqual([1, 5]);
     expect(findMatchingBrackets("f('it''s )')", 2)).toEqual([1, 11]);
   });
-  it('ED-06: курсор у скобки внутри строки или комментария пары не даёт', () => {
+  it('курсор у скобки внутри строки или комментария пары не даёт', () => {
     expect(findMatchingBrackets("f(')')", 4)).toBeNull();
     expect(findMatchingBrackets('f(a -- )\n)', 7)).toBeNull();
   });
-  it('ED-06: скобки в -- и /* */ комментариях не считаются', () => {
+  it('скобки в -- и /* */ комментариях не считаются', () => {
     const line = 'f(a -- )\n b)';
     expect(findMatchingBrackets(line, 2)).toEqual([1, line.length - 1]);
     const block = 'f(/* ) */ x)';
     expect(findMatchingBrackets(block, 2)).toEqual([1, block.length - 1]);
     expect(findMatchingBrackets(block, block.length)).toEqual([1, block.length - 1]);
   });
-  it('ED-06: закрывающая скобка ищет открывающую, пропуская строки', () => {
+  it('закрывающая скобка ищет открывающую, пропуская строки', () => {
     expect(findMatchingBrackets("f(a, ')', b)", 12)).toEqual([1, 11]);
   });
-  it('ED-06: строка после $$ … $$ тоже пропускается', () => {
+  it('строка после $$ … $$ тоже пропускается', () => {
     expect(findMatchingBrackets('f($$ ) $$)', 2)).toEqual([1, 9]);
   });
-  it('CM-02: документ 150 000 символов обрабатывается быстро', () => {
+  it('документ 150 000 символов обрабатывается быстро', () => {
     const doc = '(' + ' x'.repeat(74_999) + ')';
     expect(doc.length).toBe(150_000);
     const t0 = performance.now();

@@ -283,7 +283,7 @@ export async function queryDuckDbWasm(sqlQuery: string) {
   // Ensure all uploaded VFS files are registered in DuckDB WASM VFS before running query
   await ensureWasmFilesRegistered(db);
 
-  // COPY ... TO 'файл': ищется только в коде, комментарии и строки не считаются (WS-07)
+  // COPY ... TO 'файл': ищется только в коде, комментарии и строки не считаются
   const copyTargetFile = detectCopyTarget(sqlQuery);
 
   const result = await connInstance.query(sqlQuery);
@@ -304,7 +304,7 @@ export async function queryDuckDbWasm(sqlQuery: string) {
       }
 
       if (exportedBuffer) {
-        // Пустой файл (0 байт) — тоже настоящий результат COPY; раньше он молча не сохранялся.
+        // Пустой файл (0 байт) — тоже настоящий результат COPY.
         if (isTauriEnvironment()) {
           await writeTauriFileBinary(copyTargetFile, exportedBuffer);
         } else {
@@ -320,9 +320,9 @@ export async function queryDuckDbWasm(sqlQuery: string) {
     }
   }
 
-  // Больше 500 000 строк — ошибка, таблица не материализуется (WS-05); значения приводятся к виду Tauri (п. 3.14, WS-04):
+  // Больше 500 000 строк — ошибка, таблица не материализуется; значения приводятся к виду Tauri:
   // даты и время — строками, DECIMAL/BIGINT — строками, INTERVAL, BLOB, вложенные значения — как в execute_query.
-  // Имена столбцов делаются уникальными, порядок хранится отдельно (п. 3.2).
+  // Имена столбцов делаются уникальными, порядок хранится отдельно.
   if (((result as any)?.numRows ?? 0) > MAX_RESULT_ROWS) throw new Error(rowLimitMessage());
   const normalized = normalizeWasmTable(result as any, MAX_RESULT_ROWS);
   const resultRows: any = normalized.rows;
@@ -422,7 +422,7 @@ export async function getRegisteredWasmFiles(): Promise<Array<{ name: string; si
     await Promise.race([fetchWasmFiles(), timeoutPromise]);
   } catch (_) {}
 
-  // 3. Список с dev-сервера: только там, где он есть (в Tauri и Capacitor его нет, WS-06)
+  // 3. Список с dev-сервера: только там, где он есть (в Tauri и Capacitor его нет)
   if (hasDevVfsServer()) {
   try {
     const fetchServerFiles = async () => {
@@ -492,7 +492,7 @@ export async function dropWasmFile(fileName: string): Promise<boolean> {
     } catch (_) {}
   }
 
-  // Файл убран из реестра выше; true возвращается только если и WASM подтвердил удаление (раньше — всегда true, WS-07).
+  // Файл убран из реестра выше; true возвращается только если и WASM подтвердил удаление.
   let wasmDone = false;
   try {
     const dropTask = async () => {

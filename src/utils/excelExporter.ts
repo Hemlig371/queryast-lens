@@ -5,10 +5,11 @@ import { ExcelSettings } from '../types/excelSettings';
 import { downloadFileWithFallback } from './exportUtils';
 import { getSavedExcelPresets } from './excelSettingsStorage';
 import { getResultColumns } from './resultRows';
+import { parseTemplateDirective, buildFromTemplate, resolveTemplatePath } from './excelTemplate';
 
 export interface ExportExcelOptions {
   data: any[];
-  /** Порядок столбцов (п. 3.2): без него берутся ключи первой строки, у которых числовые имена идут первыми. */
+  /** Порядок столбцов: без него берутся ключи первой строки, у которых числовые имена идут первыми. */
   columns?: readonly string[] | null;
   columnTypes?: Record<string, string>;
   sqlQuery?: string;
@@ -288,6 +289,33 @@ export async function exportToExcel({
   const totalCells = data.length * rawColumns.length;
   if (totalCells > 1500000) {
     throw new Error(t('Объем данных слишком велик для Excel-отчета ({n} ячеек). Пожалуйста, используйте фильтры, чтобы уменьшить количество строк (максимум ~1.5 млн ячеек), или скопируйте/скачайте данные в другом формате.').replace('{n}', totalCells.toLocaleString()));
+  }
+
+  // Экспорт по шаблону (@template) — отдельный путь, нативное оформление не применяется (см. excelTemplate.ts)
+  const templateComments = sqlQuery ? extractExcelComments(sqlQuery) : '';
+  const templateDirective = parseTemplateDirective(templateComments);
+  if (templateDirective) {
+    const sheetDirective = templateComments.match(/@sheet:\s*([^@\n*]+)/);
+    // сохранение поверх самого шаблона испортило бы его
+    if (resolvedAutoSavePath) {
+      const norm = (v: string) => v.replace(/\\/g, '/').toLowerCase();
+      if (norm(resolvedAutoSavePath) === norm(resolveTemplatePath(templateDirective.path))) {
+        throw new Error(t('@excel_save указывает на сам шаблон: выберите другой путь для результата'));
+      }
+    }
+    const templateBuffer = await buildFromTemplate({
+      path: templateDirective.path,
+      valuesOnly: templateDirective.valuesOnly,
+      sheetName: sheetDirective ? sheetDirective[1].trim() : null,
+      columns: rawColumns,
+      rows: data,
+      columnTypes,
+    });
+    const templateBase = sanitizeExportFileBase(parsedFilename, sanitizeSheetName(settings.defaultFileName || 'report', 'report'));
+    const templateFileName = filename || `${templateBase}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    const templateBlob = new Blob([templateBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    await downloadFileWithFallback(templateBlob, templateFileName, resolvedAutoSavePath);
+    return;
   }
 
   const workbook = new ExcelJS.Workbook();
@@ -1079,7 +1107,7 @@ export async function exportToExcel({
         if (!isCountFunc && !col.isNumeric) {
           cell.value = '';
         } else {
-          // В настройках у нас "COUNT" (Счет). Пользователь попросил всегда использовать COUNTA (СЧЕТЗ).
+          // В настройках "COUNT" (Счет) всегда выполняется как COUNTA (СЧЕТЗ).
           const finalFunc = funcName === 'COUNT' ? 'COUNTA' : funcName;
           
           const colLetter = mainSheet.getColumn(colIdx + 1).letter;

@@ -1,9 +1,9 @@
-// Разбор глобальных сочетаний клавиш приложения (п. 3.9, H-01/H-02/H-04): чистая функция вместо длинной цепочки if в App.tsx.
+// Разбор глобальных сочетаний клавиш приложения: чистая функция вместо длинной цепочки if в App.tsx.
 import { buildComboString, normalizeCombo, type ComboEventLike } from '../editor/hotkeysMatch';
 
 export type HotkeyEventLike = ComboEventLike;
 
-/** Действия, которыми управляют глобальные сочетания (порядок = порядок проверки в прежней цепочке if). */
+/** Действия, которыми управляют глобальные сочетания (порядок = порядок проверки). */
 export const APP_HOTKEY_DEFAULTS = {
   visualize: 'Ctrl+Enter',
   saveFile: 'Ctrl+S',
@@ -88,7 +88,7 @@ function tabModifierHeld(e: HotkeyEventLike, modifier: string): boolean {
 
 /**
  * Какое действие приложения вызывает это нажатие (null — никакое).
- * - сочетание берётся только из настроек (или значения по умолчанию): прежнее жёсткое Ctrl+Enter/Ctrl+S отдельно не работает;
+ * - сочетание берётся только из настроек (или значения по умолчанию): жёстко заданные Ctrl+Enter/Ctrl+S отдельно не работают;
  * - в полях ввода ничего не перехватывается; пока открыто окно, доступен только Esc.
  */
 export function resolveHotkeyAction(

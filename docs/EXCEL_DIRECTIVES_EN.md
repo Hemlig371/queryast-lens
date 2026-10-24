@@ -29,6 +29,8 @@ This document describes how the application reads directives from SQL comments w
 | `@group_hide: true` | `true`/`false`/`1`/`0` | Do not repeat the group value in child rows | Works together with `@group`. |
 | `@protect: password` | text | Protects the sheet with a password | Enables protection; sorting, auto-filter, column width and row height changes remain allowed. The password must not contain `@` or `*`. This protects against accidental edits; it is not encryption. |
 | `@excel_save: path` | path | *(Desktop)* Saves the file without a dialog | See section 4. |
+| `@template: path` | path to `.xlsx` | *(Desktop)* Fills a ready-made template with the query result | See section 6. Native formatting (`@preset`, `@totals`, `@group`, `@split`, `@skip`, `@hide`, `@protect`, `# Title`) is not applied in this mode. |
+| `@template_values: path` | path to `.xlsx` | *(Desktop)* Only writes values into a ready-made template, no formatting | See section 6. No rows are inserted and nothing is shifted. |
 
 Column numbers in `@split`, `@skip`, `@hide` and `@group` refer to the original result columns (before `@skip` removal and before the `@split` column is dropped). A value consisting only of digits is always treated as a number, so a column named like `2024` cannot be referenced by name. If a name is not found, the directive is ignored.
 
@@ -68,3 +70,33 @@ ORDER BY region, city;
 ```
 
 Result: the file `sales_by_region_<date>.xlsx`, sheet "Продажи", a title and subtitle at the top, the `internal_id` column is not exported, rows are grouped by `region` without repeated values, and a totals row with sums.
+
+## 6. `@template` (export from a template, desktop only)
+
+A template is a regular `.xlsx` that you prepare yourself: header, category column, print setup, column widths, frozen rows. Put a marker for the start of the data area in **one cell**:
+
+| Marker | What is inserted |
+| :--- | :--- |
+| `[[table]]` | The whole result: column names from SQL as the first row, then the data |
+| `[[rows]]` | Data rows only (the header is already in the template) |
+
+* Data goes from the marker cell to the right (SQL columns) and down (result rows).
+* The row with the marker is the **lead row**: its formatting (number format, font, fill, borders, row height, merges inside the row) is applied to every inserted row. If the result has more columns than the template styles, the extra columns take the formatting of the marker cell.
+* Everything below the lead row moves down. Merged cells, row heights, page breaks and the print area (it is extended so everything fits) move with it. Formulas on this sheet are adjusted as when inserting rows in Excel: a range that contains the lead row (`SUM(D7:D7)`) is extended over all inserted rows; references to other sheets are unchanged.
+* Text in lead-row cells outside the data columns (for example a label in the category column on the left) stays in the lead row only and is not copied into the new rows.
+* Values: numbers as numbers, dates as dates, NULL as an empty cell, a string starting with `=` as a formula.
+* The template path is given the same way as the `@excel_save` path: used as is, a full path is recommended. The file is read on every export.
+* `@sheet: name` selects the template sheet to fill; without it the first sheet with a marker is used. The first marker found is filled; other sheets are left unchanged. `@file` and `@excel_save` work as usual.
+* Empty result: `[[table]]` writes only the header, `[[rows]]` just removes the marker.
+* **`@template_values: path`** — same marker and the same path/`@sheet` rules, but the result is only written as values starting at the marker cell. No formatting is copied, rows are not shifted, the print area, merges and formulas are not changed; everything else in the template stays as is. If the result is shorter than what the template had, old values below remain. A date format is set only if the cell is "General".
+* `@excel_save` is the path for the **result** (a file or folder, used as is); `@template` is the path **to the template** (both are given the same way). If `@excel_save` equals the template, the export stops with an error so the template is not overwritten.
+* Not supported: conditional formatting, data validation, images and cell notes below the lead row are not moved; a merge that crosses the lead row is not extended; shapes, text boxes, form controls and charts of the template are not kept in the result (the `exceljs` library does not preserve them); formulas on other sheets that refer to this sheet are not adjusted. A missing marker, sheet or file gives a clear error.
+
+```sql
+/*
+@template: /forms/report.xlsx
+@sheet: Sales
+@file: sales
+*/
+SELECT region, revenue FROM sales ORDER BY region;
+```

@@ -136,3 +136,15 @@ select {
   background-color: #1e293b;
   color: #e2e8f0;
 }
+
+/* Граф SQL: стрелки сами выбирают точки на сторонах карточек, штатные точки подключения прячем */
+.react-flow__node.tree-node .react-flow__handle {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Монохромный режим графа: оттенки серого одинаково в тёмной и светлой теме.
+   Фильтр стоит на viewport — он попадает и в экспорт (html-to-image копирует вычисленные стили). */
+.graph-mono .react-flow__viewport {
+  filter: grayscale(1);
+}

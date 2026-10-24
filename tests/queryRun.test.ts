@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createRunTracker, executeStatsQuery, type FinishInfo } from '../src/utils/queryRun';
 import { replaceVariablesInSql } from '../src/lib/sqlUtils';
 
-// Отмена и устаревшие запуски (п. 3.3). Выполнитель запросов — управляемая заглушка, времени и сети нет.
+// Отмена и устаревшие запуски. Выполнитель запросов — управляемая заглушка, времени и сети нет.
 
 const deferred = <T>() => {
   let resolve!: (v: T) => void;

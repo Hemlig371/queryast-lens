@@ -19,10 +19,10 @@ describe('sqlLanguage: строки', () => {
   it('одинарные кавычки с удвоением по-прежнему одна строка', () => {
     expect(named("select 'a''b' from t", 'lensString')).toEqual(["'a''b'"]);
   });
-  it("CM-03: 'it\\'s' — одна строка (обратная косая черта экранирует кавычку)", () => {
+  it("'it\\'s' — одна строка (обратная косая черта экранирует кавычку)", () => {
     expect(named("select 'it\\'s' from t", 'lensString')).toEqual(["'it\\'s'"]);
   });
-  it("CM-03: 'a\\\\' — экранированная косая черта, строка закрывается", () => {
+  it("'a\\\\' — экранированная косая черта, строка закрывается", () => {
     const toks = tokens("select 'a\\\\', 1");
     expect(toks.filter(t => t.name === 'lensString').map(t => t.text)).toEqual(["'a\\\\'"]);
     expect(toks.filter(t => t.name === 'lensNumber').map(t => t.text)).toEqual(['1']);
@@ -30,7 +30,7 @@ describe('sqlLanguage: строки', () => {
   it('косая черта перед другим символом — обычный символ строки', () => {
     expect(named("select 'C:\\data\\file' from t", 'lensString')).toEqual(["'C:\\data\\file'"]);
   });
-  it("CM-03: $$ … $$ в одной строке — зелёная строка как раньше", () => {
+  it("$$ … $$ в одной строке — зелёная строка как раньше", () => {
     expect(named("select $$ it's 'x' $$ from t", 'lensString')).toEqual(["$$ it's 'x' $$"]);
     expect(named('select $$a$$, $$b$$ from t', 'lensString')).toEqual(['$$a$$', '$$b$$']);
   });
@@ -81,7 +81,7 @@ describe('sqlLanguage: строки', () => {
 
 describe('sqlLanguage: числа', () => {
   for (const num of ['42', '3.14', '1e5', '1E5', '2.5e-3', '.5', '0xFF', '0Xab12']) {
-    it(`CM-03: ${num} — число`, () => {
+    it(`${num} — число`, () => {
       expect(named(`select ${num} from t`, 'lensNumber')).toEqual([num]);
     });
   }

@@ -1,4 +1,4 @@
-// Чистые функции для виртуальных файлов DuckDB-WASM (п. 3.15, находки WS-06, WS-07, WM-01).
+// Чистые функции для виртуальных файлов DuckDB-WASM.
 
 import { splitSqlSegments } from './sqlTokens';
 
@@ -16,8 +16,8 @@ const SYSTEM_DIRS = ['node_modules/', 'dist/', 'src/', 'public/'];
 
 /**
  * Файл проекта, а не пользовательские данные (его возвращает glob серверного dev-режима).
- * Раньше сравнивался префикс `src`/`dist`/`public`, из-за чего прятались `source.parquet`, `distance.csv`, `public_2024.csv`;
- * теперь скрываются только каталоги проекта (имя начинается с `src/` и т. п.). Скрытые файлы (`.env`), `*.js` и `*.lock` скрыты, как и раньше.
+ * Скрываются только каталоги проекта (имя начинается с `src/` и т. п.), а не любые имена с таким префиксом:
+ * `source.parquet`, `distance.csv`, `public_2024.csv` — пользовательские данные. Скрытые файлы (`.env`), `*.js` и `*.lock` тоже скрыты.
  */
 export function isSystemVfsFile(filename: string): boolean {
   const f = (filename || '').replace(/\\/g, '/').toLowerCase();
@@ -37,8 +37,7 @@ function unquote(text: string): string {
 
 /**
  * Файл, в который скрипт пишет оператором `COPY … TO '<файл>'`, или null.
- * Ищется только в коде: комментарии и строки пропускаются (раньше регулярка по всему тексту видела COPY и в них).
- * Берётся первый COPY скрипта — как и раньше.
+ * Ищется только в коде: комментарии и строки пропускаются. Берётся первый COPY скрипта.
  */
 export function detectCopyTarget(sql: string): string | null {
   const segments = splitSqlSegments(sql || '', { backslashEscapes: false });

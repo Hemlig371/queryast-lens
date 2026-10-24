@@ -1,4 +1,4 @@
-//! Проверка относительных папок DuckDB (`./tmp`, `./extensions`) перед PRAGMA (F-14).
+//! Проверка относительных папок DuckDB (`./tmp`, `./extensions`) перед PRAGMA.
 //! В AppImage рабочая папка лежит внутри read-only образа: `PRAGMA temp_directory = './tmp'` проходит, а первый же запрос
 //! со сбросом на диск падает с «IO Error: Cannot open file "./tmp/duckdb_temp_storage…": Read-only file system».
 //! Только стандартная библиотека: модуль проверяется отдельно от остальных крейтов (`rustc --test src/dircheck.rs`).

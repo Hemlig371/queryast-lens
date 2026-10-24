@@ -16,7 +16,7 @@ describe('sqlFormat', () => {
     expect(out).toBe('-- head\nSELECT a, b FROM t');
   });
 
-  // ---- п. 3.6 (C-01, C-02): compactSql и -- комментарии ----
+  // ---- compactSql и -- комментарии ----
   describe('compactSql: характеризующие', () => {
     it('пустой ввод возвращается как есть', () => {
       expect(compactSql('')).toBe('');
@@ -82,7 +82,7 @@ describe('sqlFormat', () => {
     });
   });
 
-  describe('convertInlineDashComments: строки и блочные комментарии на нескольких строках (C-02)', () => {
+  describe('convertInlineDashComments: строки и блочные комментарии на нескольких строках', () => {
     it('-- на второй строке многострочной строки не считается комментарием', () => {
       expect(convertInlineDashComments("SELECT 'x\ny -- z' FROM t")).toBe("SELECT 'x\ny -- z' FROM t");
     });
@@ -97,8 +97,8 @@ describe('sqlFormat', () => {
   });
 });
 
-// ---- F-26: форматтер и «в одну строку» не меняют содержимое литералов ----
-describe('F-26: литералы и //', () => {
+// ---- форматтер и «в одну строку» не меняют содержимое литералов ----
+describe('литералы и //', () => {
   const cfg = { keywordCase: 'upper' as const, tabWidth: 2, useTabs: false, expressionWidth: 120, denseOperators: false, leadingCommas: false };
   const fmt = (sql: string, dialect = 'DuckDB') => formatSqlText(sql, dialect, cfg);
 

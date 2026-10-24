@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { clampPage } from '../src/utils/pagination';
 
-describe('clampPage (C-10: страница после удаления шаблона)', () => {
+describe('clampPage (страница после удаления шаблона)', () => {
   it('страница в пределах — без изменений', () => {
     expect(clampPage(1, 45, 20)).toBe(1);
     expect(clampPage(2, 45, 20)).toBe(2);

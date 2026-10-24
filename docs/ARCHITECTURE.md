@@ -82,8 +82,8 @@ flowchart TD
 ```
 SQL (выделение или весь текст)
   → parseSqlToAst            (astToGraph.ts: деление на запросы, node-sql-parser + эвристики)
-  → astToGraph               (узлы и рёбра: таблицы, CTE, подзапросы, JOIN, SELECT, Sort, Limit)
-  → getLayoutedElements      (dagre; LR или TB)
+  → astToGraph               (карточки источников (таблица, CTE, подзапрос) и результата; JOIN — подписанные стрелки; WHERE, GROUP BY, HAVING, ORDER BY, LIMIT — чипы на карточках; рамки вокруг CTE и подзапросов)
+  → getLayoutedElements      (dagre по блокам + ортогональные маршруты стрелок: treeLayout.ts, edgePath.ts; LR или TB)
   → React Flow               (CustomNodes.tsx; подсветка lineage в App.tsx)
 ```
 
@@ -104,7 +104,7 @@ SQL (выделение или весь текст)
 
 ## 9. Excel
 
-`exportToExcel` (`excelExporter.ts`): настройки → переопределения из директив → листы (разбиение, исключение колонок) → оформление, группировка, итоги → запись `exceljs` → сохранение (`exportUtils.downloadFileWithFallback`: диалог или заданный путь в Tauri, «Поделиться» на Android, скачивание в браузере). Подробности — [EXCEL_DIRECTIVES](./EXCEL_DIRECTIVES.md).
+`exportToExcel` (`excelExporter.ts`): настройки → переопределения из директив → листы (разбиение, исключение колонок) → оформление, группировка, итоги → запись `exceljs` → сохранение (`exportUtils.downloadFileWithFallback`: диалог или заданный путь в Tauri, «Поделиться» на Android, скачивание в браузере). С `@template` / `@template_values` (десктоп) вместо этого читается готовый `.xlsx` и заполняется по маркеру `[[table]]` / `[[rows]]` (`excelTemplate.ts`). Подробности — [EXCEL_DIRECTIVES](./EXCEL_DIRECTIVES.md).
 
 ## 10. Хранение данных
 

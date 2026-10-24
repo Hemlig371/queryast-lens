@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { nextTabName } from '../src/utils/tabNames';
 
-describe('nextTabName (C-05)', () => {
+describe('nextTabName', () => {
   it('нет вкладок — «Вкладка 1»', () => {
     expect(nextTabName([], 'Вкладка')).toBe('Вкладка 1');
   });

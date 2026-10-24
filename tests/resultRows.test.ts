@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { uniqueColumnNames, rowsFromColumns, getResultColumns, columnsFromMeta, setOwnKey } from '../src/utils/resultRows';
 
-// п. 3.2 (B-05, XL-09): строки результата — объекты; одинаковые имена не должны схлопываться, порядок — не зависеть от числовых имён.
+// строки результата — объекты; одинаковые имена не должны схлопываться, порядок — не зависеть от числовых имён.
 
 describe('uniqueColumnNames', () => {
   it('уникальные имена остаются как есть', () => {
@@ -23,7 +23,7 @@ describe('uniqueColumnNames', () => {
     expect(uniqueColumnNames(['', ''])).toEqual(['', '_1']);
   });
 
-  it('F-17: три одинаковых имени дают a, a_1, a_2 — как DuckDB в SELECT * FROM (SELECT 1 a, 2 a, 3 a)', () => {
+  it('три одинаковых имени дают a, a_1, a_2 — как DuckDB в SELECT * FROM (SELECT 1 a, 2 a, 3 a)', () => {
     expect(uniqueColumnNames(['a', 'a', 'a'])).toEqual(['a', 'a_1', 'a_2']);
   });
 
@@ -107,7 +107,7 @@ describe('columnsFromMeta', () => {
   });
 });
 
-describe('setOwnKey (F-15)', () => {
+describe('setOwnKey', () => {
   it('обычный ключ записывается как obj[key]', () => {
     const o: Record<string, string> = {};
     setOwnKey(o, 'a', 'Int32');

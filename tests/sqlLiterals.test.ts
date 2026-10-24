@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { protectLiterals, dollarQuoteEnd } from '../src/utils/sqlLiterals';
 
-// F-26: литералы прячутся от форматтера и возвращаются точным исходным текстом.
+// литералы прячутся от форматтера и возвращаются точным исходным текстом.
 
 describe('dollarQuoteEnd', () => {
   it('$$…$$ и $тег$…$тег$: позиция после закрывающей границы', () => {

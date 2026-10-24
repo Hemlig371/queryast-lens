@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { formatStatVal, toChartNumber, selectTopN, sortStatItems } from '../src/utils/statFormat';
 
-describe('formatStatVal (S-01)', () => {
+describe('formatStatVal', () => {
   it('числа форматируются: целые с разрядами, дробные до 2 знаков', () => {
     expect(formatStatVal(1234567, 'en-US')).toBe('1,234,567');
     expect(formatStatVal(3.14159, 'en-US')).toBe('3.14');
@@ -28,7 +28,7 @@ describe('formatStatVal (S-01)', () => {
   });
 });
 
-describe('toChartNumber (S-03)', () => {
+describe('toChartNumber', () => {
   it('числа и числовые строки (ClickHouse UInt64/Decimal)', () => {
     expect(toChartNumber(5)).toBe(5);
     expect(toChartNumber(-1.5)).toBe(-1.5);
@@ -50,7 +50,7 @@ describe('toChartNumber (S-03)', () => {
   });
 });
 
-describe('selectTopN (S-02)', () => {
+describe('selectTopN', () => {
   const items = [
     { name: 'a', value: 1 },
     { name: 'b', value: 50 },

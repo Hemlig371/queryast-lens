@@ -10,7 +10,7 @@ const snip = (over: Partial<{ id: string; category: string; sql: string; dialect
   ...over,
 });
 
-describe('snippetTrash (SM-01)', () => {
+describe('snippetTrash', () => {
   it('название категории и перевод', () => {
     expect(TRASH_CATEGORY).toBe('Корзина');
     expect(EN_DICT[TRASH_CATEGORY]).toBe('Trash');

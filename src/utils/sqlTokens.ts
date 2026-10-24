@@ -12,7 +12,7 @@ export interface SqlSegment {
 
 export interface SqlTokenOptions {
   /**
-   * Обратная косая черта экранирует следующий символ внутри строки (ClickHouse, MySQL, прежнее поведение compactSql).
+   * Обратная косая черта экранирует следующий символ внутри строки (ClickHouse, MySQL).
    * Для DuckDB/PostgreSQL обычная строка `'C:\data\'` заканчивается на последней кавычке — там передаётся false.
    * По умолчанию true.
    */

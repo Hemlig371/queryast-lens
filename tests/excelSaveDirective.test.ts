@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { hasExcelSaveDirective } from '../src/utils/excelParse';
 
-// Автоэкспорт включается только директивой в блочном комментарии (п. 3.5, B-11).
+// Автоэкспорт включается только директивой в блочном комментарии.
 describe('hasExcelSaveDirective', () => {
   it('директива в блочном комментарии с путём', () => {
     expect(hasExcelSaveDirective('/* @excel_save: /tmp/report.xlsx */ SELECT 1')).toBe(true);

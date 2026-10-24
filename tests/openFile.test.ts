@@ -7,7 +7,7 @@ const tabs = [
   { id: '3', filePath: '/home/u/b.sql' },
 ];
 
-describe('decideOpenFile (C-07)', () => {
+describe('decideOpenFile', () => {
   it('новый файл — открыть', () => {
     expect(decideOpenFile({ size: 100 }, 'C:\\sql\\new.sql', tabs)).toEqual({ kind: 'open' });
   });

@@ -1,4 +1,4 @@
-// Построение запроса для страницы результата (п. 3.1, находки B-01…B-04).
+// Построение запроса для страницы результата.
 //
 // Раньше `executeDuckDbQueryWithPagination` / `executeClickhouseQueryWithPagination` работали с текстом запроса как со строкой:
 // искали LIMIT по всему тексту (в подзапросах, CTE, строках, комментариях), дописывали LIMIT в конец (после `;`, комментария,
@@ -47,14 +47,14 @@ export function splitStatements(sql: string): string[] {
 const FORMAT_AT_END = /\bFORMAT\s+(?!(?:ASC|DESC|ASCENDING|DESCENDING)\b)([A-Za-z_]\w*)(?:\s+SETTINGS\b[\s\S]*)?$/i;
 const SETTINGS_CLAUSE = /\bSETTINGS\s+[A-Za-z_]\w*\s*=/i;
 const PAGEABLE_HEAD = /^\s*\(?\s*(SELECT|WITH|FROM)\b/i;
-// F-06: в DuckDB `TABLE t`, `VALUES (…)` и `PIVOT …` тоже запросы на чтение. Дописанный в конец LIMIT они принимают не везде
+// в DuckDB `TABLE t`, `VALUES (…)` и `PIVOT …` тоже запросы на чтение. Дописанный в конец LIMIT они принимают не везде
 // (после PIVOT … GROUP BY, внутри VALUES со скобками), поэтому такие запросы всегда оборачиваются в подзапрос (проверено в DuckDB 1.5.5).
 const DUCKDB_EXTRA_HEAD = /^\s*\(?\s*(TABLE|VALUES|PIVOT)\b/i;
-// F-01: оператор начинается с WITH — после списка CTE (в `topLevelOnly` скобки уже пусты) идёт `[имя] AS [NOT] [MATERIALIZED] [,]`,
+// оператор начинается с WITH — после списка CTE (в `topLevelOnly` скобки уже пусты) идёт `[имя] AS [NOT] [MATERIALIZED] [,]`,
 // затем ключевое слово основного оператора.
 const WITH_CTE_LIST = /^\s*WITH\b\s*(?:RECURSIVE\b\s*)?(?:(?:[A-Za-z_]\w*\s+)?AS\b\s*(?:NOT\b\s*)?(?:MATERIALIZED\b\s*)?,?\s*)*/i;
 const WITH_WRITE_KEYWORD = /^(INSERT|UPDATE|DELETE|MERGE|COPY|CREATE)\b/i;
-// F-04: `FETCH FIRST n ROWS ONLY` / `FETCH NEXT …` — собственное ограничение числа строк, как LIMIT.
+// `FETCH FIRST n ROWS ONLY` / `FETCH NEXT …` — собственное ограничение числа строк, как LIMIT.
 const FETCH_LIMIT = /\bFETCH\s+(?:FIRST|NEXT)\b/i;
 const LIMIT_BY_TAIL = /^\s*(?:\d+\s*)?(?:(?:,|OFFSET)\s*\d+\s*)?BY\b/i;
 
@@ -105,7 +105,7 @@ function analyzeStatement(stmt: string, dialect: SqlDialect): StatementInfo {
   const codeEnd = codeEndIndex(stmt, dialect);
   const code = flat.slice(0, codeEnd);
 
-  // F-01: `WITH … INSERT/UPDATE/DELETE/…` читает не данные, а меняет их; дописанный LIMIT здесь недопустим или обрезает вставку
+  // `WITH … INSERT/UPDATE/DELETE/…` читает не данные, а меняет их; дописанный LIMIT здесь недопустим или обрезает вставку
   const afterWith = WITH_CTE_LIST.exec(flat);
   const withWrites = afterWith !== null && WITH_WRITE_KEYWORD.test(flat.slice(afterWith[0].length));
 
@@ -168,7 +168,7 @@ function pageStatement(stmt: string, info: StatementInfo, page: number, pageSize
  * - Листается только ПОСЛЕДНИЙ оператор скрипта (SELECT / WITH / FROM). Комментарии после последней `;` оператором не считаются.
  * - Страница ≥ 2: подготовительные операторы (CREATE, INSERT, SET …) не выполняются повторно; если последний оператор не листается,
  *   возвращается `skip: true` и ничего выполнять не нужно (иначе INSERT выполнился бы второй раз).
- * - Обычный запуск, страница 1: весь текст как раньше, у последнего оператора добавлен LIMIT.
+ * - Обычный запуск, страница 1: весь текст, у последнего оператора добавлен LIMIT.
  * - Режим sequential, страница 1: подготовительные операторы отдельно в `setup`, в `main` — последний оператор.
  * - Режим parallel: листания нет.
  */

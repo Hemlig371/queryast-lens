@@ -166,11 +166,14 @@ When exporting query results to `.xlsx` (via the **Export to Excel** button), yo
 | `@skip: column` | Completely excludes the column from the generated file | `@skip: raw_payload` |
 | `@protect: password` | Protects the worksheet from accidental editing | `@protect: readonly2024` |
 | `@excel_save: path` | *(Desktop)* Direct report save to disk without dialog prompt | `@excel_save: /reports/out.xlsx` |
+| `@template: path` | *(Desktop)* Fills a ready `.xlsx` template that has a `[[table]]` or `[[rows]]` marker with the result: the formatting of the leading row is applied to all rows, the content below is shifted down | `@template: /forms/report.xlsx` |
+| `@template_values: path` | *(Desktop)* Writes values into the template starting at the marker cell; formatting and the position of everything else stay unchanged | `@template_values: /forms/report.xlsx` |
 
 **Notes and limitations:**
 * `@split`, `@skip`, `@hide` accept a single column (name or 1-based number). A name made only of digits (e.g. `2024`) is treated as a number.
 * The title is taken from the first `#` in block comments, so do not use `#` in comment text for other purposes.
 * No report is created if the result has more than 1.5 million cells (rows × columns): reduce the selection first.
+* `@template` and `@template_values` take the template sheet name from `@sheet`; the template path is given the same way as the `@excel_save` path. See section 6 of [`EXCEL_DIRECTIVES_EN.md`](./EXCEL_DIRECTIVES_EN.md).
 * Detailed reference: [`EXCEL_DIRECTIVES_EN.md`](./EXCEL_DIRECTIVES_EN.md).
 * **`@excel_save` (desktop)**: the file is created automatically when the result arrives and contains exactly the rows the query returned, i.e. one page (100 rows by default) or as many as your own `LIMIT` allows. Moving to another page or changing sorting or filters overwrites the file with the new data. To export everything, set the page size to `0` in Settings or use an explicit large `LIMIT`.
 
@@ -217,7 +220,14 @@ To build the graph, click the **Visualize** button on the panel below the editor
 1. All tables, views, subqueries, and CTEs (`WITH cte AS (...)`) are parsed out.
 2. An oriented dependency graph is built.
 3. Clicking a node or clicking **Focus** highlights all nodes and edges upstream and downstream of the selected node (Data Lineage). Highlighting works on graph nodes (tables, CTEs, subqueries, `JOIN`s) within one query; there is no column-level lineage and no tracking between separate queries.
-4. The graph controls panel allows toggling layout orientation (`LR` / `TB`) and showing/hiding `Sort` (ORDER BY) and `Limit` (LIMIT/OFFSET) nodes.
+
+   The **Monochrome** button to the right of Focus turns the graph grayscale (the same in dark and light themes, and in exports). The choice is remembered.
+4. The graph controls panel allows toggling layout orientation (`LR` / `TB`).
+   * `JOIN` is a labeled arrow ("type · condition") from the joined source to the source it is attached to (determined by the aliases in `ON`).
+   * `WHERE`/`PREWHERE` are chips on the card of the source whose alias is mentioned first; `GROUP BY`, `HAVING`, `QUALIFY`, `ORDER BY`, `LIMIT` are chips on the `Projection` card.
+   * Source cards list the columns the query mentions as `alias.column` (the database schema is not queried); result columns show their source.
+   * CTEs, subqueries and derived tables with several sources are enclosed in a frame. A dashed arrow is a reference (to a CTE, derived table or subquery); a solid arrow is data flow or a join.
+   * An uncorrelated scalar subquery (e.g. `total > (SELECT AVG(total) FROM orders)`) is linked by a single dashed "subquery" arrow: it has no join key because it is a constant value; a correlated subquery shows its link condition (`k.customer_id = c.id`) as a chip.
 5. **Several queries separated by `;`**: each query is built as a separate block with a "Query N" header and a "Collapse" button (collapse/expand). With `LR` the blocks go one under another, with `TB` they go one after another from left to right. No links are drawn between queries, and lineage highlighting is limited to the query itself. A query that cannot be parsed is skipped without a message.
 6. **SQL parsing**: the PostgreSQL grammar (`node-sql-parser`) is used, plus heuristic parsing for constructs it does not understand. DuckDB, ClickHouse and Oracle use the same parsing, so dialect-specific constructs may be shown in a simplified way.
 

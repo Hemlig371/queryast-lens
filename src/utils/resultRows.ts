@@ -1,4 +1,4 @@
-// Строки результата как объекты (п. 3.2, находки B-05, XL-09).
+// Строки результата как объекты.
 //
 // Приложение держит результат как массив объектов `{имя_столбца: значение}`. У такого представления два изъяна:
 //  1. одинаковые имена (`SELECT 1 AS a, 2 AS a`) схлопываются в один ключ — значения пропадают;
@@ -16,7 +16,7 @@ export function uniqueColumnNames(names: readonly unknown[]): string[] {
       used.add(name);
       return name;
     }
-    // F-17: нумерация с `_1`, как в DuckDB для `SELECT * FROM (SELECT 1 a, 2 a)` (`a, a_1`): иначе после сортировки/фильтра имена столбцов меняются
+    // нумерация с `_1`, как в DuckDB для `SELECT * FROM (SELECT 1 a, 2 a)` (`a, a_1`): иначе после сортировки/фильтра имена столбцов меняются
     let k = 1;
     let candidate = `${name}_${k}`;
     while (reserved.has(candidate) || used.has(candidate)) {
@@ -29,7 +29,7 @@ export function uniqueColumnNames(names: readonly unknown[]): string[] {
 }
 
 /**
- * Запись `obj[key] = value`, безопасная для ключа `__proto__` (F-15): обычное присваивание ему не создаёт свойство,
+ * Запись `obj[key] = value`, безопасная для ключа `__proto__`: обычное присваивание ему не создаёт свойство,
  * и потом `obj['__proto__']` возвращает Object.prototype вместо значения.
  */
 export function setOwnKey<T>(obj: Record<string, T>, key: string, value: T): void {
@@ -56,7 +56,7 @@ export function rowsFromColumns(
 
 /**
  * Столбцы результата в порядке выдачи. `columns` принимаются, только если это ровно те же имена, что и ключи первой строки
- * (иначе список мог остаться от другого результата) — тогда берутся ключи первой строки, как раньше.
+ * (иначе список мог остаться от другого результата) — тогда берутся ключи первой строки.
  */
 export function getResultColumns(rows: readonly unknown[] | null | undefined, columns?: readonly string[] | null): string[] {
   const first = rows && rows.length > 0 ? rows[0] : null;

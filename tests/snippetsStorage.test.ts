@@ -120,7 +120,7 @@ describe('snippetsStorage (IndexedDB storage)', () => {
       expect(res.fileName).toBe('snippet_abcdef.py');
     });
 
-    // Характеризующие: расширение берётся по последней точке (так задумано, п. 1.7 это не меняет)
+    // Характеризующие: расширение берётся по последней точке (так задумано)
     it('takes the extension after the last dot', () => {
       const v = getSnippetExportFilename('v1.2', 'snip123');
       expect(v.baseName).toBe('v1');
@@ -138,7 +138,7 @@ describe('snippetsStorage (IndexedDB storage)', () => {
       expect(res.fileName).toBe('Отчет_по_объему.sql');
     });
 
-    // Новое поведение (п. 1.7): буква «ё» не вырезается
+    // Новое поведение: буква «ё» не вырезается
     it('keeps the letter ё in the file name', () => {
       const res = getSnippetExportFilename('Отчёт по объёму', 'snip123');
       expect(res.baseName).toBe('Отчёт_по_объёму');

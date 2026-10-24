@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { normalizeWasmTable, normalizeWasmValue, describeArrowType, WASM_MAX_ROWS } from '../src/utils/wasmResult';
 
-// п. 3.14 (WS-04): значения результата DuckDB-WASM приводятся к виду Tauri.
+// значения результата DuckDB-WASM приводятся к виду Tauri.
 // ВАЖНО: тесты идут на заглушках Arrow, собранных по описанию библиотеки; реальные значения WASM-сборки НЕ сняты
 // (см. tools/wasm-diagnostics.html). Ожидаемый вид — по Rust-коду execute_query (main.rs).
 

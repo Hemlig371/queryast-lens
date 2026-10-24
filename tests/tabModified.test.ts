@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { nextIsModified, setTabSql, formatWithFeedback, shouldConfirmClose } from '../src/utils/tabModified';
 import type { EditorTab } from '../src/types/editorTab';
 
-// п. 3.17 (C-06): одно правило isModified для ввода, вставки шаблона, форматирования, сжатия и восстановления версии.
+// одно правило isModified для ввода, вставки шаблона, форматирования, сжатия и восстановления версии.
 
 const tab = (over: Partial<EditorTab> = {}): EditorTab => ({ id: '1', title: 'Вкладка 1', sql: 'SELECT 1', ...over });
 

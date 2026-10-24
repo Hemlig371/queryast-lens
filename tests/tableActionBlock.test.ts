@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { appendTableActionBlock, TABLE_ACTION_SEPARATOR, type TableActionBlock } from '../src/utils/tableActionBlock';
 
-// Этап E плана 32: действия над таблицей дописывают блок в конец вкладки; сортировка и фильтр подряд заменяют друг друга.
+// Действия над таблицей дописывают блок в конец вкладки; сортировка и фильтр подряд заменяют друг друга.
 const SEP = TABLE_ACTION_SEPARATOR;
 
 describe('appendTableActionBlock', () => {

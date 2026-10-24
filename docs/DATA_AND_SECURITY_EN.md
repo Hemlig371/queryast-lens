@@ -35,7 +35,7 @@ All data is stored locally, in the browser or WebView profile (desktop and Andro
 ### Files (desktop)
 
 * The workspace sync file: the path from settings; if a folder is given, `sql_visualizer_workspace_sync.json` inside it.
-* SQL files saved by the user; Excel reports (including those from `@excel_save`); ClickHouse `COPY TO` exports.
+* SQL files saved by the user; Excel reports (including those from `@excel_save`); Excel templates are read from the path in `@template` / `@template_values` (read only); ClickHouse `COPY TO` exports.
 * DuckDB databases and temporary files: the `.duckdb` file and the `temp_directory` and `extension_directory` folders from settings.
 
 ## 2. What goes into export and workspace sync

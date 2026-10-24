@@ -13,7 +13,7 @@ describe('takeTableRows', () => {
     expect(takeTableRows(t, 10)).toEqual([{ id: 0 }, { id: 1 }, { id: 2 }]);
   });
 
-  it('усекает до предела и обращается только к нужным строкам (WS-05)', () => {
+  it('усекает до предела и обращается только к нужным строкам', () => {
     const t = fakeTable(600000);
     const rows = takeTableRows(t, 500000);
     expect(rows.length).toBe(500000);

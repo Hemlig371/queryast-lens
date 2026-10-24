@@ -64,7 +64,7 @@ export function WasmFileManagerModal({
     setIsLoading(true);
     setMessage(null);
 
-    // Статус честный по каждому файлу (WM-01): «успешно» — только если файл зарегистрирован; отложенная регистрация и сбои — отдельно.
+    // Статус честный по каждому файлу: «успешно» — только если файл зарегистрирован; отложенная регистрация и сбои — отдельно.
     let okCount = 0;
     let postponedCount = 0;
     const failed: string[] = [];

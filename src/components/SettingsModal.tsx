@@ -66,7 +66,6 @@ export interface UiVisibilitySettings {
   showCopySql: boolean;
   showMaximizeButton: boolean;
   showLayoutDirection: boolean;
-  showSortLimitToggle: boolean;
   showLineageFocus: boolean;
   showMiniMapButton: boolean;
   showThemeToggle: boolean;
@@ -135,7 +134,6 @@ export const DEFAULT_UI_VISIBILITY: UiVisibilitySettings = {
   showCopySql: true,
   showMaximizeButton: true,
   showLayoutDirection: true,
-  showSortLimitToggle: true,
   showLineageFocus: true,
   showMiniMapButton: true,
   showThemeToggle: true,
@@ -1296,7 +1294,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   {[
                     { key: 'showLayoutDirection', label: 'Переключатель Layout', desc: 'Ориентация Left-Right / Top-Bottom' },
-                    { key: 'showSortLimitToggle', label: 'Кнопки Sort / Limit Nodes', desc: 'Фильтры отображения узлов' },
                     { key: 'showLineageFocus', label: 'Кнопка Lineage Focus', desc: 'Подсветка связей выделенного узла' },
                     { key: 'showMiniMapButton', label: 'Кнопка Миникарты', desc: 'Переключатель видимости миникарты' },
                     { key: 'showThemeToggle', label: 'Переключатель темы', desc: 'Смена Dark / Light темы' },

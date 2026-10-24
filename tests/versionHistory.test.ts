@@ -89,7 +89,7 @@ describe('versionHistory (IndexedDB storage)', () => {
   });
 });
 
-// Подпись времени снимка: язык передаётся явно, часовой пояс задан для воспроизводимости (п. 1.13)
+// Подпись времени снимка: язык передаётся явно, часовой пояс задан для воспроизводимости
 describe('formatVersionLabel', () => {
   const morning = Date.UTC(2024, 4, 1, 10, 30, 45);
   const afternoon = Date.UTC(2024, 4, 1, 15, 5, 9);
@@ -99,7 +99,7 @@ describe('formatVersionLabel', () => {
     expect(formatVersionLabel(afternoon, 'ru', 'UTC')).toBe('01.05.2024, 15:05:09');
   });
 
-  // Новое поведение: английский язык больше не даёт подпись в формате ru-RU
+  // Английский язык не даёт подпись в формате ru-RU
   it('formats the label in the English style for "en"', () => {
     expect(formatVersionLabel(morning, 'en', 'UTC')).toMatch(/^05\/01\/2024, 10:30:45\sAM$/);
     expect(formatVersionLabel(afternoon, 'en', 'UTC')).toMatch(/^05\/01\/2024, 03:05:09\sPM$/);

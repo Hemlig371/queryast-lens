@@ -213,7 +213,7 @@ describe('excelExporter utils', () => {
       });
     });
 
-    // п. 3.2: порядок столбцов задаёт список columns; числовые имена и уникализированные дубли не теряются
+    // порядок столбцов задаёт список columns; числовые имена и уникализированные дубли не теряются
     it('порядок столбцов берётся из columns, а не из ключей объекта (числовые имена)', async () => {
       const { exportToExcel } = await import('../src/utils/excelExporter');
       const { DEFAULT_EXCEL_SETTINGS } = await import('../src/types/excelSettings');

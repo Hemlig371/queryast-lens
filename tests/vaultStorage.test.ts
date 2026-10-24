@@ -1,9 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { parseClickhouseUri, replaceSecretsInSql } from '../src/utils/vaultStorage';
-// We also need to test replaceSecretsInSql. It relies on isVaultUnlocked() and memoryVault.
-// The easiest way to test it is to set those values, but they are module-level private variables in vaultStorage.ts.
-// We might need to mock them, or just use the public API (setupVault, unlockVault, addOrUpdateVaultSecret) which requires mocking IndexedDB and crypto.
-// Let's just focus on parseClickhouseUri for now.
+// Здесь проверяется разбор URI ClickHouse; replaceSecretsInSql зависит от закрытого состояния хранилища и не покрыт.
 
 describe('vaultStorage utils', () => {
   describe('parseClickhouseUri', () => {

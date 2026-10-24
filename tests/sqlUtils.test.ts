@@ -100,7 +100,7 @@ SELECT * FROM a WHERE id = 42 UNION ALL SELECT * FROM b WHERE id = 42;`;
   });
 });
 
-describe('getLastSelectStatement (B-10)', () => {
+describe('getLastSelectStatement', () => {
   it('один запрос: без хвостовой «;»', () => {
     expect(getLastSelectStatement('SELECT 1;')).toBe('SELECT 1');
     expect(getLastSelectStatement('  select a from t  ')).toBe('select a from t');
@@ -134,7 +134,7 @@ describe('getLastSelectStatement (B-10)', () => {
   });
 });
 
-describe('buildQuickActionSource (B-10)', () => {
+describe('buildQuickActionSource', () => {
   it('до первого запроса — table', () => {
     expect(buildQuickActionSource('')).toBe('table');
     expect(buildQuickActionSource('  \n')).toBe('table');
@@ -147,7 +147,7 @@ describe('buildQuickActionSource (B-10)', () => {
   });
 });
 
-describe('findUnresolvedVariables (B-10)', () => {
+describe('findUnresolvedVariables', () => {
   it('все переменные определены в тексте вкладки — пусто', () => {
     expect(findUnresolvedVariables('SELECT {{$a}}', '-- {{$a=5}}\nSELECT 1')).toEqual([]);
   });
@@ -168,7 +168,7 @@ describe('findUnresolvedVariables (B-10)', () => {
   });
 });
 
-describe('{{$now}} (этап E плана 32)', () => {
+describe('{{$now}}', () => {
   it('formatLocalNow: локальное время YYYY-MM-DD HH:MM:SS с ведущими нулями', () => {
     expect(formatLocalNow(new Date(2024, 0, 5, 3, 4, 9))).toBe('2024-01-05 03:04:09');
     expect(formatLocalNow(new Date(2026, 11, 31, 23, 59, 59))).toBe('2026-12-31 23:59:59');

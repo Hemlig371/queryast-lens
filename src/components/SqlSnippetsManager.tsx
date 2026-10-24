@@ -1615,7 +1615,7 @@ export function SqlSnippetsManager({
   useEffect(() => {
     const loadSnippets = async () => {
       try {
-        // перенос из старого ключа localStorage выполняется один раз и ничего не стирает (п. 3.16)
+        // перенос из старого ключа localStorage выполняется один раз и ничего не стирает
         const { snippets } = await migrateLegacySnippets();
         setCustomSnippets(snippets);
       } catch (e) {
@@ -1901,7 +1901,7 @@ export function SqlSnippetsManager({
   const handleDeleteSnippet = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
 
-    // «Удалить» = переместить в «Корзину»; из самой «Корзины» — удалить насовсем (как раньше)
+    // «Удалить» = переместить в «Корзину»; из самой «Корзины» — удалить насовсем
     const target = allSnippets.find(s => s.id === id);
     if (target && !isTrashed(target)) {
       const trashed = trashSnippet({ ...target, isCustom: true });

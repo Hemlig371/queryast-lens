@@ -62,7 +62,7 @@ describe('resultRowsToMarkdown', () => {
     expect(resultRowsToMarkdown([{}])).toBe('');
   });
 
-  // п. 3.2: порядок столбцов из отдельного списка columns (числовые имена, уникализированные дубли)
+  // порядок столбцов из отдельного списка columns (числовые имена, уникализированные дубли)
   it('columns задают порядок столбцов: числовые имена не переставляются по возрастанию', () => {
     const numeric = [{ '1': 'y', '2': 'x', b: 'z' }];
     expect(resultRowsToMarkdown(numeric)).toBe('| 1 | 2 | b |\n| --- | --- | --- |\n| y | x | z |');

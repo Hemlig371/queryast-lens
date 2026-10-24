@@ -1,4 +1,4 @@
-// Копирование результата как TSV (вынесено из App.tsx без изменения формата; B-16 «TSV без кавычек» оставлен).
+// Копирование результата как TSV (значения без экранирования кавычками).
 import { getResultColumns } from './resultRows';
 
 export interface ResultTsvOptions {
@@ -8,7 +8,7 @@ export interface ResultTsvOptions {
   firstRowNumber: number;
   /** Подпись первого столбца при транспонировании. */
   fieldLabel: string;
-  /** Порядок столбцов (п. 3.2); не задан или не подходит — ключи первой строки. */
+  /** Порядок столбцов; не задан или не подходит — ключи первой строки. */
   columns?: readonly string[] | null;
 }
 

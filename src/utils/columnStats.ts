@@ -2,7 +2,6 @@ import { t } from './i18n';
 import { formatCellValue } from './formatCellValue';
 
 // Статистика по колонке результата (Count/Distinct/Null, для числовых — Sum/Min/Max/Avg/Median).
-// Вынесено из App.tsx (этап A2) без изменения логики.
 export function computeColumnStats(colKey: string, rows: any[]): string {
   if (!rows || rows.length === 0) return `${t("Количество (Count)")}: 0\n${t("Уникальных (Distinct)")}: 0\n${t("Пустых (Null/Empty)")}: 0`;
 

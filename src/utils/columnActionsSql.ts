@@ -16,7 +16,7 @@ const wrapSub = (selectPart: string, baseSql: string): string =>
 
 /**
  * GROUP BY по выбранным столбцам со счётчиком строк.
- * Для одного столбца результат совпадает с прежним `handleApplyTableGroupBy`:
+ * Для одного столбца:
  * `SELECT "x", COUNT(*) AS count FROM (...) AS _sub GROUP BY 1 ORDER BY 2 DESC`.
  */
 export function buildGroupBySql(baseSql: string, cols: string[]): string {
