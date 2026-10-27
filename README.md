@@ -6,10 +6,10 @@ Cross-platform SQL Query Workbench and analytical database client (DuckDB, Click
 
 | Platform | Type / Arch | Package / Download |
 | :--- | :--- | :--- |
-| **Windows** | x64 | [Windows: Native Desktop (`.msi` / `.exe`)](https://github.com/Hemlig371/queryast-lens/releases/download/v8.6.0/QueryAST.Lens_8.6.0_x64-setup.exe) |
-| **macOS** | Apple Silicon (arm64) | [macOS: Desktop (`.dmg`)](https://github.com/Hemlig371/queryast-lens/releases/download/v8.6.0/QueryAST.Lens_8.6.0_aarch64.dmg) |
-| **Linux** | x86_64 / Wayland & X11 | [Linux: Standalone (`.AppImage` / `.deb`)](https://github.com/Hemlig371/queryast-lens/releases/download/v8.6.0/query-ast-lens_8.6.0_amd64.AppImage) |
-| **Android** | APK (debug build) | [Android APK: Mobile Application (`.apk`)](https://github.com/Hemlig371/queryast-lens/releases/download/v8.6.0/QueryAST-Lens-v8.6.0-android.apk) |
+| **Windows** | x64 | [Windows: Native Desktop (`.msi` / `.exe`)](https://github.com/Hemlig371/queryast-lens/releases/download/v8.6.1/QueryAST.Lens_8.6.1_x64-setup.exe) |
+| **macOS** | Apple Silicon (arm64) | [macOS: Desktop (`.dmg`)](https://github.com/Hemlig371/queryast-lens/releases/download/v8.6.1/QueryAST.Lens_8.6.1_aarch64.dmg) |
+| **Linux** | x86_64 / Wayland & X11 | [Linux: Standalone (`.AppImage` / `.deb`)](https://github.com/Hemlig371/queryast-lens/releases/download/v8.6.1/query-ast-lens_8.6.1_amd64.AppImage) |
+| **Android** | APK (debug build) | [Android APK: Mobile Application (`.apk`)](https://github.com/Hemlig371/queryast-lens/releases/download/v8.6.1/QueryAST-Lens-v8.6.1-android.apk) |
 
 <p align="center">
   <img src="https://github.com/user-attachments/assets/b6d62bb3-5282-4539-85f3-157314eab3a6" alt="Interactive AST & Data Lineage Graph" width="100%" />
