@@ -1,3 +1,5 @@
+import { dollarQuoteTag } from '../utils/sqlTokens';
+
 export const formatColumnType = (type: string | undefined | null): string => {
   if (!type) return '';
   const t = type.trim();
@@ -14,10 +16,19 @@ export const splitBySemicolonIgnoringQuotes = (str: string): string[] => {
   let inString: string | null = null;
   let inSingleComment = false;
   let inMultiComment = false;
+  let dollarTag: string | null = null;
   for (let i = 0; i < str.length; i++) {
     const char = str[i];
     const nextChar = str[i + 1] || '';
-    if (inSingleComment) {
+    if (dollarTag) {
+      if (str.startsWith(dollarTag, i)) {
+        current += dollarTag;
+        i += dollarTag.length - 1;
+        dollarTag = null;
+      } else {
+        current += char;
+      }
+    } else if (inSingleComment) {
       current += char;
       if (char === '\n') {
         inSingleComment = false;
@@ -42,6 +53,10 @@ export const splitBySemicolonIgnoringQuotes = (str: string): string[] => {
       inMultiComment = true;
       current += char + nextChar;
       i++;
+    } else if (char === '$' && dollarQuoteTag(str, i)) {
+      dollarTag = dollarQuoteTag(str, i);
+      current += dollarTag;
+      i += (dollarTag as string).length - 1;
     } else if (char === "'" || char === '"' || char === '`') {
       inString = char;
       current += char;

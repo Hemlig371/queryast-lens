@@ -1,6 +1,7 @@
 // Лексический разбор SQL на «код», строки и комментарии без потери текста.
 // Правила те же, что у stripCommentsAndLiterals (clickhouseFormat.ts): `--` до конца строки, `/* … */` без вложенности,
-// строки и идентификаторы в '…', "…", `…`; удвоенная кавычка внутри не закрывает строку.
+// строки и идентификаторы в '…', "…", `…`; удвоенная кавычка внутри не закрывает строку;
+// строка в долларовых кавычках `$$…$$` и `$тег$…$тег$` (DuckDB, PostgreSQL) до такой же закрывающей метки.
 // Используется сжатием SQL (3.6) и построением страниц результата (3.1): там важно не трогать содержимое строк и комментариев.
 
 export type SqlSegmentType = 'code' | 'line-comment' | 'block-comment' | 'string';
@@ -17,6 +18,18 @@ export interface SqlTokenOptions {
    * По умолчанию true.
    */
   backslashEscapes?: boolean;
+}
+
+/**
+ * Метка долларовых кавычек (`$$` или `$тег$`), которая начинается в позиции `i`; null, если там её нет.
+ * Тег — буквы, цифры и `_`, не с цифры. Перед меткой не должно быть символа имени (`a$b$`), иначе это часть идентификатора;
+ * `$1` и `$name` без закрывающего `$` не метки.
+ */
+export function dollarQuoteTag(sql: string, i: number): string | null {
+  if (sql[i] !== '$') return null;
+  if (i > 0 && /[A-Za-z0-9_$]/.test(sql[i - 1])) return null;
+  const m = /^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/.exec(sql.slice(i, i + 130));
+  return m ? m[0] : null;
 }
 
 /**
@@ -50,6 +63,14 @@ export function splitSqlSegments(sql: string, opts: SqlTokenOptions = {}): SqlSe
       const end = sql.indexOf('*/', i + 2);
       const j = end < 0 ? n : end + 2;
       out.push({ type: 'block-comment', text: sql.slice(i, j) });
+      i = j;
+      codeStart = i;
+    } else if (c === '$' && dollarQuoteTag(sql, i)) {
+      flushCode(i);
+      const tag = dollarQuoteTag(sql, i) as string;
+      const end = sql.indexOf(tag, i + tag.length);
+      const j = end < 0 ? n : end + tag.length;
+      out.push({ type: 'string', text: sql.slice(i, j) });
       i = j;
       codeStart = i;
     } else if (c === "'" || c === '"' || c === '`') {
