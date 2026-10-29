@@ -197,7 +197,21 @@ async fn disconnect_db(state: State<'_, DbState>) -> Result<(), String> {
 
 #[tauri::command]
 async fn write_text_file(path: String, contents: String) -> Result<(), String> {
-    tokio::fs::write(&path, contents).await.map_err(|e| e.to_string())
+    // Сначала во временный файл рядом, затем переименование: оборванная запись (закрытие окна, нет места, сбой диска)
+    // оставляет прежний файл целым, а два одновременных сохранения не пишут в один и тот же файл.
+    static TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = TMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp = format!("{}.{}.{}.tmp", path, std::process::id(), seq);
+    if let Err(e) = tokio::fs::write(&tmp, &contents).await {
+        let _ = tokio::fs::remove_file(&tmp).await;
+        return Err(e.to_string());
+    }
+    if tokio::fs::rename(&tmp, &path).await.is_err() {
+        // переименование не удалось (например, файл занят другой программой): обычная прямая запись
+        let _ = tokio::fs::remove_file(&tmp).await;
+        return tokio::fs::write(&path, contents).await.map_err(|e| e.to_string());
+    }
+    Ok(())
 }
 
 #[tauri::command]

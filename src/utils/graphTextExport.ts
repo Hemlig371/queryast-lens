@@ -55,7 +55,6 @@ const makeJsonReplacer = () => {
 export interface GraphTextExportInput {
   nodes: any[];
   edges: any[];
-  dialect: string;
   direction: 'LR' | 'TB';
   /** Текст SQL активной вкладки (попадает в XML-экспорт). */
   sql: string;
@@ -70,7 +69,7 @@ export interface GraphTextExportResult {
 /** Строит текстовое представление графа (json/xml/drawio/mermaid). Без побочных эффектов. */
 export function buildGraphTextExport(
   format: GraphTextFormat,
-  { nodes: allNodes, edges, dialect, direction, sql }: GraphTextExportInput
+  { nodes: allNodes, edges, direction, sql }: GraphTextExportInput
 ): GraphTextExportResult {
   // рамки CTE/подзапросов — оформление экрана, не данные графа
   const nodes = allNodes.filter((n: any) => n?.type !== 'frameNode');
@@ -82,7 +81,6 @@ export function buildGraphTextExport(
     const exportData = {
       metadata: {
         exportedAt: new Date().toISOString(),
-        dialect,
         nodeCount: nodes.length,
         edgeCount: edges.length,
       },
@@ -115,7 +113,7 @@ export function buildGraphTextExport(
     };
 
     let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
-    xml += `<sqlGraph dialect="${escapeXml(dialect)}" exportedAt="${new Date().toISOString()}">\n`;
+    xml += `<sqlGraph exportedAt="${new Date().toISOString()}">\n`;
     xml += `  <query>${cdata(sql)}</query>\n`;
     xml += `  <nodes count="${nodes.length}">\n`;
     nodes.forEach((n: any) => {

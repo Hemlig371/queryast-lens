@@ -116,14 +116,18 @@ Before execution, the editor automatically performs safe variable substitution. 
 * `Ctrl + S` (or `Cmd + S`) — Save current query to file / history.
 * `Ctrl + Shift + S` — Save As new file.
 * `Ctrl + O` — Open SQL file from disk.
+* `Ctrl + Shift + K` — Save the current tab as a template (opens a pre-filled template form: title = tab name, description = first line, text = whole tab).
+* `Alt + N` / `Alt + X` — New tab / close tab (close asks for confirmation if the file has unsaved changes).
+* `Alt + Enter` — Re-run the last query executed in this tab (regardless of current text and selection).
 * `Ctrl + K` — Open snippets library (Snippets Manager).
 * `Ctrl + \`` (or `Cmd + \``) — Open / close **Action Menu**.
 * `Ctrl + Q` — Open Quick Actions contextual menu under cursor.
 * `Ctrl + /` — Comment / uncomment line or block (`--` / `/* ... */`).
-* `Ctrl + Shift + U` / `Ctrl + Shift + L` — Convert selection or word under cursor to UPPERCASE / lowercase.
+* `Alt + Shift + U` / `Ctrl + Shift + L` — Convert selection or word under cursor to UPPERCASE / lowercase.
 * `Alt + Up` / `Alt + Down` — Move line or selected block of lines up / down.
 * `Ctrl + Shift + V` — Paste clipboard content at the **end** of each selected line.
 * `Ctrl + Alt + V` — Paste clipboard content at the **beginning** of each selected line (convenient for mass quotation or prefixing).
+* Case conversion, moving lines (`Alt + Up` / `Alt + Down`) and pasting at the beginning / end of lines (`Ctrl + Shift + V`, `Ctrl + Alt + V`) work only while the focus is in the editor text; from the search and replace field they do not change the document.
 * `Ctrl + 1` .. `Ctrl + 9` — Switch directly to tab 1 through 9 (modifier configurable in Hotkeys settings).
 * **Mouse Tab Management**: Middle-click (mouse wheel click) on a tab header closes it; the `+` button creates a new tab.
 * `Alt + W` — Toggle word wrap in editor.

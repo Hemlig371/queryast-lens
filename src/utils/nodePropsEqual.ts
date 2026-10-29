@@ -14,7 +14,6 @@ export function isNodePropsEqual(prevProps: NodePropsLike, nextProps: NodePropsL
   if (prevProps.data === nextProps.data) return true;
   if (!prevProps.data || !nextProps.data) return prevProps.data === nextProps.data;
 
-  // Shallow compare data keys
   const keysA = Object.keys(prevProps.data);
   const keysB = Object.keys(nextProps.data);
   if (keysA.length !== keysB.length) return false;

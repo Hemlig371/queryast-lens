@@ -41,7 +41,6 @@ export interface FormatterSettings {
 
 export interface UiVisibilitySettings {
   showEditorToggleBtn?: boolean;
-  showPresets: boolean;
   showSnippets: boolean;
   showHistory: boolean;
   showDuckDbConfig?: boolean;
@@ -71,17 +70,14 @@ export interface UiVisibilitySettings {
   showThemeToggle: boolean;
   showExportButton: boolean;
   showGraphFooter: boolean;
-  // Snippets settings
   showSnippetSearch: boolean;
   showSnippetCategories: boolean;
   showSnippetFavorites: boolean;
   showSnippetCreateBtn: boolean;
-  // History settings
   showHistorySearch: boolean;
   showHistoryManualSnapshot: boolean;
   showHistoryExport: boolean;
   showHistoryDiff: boolean;
-  // Export Menu Settings
   showExportPngBg: boolean;
   showExportPngTransparent: boolean;
   showExportSvgBg: boolean;
@@ -109,7 +105,6 @@ export const DEFAULT_FORMATTER_SETTINGS: FormatterSettings = {
 
 export const DEFAULT_UI_VISIBILITY: UiVisibilitySettings = {
   showEditorToggleBtn: true,
-  showPresets: true,
   showSnippets: true,
   showHistory: true,
   showDuckDbConfig: true,
@@ -327,6 +322,34 @@ export const DEFAULT_HOTKEYS: HotkeyBinding[] = [
     description: 'Открыть окно готовых шаблонов кода',
     category: 'Редактор',
     defaultKey: 'Ctrl+K'
+  },
+  {
+    id: 'saveAsSnippet',
+    label: 'Сохранить вкладку как шаблон',
+    description: 'Открыть форму нового шаблона, заполненную из активной вкладки (также ПКМ по вкладке)',
+    category: 'Редактор',
+    defaultKey: 'Ctrl+Shift+K'
+  },
+  {
+    id: 'newTab',
+    label: 'Новая вкладка',
+    description: 'Создать пустую вкладку редактора',
+    category: 'Редактор',
+    defaultKey: 'Alt+N'
+  },
+  {
+    id: 'closeTab',
+    label: 'Закрыть вкладку',
+    description: 'Закрыть активную вкладку (с подтверждением, если в файле есть несохранённые изменения)',
+    category: 'Редактор',
+    defaultKey: 'Alt+X'
+  },
+  {
+    id: 'rerunLast',
+    label: 'Выполнить последний запрос ещё раз',
+    description: 'Повторить последний выполненный в этой вкладке запрос, независимо от текущего текста и выделения',
+    category: 'Редактор',
+    defaultKey: 'Alt+Enter'
   },
   {
     id: 'toggleMaximized',
@@ -559,7 +582,6 @@ export async function applyWorkspaceBundleSilently(
         }
       }
     } catch {
-      // Ignore parse errors on pre-existing localStorage
     }
   }
 
@@ -677,7 +699,6 @@ export async function importWorkspaceSettings(file: File, onBeforeImport?: () =>
           }
         }
       } catch {
-        // Ignore parse errors on pre-existing localStorage
       }
 
       // Ensure session key compatibility (if old key exists without _v2)
@@ -741,7 +762,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   // Действие, с которым конфликтует только что введённое сочетание: { записываемое действие, занявшее его }
   const [hotkeyConflict, setHotkeyConflict] = useState<{ actionId: string; withId: string } | null>(null);
 
-  // Excel Settings State
   const [excelSettings, setExcelSettings] = useState<ExcelSettings>(getSavedExcelSettings);
 
   const updateExcel = (partial: Partial<ExcelSettings>) => {
@@ -755,7 +775,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setExcelSettings(defaultSet);
   };
 
-  // Custom Autocomplete Templates State
   const [templates, setTemplates] = useState<AutocompleteTemplate[]>(getCustomAutocompleteTemplates);
   const [newKeyword, setNewKeyword] = useState<string>('');
   const [newInsertion, setNewInsertion] = useState<string>('');
@@ -765,7 +784,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [editInsertion, setEditInsertion] = useState<string>('');
   const [editDesc, setEditDesc] = useState<string>('');
 
-  // Quick Action Templates State
   const [quickActions, setQuickActions] = useState<QuickActionTemplate[]>(getQuickActionTemplates);
   const [newQaName, setNewQaName] = useState<string>('');
   const [newQaTemplate, setNewQaTemplate] = useState<string>('');
@@ -1140,7 +1158,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     { key: 'showSnippets', label: 'Шаблоны и Конструктор', desc: 'Библиотека готовых фрагментов' },
                     { key: 'showHistory', label: 'История версий', desc: 'История снимков и автосохранений' },
                     { key: 'showMaximizeButton', label: 'Кнопки «Развернуть»', desc: 'Скрывает кнопки Graph и Editor' },
-                    { key: 'showPresets', label: 'Кнопка «Пресеты»', desc: 'Быстрый выбор готовых SQL запросов' },
                     { key: 'showFormatSql', label: 'Кнопка «Формат»', desc: 'Авто-форматирование SQL' },
                     { key: 'showCompactSql', label: 'Кнопка «Формат в одну строку»', desc: 'Замена переносов строк на пробелы' },
                     { key: 'showCopySql', label: 'Кнопка «Copy SQL»', desc: 'Копирование текста в буфер обмена' },

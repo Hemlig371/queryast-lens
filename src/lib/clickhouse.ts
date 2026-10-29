@@ -134,9 +134,7 @@ export function parseClickhouseResponse(responseText: string, query: string, max
 export async function executeClickhouseQueryTauri(config: ClickhouseConfig, query: string): Promise<any> {
   const { invoke } = await import('@tauri-apps/api/tauri');
 
-  // We no longer strictly need a query_id for cancellation since we abort the HTTP request, 
-  // which will cause ClickHouse to cancel the query (cancel_http_readonly_queries_on_client_close=1 by default).
-  // But we still pass session_id or query_id if needed, though they aren't strictly required.
+  // Отмена — разрывом HTTP-запроса: ClickHouse сам останавливает запрос при закрытии соединения.
   const url = getClickhouseUrl(config);
   const originalHeaders = getClickhouseHeaders(config, 'text/plain;charset=utf-8');
 

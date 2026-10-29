@@ -1,6 +1,6 @@
 import { t } from "../utils/i18n";
 import React, { useRef, useState, useLayoutEffect, useEffect } from 'react';
-import { Search, Replace, ChevronUp, ChevronDown, X, CaseSensitive, Table } from 'lucide-react';
+import { Search, Replace, ChevronUp, ChevronDown, X, CaseSensitive, Table, Play, Workflow, Scissors, Copy, ClipboardPaste } from 'lucide-react';
 import { EditorState, EditorSelection, Compartment, Prec, Annotation } from '@codemirror/state';
 import type { Extension } from '@codemirror/state';
 import { EditorView, keymap, drawSelection, dropCursor, lineNumbers, Decoration } from '@codemirror/view';
@@ -25,6 +25,7 @@ import {
   type TextEdit,
   computeMoveLines,
   computeChangeCase,
+  computeToggleComment,
   computePasteLines,
   computeIndent,
   computeWrapSelection,
@@ -35,6 +36,7 @@ import {
   AUTOCOMPLETE_WORD_RE,
 } from '../editor/editorOps';
 import { matchHotkeyCombo } from '../editor/hotkeysMatch';
+import { copyToClipboard } from '../utils/exportUtils';
 
 // Реэкспорт публичного API модуля (на него завязаны App, SettingsModal, SqlSnippetsManager).
 export { DEFAULT_AUTOCOMPLETE_TEMPLATES, getCustomAutocompleteTemplates } from '../editor/templates';
@@ -76,6 +78,11 @@ interface SqlEditorProps {
    * чтобы Ctrl+Z не «перетаскивал» текст из другой вкладки. Выделение и скролл запоминаются по docId.
    */
   docId?: string;
+  /** Пункты контекстного меню (ПКМ): выполнить и визуализировать выделенное (без выделения — весь текст). Нет обработчика — нет пункта. */
+  onExecute?: () => void;
+  /** running — запрос идёт, пункт превращается в «Остановить запрос»; disabled — выполнять нельзя (нет подключения или идёт другой запрос). */
+  executeState?: 'ready' | 'running' | 'disabled';
+  onVisualize?: () => void;
 }
 
 type PopupPos = { top: number; left: number; isAbove?: boolean };
@@ -97,6 +104,9 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
     editorRef,
     schemaTables,
     docId,
+    onExecute,
+    executeState = 'ready',
+    onVisualize,
   } = props;
 
   const latest = useRef(props);
@@ -122,7 +132,6 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
 
   const [value, setValue] = useState(propValue);
 
-  // Search state
   const [showSearch, setShowSearch] = useState<boolean>(false);
   // Ширина колонки номеров строк (растёт с числом цифр): панель поиска/замены выравнивается по началу текста.
   const [gutterW, setGutterW] = useState<number>(0);
@@ -161,7 +170,6 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
   const lastSearchQueryRef = useRef<string>('');
   const hasNavigatedSearchRef = useRef<boolean>(false);
 
-  // Quick actions & autocomplete state
   const [showQuickActionsPopup, setShowQuickActionsPopup] = useState<boolean>(false);
   const [customTemplates, setCustomTemplates] = useState<AutocompleteTemplate[]>(getCustomAutocompleteTemplates);
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -352,6 +360,89 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
 
   const handleMoveLines = (dir: 'up' | 'down') => runTextOp((text, s, e) => computeMoveLines(text, s, e, dir));
   const handleChangeCase = (target: 'upper' | 'lower') => runTextOp((text, s, e) => computeChangeCase(text, s, e, target));
+  const handleToggleComment = () => runTextOp((text, s, e) => computeToggleComment(text, s, e));
+
+  // ------------------------------------------------------- контекстное меню (ПКМ)
+
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; hasSelection: boolean } | null>(null);
+
+  const openContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const view = viewRef.current;
+    if (!view) return;
+    // как в других редакторах: ПКМ вне выделения переносит курсор в точку клика, внутри выделения — оставляет его
+    const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
+    const sel = view.state.selection.main;
+    if (pos !== null && (sel.empty || pos < sel.from || pos > sel.to)) {
+      view.dispatch({ selection: { anchor: pos } });
+    }
+    setCtxMenu({ x: e.clientX, y: e.clientY, hasSelection: !view.state.selection.main.empty });
+  };
+
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const close = () => setCtxMenu(null);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setCtxMenu(null); };
+    window.addEventListener('click', close);
+    window.addEventListener('contextmenu', close, true); // ПКМ вне редактора; из редактора меню откроется заново
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('blur', close);
+    window.addEventListener('resize', close);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('contextmenu', close, true);
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('blur', close);
+      window.removeEventListener('resize', close);
+    };
+  }, [ctxMenu]);
+
+  const selectedText = (): string => {
+    const view = viewRef.current;
+    if (!view) return '';
+    const sel = view.state.selection.main;
+    return view.state.sliceDoc(sel.from, sel.to);
+  };
+
+  const ctxCopy = () => {
+    const text = selectedText();
+    if (!text) return;
+    lastCopiedTextRef.current = text;
+    copyToClipboard(text).catch(() => {});
+    viewRef.current?.focus();
+  };
+
+  const ctxCut = () => {
+    const view = viewRef.current;
+    const text = selectedText();
+    if (!view || !text || !latest.current.onChange) return;
+    lastCopiedTextRef.current = text;
+    copyToClipboard(text).catch(() => {});
+    view.focus();
+    view.dispatch(view.state.replaceSelection(''), { scrollIntoView: true, userEvent: 'delete.cut' });
+  };
+
+  const ctxPaste = () => {
+    const view = viewRef.current;
+    if (!view || !latest.current.onChange) return;
+    const insert = (text: string) => {
+      if (!text) return;
+      view.focus();
+      view.dispatch(view.state.replaceSelection(text), { scrollIntoView: true, userEvent: 'input.paste' });
+    };
+    if (navigator.clipboard && typeof navigator.clipboard.readText === 'function') {
+      navigator.clipboard.readText().then(insert).catch(() => insert(lastCopiedTextRef.current));
+    } else {
+      insert(lastCopiedTextRef.current);
+    }
+  };
+
+  const ctxSelectAll = () => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.focus();
+    view.dispatch({ selection: { anchor: 0, head: view.state.doc.length } });
+  };
   const performPaste = (clipText: string, atEnd: boolean) =>
     runTextOp((text, s, e) => computePasteLines(text, s, e, clipText, atEnd));
 
@@ -886,13 +977,17 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
         e.stopPropagation();
       };
 
-      if (matchHotkeyCombo(e, savedHotkeys.pasteAtEnd || 'Ctrl+Shift+V')) { consume(); handleMultiLinePaste(true); return; }
-      if (matchHotkeyCombo(e, savedHotkeys.pasteAtStart || 'Ctrl+Alt+V')) { consume(); handleMultiLinePaste(false); return; }
-      if (matchHotkeyCombo(e, savedHotkeys.moveLinesUp || 'Alt+Up')) { consume(); handleMoveLines('up'); return; }
-      if (matchHotkeyCombo(e, savedHotkeys.moveLinesDown || 'Alt+Down')) { consume(); handleMoveLines('down'); return; }
-      if (matchHotkeyCombo(e, savedHotkeys.toUpperCase || 'Alt+Shift+U')) { consume(); handleChangeCase('upper'); return; }
-      if (matchHotkeyCombo(e, savedHotkeys.toLowerCase || 'Ctrl+Shift+L')) { consume(); handleChangeCase('lower'); return; }
-
+      // Правка текста документа: только когда фокус в самом редакторе. Из поля поиска/замены эти комбинации (например Ctrl+Shift+V)
+      // не должны менять документ — там они работают как обычный ввод в поле.
+      const focusInContent = !!(activeEl && view.contentDOM.contains(activeEl));
+      if (focusInContent) {
+        if (matchHotkeyCombo(e, savedHotkeys.pasteAtEnd || 'Ctrl+Shift+V')) { consume(); handleMultiLinePaste(true); return; }
+        if (matchHotkeyCombo(e, savedHotkeys.pasteAtStart || 'Ctrl+Alt+V')) { consume(); handleMultiLinePaste(false); return; }
+        if (matchHotkeyCombo(e, savedHotkeys.moveLinesUp || 'Alt+Up')) { consume(); handleMoveLines('up'); return; }
+        if (matchHotkeyCombo(e, savedHotkeys.moveLinesDown || 'Alt+Down')) { consume(); handleMoveLines('down'); return; }
+        if (matchHotkeyCombo(e, savedHotkeys.toUpperCase || 'Alt+Shift+U')) { consume(); handleChangeCase('upper'); return; }
+        if (matchHotkeyCombo(e, savedHotkeys.toLowerCase || 'Ctrl+Shift+L')) { consume(); handleChangeCase('lower'); return; }
+      }
       const targetSearchCombo = savedHotkeys.searchSql || 'Ctrl+F';
       const targetReplaceCombo = savedHotkeys.replaceSql || 'Ctrl+H';
       const targetCompactCombo = savedHotkeys.compactSql || 'Ctrl+Alt+M';
@@ -1091,8 +1186,70 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
       {/* CODE EDITOR BODY AREA */}
       <div className="flex-1 flex flex-row min-h-0 relative overflow-hidden">
         {/* EDITOR (CodeMirror 6) + POPUPS */}
-        <div ref={bodyRef} className="flex-1 h-full relative overflow-hidden">
+        <div ref={bodyRef} onContextMenu={openContextMenu} className="flex-1 h-full relative overflow-hidden">
           <div ref={hostRef} className="absolute inset-0" />
+
+          {/* КОНТЕКСТНОЕ МЕНЮ РЕДАКТОРА (ПКМ) */}
+          {ctxMenu && (() => {
+            const scale = (getSavedUiVisibilitySettings().uiScale ?? 100) / 100;
+            const editable = !!onChange;
+            const hasSel = ctxMenu.hasSelection;
+            const dark = theme === 'dark';
+            const hover = dark ? 'hover:bg-slate-700 disabled:hover:bg-transparent' : 'hover:bg-slate-100 disabled:hover:bg-transparent';
+            const itemCls = `w-full text-left px-3 py-1.5 flex items-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${hover}`;
+            const cellCls = `flex-1 px-2 py-1.5 flex items-center justify-center font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${hover}`;
+            const sepCls = `my-0.5 border-t ${dark ? 'border-slate-700' : 'border-slate-200'}`;
+            const keepFocus = (ev: React.MouseEvent) => ev.preventDefault(); // фокус остаётся в редакторе, выделение не сбрасывается
+            const item = (label: string, onClick: () => void, opts: { disabled?: boolean; icon?: React.ReactNode } = {}) => (
+              <button type="button" disabled={opts.disabled} onMouseDown={keepFocus} onClick={() => { onClick(); setCtxMenu(null); }} className={itemCls}>
+                <span className="w-3.5 shrink-0 flex items-center justify-center">{opts.icon}</span>
+                <span className="flex-1">{label}</span>
+              </button>
+            );
+            const cell = (title: string, onClick: () => void, content: React.ReactNode, disabled = false) => (
+              <button type="button" title={title} aria-label={title} disabled={disabled} onMouseDown={keepFocus} onClick={() => { onClick(); setCtxMenu(null); }} className={cellCls}>
+                {content}
+              </button>
+            );
+            const maxH = window.innerHeight / scale - 16;
+            return (
+              <div
+                onContextMenu={(ev) => ev.preventDefault()}
+                className={`fixed z-[99999] [transform:translateZ(0)] w-40 overflow-y-auto rounded-lg border shadow-xl py-1 text-xs select-none ${
+                  dark ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-white border-slate-200 text-slate-800'
+                }`}
+                style={{
+                  left: Math.max(8, Math.min(ctxMenu.x / scale, (window.innerWidth / scale) - 170)),
+                  top: Math.max(8, Math.min(ctxMenu.y / scale, (window.innerHeight / scale) - 260)),
+                  maxHeight: maxH,
+                }}
+              >
+                {onExecute && item(
+                  executeState === 'running' ? t('Остановить запрос') : t('Выполнить'),
+                  onExecute,
+                  { disabled: executeState === 'disabled', icon: <Play className="w-3.5 h-3.5 text-teal-500" /> }
+                )}
+                {onVisualize && item(
+                  t('Визуализировать'),
+                  onVisualize,
+                  { icon: <Workflow className="w-3.5 h-3.5 text-blue-500" /> }
+                )}
+                {(onExecute || onVisualize) && <div className={sepCls} />}
+                <div className="flex">
+                  {cell(t('Вырезать'), ctxCut, <Scissors className="w-3.5 h-3.5" />, !editable || !hasSel)}
+                  {cell(t('Копировать'), ctxCopy, <Copy className="w-3.5 h-3.5" />, !hasSel)}
+                  {cell(t('Вставить'), ctxPaste, <ClipboardPaste className="w-3.5 h-3.5" />, !editable)}
+                  {cell(t('Выделить всё'), ctxSelectAll, <span>{t('Все')}</span>)}
+                </div>
+                <div className={sepCls} />
+                <div className="flex font-mono">
+                  {cell(t('ВЕРХНИЙ регистр'), () => handleChangeCase('upper'), <span>AB</span>, !editable)}
+                  {cell(t('нижний регистр'), () => handleChangeCase('lower'), <span>ab</span>, !editable)}
+                  {cell(t('Закомментировать / раскомментировать'), handleToggleComment, <span>--</span>, !editable)}
+                </div>
+              </div>
+            );
+          })()}
 
                     {/* AUTOCOMPLETE POPUP DROPDOWN UNDER CURSOR */}
           {showAutocomplete && suggestions.length > 0 && (

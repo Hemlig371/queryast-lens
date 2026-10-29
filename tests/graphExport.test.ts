@@ -5,7 +5,6 @@ import { scopedHideScrollbarsCss } from '../src/utils/graphExportStyle';
 const input = (over: Partial<GraphTextExportInput> = {}): GraphTextExportInput => ({
   nodes: [],
   edges: [],
-  dialect: 'DuckDB',
   direction: 'LR',
   sql: '',
   ...over,

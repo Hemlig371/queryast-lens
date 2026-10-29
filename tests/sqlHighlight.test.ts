@@ -15,6 +15,20 @@ describe('sqlHighlight (HTML-подсветка для статических п
     expect(highlightSqlHtml('select x from x', 'dark', 'x')).toContain('bg-amber-400/25');
   });
 
+  it('выделенное слово gt/lt/amp не ломает HTML-сущности', () => {
+    const html = highlightSqlHtml('SELECT 1 WHERE a > 1 AND b < 2 AND c = 1 & 2', 'dark', 'gt');
+    expect(html).toContain('&gt;');
+    expect(html).not.toContain('bg-amber-400/25');
+    expect(highlightSqlHtml('WHERE a < 1', 'dark', 'lt')).toContain('&lt;');
+    expect(highlightSqlHtml('WHERE a & 1', 'dark', 'amp')).toContain('&amp;');
+    expect(highlightSqlHtml('WHERE a & 1', 'dark', 'amp')).not.toContain('bg-amber-400/25');
+  });
+  it('выделенные знаки >, <, & по-прежнему подсвечиваются целиком, слова рядом с сущностями — тоже', () => {
+    expect(highlightSqlHtml('WHERE a > 1', 'dark', '>')).toMatch(/bg-amber-400\/25[^>]*>&gt;<\/span>/);
+    expect(highlightSqlHtml('WHERE a & 1', 'dark', '&')).toMatch(/bg-amber-400\/25[^>]*>&amp;<\/span>/);
+    expect(highlightSqlHtml('x >= gt', 'dark', 'gt')).toMatch(/bg-amber-400\/25[^>]*>gt<\/span>/);
+  });
+
   it('подсвечивает переменные с кириллическими именами', () => {
     const html = getBaseHighlight('SELECT {{$дата}}', 'dark');
     expect(html).toContain('{{$дата}}');

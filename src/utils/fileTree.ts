@@ -231,7 +231,10 @@ export function dirnameOf(path: string): string {
   if (i < 0) return '';
   if (i === 0) return '/';
   // Сохраняем исходный вид разделителей: режем по позиции в исходной строке.
-  return path.slice(0, i) || '/';
+  const head = path.slice(0, i);
+  // Корень диска Windows: `C:` без разделителя — это «текущая папка диска C», поэтому разделитель сохраняется (`C:\`).
+  if (/^[A-Za-z]:$/.test(head)) return path.slice(0, i + 1);
+  return head || '/';
 }
 
 /** Корень дерева: путь из настроек → папка открытой БД → домашняя папка. */

@@ -1,0 +1,30 @@
+name: Tests
+
+# Лёгкая проверка на каждый push (типы + unit-тесты). Также вызывается из build.yml: сборка без зелёных тестов не стартует.
+on:
+  push:
+  workflow_call:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          rm -rf package-lock.json bun.lock bun.lockb node_modules
+          npm install
+
+      - name: Lint (type check)
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test

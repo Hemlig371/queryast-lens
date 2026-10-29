@@ -84,7 +84,6 @@ export function saveOrUpdateExcelPreset(
   const currentPresets = getSavedExcelPresets();
   const trimmedName = name.trim() || 'Пользовательский';
 
-  // If updating existing user preset
   if (id && id !== CLASSIC_PRESET_ID) {
     const existingIdx = currentPresets.findIndex(p => p.id === id);
     if (existingIdx !== -1) {
@@ -99,7 +98,6 @@ export function saveOrUpdateExcelPreset(
     }
   }
 
-  // Otherwise create a new user preset
   const newId = `preset_${Date.now()}`;
   const newPreset: ExcelPreset = {
     id: newId,

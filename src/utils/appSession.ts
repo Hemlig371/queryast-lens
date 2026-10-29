@@ -8,7 +8,6 @@ export interface SavedSession {
   tabs?: EditorTab[];
   activeTabId?: string;
   sql?: string;
-  dialect?: 'PostgreSQL' | 'Oracle' | 'Clickhouse' | 'DuckDB' | '';
   direction?: 'LR' | 'TB';
   theme?: 'dark' | 'light';
   isWrapSql?: boolean;

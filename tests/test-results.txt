@@ -1,162 +1,1249 @@
+﻿> queryast-lens@8.6.1 test
+> vitest run --reporter=verbose --no-color
 
- RUN  v3.2.7 /app/applet
 
- ✓ tests/excelTemplate.exceljs.test.ts (5 tests) 263ms
- ✓ tests/markdown.test.ts (37 tests) 1029ms
-   ✓ markdown: документ > патологический ввод обрабатывается быстро  1002ms
-stderr | tests/excelExporter.test.ts > excelExporter utils > exportToExcel with formatting features > parses @preset directive from comments and applies preset settings
-Failed to load Excel presets from localStorage ReferenceError: localStorage is not defined
-    at getSavedExcelPresets (/app/applet/src/utils/excelSettingsStorage.ts:48:17)
-    at /app/applet/tests/excelExporter.test.ts:170:31
-    at file:///app/applet/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20
-Failed to save Excel presets to localStorage ReferenceError: localStorage is not defined
-    at saveUserExcelPresets (/app/applet/src/utils/excelSettingsStorage.ts:73:5)
-    at /app/applet/tests/excelExporter.test.ts:171:7
-    at file:///app/applet/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20
-Failed to load Excel presets from localStorage ReferenceError: localStorage is not defined
-    at getSavedExcelPresets (/app/applet/src/utils/excelSettingsStorage.ts:48:17)
-    at exportToExcel (/app/applet/src/utils/excelExporter.ts:157:28)
-    at /app/applet/tests/excelExporter.test.ts:190:13
-    at file:///app/applet/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20
+ RUN  v3.2.7 D:/VS Code/queryast-lens
 
- ✓ tests/excelExporter.test.ts (8 tests) 611ms
-   ✓ excelExporter utils > exportToExcel with formatting features > runs exportToExcel without crashing when formatExistingRowAsTotal and formatExistingColumnAsTotal are enabled  417ms
- ✓ tests/arrowRows.test.ts (4 tests) 621ms
-   ✓ takeTableRows > усекает до предела и обращается только к нужным строкам (WS-05)  616ms
- ✓ tests/graphDetail.test.ts (54 tests) 273ms
- ✓ tests/sqlFormat.test.ts (29 tests) 258ms
-stderr | tests/wasmResult.test.ts > normalizeWasmTable > значение, которое не удалось привести, не роняет весь результат
-WASM value normalization failed Error: boom
-    at Object.toJSON (/app/applet/tests/wasmResult.test.ts:239:77)
-    at toPlain (/app/applet/src/utils/wasmResult.ts:175:68)
-    at normalizeWasmValue (/app/applet/src/utils/wasmResult.ts:197:31)
-    at normalizeWasmTable (/app/applet/src/utils/wasmResult.ts:253:31)
-    at /app/applet/tests/wasmResult.test.ts:241:15
-    at file:///app/applet/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11
-    at file:///app/applet/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26
-    at file:///app/applet/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20
-    at new Promise (<anonymous>)
-    at runWithTimeout (file:///app/applet/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)
-
- ✓ tests/wasmResult.test.ts (29 tests) 241ms
- ✓ tests/errorBoundary.test.ts (9 tests) 186ms
- ✓ tests/astToGraph.test.ts (30 tests) 122ms
- ✓ tests/edgePath.test.ts (14 tests) 89ms
- ✓ tests/mermaidSvg.test.ts (13 tests) 85ms
- ✓ tests/sourceGuards.test.ts (28 tests) 80ms
- ✓ tests/pagedSql.test.ts (52 tests) 64ms
- ✓ tests/mermaidToGraph.test.ts (8 tests) 58ms
-stderr | tests/snippetsMigration.test.ts > loadSnippetsFromDBStrict > прежняя loadSnippetsFromDB при неоткрывшейся базе по-прежнему возвращает []
+ ✓ tests/errorBoundary.test.ts > состояние ErrorBoundary (без отрисовки) > начальное состояние без ошибки и с ключом 2ms
+ ✓ tests/errorBoundary.test.ts > состояние ErrorBoundary (без отрисовки) > ошибка потомка переводит в состояние ошибки 0ms
+ ✓ tests/errorBoundary.test.ts > состояние ErrorBoundary (без отрисовки) > тот же ключ — состояние не меняется (ошибка остаётся на экране) 0ms
+ ✓ tests/errorBoundary.test.ts > состояние ErrorBoundary (без отрисовки) > смена ключа при ошибке снимает экран ошибки 0ms
+ ✓ tests/errorBoundary.test.ts > состояние ErrorBoundary (без отрисовки) > смена ключа без ошибки только запоминает новый ключ 0ms
+ ✓ tests/errorBoundary.test.ts > состояние ErrorBoundary (без отрисовки) > без ключа (resetKey не передан) автосброса нет 0ms
+ ✓ tests/errorBoundary.test.ts > состояние ErrorBoundary (без отрисовки) > после ошибки и смены ключа новая ошибка снова показывается 0ms
+ ✓ tests/arrowRows.test.ts > takeTableRows > берёт все строки, если их меньше предела 4ms
+ ✓ tests/arrowRows.test.ts > takeTableRows > усекает до предела и обращается только к нужным строкам 188ms
+ ✓ tests/arrowRows.test.ts > takeTableRows > пустая таблица 1ms
+ ✓ tests/arrowRows.test.ts > takeTableRows > пустые (null) строки пропускаются 0ms
+ ✓ tests/sourceGuards.test.ts > source guards > snippet trash is never exported > файл настроек и синхронизации: generateWorkspaceBundleObject фильтрует «Корзину» 2ms
+ ✓ tests/sourceGuards.test.ts > source guards > snippet trash is never exported > экспорт JSON и ZIP шаблонов: список проходит через withoutTrash 2ms
+ ✓ tests/sourceGuards.test.ts > source guards > clipboard access > navigator.clipboard.writeText встречается только в src/utils/exportUtils.ts 31ms
+ ✓ tests/sourceGuards.test.ts > source guards > no nested t(t(...)) > has no nested t(t(...)) calls in src (except the known exception) 32ms
+ ✓ tests/sourceGuards.test.ts > source guards > no nested t(t(...)) > has no nested t(t(...)) in SqlEditor.tsx 1ms
+ ✓ tests/sourceGuards.test.ts > source guards > unused dependencies > package.json does not list motion and dotenv 0ms
+ ✓ tests/sourceGuards.test.ts > source guards > unused dependencies > vite is not duplicated in dependencies 0ms
+ ✓ tests/sourceGuards.test.ts > source guards > unused dependencies > src, server.ts and vite.config.ts do not import motion or dotenv 30ms
+ ✓ tests/sourceGuards.test.ts > source guards > graph node styles > CustomNodes.tsx has no animate-pulse, drop-shadow and shadow-* classes 1ms
+ ✓ tests/sourceGuards.test.ts > source guards > graph node styles > CustomNodes.tsx keeps transition-all 1ms
+ ✓ tests/sourceGuards.test.ts > source guards > graph node styles > MermaidNodes.tsx has no animate-pulse, drop-shadow and shadow-* classes 1ms
+ ✓ tests/sourceGuards.test.ts > source guards > graph node styles > MermaidNodes.tsx keeps transition-all 0ms
+ ✓ tests/sourceGuards.test.ts > source guards > CI workflow > build.yml contains an npm run lint step 1ms
+ ✓ tests/sourceGuards.test.ts > source guards > CI workflow > every npm run build is preceded by npm run lint 3ms
+ ✓ tests/sourceGuards.test.ts > source guards > graph nodes (2.2) > every memo() node in CustomNodes.tsx has isNodePropsEqual as comparator 0ms
+ ✓ tests/sourceGuards.test.ts > source guards > graph nodes (2.2) > ResultNode does not render col.name without a string check 0ms
+ ✓ tests/sourceGuards.test.ts > source guards > graph nodes (2.2) > MermaidNode applies scale-102 to the whole node when selected 0ms
+ ✓ tests/sourceGuards.test.ts > source guards > CustomNodes labels > uses t() for node labels 0ms
+ ✓ tests/sourceGuards.test.ts > source guards > CustomNodes labels > every t('…') literal in CustomNodes.tsx is present in EN_DICT 0ms
+ ✓ tests/sourceGuards.test.ts > source guards > CustomNodes labels > former hard-coded English labels are gone from JSX text 0ms
+ ✓ tests/sourceGuards.test.ts > source guards > server build (2.13) > npm run build не собирает server.ts и ничего не пишет в dist/server.cjs 0ms
+ ✓ tests/sourceGuards.test.ts > source guards > server build (2.13) > build:server собирает server.ts вне dist/ 0ms
+ ✓ tests/sourceGuards.test.ts > source guards > server build (2.13) > start запускает собранный сервер из того же каталога, что и build:server 3ms
+ ✓ tests/sourceGuards.test.ts > source guards > dev server (2.28) > нет общего express.json() без исключения для /api/vfs/upload 0ms
+ ✓ tests/sourceGuards.test.ts > source guards > dev server (2.28) > SQL запроса ClickHouse не пишется в консоль 0ms
+ ✓ tests/sourceGuards.test.ts > source guards > dev server (2.28) > PRAGMA и Init SQL выполняются с ожиданием, без пустых колбэков 0ms
+ ✓ tests/sourceGuards.test.ts > source guards > dev server (2.28) > PRAGMA threads не выполняется для 0 («авто») — сервер и WASM 1ms
+ ✓ tests/sourceGuards.test.ts > source guards > dev server (2.28) > подготовленный оператор освобождается 0ms
+npm.cmd : stderr | tests/snippetsMigration.test.ts > loadSnippetsFromDBStrict > ╨┐╤А╨╡╨╢╨╜╤П╤П loadSnippetsFromDB ╨
+┐╤А╨╕ ╨╜╨╡╨╛╤В╨║╤А╤Л╨▓╤И╨╡╨╣╤Б╤П ╨▒╨░╨╖╨╡ ╨┐╨╛-╨┐╤А╨╡╨╢╨╜╨╡╨╝╤Г ╨▓╨╛╨╖╨▓╤А╨░╤Й╨░╨╡╤В []
+строка:1 знак:1
++ npm.cmd test -- --reporter=verbose --no-color 2>&1 | Out-File -Encodi ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (stderr | tests/...ращает []:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
 Failed to load snippets from IndexedDB Error: blocked
-    at Object.open (/app/applet/tests/snippetsMigration.test.ts:33:77)
-    at /app/applet/src/utils/snippetsStorage.ts:13:38
+    at Object.open (D:\VS Code\queryast-lens\tests\snippetsMigration.test.ts:33:77)
+    at D:\VS Code\queryast-lens\src\utils\snippetsStorage.ts:13:38
     at new Promise (<anonymous>)
-    at openDB (/app/applet/src/utils/snippetsStorage.ts:7:10)
-    at loadSnippetsFromDB (/app/applet/src/utils/snippetsStorage.ts:143:22)
-    at /app/applet/tests/snippetsMigration.test.ts:102:18
-    at file:///app/applet/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11
-    at file:///app/applet/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26
-    at file:///app/applet/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20
+    at openDB (D:\VS Code\queryast-lens\src\utils\snippetsStorage.ts:7:10)
+    at loadSnippetsFromDB (D:\VS Code\queryast-lens\src\utils\snippetsStorage.ts:143:22)
+    at D:\VS Code\queryast-lens\tests\snippetsMigration.test.ts:102:18
+    at file:///D:/VS%20Code/queryast-lens/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11
+    at file:///D:/VS%20Code/queryast-lens/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26
+    at file:///D:/VS%20Code/queryast-lens/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:2
+0
     at new Promise (<anonymous>)
 
-stderr | tests/snippetsMigration.test.ts > migrateLegacySnippets > сбой записи: старый ключ остаётся, отметки нет
+stderr | tests/snippetsMigration.test.ts > migrateLegacySnippets > ╤Б╨▒╨╛╨╣ ╨╖╨░╨┐╨╕╤Б╨╕: ╤Б╤В╨░╤А╤Л╨╣ ╨║╨╗╤О╤З ╨╛╤
+Б╤В╨░╤С╤В╤Б╤П, ╨╛╤В╨╝╨╡╤В╨║╨╕ ╨╜╨╡╤В
 Failed to write migrated snippets to IndexedDB Error: QuotaExceededError
-    at Object.put (/app/applet/tests/snippetsMigration.test.ts:123:106)
-    at migrateLegacySnippets (/app/applet/src/utils/snippetsStorage.ts:280:16)
-    at /app/applet/tests/snippetsMigration.test.ts:123:15
-    at file:///app/applet/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20
+    at Object.put (D:\VS Code\queryast-lens\tests\snippetsMigration.test.ts:123:106)
+    at migrateLegacySnippets (D:\VS Code\queryast-lens\src\utils\snippetsStorage.ts:280:16)
+    at D:\VS Code\queryast-lens\tests\snippetsMigration.test.ts:123:15
+    at file:///D:/VS%20Code/queryast-lens/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20
 
-stderr | tests/snippetsMigration.test.ts > migrateLegacySnippets > ошибка чтения базы не стирает данные: ничего не пишется, ключ остаётся
+ ✓ tests/snippetsMigration.test.ts > saveSnippetsToDB: кэш > после успешной записи кэш равен записанному списку 10ms
+ ✓ tests/snippetsMigration.test.ts > saveSnippetsToDB: кэш > при сбое записи кэш остаётся прежним, а ошибка доходит до вызывающего 5ms
+ ✓ tests/snippetsMigration.test.ts > saveSnippetsToDB: кэш > пока запись не завершена, кэш не меняется 1ms
+ ✓ tests/snippetsMigration.test.ts > loadSnippetsFromDBStrict > возвращает записи и обновляет кэш 1ms
+ ✓ tests/snippetsMigration.test.ts > loadSnippetsFromDBStrict > не скрывает ошибку: база не открылась / чтение упало → отказ 43ms
+ ✓ tests/snippetsMigration.test.ts > loadSnippetsFromDBStrict > прежняя loadSnippetsFromDB при неоткрывшейся базе по-прежнему возвращает [] 24ms
+ ✓ tests/snippetsMigration.test.ts > migrateLegacySnippets > база пуста, старый ключ с шаблонами: записаны, прочитаны, затем ключ удалён и поставлена отметка 3ms
+ ✓ tests/snippetsMigration.test.ts > migrateLegacySnippets > сбой записи: старый ключ остаётся, отметки нет 2ms
+ ✓ tests/snippetsMigration.test.ts > migrateLegacySnippets > запись «прошла», но при чтении записей нет: ключ не удаляется (verify-failed) 1ms
+ ✓ tests/snippetsMigration.test.ts > migrateLegacySnippets > запись с искажённым содержимым не считается успешной 1ms
+stderr | tests/snippetsMigration.test.ts > migrateLegacySnippets > ошибка чтения базы не стир
+ает данные: ничего не пишется, ключ остаётся
 Snippets migration skipped: IndexedDB is not readable Error: read failed
-    at Object.getAll (/app/applet/tests/snippetsMigration.test.ts:39:113)
-    at /app/applet/src/utils/snippetsStorage.ts:170:23
+    at Object.getAll (D:\VS Code\queryast-lens\tests\snippetsMigration.test.ts:39:113)
+    at D:\VS Code\queryast-lens\src\utils\snippetsStorage.ts:170:23
     at new Promise (<anonymous>)
-    at Object.loadSnippetsFromDBStrict [as load] (/app/applet/src/utils/snippetsStorage.ts:167:10)
-    at migrateLegacySnippets (/app/applet/src/utils/snippetsStorage.ts:232:18)
-    at /app/applet/tests/snippetsMigration.test.ts:151:15
-    at file:///app/applet/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20
+    at Object.loadSnippetsFromDBStrict [as load] (D:\VS Code\queryast-lens\src\utils\snippetsStorage.ts:1
+67:10)
+    at runNextTicks (node:internal/process/task_queues:64:5)
+    at processTimers (node:internal/timers:518:9)
+    at migrateLegacySnippets (D:\VS Code\queryast-lens\src\utils\snippetsStorage.ts:232:18)
+    at D:\VS Code\queryast-lens\tests\snippetsMigration.test.ts:151:15
+    at file:///D:/VS%20Code/queryast-lens/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20
 
-stderr | tests/snippetsMigration.test.ts > migrateLegacySnippets > база не открылась: то же самое
+stderr | tests/snippetsMigration.test.ts > migrateLegacySnippets > база не открылась: то же са
+мое
 Snippets migration skipped: IndexedDB is not readable Error: blocked
-    at Object.open (/app/applet/tests/snippetsMigration.test.ts:33:77)
-    at /app/applet/src/utils/snippetsStorage.ts:13:38
+    at Object.open (D:\VS Code\queryast-lens\tests\snippetsMigration.test.ts:33:77)
+    at D:\VS Code\queryast-lens\src\utils\snippetsStorage.ts:13:38
     at new Promise (<anonymous>)
-    at openDB (/app/applet/src/utils/snippetsStorage.ts:7:10)
-    at Object.loadSnippetsFromDBStrict [as load] (/app/applet/src/utils/snippetsStorage.ts:166:20)
-    at migrateLegacySnippets (/app/applet/src/utils/snippetsStorage.ts:232:29)
-    at /app/applet/tests/snippetsMigration.test.ts:163:21
-    at file:///app/applet/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20
+    at openDB (D:\VS Code\queryast-lens\src\utils\snippetsStorage.ts:7:10)
+    at Object.loadSnippetsFromDBStrict [as load] (D:\VS Code\queryast-lens\src\utils\snippetsStorage.ts:1
+66:20)
+    at migrateLegacySnippets (D:\VS Code\queryast-lens\src\utils\snippetsStorage.ts:232:29)
+    at D:\VS Code\queryast-lens\tests\snippetsMigration.test.ts:163:21
+    at file:///D:/VS%20Code/queryast-lens/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20
 
- ✓ tests/snippetsMigration.test.ts (21 tests) 53ms
- ✓ tests/versionHistory.test.ts (10 tests) 52ms
- ✓ tests/erParse.test.ts (15 tests) 49ms
- ✓ tests/statFormat.test.ts (13 tests) 30ms
-stderr | tests/connectionSwitch.test.ts > switchConnection > ошибка закрытия старого не мешает открыть новое
-Closing the previous DuckDB connection failed Error: close failed
-    at Object.closeCurrent (/app/applet/tests/connectionSwitch.test.ts:101:117)
-    at switchConnection (/app/applet/src/utils/connectionSwitch.ts:33:18)
-    at /app/applet/tests/connectionSwitch.test.ts:101:21
-    at file:///app/applet/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11
-    at file:///app/applet/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26
-    at file:///app/applet/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20
+ ✓ tests/wasmResult.test.ts > describeArrowType > классифицирует типы по строковому описанию 5ms
+ ✓ tests/wasmResult.test.ts > normalizeWasmValue: скаляры > NULL, BOOLEAN, INTEGER, DOUBLE, VARCHAR остаются как есть 1ms
+ ✓ tests/wasmResult.test.ts > normalizeWasmValue: скаляры > BIGINT (bigint) → строка, в том числе за пределами безопасных целых 0ms
+ ✓ tests/wasmResult.test.ts > normalizeWasmValue: скаляры > ENUM (словарь строк) — строка 0ms
+ ✓ tests/wasmResult.test.ts > normalizeWasmValue: даты и время > DATE: число миллисекунд и объект Date → YYYY-MM-DD 2ms
+ ✓ tests/wasmResult.test.ts > normalizeWasmValue: даты и время > TIMESTAMP: без дробной части — как у Tauri (без .000); с миллисекундами — три знака 0ms
+ ✓ tests/wasmResult.test.ts > normalizeWasmValue: даты и время > TIMESTAMP в bigint: микросекунды дают шесть знаков, наносекунды — девять 0ms
+ ✓ tests/wasmResult.test.ts > normalizeWasmValue: даты и время > TIMESTAMPTZ: с суффиксом UTC, как DateTime<Utc> в Tauri 0ms
+ ✓ tests/wasmResult.test.ts > normalizeWasmValue: даты и время > TIME: bigint микросекунд и число миллисекунд → HH:MM:SS[.дробь] 1ms
+ ✓ tests/wasmResult.test.ts > normalizeWasmValue: даты и время > строка, пришедшая вместо даты, не искажается 0ms
+ ✓ tests/wasmResult.test.ts > normalizeWasmValue: DECIMAL, INTERVAL, BLOB > DECIMAL из четырёх 32-битных слов: масштаб сохраняется, как в rust_decimal 0ms
+ ✓ tests/wasmResult.test.ts > normalizeWasmValue: DECIMAL, INTERVAL, BLOB > DECIMAL: отрицательное значение (дополнительный код) и значение больше 64 бит (HUGEINT) 0ms
+ ✓ tests/wasmResult.test.ts > normalizeWasmValue: DECIMAL, INTERVAL, BLOB > DECIMAL: bigint как неотмасштабированное целое; число и строка 0ms
+ ✓ tests/wasmResult.test.ts > normalizeWasmValue: DECIMAL, INTERVAL, BLOB > INTERVAL (месяцы, дни, наносекунды): вид «Nm Nd Nns» как у Tauri 0ms
+ ✓ tests/wasmResult.test.ts > normalizeWasmValue: DECIMAL, INTERVAL, BLOB > INTERVAL других единиц arrow: DAY_TIME и YEAR_MONTH 0ms
+ ✓ tests/wasmResult.test.ts > normalizeWasmValue: DECIMAL, INTERVAL, BLOB > BLOB → «<blob N bytes>» 0ms
+ ✓ tests/wasmResult.test.ts > normalizeWasmValue: вложенные значения → JSON-строка > LIST: объект с toJSON, обычный массив и типизированный массив 0ms
+ ✓ tests/wasmResult.test.ts > normalizeWasmValue: вложенные значения → JSON-строка > STRUCT / MAP: объект, вложенные bigint — строками 0ms
+ ✓ tests/wasmResult.test.ts > normalizeWasmValue: вложенные значения → JSON-строка > вложенные Date, Uint8Array и null внутри 0ms
+ ✓ tests/wasmResult.test.ts > normalizeWasmValue: вложенные значения → JSON-строка > null вместо вложенного значения остаётся null 0ms
+ ✓ tests/wasmResult.test.ts > normalizeWasmValue: вложенные значения → JSON-строка > цикличная структура не вешает и не бросает 0ms
+ ✓ tests/wasmResult.test.ts > normalizeWasmTable > строки по индексам столбцов, нормализация по типам, типы по именам 2ms
+ ✓ tests/wasmResult.test.ts > normalizeWasmTable > одинаковые имена столбцов не схлопываются: a, a_1; типы по уникальным именам 0ms
+ ✓ tests/wasmResult.test.ts > normalizeWasmTable > числовые имена: порядок столбцов хранится в columns, а не в объекте 0ms
+ ✓ tests/wasmResult.test.ts > normalizeWasmTable > усечение до 500 000 строк без обращения к остальным 119ms
+ ✓ tests/snippetsMigration.test.ts > migrateLegacySnippets > ошибка чтения базы не стирает данные: ничего не пишется, ключ остаётся 21ms
+ ✓ tests/snippetsMigration.test.ts > migrateLegacySnippets > база не открылась: то же самое 12ms
+ ✓ tests/snippetsMigration.test.ts > migrateLegacySnippets > повторный запуск не дублирует и не пишет заново 1ms
+ ✓ tests/snippetsMigration.test.ts > migrateLegacySnippets > удалённые после миграции шаблоны не воскресают, даже если старый ключ вернули 2ms
+ ✓ tests/snippetsMigration.test.ts > migrateLegacySnippets > база не пуста, все шаблоны старого ключа уже в базе: ключ удаляется, база не меняется 1ms
+ ✓ tests/snippetsMigration.test.ts > migrateLegacySnippets > база не пуста, в старом ключе есть то, чего в базе нет: ключ сохраняется как копия, база не меняется, повторно не мигрирует 1ms
+ ✓ tests/snippetsMigration.test.ts > migrateLegacySnippets > нет старого ключа: нечего переносить, отметка ставится 0ms
+ ✓ tests/snippetsMigration.test.ts > migrateLegacySnippets > пустой массив в старом ключе: ключ удаляется 0ms
+ ✓ tests/snippetsMigration.test.ts > migrateLegacySnippets > нечитаемый старый ключ не трогается и базу не затрагивает 1ms
+ ✓ tests/snippetsMigration.test.ts > migrateLegacySnippets > записи без id в старом ключе пропускаются, остальные переносятся 1ms
+ ✓ tests/snippetsMigration.test.ts > SqlSnippetsManager: перенос из старого ключа > использует migrateLegacySnippets и не читает старый ключ сам 1ms
+stderr | tests/wasmResult.test.ts > normalizeWasmTable > ╨╖╨╜╨░╤З╨╡╨╜╨╕╨╡, ╨║╨╛╤В╨╛╤А╨╛╨╡ ╨╜╨╡ ╤Г╨┤╨░╨╗╨╛╤Б╤М ╨┐╤А╨
+╕╨▓╨╡╤Б╤В╨╕, ╨╜╨╡ ╤А╨╛╨╜╤П╨╡╤В ╨▓╨╡╤Б╤М ╤А╨╡╨╖╤Г╨╗╤М╤В╨░╤В
+WASM value normalization failed Error: boom
+    at Object.toJSON (D:\VS Code\queryast-lens\tests\wasmResult.test.ts:239:77)
+    at toPlain (D:\VS Code\queryast-lens\src\utils\wasmResult.ts:175:68)
+    at normalizeWasmValue (D:\VS Code\queryast-lens\src\utils\wasmResult.ts:197:31)
+    at normalizeWasmTable (D:\VS Code\queryast-lens\src\utils\wasmResult.ts:253:31)
+    at D:\VS Code\queryast-lens\tests\wasmResult.test.ts:241:15
+    at file:///D:/VS%20Code/queryast-lens/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11
+    at file:///D:/VS%20Code/queryast-lens/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26
+    at file:///D:/VS%20Code/queryast-lens/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:2
+0
     at new Promise (<anonymous>)
-    at runWithTimeout (file:///app/applet/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)
-    at runTest (file:///app/applet/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)
+    at runWithTimeout (file:///D:/VS%20Code/queryast-lens/node_modules/@vitest/runner/dist/chunk
+-hooks.js:1863:10)
+
+ ✓ tests/wasmResult.test.ts > normalizeWasmTable > свой предел строк 0ms
+ ✓ tests/wasmResult.test.ts > normalizeWasmTable > пустая таблица и таблица без схемы 0ms
+ ✓ tests/wasmResult.test.ts > normalizeWasmTable > запасной путь без getChildAt: строки через toJSON(), значения всё равно нормализуются по типам 1ms
+ ✓ tests/wasmResult.test.ts > normalizeWasmTable > значение, которое не удалось привести, не роняет весь результат 10ms
+ ✓ tests/errorBoundary.test.ts > ErrorBoundary: статические методы компонента > getDerivedStateFromError возвращает состояние ошибки 340ms
+ ✓ tests/errorBoundary.test.ts > ErrorBoundary: статические методы компонента > getDerivedStateFromProps сбрасывает ошибку при смене resetKey 1ms
+ ✓ tests/mermaidToGraph.test.ts > mermaidToGraph > should parse basic flowchart 28ms
+ ✓ tests/mermaidToGraph.test.ts > mermaidToGraph > should extract node labels and shapes 6ms
+ ✓ tests/mermaidToGraph.test.ts > mermaidToGraph > should return error for empty or invalid input 2ms
+ ✓ tests/mermaidToGraph.test.ts > mermaidToGraph > метки рёбер и стрелки попадают в рёбра React Flow 8ms
+ ✓ tests/mermaidToGraph.test.ts > mermaidToGraph > ошибки: тип диаграммы и номер строки 5ms
+ ✓ tests/mermaidToGraph.test.ts > mermaidToGraph > вложенные подграфы: рамка родителя охватывает рамку вложенного 15ms
+ ✓ tests/mermaidToGraph.test.ts > mermaidToGraph > подпись ребра получает место в раскладке: узлы дальше, чем без подписи 9ms
+ ✓ tests/mermaidToGraph.test.ts > mermaidToGraph > размер узла учитывает строки с <br/>, подпись ребра без <br/>, у ребра есть маршрут 3ms
+ ✓ tests/edgePath.test.ts > порты рёбер > смещения портов: одна — по центру, несколько — симметрично и не теснее шага стрелки 3ms
+ ✓ tests/edgePath.test.ts > порты рёбер > точка порта лежит на контуре ромба и круга 1ms
+ ✓ tests/edgePath.test.ts > порты рёбер > несколько входящих рёбер приходят в разные точки, исходящие тоже; порядок без пересечений у узла 4ms
+ ✓ tests/edgePath.test.ts > порты рёбер > вертикальный поток: выход снизу, вход сверху; BT и RL зеркальны 2ms
+ ✓ tests/edgePath.test.ts > ортогональные маршруты > смена уровня — только прямыми углами, ровные рёбра без изломов 1ms
+ ✓ tests/edgePath.test.ts > ортогональные маршруты > любое направление: все углы прямые, линии не заходят в чужие узлы 6ms
+ ✓ tests/edgePath.test.ts > ортогональные маршруты > шина: рёбра с одной целью и ключом сливаются в один вход; с подписью — не сливаются 1ms
+ ✓ tests/edgePath.test.ts > ортогональные маршруты > несколько изломов в одном зазоре идут по разным вертикалям 0ms
+ ✓ tests/edgePath.test.ts > ортогональные маршруты > обратное ребро идёт коридором вне узлов; петля — над узлом 1ms
+ ✓ tests/edgePath.test.ts > ортогональные маршруты > orthoFallback: простой «Z» вперёд и объезд назад, только прямые углы 1ms
+ ✓ tests/edgePath.test.ts > ортогональные маршруты > подпись стоит рядом с линией и не на узле 1ms
+ ✓ tests/edgePath.test.ts > линия и наконечники > стрелка: вершина в конце, линия укорочена; у <--> два наконечника; углы скруглены 1ms
+ ✓ tests/edgePath.test.ts > линия и наконечники > рёбра встроенных схем: углы прямые, числа конечны, порты и наконечники не слипаются 81ms
+ ✓ tests/edgePath.test.ts > линия и наконечники > direction внутри подграфа работает, если узлы не связаны с внешними, и игнорируется иначе (как в Mermaid) 14ms
+ ✓ tests/erParse.test.ts > erDiagram: распознавание > isErDiagram: заголовок, фронтматтер, комментарии, регистр 3ms
+ ✓ tests/erParse.test.ts > erDiagram: распознавание > parseDiagram выбирает разбор по заголовку 5ms
+ ✓ tests/erParse.test.ts > erDiagram: разбор > сущности: из связей, блоков, алиасов и кавычек; порядок появления 2ms
+ ✓ tests/erParse.test.ts > erDiagram: разбор > атрибуты: тип, имя, ключи, комментарий, тип со скобками и запятой 1ms
+ ✓ tests/erParse.test.ts > erDiagram: разбор > связи: мощности с обеих сторон, сплошная и пунктирная линия, подпись 0ms
+ ✓ tests/erParse.test.ts > erDiagram: разбор > все четыре мощности слева и справа 0ms
+ ✓ tests/erParse.test.ts > erDiagram: разбор > direction, комментарии %%, classDef/style пропускаются молча, связь без подписи 0ms
+ ✓ tests/erParse.test.ts > erDiagram: разбор > непонятные строки — предупреждение с номером строки, остальное строится 3ms
+ ✓ tests/erParse.test.ts > erDiagram: разбор > пустая диаграмма — фатальная ошибка; имена по-русски 1ms
+ ✓ tests/erParse.test.ts > erDiagram: разбор > блок в одну строку 0ms
+ ✓ tests/erParse.test.ts > erDiagram: размеры, граф, SVG > метрики: высота по числу строк, ширина по самым длинным значениям, колонки не пересекаются 1ms
+ ✓ tests/erParse.test.ts > erDiagram: размеры, граф, SVG > parseMermaidToGraph: узлы-таблицы, рёбра с воронкой, маршруты без NaN 26ms
+ ✓ tests/erParse.test.ts > erDiagram: размеры, граф, SVG > SVG: таблицы, ключи, воронка и кольцо, без NaN 9ms
+ ✓ tests/erParse.test.ts > erDiagram: размеры, граф, SVG > SVG: имена и комментарии экранируются 2ms
+ ✓ tests/erParse.test.ts > erDiagram: размеры, граф, SVG > Markdown: блок ```mermaid с erDiagram рисуется диаграммой, а не ошибкой 13ms
+ ✓ tests/sqlFormat.test.ts > sqlFormat > convertInlineDashComments превращает хвостовой -- в /* */ 2ms
+ ✓ tests/sqlFormat.test.ts > sqlFormat > не трогает -- внутри строки и отдельные комментарии 1ms
+ ✓ tests/sqlFormat.test.ts > sqlFormat > compactSql схлопывает код в одну строку и сохраняет отдельные комментарии 1ms
+ ✓ tests/sqlFormat.test.ts > sqlFormat > compactSql: характеризующие > пустой ввод возвращается как есть 0ms
+ ✓ tests/sqlFormat.test.ts > sqlFormat > compactSql: характеризующие > хвостовые -- комментарии в середине запроса превращаются в /* */ (в том числе до FROM) 0ms
+ ✓ tests/sqlFormat.test.ts > sqlFormat > compactSql: характеризующие > отдельная строка-комментарий остаётся на своей строке между кусками кода 0ms
+ ✓ tests/sqlFormat.test.ts > sqlFormat > compactSql: характеризующие > пустые строки склеиваются; между комментариями пустых строк нет 0ms
+ ✓ tests/sqlFormat.test.ts > sqlFormat > compactSql: характеризующие > однострочный блочный комментарий и -- внутри строки не меняются 0ms
+ ✓ tests/sqlFormat.test.ts > sqlFormat > compactSql: характеризующие > CRLF и завершающий комментарий после ; 1ms
+ ✓ tests/sqlFormat.test.ts > sqlFormat > compactSql: характеризующие > */ внутри хвостового -- комментария не закрывает блок раньше времени 0ms
+ ✓ tests/sqlFormat.test.ts > sqlFormat > compactSql: характеризующие > /* внутри хвостового -- комментария не остаётся вложенным комментарием 0ms
+ ✓ tests/sqlFormat.test.ts > sqlFormat > compactSql: характеризующие > обычный хвостовой комментарий без /* и */ не меняется 0ms
+ ✓ tests/sqlFormat.test.ts > sqlFormat > compactSql: новое поведение (3.6) > SELECT 'a  b' остаётся в одну строку и не меняет содержимое строки 0ms
+ ✓ tests/sqlFormat.test.ts > sqlFormat > compactSql: новое поведение (3.6) > идентификаторы в двойных кавычках и удвоенные кавычки сохраняются 0ms
+ ✓ tests/sqlFormat.test.ts > sqlFormat > compactSql: новое поведение (3.6) > многострочная строка не схлопывается, а строка с -- внутри не становится комментарием 0ms
+ ✓ tests/sqlFormat.test.ts > sqlFormat > compactSql: новое поведение (3.6) > многострочный блочный комментарий сохраняется как есть, -- в нём не трогается 0ms
+ ✓ tests/sqlFormat.test.ts > sqlFormat > compactSql: новое поведение (3.6) > -- после блочного комментария на той же строке не съедает следующую строку кода 0ms
+ ✓ tests/sqlFormat.test.ts > sqlFormat > compactSql: новое поведение (3.6) > повторное сжатие ничего не меняет 0ms
+ ✓ tests/sqlFormat.test.ts > sqlFormat > convertInlineDashComments: строки и блочные комментарии на нескольких строках > -- на второй строке многострочной строки не считается комментарием 0ms
+ ✓ tests/sqlFormat.test.ts > sqlFormat > convertInlineDashComments: строки и блочные комментарии на нескольких строках > -- внутри многострочного блочного комментария не трогается 0ms
+ ✓ tests/sqlFormat.test.ts > sqlFormat > convertInlineDashComments: строки и блочные комментарии на нескольких строках > -- после блочного комментария на той же строке становится блочным 0ms
+ ✓ tests/sqlFormat.test.ts > литералы и // > многострочный литерал: пустые строки и отступы внутри сохраняются 234ms
+ ✓ tests/mermaidSvg.test.ts > mermaidSvg > строит SVG для flowchart: узлы, рёбра, метки, подграф 45ms
+ ✓ tests/mermaidSvg.test.ts > mermaidSvg > все фигуры рисуются без NaN 20ms
+ ✓ tests/mermaidSvg.test.ts > mermaidSvg > стрелки: обычная, двунаправленная, o/x рисуются головами 7ms
+ ✓ tests/mermaidSvg.test.ts > mermaidSvg > невидимая связь ~~~ не рисуется 3ms
+ ✓ tests/mermaidSvg.test.ts > mermaidSvg > по умолчанию направление TB, явное LR уважается 7ms
+ ✓ tests/mermaidSvg.test.ts > mermaidSvg > текст подписей экранируется, теги вырезаются, <br> — перенос строки 1ms
+ ✓ tests/mermaidSvg.test.ts > mermaidSvg > id узла и подписи в атрибутах экранируются 8ms
+ ✓ tests/mermaidSvg.test.ts > mermaidSvg > стили: допустимые цвета применяются, опасные значения отбрасываются 3ms
+ ✓ tests/mermaidSvg.test.ts > mermaidSvg > linkStyle применяется к ребру 2ms
+ ✓ tests/mermaidSvg.test.ts > mermaidSvg > неподдерживаемый тип и пустая диаграмма — ошибка без SVG 1ms
+ ✓ tests/mermaidSvg.test.ts > mermaidSvg > предупреждения не мешают построению 4ms
+ ✓ tests/mermaidSvg.test.ts > mermaidSvg > renderMermaidBlock: диаграмма или сообщение об ошибке с исходником 17ms
+ ✓ tests/mermaidSvg.test.ts > mermaidSvg > стили темы и самодостаточный SVG 4ms
+ ✓ tests/sqlFormat.test.ts > литералы и // > CRLF внутри литерала сохраняется 12ms
+ ✓ tests/sqlFormat.test.ts > литералы и // > $$…$$ и $тег$…$тег$: апострофы, --, ; и пустые строки внутри не меняются 3ms
+ ✓ tests/sqlFormat.test.ts > литералы и // > // остаётся целочисленным делением, а не превращается в / / 3ms
+ ✓ tests/sqlFormat.test.ts > литералы и // > // внутри строки, идентификатора и комментария не трогается 3ms
+ ✓ tests/sqlFormat.test.ts > литералы и // > строки с ; и -- внутри и удвоенные кавычки возвращаются как были 3ms
+ ✓ tests/sqlFormat.test.ts > литералы и // > текст пользователя, похожий на плейсхолдер, не портится 3ms
+ ✓ tests/sqlFormat.test.ts > литералы и // > незакрытая строка по-прежнему даёт ошибку форматирования 65ms
+ ✓ tests/sqlFormat.test.ts > литералы и // > форматирование без литералов не изменилось 3ms
+ ✓ tests/sqlFormat.test.ts > литералы и // > compactSql: $$-блок с переводами строк, апострофом и -- внутри остаётся как есть, код вокруг схлопывается 0ms
+ ✓ tests/excelTemplate.exceljs.test.ts > экспорт по шаблону на настоящем exceljs > [[rows]]: данные, оформление ведущей строки, сдвиг подписи, область печати, формула 130ms
+ ✓ tests/excelTemplate.exceljs.test.ts > экспорт по шаблону на настоящем exceljs > [[table]]: первой строкой имена колонок 35ms
+ ✓ tests/excelTemplate.exceljs.test.ts > экспорт по шаблону на настоящем exceljs > @template_values: данные записаны, оформление и положение остального не тронуты 41ms
+ ✓ tests/mermaidParse.test.ts > mermaidParse: метки рёбер > -->|text| 9ms
+ ✓ tests/mermaidParse.test.ts > mermaidParse: метки рёбер > -- text -->, == text ==>, -. text .-> 2ms
+ ✓ tests/mermaidParse.test.ts > mermaidParse: метки рёбер > ---|text| (линия без стрелки) 1ms
+ ✓ tests/mermaidParse.test.ts > mermaidParse: разделители и комментарии > точка с запятой в конце и несколько выражений в строке 1ms
+ ✓ tests/mermaidParse.test.ts > mermaidParse: разделители и комментарии > %% комментарии: целая строка и в конце строки 0ms
+ ✓ tests/mermaidParse.test.ts > mermaidParse: разделители и комментарии > %% внутри кавычек не комментарий 0ms
+ ✓ tests/mermaidParse.test.ts > mermaidParse: разделители и комментарии > %%{init}%% и frontmatter пропускаются 1ms
+ ✓ tests/mermaidParse.test.ts > mermaidParse: узлы и идентификаторы > & внутри подписи в кавычках и как разделитель 1ms
+ ✓ tests/mermaidParse.test.ts > mermaidParse: узлы и идентификаторы > кириллица в id 1ms
+ ✓ tests/mermaidParse.test.ts > mermaidParse: узлы и идентификаторы > дефисы в id не ломают стрелки 1ms
+ ✓ tests/mermaidParse.test.ts > mermaidParse: узлы и идентификаторы > апостроф в подписи не считается кавычкой 0ms
+ ✓ tests/mermaidParse.test.ts > mermaidParse: узлы и идентификаторы > фигуры 1ms
+ ✓ tests/mermaidParse.test.ts > mermaidParse: узлы и идентификаторы > соседние узлы с `/]` и `\]` не склеиваются (ближайшая закрывающая) 1ms
+ ✓ tests/mermaidParse.test.ts > mermaidParse: узлы и идентификаторы > [/путь] без закрытия трапеции — обычный прямоугольник 0ms
+ ✓ tests/mermaidParse.test.ts > mermaidParse: узлы и идентификаторы > новый синтаксис @{ shape, label } 0ms
+ ✓ tests/mermaidParse.test.ts > mermaidParse: узлы и идентификаторы > #quot; и #35; в подписи 0ms
+ ✓ tests/mermaidParse.test.ts > mermaidParse: стрелки > двунаправленные и с маркерами 1ms
+ ✓ tests/mermaidParse.test.ts > mermaidParse: стрелки > длинные стрелки 0ms
+ ✓ tests/mermaidParse.test.ts > mermaidParse: стрелки > типы линий 1ms
+ ✓ tests/mermaidParse.test.ts > mermaidParse: стрелки > слово, начинающееся на o/x после пробела, не становится маркером 0ms
+ ✓ tests/mermaidParse.test.ts > mermaidParse: классы и стили > class до classDef и ::: 1ms
+ ✓ tests/mermaidParse.test.ts > mermaidParse: классы и стили > style перекрывает classDef независимо от порядка 0ms
+ ✓ tests/mermaidParse.test.ts > mermaidParse: классы и стили > rgb(...) с запятыми внутри скобок не режется 0ms
+ ✓ tests/mermaidParse.test.ts > mermaidParse: классы и стили > linkStyle по индексу 1ms
+ ✓ tests/mermaidParse.test.ts > mermaidParse: подграфы > вложенные подграфы и ссылка на подграф как на узел 1ms
+ ✓ tests/mermaidParse.test.ts > mermaidParse: подграфы > subgraph id [title] и "title" 2ms
+ ✓ tests/mermaidParse.test.ts > mermaidParse: подграфы > лишний end и незакрытый subgraph — предупреждения 1ms
+ ✓ tests/mermaidParse.test.ts > mermaidParse: ошибки > неподдерживаемый тип диаграммы — fatal 0ms
+ ✓ tests/mermaidParse.test.ts > mermaidParse: ошибки > узел с именем pie/gantt и стрелкой — не тип диаграммы 0ms
+ ✓ tests/mermaidParse.test.ts > mermaidParse: ошибки > мусорная строка пропускается с номером строки, остальное строится 1ms
+ ✓ tests/mermaidParse.test.ts > mermaidParse: ошибки > обрыв стрелки и незакрытая скобка 1ms
+ ✓ tests/mermaidParse.test.ts > mermaidParse: ошибки > номер строки учитывает пустые строки и frontmatter 0ms
+ ✓ tests/mermaidParse.test.ts > mermaidParse: ошибки > транзакционность: частично разобранное выражение не оставляет узлов 0ms
+ ✓ tests/mermaidParse.test.ts > looksLikeMermaid > распознаёт заголовки 0ms
+ ✓ tests/mermaidParse.test.ts > looksLikeMermaid > обычный текст и SQL — нет 0ms
+ ✓ tests/pagedSql.test.ts > A: один SELECT > страница 1 добавляет LIMIT, страница 3 — LIMIT и OFFSET 5ms
+ ✓ tests/pagedSql.test.ts > A: один SELECT > завершающая ; и пробелы убираются 0ms
+ ✓ tests/pagedSql.test.ts > A: один SELECT > после ; остался только комментарий — он не считается оператором 1ms
+ ✓ tests/pagedSql.test.ts > A: один SELECT > хвостовой -- комментарий не съедает LIMIT и остаётся в запросе 1ms
+ ✓ tests/pagedSql.test.ts > A: один SELECT > комментарий в начале сохраняется 0ms
+ ✓ tests/pagedSql.test.ts > A: один SELECT > регистр ключевых слов не важен; FROM-first и скобка в начале листаются 1ms
+ ✓ tests/pagedSql.test.ts > A: один SELECT > номер страницы меньше 1 или дробный приводится к целой странице ≥ 1 0ms
+ ✓ tests/pagedSql.test.ts > B: скрипт из нескольких операторов > обычный запуск, страница 1: весь текст как раньше, LIMIT только у последнего оператора 0ms
+ ✓ tests/pagedSql.test.ts > B: скрипт из нескольких операторов > обычный запуск, страница 2: подготовительные операторы не выполняются повторно 1ms
+ ✓ tests/pagedSql.test.ts > B: скрипт из нескольких операторов > режим sequential: страница 1 отдаёт подготовительные операторы отдельно, страница ≥ 2 — нет 1ms
+ ✓ tests/pagedSql.test.ts > B: скрипт из нескольких операторов > последний оператор — только комментарий: он не выполняется вместо запроса 0ms
+ ✓ tests/pagedSql.test.ts > B: скрипт из нескольких операторов > комментарии перед операторами остаются при операторе 0ms
+ ✓ tests/pagedSql.test.ts > C: скрипт, начинающийся с CREATE > страница 2 листает последний SELECT (данные не повторяются) 0ms
+ ✓ tests/pagedSql.test.ts > C: скрипт, начинающийся с CREATE > последний оператор не листается: страница 1 без изменений, страница ≥ 2 ничего не выполняет 0ms
+ ✓ tests/pagedSql.test.ts > C: скрипт, начинающийся с CREATE > режим sequential с непагинируемым последним оператором: подготовка и сам оператор как есть, без LIMIT 0ms
+ ✓ tests/pagedSql.test.ts > C: скрипт, начинающийся с CREATE > INSERT и другие операторы без строк не листаются 1ms
+ ✓ tests/pagedSql.test.ts > D: WITH, собственный LIMIT, OFFSET, UNION > LIMIT внутри CTE не считается: LIMIT добавляется к основному запросу 1ms
+ ✓ tests/pagedSql.test.ts > D: WITH, собственный LIMIT, OFFSET, UNION > LIMIT в подзапросе FROM не считается 0ms
+ ✓ tests/pagedSql.test.ts > D: WITH, собственный LIMIT, OFFSET, UNION > собственный LIMIT верхнего уровня: страница 1 без изменений, страница 2 оборачивает запрос 0ms
+ ✓ tests/pagedSql.test.ts > D: WITH, собственный LIMIT, OFFSET, UNION > LIMIT в строке и в комментарии не считается собственным 0ms
+ ✓ tests/pagedSql.test.ts > D: WITH, собственный LIMIT, OFFSET, UNION > только OFFSET: страница 1 добавляет LIMIT, страница 2 оборачивает 0ms
+ ✓ tests/pagedSql.test.ts > D: WITH, собственный LIMIT, OFFSET, UNION > UNION/EXCEPT/INTERSECT верхнего уровня оборачиваются в подзапрос 1ms
+ ✓ tests/pagedSql.test.ts > D: WITH, собственный LIMIT, OFFSET, UNION > UNION только внутри подзапроса или строки не требует обёртки 0ms
+ ✓ tests/pagedSql.test.ts > D: WITH, собственный LIMIT, OFFSET, UNION > размер страницы 0 (без ограничения): запрос не меняется, страница ≥ 2 не выполняется 0ms
+ ✓ tests/pagedSql.test.ts > E: комментарии > ; и UNION внутри комментариев не делят скрипт и не требуют обёртки 0ms
+ ✓ tests/pagedSql.test.ts > E: комментарии > splitStatements отбрасывает куски из одних комментариев и пробелов, но не трогает остальные 0ms
+ ✓ tests/pagedSql.test.ts > E: комментарии > пустой или состоящий из комментариев текст не даёт запроса 0ms
+ ✓ tests/pagedSql.test.ts > F: ClickHouse (SETTINGS и FORMAT) > LIMIT ставится перед SETTINGS 1ms
+ ✓ tests/pagedSql.test.ts > F: ClickHouse (SETTINGS и FORMAT) > LIMIT ставится перед FORMAT и перед SETTINGS … FORMAT 2ms
+ ✓ tests/pagedSql.test.ts > F: ClickHouse (SETTINGS и FORMAT) > хвостовой комментарий после FORMAT остаётся в конце 0ms
+ ✓ tests/pagedSql.test.ts > F: ClickHouse (SETTINGS и FORMAT) > столбец format / settings и слова в строках — не предложения запроса 0ms
+ ✓ tests/pagedSql.test.ts > F: ClickHouse (SETTINGS и FORMAT) > собственный LIMIT и SETTINGS, страница 2: SETTINGS выносится из подзапроса наружу 1ms
+ ✓ tests/pagedSql.test.ts > F: ClickHouse (SETTINGS и FORMAT) > UNION ALL с FORMAT: обёртка, FORMAT снаружи 0ms
+ ✓ tests/pagedSql.test.ts > F: ClickHouse (SETTINGS и FORMAT) > LIMIT n BY не является ограничением числа строк 0ms
+ ✓ tests/pagedSql.test.ts > F: ClickHouse (SETTINGS и FORMAT) > обратная косая черта в строке экранирует кавычку 0ms
+ ✓ tests/pagedSql.test.ts > G: строки с ; , -- и обратной косой чертой > ; и -- внутри строки не делят запрос и не обрезают его 0ms
+ ✓ tests/pagedSql.test.ts > G: строки с ; , -- и обратной косой чертой > ; в строке подготовительного оператора 0ms
+ ✓ tests/pagedSql.test.ts > G: строки с ; , -- и обратной косой чертой > DuckDB: строка 'C:\data\' закрывается на последней кавычке, LIMIT после неё виден 0ms
+ ✓ tests/pagedSql.test.ts > G: строки с ; , -- и обратной косой чертой > удвоенная кавычка и двойные кавычки идентификаторов 0ms
+ ✓ tests/pagedSql.test.ts > H: режим parallel и устойчивость > parallel: страница 1 не меняет запрос, страница ≥ 2 не выполняется 0ms
+ ✓ tests/pagedSql.test.ts > H: режим parallel и устойчивость > незакрытые скобки и кавычки не вызывают исключений 2ms
+ ✓ tests/pagedSql.test.ts > H: режим parallel и устойчивость > большой скрипт обрабатывается быстро 32ms
+ ✓ tests/pagedSql.test.ts > I: WITH … DML, FETCH FIRST, TABLE / VALUES / PIVOT > WITH … INSERT/UPDATE/DELETE/MERGE/COPY/CREATE не листается и не получает LIMIT 2ms
+ ✓ tests/pagedSql.test.ts > I: WITH … DML, FETCH FIRST, TABLE / VALUES / PIVOT > WITH … SELECT (в том числе слова insert/update в CTE, строках и столбцах) по-прежнему листается 1ms
+ ✓ tests/pagedSql.test.ts > I: WITH … DML, FETCH FIRST, TABLE / VALUES / PIVOT > в скрипте WITH … INSERT последним оператором: подготовка выполняется как есть, страница 2 ничего не запускает 0ms
+ ✓ tests/pagedSql.test.ts > I: WITH … DML, FETCH FIRST, TABLE / VALUES / PIVOT > FETCH FIRST/NEXT — собственный лимит: страница 1 без изменений, страница 2 оборачивает 0ms
+ ✓ tests/pagedSql.test.ts > I: WITH … DML, FETCH FIRST, TABLE / VALUES / PIVOT > FETCH в подзапросе, строке, комментарии и как имя столбца не считается лимитом 1ms
+ ✓ tests/pagedSql.test.ts > I: WITH … DML, FETCH FIRST, TABLE / VALUES / PIVOT > TABLE / VALUES / PIVOT (DuckDB) листаются и всегда оборачиваются в подзапрос 1ms
+ ✓ tests/pagedSql.test.ts > I: WITH … DML, FETCH FIRST, TABLE / VALUES / PIVOT > собственный LIMIT у TABLE/VALUES — страница 1 без изменений 0ms
+ ✓ tests/pagedSql.test.ts > I: WITH … DML, FETCH FIRST, TABLE / VALUES / PIVOT > в скрипте TABLE последним оператором листается, подготовка не повторяется 0ms
+ ✓ tests/pagedSql.test.ts > I: WITH … DML, FETCH FIRST, TABLE / VALUES / PIVOT > для ClickHouse и для CREATE TABLE/VALUES внутри других операторов ничего не меняется 0ms
+ ✓ tests/pagedSql.test.ts > согласованность с признаком FORMAT из clickhouseFormat > FORMAT остаётся последним, LIMIT ставится перед ним; без FORMAT хвоста нет 1ms
+ ✓ tests/statFormat.test.ts > formatStatVal > числа форматируются: целые с разрядами, дробные до 2 знаков 24ms
+ ✓ tests/statFormat.test.ts > formatStatVal > строки, похожие на числа, не превращаются в числа 1ms
+ ✓ tests/statFormat.test.ts > formatStatVal > пустое и NaN — null 1ms
+ ✓ tests/statFormat.test.ts > formatStatVal > текст, boolean и bigint — как String 0ms
+ ✓ tests/statFormat.test.ts > toChartNumber > числа и числовые строки (ClickHouse UInt64/Decimal) 1ms
+ ✓ tests/statFormat.test.ts > toChartNumber > нечисловое — null, а не 0 0ms
+ ✓ tests/statFormat.test.ts > selectTopN > по алфавиту: берутся самые крупные по значению, затем порядок по алфавиту 2ms
+ ✓ tests/statFormat.test.ts > selectTopN > раньше брались первые N по алфавиту (a, b) 0ms
+ ✓ tests/statFormat.test.ts > selectTopN > лимит не меньше размера: все элементы по алфавиту 1ms
+ ✓ tests/statFormat.test.ts > selectTopN > desc и asc обрезают список, отсортированный по значению 0ms
+ ✓ tests/statFormat.test.ts > selectTopN > равные значения — по имени (стабильно) 0ms
+ ✓ tests/statFormat.test.ts > selectTopN > исходный массив не меняется; числа в именах сравниваются как числа 0ms
+ ✓ tests/statFormat.test.ts > selectTopN > пустой список 0ms
+ ✓ tests/excelTemplate.exceljs.test.ts > экспорт по шаблону на настоящем exceljs > рамки по краям объединения ниже маркера сохраняются при сдвиге 30ms
+ ✓ tests/excelTemplate.exceljs.test.ts > экспорт по шаблону на настоящем exceljs > понятные ошибки: нет маркера, нет листа 35ms
+ ✓ tests/excelTemplate.exceljs.test.ts > [[header]], [[title]], [[subtitle]] и пустой результат на настоящем exceljs > шапка на месте, данные от [[rows]], заголовки подставлены, подпись сдвинута 37ms
+ ✓ tests/astToGraph.test.ts > astToGraph utils > stripCommentsSafely > should remove inline and multiline comments 3ms
+ ✓ tests/astToGraph.test.ts > astToGraph utils > splitQueries > should split multiple statements 1ms
+ ✓ tests/astToGraph.test.ts > astToGraph utils > parseSqlToAst > should parse a simple SELECT query 18ms
+ ✓ tests/astToGraph.test.ts > astToGraph utils > parseSqlToAst > should parse a query with JOIN 5ms
+ ✓ tests/astToGraph.test.ts > astToGraph utils > parseSqlToAst > should not throw on empty query 6ms
+ ✓ tests/astToGraph.test.ts > astToGraph utils > граф: COPY / CTAS / DISTINCT / QUALIFY / область видимости CTE > COPY (SELECT ...) TO строит источник и узел файла 8ms
+ ✓ tests/astToGraph.test.ts > astToGraph utils > граф: COPY / CTAS / DISTINCT / QUALIFY / область видимости CTE > COPY tbl FROM строит файл -> таблица 1ms
+ ✓ tests/astToGraph.test.ts > astToGraph utils > граф: COPY / CTAS / DISTINCT / QUALIFY / область видимости CTE > CREATE TABLE ... AS SELECT добавляет целевую таблицу 2ms
+ ✓ tests/astToGraph.test.ts > astToGraph utils > граф: COPY / CTAS / DISTINCT / QUALIFY / область видимости CTE > SELECT DISTINCT отображается в проекции, а не как столбец 2ms
+ ✓ tests/astToGraph.test.ts > astToGraph utils > граф: COPY / CTAS / DISTINCT / QUALIFY / область видимости CTE > SELECT без DISTINCT не получает подпись DISTINCT в проекции 6ms
+ ✓ tests/astToGraph.test.ts > astToGraph utils > граф: COPY / CTAS / DISTINCT / QUALIFY / область видимости CTE > distinctLabel: пустые значения парсера не считаются DISTINCT 0ms
+ ✓ tests/astToGraph.test.ts > astToGraph utils > граф: COPY / CTAS / DISTINCT / QUALIFY / область видимости CTE > distinctLabel: DISTINCT и DISTINCT ON 0ms
+ ✓ tests/astToGraph.test.ts > astToGraph utils > граф: COPY / CTAS / DISTINCT / QUALIFY / область видимости CTE > QUALIFY становится чипом на карточке Projection 16ms
+ ✓ tests/astToGraph.test.ts > astToGraph utils > граф: COPY / CTAS / DISTINCT / QUALIFY / область видимости CTE > CTE одного запроса не подхватывается следующим запросом файла 5ms
+ ✓ tests/astToGraph.test.ts > astToGraph utils > CTE: RECURSIVE и [NOT] MATERIALIZED > обычный WITH разбирается как раньше 3ms
+ ✓ tests/astToGraph.test.ts > astToGraph utils > CTE: RECURSIVE и [NOT] MATERIALIZED > WITH RECURSIVE даёт CTE-узел 2ms
+ ✓ tests/astToGraph.test.ts > astToGraph utils > CTE: RECURSIVE и [NOT] MATERIALIZED > WITH RECURSIVE со списком столбцов и несколькими CTE 7ms
+ ✓ tests/astToGraph.test.ts > astToGraph utils > CTE: RECURSIVE и [NOT] MATERIALIZED > AS MATERIALIZED (...) даёт CTE-узел 8ms
+ ✓ tests/astToGraph.test.ts > astToGraph utils > CTE: RECURSIVE и [NOT] MATERIALIZED > AS NOT MATERIALIZED (...) даёт CTE-узел 1ms
+ ✓ tests/astToGraph.test.ts > astToGraph utils > CTE: RECURSIVE и [NOT] MATERIALIZED > RECURSIVE вместе с MATERIALIZED 1ms
+ ✓ tests/astToGraph.test.ts > astToGraph utils > CTE: RECURSIVE и [NOT] MATERIALIZED > CTE по имени recursive (без ключевого слова) по-прежнему разбирается 1ms
+ ✓ tests/astToGraph.test.ts > astToGraph utils > tokenizeSql: # > # в начале слова — по-прежнему комментарий до конца строки (MySQL) 0ms
+ ✓ tests/astToGraph.test.ts > astToGraph utils > tokenizeSql: # > оператор #>> не начинает комментарий 0ms
+ ✓ tests/astToGraph.test.ts > astToGraph utils > tokenizeSql: # > оператор #> не начинает комментарий 0ms
+ ✓ tests/astToGraph.test.ts > astToGraph utils > tokenizeSql: # > -- комментарий рядом с #>> работает как раньше 0ms
+ ✓ tests/astToGraph.test.ts > astToGraph utils > несколько запросов в файле > между запросами нет рёбер (раньше «Next» связывал запросы) 2ms
+ ✓ tests/versionHistory.test.ts > versionHistory (IndexedDB storage) > should save a version and retrieve it 34ms
+ ✓ tests/versionHistory.test.ts > versionHistory (IndexedDB storage) > should retrieve latest version 20ms
+ ✓ tests/versionHistory.test.ts > versionHistory (IndexedDB storage) > should delete a version by id 2ms
+ ✓ tests/versionHistory.test.ts > versionHistory (IndexedDB storage) > should get version by id 2ms
+ ✓ tests/versionHistory.test.ts > versionHistory (IndexedDB storage) > should import multiple versions 1ms
+ ✓ tests/versionHistory.test.ts > versionHistory (IndexedDB storage) > should throw error when saving empty query 2ms
+ ✓ tests/versionHistory.test.ts > formatVersionLabel > formats the label in the Russian style for "ru" 1ms
+ ✓ tests/versionHistory.test.ts > formatVersionLabel > formats the label in the English style for "en" 2ms
+ ✓ tests/versionHistory.test.ts > formatVersionLabel > gives different labels for "ru" and "en" 2ms
+ ✓ tests/versionHistory.test.ts > formatVersionLabel > falls back to the Russian style for an unknown language 1ms
+ ✓ tests/excelTemplate.exceljs.test.ts > [[header]], [[title]], [[subtitle]] и пустой результат на настоящем exceljs > пустой результат: имена колонок записаны, маркер [[rows]] убран, подпись на месте 38ms
+ ✓ tests/excelTemplate.exceljs.test.ts > [[header]], [[title]], [[subtitle]] и пустой результат на настоящем exceljs > [[header]] вместе с [[table]] и в одной строке с [[rows]] — ошибка 22ms
+ ✓ tests/astToGraph.test.ts > astToGraph utils > несколько запросов в файле > LR: блоки запросов идут друг под другом с общим левым краем 30ms
+ ✓ tests/astToGraph.test.ts > astToGraph utils > несколько запросов в файле > TB: блоки запросов идут друг за другом вправо с общим верхним краем 12ms
+ ✓ tests/astToGraph.test.ts > astToGraph utils > несколько запросов в файле > заголовок «Query N» без рёбер и стоит над своим блоком у левого края 28ms
+ ✓ tests/astToGraph.test.ts > astToGraph utils > несколько запросов в файле > свёрнутый запрос остаётся в своём месте списка 7ms
+ ✓ tests/fileTree.test.ts > sortEntries: дата и размер > по дате: новые сверху, без даты — в конце, папки первыми 3ms
+ ✓ tests/fileTree.test.ts > sortEntries: дата и размер > по дате: старые сверху 1ms
+ ✓ tests/fileTree.test.ts > sortEntries: дата и размер > по размеру: крупные сверху; папки по имени А→Я при любом направлении 12ms
+ ✓ tests/fileTree.test.ts > sortEntries: дата и размер > равные значения — по имени А→Я 0ms
+ ✓ tests/fileTree.test.ts > sortEntries: дата и размер > по имени Я→А: папки всё равно первыми 0ms
+ ✓ tests/fileTree.test.ts > nextSort / normalizeFileSort > другой ключ — направление по умолчанию, тот же — разворот 1ms
+ ✓ tests/fileTree.test.ts > nextSort / normalizeFileSort > мусор из сессии → по имени 0ms
+ ✓ tests/fileTree.test.ts > поиск по загруженному дереву > nameMatches: без регистра, пустой запрос подходит всем 0ms
+ ✓ tests/fileTree.test.ts > поиск по загруженному дереву > папка видна, если внутри (из загруженного) есть найденное, на любой глубине 0ms
+ ✓ tests/fileTree.test.ts > поиск по загруженному дереву > filterEntries: совпадения и папки на пути к ним 1ms
+ ✓ tests/fileTree.test.ts > поиск по загруженному дереву > не загруженное не ищется: папка без списка не считается подходящей 0ms
+ ✓ tests/fileTree.test.ts > поиск по загруженному дереву > цикл ссылок не вешает поиск 0ms
+ ✓ tests/fileTree.test.ts > пути: платформа, вложенность, переименование > detectPlatform 0ms
+ ✓ tests/fileTree.test.ts > пути: платформа, вложенность, переименование > isSameOrInside: оба разделителя, соседние имена не считаются вложенными 0ms
+ ✓ tests/fileTree.test.ts > пути: платформа, вложенность, переименование > dropPathKeys убирает папку и всё внутри 0ms
+ ✓ tests/fileTree.test.ts > пути: платформа, вложенность, переименование > remapPath: сам путь, вложенный и чужой 0ms
+ ✓ tests/fileTree.test.ts > пути: платформа, вложенность, переименование > validateNewName 0ms
+ ✓ tests/fileTree.test.ts > пути: платформа, вложенность, переименование > renameSelectionEnd: без расширения; папки и скрытые файлы целиком 0ms
+ ✓ tests/fileTree.test.ts > sortEntries > папки первыми, затем по имени 0ms
+ ✓ tests/fileTree.test.ts > sortEntries > числа сортируются естественно и вход не меняется 0ms
+ ✓ tests/fileTree.test.ts > quotePathForSql > обратные слэши и кавычки 0ms
+ ✓ tests/fileTree.test.ts > quotePathForSql > обычный путь 0ms
+ ✓ tests/fileTree.test.ts > dirnameOf / joinPath > разные стили путей 0ms
+ ✓ tests/fileTree.test.ts > dirnameOf / joinPath > корень диска Windows сохраняет разделитель 0ms
+ ✓ tests/fileTree.test.ts > dirnameOf / joinPath > joinPath сохраняет стиль 0ms
+ ✓ tests/fileTree.test.ts > pickFileTreeRoot > настройка важнее всего 0ms
+ ✓ tests/fileTree.test.ts > pickFileTreeRoot > БД в корне диска: корень дерева — C:\, а не C: 0ms
+ ✓ tests/fileTree.test.ts > pickFileTreeRoot > папка БД, затем домашняя 0ms
+ ✓ tests/fileTree.test.ts > shouldRefreshOnFocus > не чаще раза в 10 секунд 0ms
+ ✓ tests/fileTree.test.ts > getDoubleClickAction > текст — вкладка, офис — внешняя программа, остальное — ничего 0ms
+ ✓ tests/fileTree.test.ts > getDoubleClickAction > getExtension 0ms
+ ✓ tests/fileTree.test.ts > vfsToEntries / foldersToReload > VFS: плоский список, дата из loadedAt 1ms
+ ✓ tests/fileTree.test.ts > vfsToEntries / foldersToReload > обновление читает только раскрытые папки 0ms
+ ✓ tests/fileTree.test.ts > перенос в папку: planMove и nameTaken > та же папка — ничего не делать 0ms
+ ✓ tests/fileTree.test.ts > перенос в папку: planMove и nameTaken > папку нельзя бросить в себя и во вложенную 0ms
+ ✓ tests/fileTree.test.ts > перенос в папку: planMove и nameTaken > соседняя папка с похожим именем — допустимо 0ms
+ ✓ tests/fileTree.test.ts > перенос в папку: planMove и nameTaken > корень «/»: перенос из подпапки в корень 0ms
+ ✓ tests/fileTree.test.ts > перенос в папку: planMove и nameTaken > занятое имя: Windows/macOS без учёта регистра, Linux — с учётом 0ms
+ ✓ tests/fileTree.test.ts > перенос в папку: planMove и nameTaken > тип данных перетаскивания не совпадает с text/plain 0ms
+ ✓ tests/editorOps.test.ts > computeMoveLines > двигает строку вверх и сдвигает выделение 3ms
+ ✓ tests/editorOps.test.ts > computeMoveLines > двигает строку вниз 0ms
+ ✓ tests/editorOps.test.ts > computeMoveLines > не двигает за границы 0ms
+ ✓ tests/editorOps.test.ts > computeMoveLines > двигает блок из нескольких строк 0ms
+ ✓ tests/editorOps.test.ts > computeMoveLines > корректно поднимает строку под пустой первой строкой 0ms
+ ✓ tests/editorOps.test.ts > computeChangeCase > меняет регистр выделения и выделяет результат 0ms
+ ✓ tests/editorOps.test.ts > computeChangeCase > меняет регистр слова под курсором, курсор остаётся 2ms
+ ✓ tests/editorOps.test.ts > computeChangeCase > слово под курсором на кириллице меняет регистр целиком 1ms
+ ✓ tests/editorOps.test.ts > computeChangeCase > имя_col и ёжик — одно слово 1ms
+ ✓ tests/editorOps.test.ts > computeChangeCase > ничего не делает вне слова 0ms
+ ✓ tests/editorOps.test.ts > computePasteLines > добавляет текст в конец каждой выбранной строки 0ms
+ ✓ tests/editorOps.test.ts > computePasteLines > добавляет текст в начало строк 0ms
+ ✓ tests/editorOps.test.ts > computePasteLines > пустой буфер — ничего 0ms
+ ✓ tests/editorOps.test.ts > computeIndent > Tab без выделения вставляет два пробела 0ms
+ ✓ tests/editorOps.test.ts > computeIndent > Shift+Tab убирает отступ в начале строки 0ms
+ ✓ tests/editorOps.test.ts > computeIndent > Tab с выделением сдвигает все строки 0ms
+ ✓ tests/editorOps.test.ts > computeIndent > Shift+Tab с выделением снимает отступ 0ms
+ ✓ tests/editorOps.test.ts > computeIndent > Shift+Tab без отступа — ничего 0ms
+ ✓ tests/editorOps.test.ts > computeWrapSelection > оборачивает выделение в скобки и сохраняет выделение внутри 0ms
+ ✓ tests/editorOps.test.ts > computeWrapSelection > игнорирует обычные символы и пустое выделение 0ms
+ ✓ tests/editorOps.test.ts > diffReplace > возвращает минимальную правку 0ms
+ ✓ tests/editorOps.test.ts > diffReplace > результат применения равен новому тексту 0ms
+ ✓ tests/editorOps.test.ts > поиск и замена > ищет без учёта регистра по умолчанию 0ms
+ ✓ tests/editorOps.test.ts > поиск и замена > поддерживает regex и \n 0ms
+ ✓ tests/editorOps.test.ts > поиск и замена > некорректный regex даёт пустой результат 0ms
+ ✓ tests/editorOps.test.ts > поиск и замена > replaceAllInText экранирует спецсимволы в обычном режиме 0ms
+ ✓ tests/editorOps.test.ts > поиск и замена > replaceAllInText в regex-режиме поддерживает группы 0ms
+ ✓ tests/editorOps.test.ts > поиск и замена > computeReplacementText для одного совпадения 0ms
+ ✓ tests/editorOps.test.ts > поиск и замена > processEscapeSequences 0ms
+ ✓ tests/editorOps.test.ts > поиск и замена > в regex-режиме \\. ищет обратный слэш и любой символ 0ms
+ ✓ tests/editorOps.test.ts > поиск и замена > \n и \t в regex-режиме по-прежнему означают перенос и табуляцию 0ms
+ ✓ tests/editorOps.test.ts > поиск и замена > replaceAllInText без regex вставляет $$, $& и $1 буквально 0ms
+ ✓ tests/editorOps.test.ts > поиск и замена > в regex-режиме $1 по-прежнему работает 0ms
+ ✓ tests/editorOps.test.ts > поиск и замена > Replace one в regex-режиме видит контекст (lookbehind) 0ms
+ ✓ tests/editorOps.test.ts > поиск и замена > Replace one в regex-режиме — группы и якоря с контекстом 0ms
+ ✓ tests/editorOps.test.ts > поиск и замена > без контекста поведение прежнее 0ms
+ ✓ tests/editorOps.test.ts > поиск и замена > поиск без учёта регистра не сдвигает позиции после İ 0ms
+ ✓ tests/editorOps.test.ts > поиск и замена > поиск без учёта регистра по-прежнему находит кириллицу и не пересекает совпадения 0ms
+ ✓ tests/editorOps.test.ts > isWordChar / слова > isWordChar: латиница, кириллица, _, $, цифры — да; пробел и пунктуация — нет 1ms
+ ✓ tests/editorOps.test.ts > isWordChar / слова > wordOccurrenceRegExp: целые слова на кириллице, не внутри других слов 4ms
+ ✓ tests/editorOps.test.ts > isWordChar / слова > wordOccurrenceRegExp: не-слово ищется как подстрока, спецсимволы экранируются 0ms
+ ✓ tests/editorOps.test.ts > isWordChar / слова > AUTOCOMPLETE_WORD_RE: слово перед курсором, включая кириллицу и точки 1ms
+ ✓ tests/editorOps.test.ts > findMatchingBrackets > находит пару скобок рядом с курсором 1ms
+ ✓ tests/editorOps.test.ts > findMatchingBrackets > скобка внутри строкового литерала пропускается 0ms
+ ✓ tests/editorOps.test.ts > findMatchingBrackets > курсор у скобки внутри строки или комментария пары не даёт 0ms
+ ✓ tests/editorOps.test.ts > findMatchingBrackets > скобки в -- и /* */ комментариях не считаются 0ms
+ ✓ tests/editorOps.test.ts > findMatchingBrackets > закрывающая скобка ищет открывающую, пропуская строки 0ms
+ ✓ tests/editorOps.test.ts > findMatchingBrackets > строка после $$ … $$ тоже пропускается 0ms
+ ✓ tests/editorOps.test.ts > findMatchingBrackets > документ 150 000 символов обрабатывается быстро 11ms
+ ✓ tests/editorOps.test.ts > classifyWord > классифицирует слова как в прежней подсветке 0ms
+ ✓ tests/excelTemplate.test.ts > директива @template > читает путь из блочных комментариев и не берёт @ и * в значение 3ms
+ ✓ tests/excelTemplate.test.ts > директива @template > @template_values — режим «только значения» 1ms
+ ✓ tests/excelTemplate.test.ts > директива @template > путь шаблона берётся как есть (как @excel_save) 0ms
+ ✓ tests/excelTemplate.test.ts > сдвиг формул и области печати > диапазон с ведущей строкой растягивается, ниже — сдвигается, выше и «чужое» не трогается 1ms
+ ✓ tests/excelTemplate.test.ts > сдвиг формул и области печати > не трогает другие листы, текст в кавычках и имена функций 1ms
+ ✓ tests/excelTemplate.test.ts > сдвиг формул и области печати > область печати растягивается 1ms
+ ✓ tests/excelTemplate.test.ts > значения клеток > числа, даты, формулы, NULL 1ms
+ ✓ tests/excelTemplate.test.ts > поиск маркера > находит [[table]] / [[rows]] только как единственный текст клетки 1ms
+ ✓ tests/excelTemplate.test.ts > заполнение листа > [[rows]]: строки с маркера, ведущее оформление копируется, всё ниже сдвигается 3ms
+ ✓ tests/excelTemplate.test.ts > заполнение листа > [[table]]: первая строка — имена колонок 1ms
+ ✓ tests/excelTemplate.test.ts > заполнение листа > одна строка результата: ничего не сдвигается 1ms
+ ✓ tests/excelTemplate.test.ts > заполнение листа > пустой результат: [[rows]] убирает маркер, [[table]] пишет только шапку 1ms
+ ✓ tests/excelTemplate.test.ts > заполнение листа > колонок больше, чем размечено в шаблоне: стиль берётся с клетки маркера 1ms
+ ✓ tests/excelTemplate.test.ts > заполнение листа > объединение внутри ведущей строки повторяется в новых строках 1ms
+ ✓ tests/excelTemplate.test.ts > заполнение листа > только значения: оформление, положение и остальное содержимое не меняются, строки не вставляются 1ms
+ ✓ tests/excelTemplate.test.ts > заполнение листа > только значения и [[table]]: шапка пишется в строку маркера 0ms
+ ✓ tests/excelTemplate.test.ts > маркер [[header]] > находит только клетку, целиком равную [[header]]; [[rows]] ищется как раньше 3ms
+ ✓ tests/excelTemplate.test.ts > маркер [[header]] > пишет имена колонок вправо без сдвига; оформленная клетка сохраняет стиль, пустая берёт стиль маркера 1ms
+ ✓ tests/excelTemplate.test.ts > маркер [[header]] > только значения: стили не меняются 0ms
+ ✓ tests/excelTemplate.test.ts > маркер [[header]] > вместе с [[rows]]: шапка на месте, данные от [[rows]], остальное сдвигается 1ms
+ ✓ tests/excelTemplate.test.ts > маркер [[header]] > [[header]] ниже [[rows]]: уезжает вместе с остальным содержимым 0ms
+ ✓ tests/excelTemplate.test.ts > маркер [[header]] > пустой результат: шапка записана, маркер [[rows]] убран, ничего не сдвинуто 0ms
+ ✓ tests/excelTemplate.test.ts > маркер [[header]] > недопустимые сочетания — ошибка 2ms
+ ✓ tests/excelTemplate.test.ts > [[title]] и [[subtitle]] > заголовок и подзаголовок из блочных комментариев 1ms
+ ✓ tests/excelTemplate.test.ts > [[title]] и [[subtitle]] > «#» в строке директивы (путь) не становится заголовком 0ms
+ ✓ tests/excelTemplate.test.ts > [[title]] и [[subtitle]] > sqlUsesTemplate: только директива в блочном комментарии 0ms
+ ✓ tests/excelTemplate.test.ts > [[title]] и [[subtitle]] > заменяет маркер в любой клетке, в том числе внутри текста, без учёта регистра 1ms
+ ✓ tests/excelTemplate.test.ts > [[title]] и [[subtitle]] > пустое значение даёт пустую клетку; формулы и [[table]]/[[rows]]/[[header]] не меняются 0ms
+ ✓ tests/excelTemplate.test.ts > [[title]] и [[subtitle]] > форматированный текст: заменяются маркеры внутри одного фрагмента; подчинённая клетка объединения пропускается 0ms
+ ✓ tests/excelTemplate.test.ts > [[title]] и [[subtitle]] > маркер, разбитый между фрагментами форматированного текста, не заменяется 0ms
+ ✓ tests/hotkeysMatch.test.ts > buildComboString > Ctrl+Enter 2ms
+ ✓ tests/hotkeysMatch.test.ts > buildComboString > Shift+Alt+Up собирается в Ctrl/Alt/Shift-порядке с именем Up 0ms
+ ✓ tests/hotkeysMatch.test.ts > buildComboString > Esc без модификаторов 0ms
+ ✓ tests/hotkeysMatch.test.ts > buildComboString > буква берётся по физической клавише, а не по раскладке 0ms
+ ✓ tests/hotkeysMatch.test.ts > buildComboString > Meta считается как Ctrl 0ms
+ ✓ tests/hotkeysMatch.test.ts > buildComboString > «+» записывается как Plus и не ломает разбор 0ms
+ ✓ tests/hotkeysMatch.test.ts > matchHotkeyCombo > Ctrl+Enter совпадает с записями в любом регистре и с Cmd/Meta 1ms
+ ✓ tests/hotkeysMatch.test.ts > matchHotkeyCombo > Shift+Alt+Up совпадает с Up и ArrowUp независимо от порядка модификаторов 0ms
+ ✓ tests/hotkeysMatch.test.ts > matchHotkeyCombo > Esc совпадает с Esc и Escape 0ms
+ ✓ tests/hotkeysMatch.test.ts > matchHotkeyCombo > лишний модификатор или другая клавиша — не совпадение 0ms
+ ✓ tests/hotkeysMatch.test.ts > matchHotkeyCombo > пустое сочетание не совпадает ни с чем 0ms
+ ✓ tests/hotkeysMatch.test.ts > matchHotkeyCombo > русская раскладка: Ctrl+Ы совпадает с Ctrl+S 0ms
+ ✓ tests/hotkeysMatch.test.ts > matchHotkeyCombo > прежняя запись «Ctrl++» совпадает с клавишей «+» 0ms
+ ✓ tests/hotkeysMatch.test.ts > круговая проверка buildComboString → matchHotkeyCombo > событие «Ctrl+Enter» совпадает с собственной записью 0ms
+ ✓ tests/hotkeysMatch.test.ts > круговая проверка buildComboString → matchHotkeyCombo > событие «Shift+Alt+Up» совпадает с собственной записью 0ms
+ ✓ tests/hotkeysMatch.test.ts > круговая проверка buildComboString → matchHotkeyCombo > событие «Alt+Down» совпадает с собственной записью 0ms
+ ✓ tests/hotkeysMatch.test.ts > круговая проверка buildComboString → matchHotkeyCombo > событие «Esc» совпадает с собственной записью 0ms
+ ✓ tests/hotkeysMatch.test.ts > круговая проверка buildComboString → matchHotkeyCombo > событие «Ctrl+S» совпадает с собственной записью 0ms
+ ✓ tests/hotkeysMatch.test.ts > круговая проверка buildComboString → matchHotkeyCombo > событие «Ctrl+S (рус. раскладка)» совпадает с собственной записью 0ms
+ ✓ tests/hotkeysMatch.test.ts > круговая проверка buildComboString → matchHotkeyCombo > событие «Ctrl+Shift+V» совпадает с собственной записью 0ms
+ ✓ tests/hotkeysMatch.test.ts > круговая проверка buildComboString → matchHotkeyCombo > событие «Ctrl+Space» совпадает с собственной записью 0ms
+ ✓ tests/hotkeysMatch.test.ts > круговая проверка buildComboString → matchHotkeyCombo > событие «Ctrl+/» совпадает с собственной записью 0ms
+ ✓ tests/hotkeysMatch.test.ts > круговая проверка buildComboString → matchHotkeyCombo > событие «Ctrl+1» совпадает с собственной записью 0ms
+ ✓ tests/hotkeysMatch.test.ts > круговая проверка buildComboString → matchHotkeyCombo > событие «Ctrl+`» совпадает с собственной записью 0ms
+ ✓ tests/hotkeysMatch.test.ts > круговая проверка buildComboString → matchHotkeyCombo > событие «Ctrl+= » совпадает с собственной записью 0ms
+ ✓ tests/hotkeysMatch.test.ts > круговая проверка buildComboString → matchHotkeyCombo > событие «Ctrl+NumpadAdd (+)» совпадает с собственной записью 0ms
+ ✓ tests/hotkeysMatch.test.ts > круговая проверка buildComboString → matchHotkeyCombo > событие «Meta+K (Mac)» совпадает с собственной записью 0ms
+ ✓ tests/hotkeysMatch.test.ts > круговая проверка buildComboString → matchHotkeyCombo > событие «F5» совпадает с собственной записью 0ms
+ ✓ tests/hotkeysMatch.test.ts > круговая проверка buildComboString → matchHotkeyCombo > событие «Old IE Esc» совпадает с собственной записью 0ms
+ ✓ tests/hotkeysMatch.test.ts > круговая проверка buildComboString → matchHotkeyCombo > разные события не совпадают с чужими записями 18ms
+ ✓ tests/hotkeysMatch.test.ts > normalizeCombo > синонимы и порядок 0ms
+ ✓ tests/hotkeysMatch.test.ts > findHotkeyConflict > находит действие, уже занявшее сочетание (по умолчанию) 0ms
+ ✓ tests/hotkeysMatch.test.ts > findHotkeyConflict > учитывает сохранённые значения вместо умолчаний 0ms
+ ✓ tests/hotkeysMatch.test.ts > findHotkeyConflict > своё же сочетание конфликтом не считается 0ms
+ ✓ tests/hotkeysMatch.test.ts > findHotkeyConflict > синонимы записи считаются тем же сочетанием 0ms
+ ✓ tests/hotkeysMatch.test.ts > findHotkeyConflict > tabSwitchModifier — не сочетание, пустое сочетание — не конфликт 0ms
+ ✓ tests/graphDetail.test.ts > граф запроса > соединения и стрелки > узлов JOIN нет, соединения — стрелки с подписью и данными 3ms
+ ✓ tests/graphDetail.test.ts > граф запроса > соединения и стрелки > присоединяемый источник ведёт к родителю по алиасу из ON 0ms
+ ✓ tests/graphDetail.test.ts > граф запроса > соединения и стрелки > все стрелки — mermaidEdge с маршрутом, петель нет 0ms
+ ✓ tests/graphDetail.test.ts > граф запроса > соединения и стрелки > стрелки не анимированы; пунктир только у подзапросов в условиях (IN/EXISTS); потоки данных CTE и производных таблиц сплошные 0ms
+ ✓ tests/graphDetail.test.ts > граф запроса > соединения и стрелки > карточки не накладываются друг на друга 0ms
+ ✓ tests/graphDetail.test.ts > граф запроса > соединения и стрелки > режим TB тоже даёт маршруты 14ms
+ ✓ tests/graphDetail.test.ts > граф запроса > соединения и стрелки > тот же CTE дважды в запросе: без петель и циклов из двух рёбер 7ms
+ ✓ tests/graphDetail.test.ts > граф запроса > чипы, колонки и рамки > отдельных узлов WHERE / GROUP BY / HAVING / ORDER / LIMIT нет 0ms
+ ✓ tests/graphDetail.test.ts > граф запроса > чипы, колонки и рамки > WHERE — чипы на карточках источников по первому упомянутому алиасу 1ms
+ ✓ tests/graphDetail.test.ts > граф запроса > чипы, колонки и рамки > GROUP BY, HAVING, ORDER BY, LIMIT — чипы на Projection 0ms
+ ✓ tests/graphDetail.test.ts > граф запроса > чипы, колонки и рамки > колонки на карточках — только alias.колонка из запроса 0ms
+ ✓ tests/graphDetail.test.ts > граф запроса > чипы, колонки и рамки > у колонок результата — метка источника 0ms
+ ✓ tests/graphDetail.test.ts > граф запроса > чипы, колонки и рамки > CTE с двумя источниками получает рамку; обращение к CTE — своя карточка с алиасом 0ms
+ ✓ tests/graphDetail.test.ts > граф запроса > чипы, колонки и рамки > рамка охватывает свои карточки и не заходит на чужие 0ms
+ ✓ tests/graphDetail.test.ts > граф запроса > чипы, колонки и рамки > узлы без пересечений, все стрелки с маршрутом 0ms
+ ✓ tests/graphDetail.test.ts > граф запроса > чипы, колонки и рамки > условие с OR остаётся одним чипом 5ms
+ ✓ tests/graphDetail.test.ts > граф запроса > встроенный разбор: производные таблицы и ClickHouse > ON соединения с производной таблицей берётся после её закрывающей скобки, а не из подзапроса 16ms
+ ✓ tests/graphDetail.test.ts > граф запроса > встроенный разбор: производные таблицы и ClickHouse > ANY / ASOF / GLOBAL перед JOIN входят в тип соединения, а не в алиас предыдущей таблицы 28ms
+ ✓ tests/graphDetail.test.ts > граф запроса > встроенный разбор: производные таблицы и ClickHouse > WITH с константами и скалярным подзапросом (ClickHouse) не мешает разбору CTE 3ms
+ ✓ tests/graphDetail.test.ts > граф запроса > итоговая карточка > помечается только результат основного запроса, не CTE и не подзапросы 18ms
+ ✓ tests/graphDetail.test.ts > граф запроса > итоговая карточка > в файле из нескольких запросов — по одной на запрос 27ms
+ ✓ tests/snippetsStorage.test.ts > snippetsStorage (IndexedDB storage) > should add a snippet and load it back 8ms
+ ✓ tests/snippetsStorage.test.ts > snippetsStorage (IndexedDB storage) > should update an existing snippet 2ms
+ ✓ tests/snippetsStorage.test.ts > snippetsStorage (IndexedDB storage) > should delete snippet by id 2ms
+ ✓ tests/snippetsStorage.test.ts > snippetsStorage (IndexedDB storage) > should bulk save snippets to DB 2ms
+ ✓ tests/snippetsStorage.test.ts > snippetsStorage (IndexedDB storage) > getSnippetExportFilename > defaults to .sql when title has no extension 1ms
+ ✓ tests/snippetsStorage.test.ts > snippetsStorage (IndexedDB storage) > getSnippetExportFilename > preserves .md extension when title ends with .md 1ms
+ ✓ tests/snippetsStorage.test.ts > snippetsStorage (IndexedDB storage) > getSnippetExportFilename > preserves .py extension when title ends with .py 0ms
+ ✓ tests/snippetsStorage.test.ts > snippetsStorage (IndexedDB storage) > getSnippetExportFilename > preserves other explicit extensions like .json, .sh, .txt, .yaml 0ms
+ ✓ tests/snippetsStorage.test.ts > snippetsStorage (IndexedDB storage) > getSnippetExportFilename > handles fallback id when title base becomes empty 1ms
+ ✓ tests/snippetsStorage.test.ts > snippetsStorage (IndexedDB storage) > getSnippetExportFilename > takes the extension after the last dot 0ms
+ ✓ tests/snippetsStorage.test.ts > snippetsStorage (IndexedDB storage) > getSnippetExportFilename > keeps other Cyrillic letters and drops punctuation 0ms
+ ✓ tests/snippetsStorage.test.ts > snippetsStorage (IndexedDB storage) > getSnippetExportFilename > keeps the letter ё in the file name 0ms
+ ✓ tests/snippetsStorage.test.ts > snippetsStorage (IndexedDB storage) > getSnippetExportFilename > keeps the capital letter Ё 0ms
+ ✓ tests/snippetsStorage.test.ts > snippetsStorage (IndexedDB storage) > getSnippetExportFilename > keeps ё together with an explicit extension 0ms
+ ✓ tests/editorToggleComment.test.ts > комментирование из меню редактора > без выделения: «-- » добавляется и снимается в строке с курсором 3ms
+ ✓ tests/editorToggleComment.test.ts > комментирование из меню редактора > с выделением: обёртка в /* */ и снятие обёртки 1ms
+ ✓ tests/editorToggleComment.test.ts > комментирование из меню редактора > результат совпадает с прежним сочетанием клавиш на наборе случаев 17ms
+ ✓ tests/editorToggleComment.test.ts > комментирование из меню редактора > курсор в начале текста с пустой первой строкой: комментируется эта строка (прежний алгоритм портил текст) 0ms
+ ✓ tests/graphDetail.test.ts > граф запроса > оконные функции > row_number() с PARTITION BY и ORDER BY (форма node-sql-parser) 1ms
+ ✓ tests/graphDetail.test.ts > граф запроса > оконные функции > агрегат с окном и рамкой; ORDER BY без направления 0ms
+ ✓ tests/graphDetail.test.ts > граф запроса > оконные функции > именованное окно и пустое OVER () 0ms
+ ✓ tests/graphDetail.test.ts > граф запроса > оконные функции > прежняя упрощённая форма over.partitionby по-прежнему читается 0ms
+ ✓ tests/graphDetail.test.ts > граф запроса > оконные функции > оконная колонка помечается window, обычная — нет 4ms
+ ✓ tests/graphDetail.test.ts > граф запроса > предупреждения ⚠ > запятая и CROSS JOIN без связи — декартово произведение 9ms
+ ✓ tests/graphDetail.test.ts > граф запроса > предупреждения ⚠ > старый стиль «FROM a, b WHERE a.id = b.id» не считается ошибкой 4ms
+ ✓ tests/graphDetail.test.ts > граф запроса > предупреждения ⚠ > ARRAY JOIN и JOIN с условием — без предупреждений 11ms
+ ✓ tests/graphDetail.test.ts > граф запроса > предупреждения ⚠ > LEFT JOIN с условием WHERE по правой таблице 6ms
+ ✓ tests/graphDetail.test.ts > граф запроса > предупреждения ⚠ > LEFT JOIN: IS NULL, условие по левой таблице и OR с левой — без предупреждений 15ms
+ ✓ tests/graphDetail.test.ts > граф запроса > предупреждения ⚠ > SELECT * — только у итогового результата, не у CTE 4ms
+ ✓ tests/graphDetail.test.ts > граф запроса > единое название «subquery» > подпись «subquery» только у стрелки подзапроса в условии; у производной таблицы её нет (карточка помечена бейджем) 14ms
+ ✓ tests/graphDetail.test.ts > граф запроса > источник без имени таблицы > табличная функция показывается как написана, а не UNKNOWN 0ms
+ ✓ tests/graphDetail.test.ts > граф запроса > метки CTE: RECURSIVE и MATERIALIZED > MATERIALIZED / NOT MATERIALIZED показываются на своём CTE 13ms
+ ✓ tests/graphDetail.test.ts > граф запроса > метки CTE: RECURSIVE и MATERIALIZED > RECURSIVE не ставится CTE, в теле которого есть одноимённая таблица другой схемы 37ms
+ ✓ tests/excelExporter.test.ts > excelExporter utils > exportToExcel with formatting features > runs exportToExcel without crashing when formatExistingRowAsTotal and formatExistingColumnAsTotal are enabled 1253ms
+stderr | tests/excelExporter.test.ts > excelExporter utils > exportToExcel with formatting features > parses @prese
+t directive from comments and applies preset settings
+Failed to load Excel presets from localStorage ReferenceError: localStorage is not defined
+    at getSavedExcelPresets (D:\VS Code\queryast-lens\src\utils\excelSettingsStorage.ts:48:17)
+    at D:\VS Code\queryast-lens\tests\excelExporter.test.ts:170:31
+    at file:///D:/VS%20Code/queryast-lens/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20
+Failed to save Excel presets to localStorage ReferenceError: localStorage is not defined
+    at saveUserExcelPresets (D:\VS Code\queryast-lens\src\utils\excelSettingsStorage.ts:73:5)
+    at D:\VS Code\queryast-lens\tests\excelExporter.test.ts:171:7
+    at file:///D:/VS%20Code/queryast-lens/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20
+Failed to load Excel presets from localStorage ReferenceError: localStorage is not defined
+    at getSavedExcelPresets (D:\VS Code\queryast-lens\src\utils\excelSettingsStorage.ts:48:17)
+    at exportToExcel (D:\VS Code\queryast-lens\src\utils\excelExporter.ts:160:28)
+    at D:\VS Code\queryast-lens\tests\excelExporter.test.ts:190:13
+    at file:///D:/VS%20Code/queryast-lens/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20
+
+ ✓ tests/graphDetail.test.ts > граф запроса > метки CTE: RECURSIVE и MATERIALIZED > RECURSIVE — только у CTE, который ссылается на себя 34ms
+ ✓ tests/graphDetail.test.ts > граф запроса > пустой limit от node-sql-parser > не рисуется чипом LIMIT 0 0ms
+ ✓ tests/graphDetail.test.ts > граф запроса > пустой limit от node-sql-parser > настоящий LIMIT по-прежнему рисуется 0ms
+ ✓ tests/graphDetail.test.ts > граф запроса > несколько запросов в файле > блоки запросов не пересекаются 28ms
+ ✓ tests/graphDetail.test.ts > граф запроса > DML > UPDATE без WHERE всё равно показывает SET со списком присваиваний 2ms
+ ✓ tests/graphDetail.test.ts > граф запроса > DML > UPDATE … FROM: источники, JOIN-условие и алиас цели 2ms
+ ✓ tests/graphDetail.test.ts > граф запроса > DML > DELETE … USING показывает источник; WHERE с подзапросом не режется по чужому WHERE 9ms
+ ✓ tests/graphDetail.test.ts > граф запроса > DML > INSERT: список колонок на карточке цели 2ms
+ ✓ tests/graphDetail.test.ts > граф запроса > DML > MERGE: источник, ON и ветки WHEN 7ms
+ ✓ tests/graphDetail.test.ts > граф запроса > DML > все DML-графы раскладываются без пересечений карточек 14ms
+ ✓ tests/graphDetail.test.ts > граф запроса > ClickHouse: FINAL и константы WITH > FINAL — метка на карточке таблицы, алиас сохраняется 2ms
+ ✓ tests/excelExporter.test.ts > excelExporter utils > exportToExcel with formatting features > runs exportToExcel with categoryGroupFormatSubtotals 17ms
+ ✓ tests/excelExporter.test.ts > excelExporter utils > exportToExcel with formatting features > runs exportToExcel with both categoryGroupFormatSubtotals and formatExistingRowAsTotal 12ms
+ ✓ tests/excelExporter.test.ts > excelExporter utils > exportToExcel with formatting features > runs exportToExcel with skipColumnIndex and @skip directive 24ms
+ ✓ tests/excelExporter.test.ts > excelExporter utils > exportToExcel with formatting features > runs exportToExcel with hideColumnIndex and @hide directive 19ms
+ ✓ tests/markdown.test.ts > markdown: блоки > заголовки ATX и setext, якоря 6ms
+ ✓ tests/markdown.test.ts > markdown: блоки > абзацы и переносы строк 1ms
+ ✓ tests/markdown.test.ts > markdown: блоки > горизонтальная линия 0ms
+ ✓ tests/markdown.test.ts > markdown: блоки > цитаты, в том числе вложенные 0ms
+ ✓ tests/markdown.test.ts > markdown: блоки > блоки кода: ``` и ~~~, язык, экранирование 1ms
+ ✓ tests/markdown.test.ts > markdown: блоки > незакрытый блок кода идёт до конца текста 0ms
+ ✓ tests/markdown.test.ts > markdown: блоки > внутри кода разметка не разбирается 0ms
+ ✓ tests/markdown.test.ts > markdown: блоки > highlightCode подставляет подсвеченный HTML 0ms
+ ✓ tests/markdown.test.ts > markdown: блоки > mermaid-блоки собираются и отдаются в renderMermaid 1ms
+ ✓ tests/markdown.test.ts > markdown: списки > маркированный и нумерованный 1ms
+ ✓ tests/markdown.test.ts > markdown: списки > вложенные 0ms
+ ✓ tests/markdown.test.ts > markdown: списки > рыхлый список даёт <p> 0ms
+ ✓ tests/markdown.test.ts > markdown: списки > чекбоксы 0ms
+ ✓ tests/markdown.test.ts > markdown: списки > код внутри пункта 0ms
+ ✓ tests/markdown.test.ts > markdown: списки > смена маркера начинает новый список; `---` — не пункт 0ms
+ ✓ tests/markdown.test.ts > markdown: таблицы > GFM таблица с выравниванием и экранированным | 1ms
+ ✓ tests/markdown.test.ts > markdown: таблицы > строка с | без разделителя — обычный абзац 0ms
+ ✓ tests/markdown.test.ts > markdown: инлайн > жирный, курсив, зачёркнутый, код 1ms
+ ✓ tests/markdown.test.ts > markdown: инлайн > snake_case и умножение не превращаются в курсив 0ms
+ ✓ tests/markdown.test.ts > markdown: инлайн > код не парсится, `` позволяет вставить обратный апостроф 0ms
+ ✓ tests/markdown.test.ts > markdown: инлайн > экранирование \* и литерал * 0ms
+ ✓ tests/markdown.test.ts > markdown: инлайн > ссылки, якоря, картинки, автоссылки 2ms
+ ✓ tests/markdown.test.ts > markdown: инлайн > некорректный % в якоре не роняет рендер 0ms
+ ✓ tests/markdown.test.ts > markdown: инлайн > опасные схемы отбрасываются 1ms
+ ✓ tests/markdown.test.ts > markdown: инлайн > HTML экранируется, простые теги без атрибутов разрешены 1ms
+ ✓ tests/markdown.test.ts > markdown: инлайн > escapeHtml 0ms
+ ✓ tests/markdown.test.ts > markdown: документ > YAML front matter скрывается 0ms
+ ✓ tests/markdown.test.ts > markdown: документ > пустой текст и CRLF 0ms
+ ✓ tests/markdown.test.ts > markdown: документ > смешанный документ 1ms
+ ✓ tests/markdown.test.ts > markdown: документ > патологический ввод обрабатывается быстро 1307ms
+ ✓ tests/graphDetail.test.ts > граф запроса > ClickHouse: FINAL и константы WITH > константы WITH — отдельная карточка «имя = выражение» 2ms
+ ✓ tests/graphDetail.test.ts > граф запроса > разбор: мелкие случаи > ORDER BY … NULLS LAST без лишнего ASC 1ms
+ ✓ tests/graphDetail.test.ts > граф запроса > разбор: мелкие случаи > массив в WITH (ClickHouse) попадает в константы 1ms
+ ✓ tests/graphDetail.test.ts > граф запроса > разбор: мелкие случаи > колонка «o.lvl + 1» без алиаса не теряет «1» 2ms
+ ✓ tests/graphDetail.test.ts > граф запроса > разбор: мелкие случаи > JOIN LATERAL (подзапрос): источник разобран, соединение помечено LATERAL 8ms
+ ✓ tests/graphDetail.test.ts > граф запроса > GROUP BY в двух формах AST > массив (встроенный разбор) 1ms
+ ✓ tests/graphDetail.test.ts > граф запроса > GROUP BY в двух формах AST > объект { columns, modifiers } (node-sql-parser 5.x) 1ms
+ ✓ tests/markdown.test.ts > markdown: исправления (автоссылки, рыхлые списки) > ссылка в кавычках не захватывает &quot; 0ms
+ ✓ tests/markdown.test.ts > markdown: исправления (автоссылки, рыхлые списки) > скобки внутри ссылки остаются, лишняя закрывающая — нет 1ms
+ ✓ tests/markdown.test.ts > markdown: исправления (автоссылки, рыхлые списки) > пунктуация в конце ссылки не входит; & в ссылке экранируется один раз 0ms
+ ✓ tests/markdown.test.ts > markdown: исправления (автоссылки, рыхлые списки) > http:// без адреса — обычный текст 0ms
+ ✓ tests/markdown.test.ts > markdown: исправления (автоссылки, рыхлые списки) > список не становится рыхлым из-за пустой строки перед другим списком 0ms
+ ✓ tests/markdown.test.ts > markdown: исправления (автоссылки, рыхлые списки) > пустая строка между пунктами одного списка по-прежнему делает его рыхлым 0ms
+ ✓ tests/markdown.test.ts > markdown: исправления (автоссылки, рыхлые списки) > другой маркер после пустой строки — другой список без <p> 0ms
+ ✓ tests/excelExporter.test.ts > excelExporter utils > exportToExcel with formatting features > parses @preset directive from comments and applies preset settings 31ms
+ ✓ tests/excelExporter.test.ts > excelExporter utils > exportToExcel with formatting features > parses @excel_save along with other tags without error 15ms
+ ✓ tests/excelExporter.test.ts > excelExporter utils > exportToExcel with formatting features > порядок столбцов берётся из columns, а не из ключей объекта (числовые имена) 75ms
+ ✓ tests/sqlLanguage.test.ts > sqlLanguage: строки > одинарные кавычки с удвоением по-прежнему одна строка 6ms
+ ✓ tests/sqlLanguage.test.ts > sqlLanguage: строки > 'it\'s' — одна строка (обратная косая черта экранирует кавычку) 1ms
+ ✓ tests/sqlLanguage.test.ts > sqlLanguage: строки > 'a\\' — экранированная косая черта, строка закрывается 1ms
+ ✓ tests/sqlLanguage.test.ts > sqlLanguage: строки > косая черта перед другим символом — обычный символ строки 1ms
+ ✓ tests/sqlLanguage.test.ts > sqlLanguage: строки > $$ … $$ в одной строке — зелёная строка как раньше 1ms
+ ✓ tests/sqlLanguage.test.ts > sqlLanguage: строки > многострочный $$ … $$ не зелёный: внутри обычная подсветка SQL 2ms
+ ✓ tests/sqlLanguage.test.ts > sqlLanguage: строки > многострочный $$: после закрытия подсветка продолжается как обычно 1ms
+ ✓ tests/sqlLanguage.test.ts > sqlLanguage: строки > многострочный $$: апостроф и комментарий внутри не «съедают» закрывающую пару 1ms
+ ✓ tests/sqlLanguage.test.ts > sqlLanguage: строки > многострочный $$ после однострочной строки в той же строке 1ms
+ ✓ tests/sqlLanguage.test.ts > sqlLanguage: строки > незакрытый $$: дальше обычная подсветка, а не зелёный текст до конца 0ms
+ ✓ tests/sqlLanguage.test.ts > sqlLanguage: строки > в обычных кавычках и комментариях $$ не открывает литерал 0ms
+ ✓ tests/sqlLanguage.test.ts > sqlLanguage: строки > после закрытия $$ подсветка продолжается как обычно 0ms
+ ✓ tests/sqlLanguage.test.ts > sqlLanguage: строки > "x" остаётся идентификатором (как в DuckDB/PostgreSQL) 0ms
+ ✓ tests/sqlLanguage.test.ts > sqlLanguage: строки > идентификатор в обратных кавычках 0ms
+ ✓ tests/sqlLanguage.test.ts > sqlLanguage: числа > 42 — число 0ms
+ ✓ tests/sqlLanguage.test.ts > sqlLanguage: числа > 3.14 — число 0ms
+ ✓ tests/sqlLanguage.test.ts > sqlLanguage: числа > 1e5 — число 0ms
+ ✓ tests/sqlLanguage.test.ts > sqlLanguage: числа > 1E5 — число 0ms
+ ✓ tests/sqlLanguage.test.ts > sqlLanguage: числа > 2.5e-3 — число 0ms
+ ✓ tests/sqlLanguage.test.ts > sqlLanguage: числа > .5 — число 0ms
+ ✓ tests/sqlLanguage.test.ts > sqlLanguage: числа > 0xFF — число 0ms
+ ✓ tests/sqlLanguage.test.ts > sqlLanguage: числа > 0Xab12 — число 0ms
+ ✓ tests/sqlLanguage.test.ts > sqlLanguage: числа > слово, начинающееся с цифры, числом не считается 0ms
+ ✓ tests/sqlLanguage.test.ts > sqlLanguage: числа > число в запятой и скобках 0ms
+ ✓ tests/sqlLanguage.test.ts > sqlLanguage: прочее не изменилось > комментарии 0ms
+ ✓ tests/sqlLanguage.test.ts > sqlLanguage: прочее не изменилось > ключевые слова, функции, движок 0ms
+ ✓ tests/sqlLanguage.test.ts > sqlLanguage: прочее не изменилось > переменные {{$…}} токена не создают (цвет задаёт декоратор) 0ms
+stderr | tests/connectionSwitch.test.ts > switchConnection > ошибка закрытия старого не ме
+шает открыть новое
+Closing the previous DuckDB connection failed Error: close failed
+    at Object.closeCurrent (D:\VS Code\queryast-lens\tests\connectionSwitch.test.ts:101:117)
+    at switchConnection (D:\VS Code\queryast-lens\src\utils\connectionSwitch.ts:33:18)
+    at D:\VS Code\queryast-lens\tests\connectionSwitch.test.ts:101:21
+    at file:///D:/VS%20Code/queryast-lens/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11
+    at file:///D:/VS%20Code/queryast-lens/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26
+    at file:///D:/VS%20Code/queryast-lens/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:2
+0
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///D:/VS%20Code/queryast-lens/node_modules/@vitest/runner/dist/chunk
+-hooks.js:1863:10)
+    at runTest (file:///D:/VS%20Code/queryast-lens/node_modules/@vitest/runner/dist/chunk-hooks.
+js:1574:12)
     at processTicksAndRejections (node:internal/process/task_queues:103:5)
 
- ✓ tests/connectionSwitch.test.ts (15 tests) 17ms
- ✓ tests/fileTree.test.ts (37 tests) 25ms
- ✓ tests/mermaidParse.test.ts (35 tests) 36ms
- ✓ tests/editorOps.test.ts (50 tests) 30ms
- ✓ tests/hotkeysMatch.test.ts (36 tests) 54ms
- ✓ tests/clickhouse.test.ts (23 tests) 14ms
- ✓ tests/excelTemplate.test.ts (16 tests) 19ms
- ✓ tests/sqlLanguage.test.ts (27 tests) 18ms
- ✓ tests/snippetsStorage.test.ts (14 tests) 17ms
- ✓ tests/graphExport.test.ts (19 tests) 17ms
- ✓ tests/appHotkeys.test.ts (25 tests) 14ms
- ✓ tests/sqlUtils.test.ts (35 tests) 14ms
- ✓ tests/wasmFiles.test.ts (17 tests) 9ms
- ✓ tests/schemaDbCache.test.ts (4 tests) 13ms
- ✓ tests/queryRun.test.ts (13 tests) 11ms
- ✓ tests/excelSettingsStorage.test.ts (8 tests) 10ms
- ✓ tests/clickhouseFormat.test.ts (26 tests) 12ms
- ✓ tests/resultRows.test.ts (20 tests) 11ms
- ✓ tests/joinTree.test.ts (22 tests) 12ms
- ✓ tests/sqlLiterals.test.ts (12 tests) 9ms
- ✓ tests/resultStorage.test.ts (3 tests) 10ms
- ✓ tests/formatCellValue.test.ts (13 tests) 8ms
- ✓ tests/templateStorage.test.ts (11 tests) 24ms
- ✓ tests/sqlHighlight.test.ts (9 tests) 8ms
- ✓ tests/canvasLimits.test.ts (4 tests) 4ms
- ✓ tests/clipboard.test.ts (6 tests) 8ms
- ✓ tests/excelParse.test.ts (16 tests) 8ms
- ✓ tests/columnActionsSql.test.ts (16 tests) 9ms
- ✓ tests/columnSelection.test.ts (14 tests) 7ms
- ✓ tests/tabModified.test.ts (13 tests) 9ms
- ✓ tests/tabResultState.test.ts (8 tests) 9ms
- ✓ tests/workspaceBundle.test.ts (9 tests) 8ms
- ✓ tests/filteredSql.test.ts (8 tests) 6ms
- ✓ tests/tableActionBlock.test.ts (10 tests) 7ms
- ✓ tests/sessionStorage.test.ts (4 tests) 8ms
- ✓ tests/markdownTable.test.ts (12 tests) 8ms
- ✓ tests/snippetTrash.test.ts (10 tests) 9ms
- ✓ tests/sqlTokens.test.ts (7 tests) 7ms
- ✓ tests/graphSelection.test.ts (9 tests) 5ms
- ✓ tests/excelSaveDirective.test.ts (7 tests) 8ms
- ✓ tests/resultTsv.test.ts (7 tests) 5ms
- ✓ tests/vaultStorage.test.ts (6 tests) 5ms
- ✓ tests/openFile.test.ts (8 tests) 5ms
- ✓ tests/schemaKeys.test.ts (6 tests) 5ms
- ✓ tests/tabNames.test.ts (8 tests) 6ms
- ✓ tests/pageRowsLimit.test.ts (5 tests) 4ms
- ✓ tests/nodePropsEqual.test.ts (8 tests) 5ms
- ✓ tests/copyGuard.test.ts (7 tests) 5ms
- ✓ tests/quickActionDefaults.test.ts (3 tests) 4ms
- ✓ tests/linesSuffix.test.ts (2 tests) 3ms
- ✓ tests/pagination.test.ts (6 tests) 5ms
+ ✓ tests/connectionSwitch.test.ts > switchConnection > нет прежнего подключения: просто открывает, ничего не закрывает 3ms
+ ✓ tests/connectionSwitch.test.ts > switchConnection > есть прежнее: сначала закрывается, потом открывается новое 1ms
+ ✓ tests/connectionSwitch.test.ts > switchConnection > сбой открытия: прежний файл открывается заново (восстановление), результат сообщает об этом 1ms
+ ✓ tests/connectionSwitch.test.ts > switchConnection > сбой открытия, прежняя in-memory база не восстанавливается: restored = null и причина возвращена 1ms
+ ✓ tests/connectionSwitch.test.ts > switchConnection > openFirst: новое открывается без закрытия старого; при сбое старое не тронуто и не переоткрывается 0ms
+ ✓ tests/connectionSwitch.test.ts > switchConnection > openFirst: успех — старое отдельно не закрывается (его заменяет бэкенд) 0ms
+ ✓ tests/connectionSwitch.test.ts > switchConnection > ошибка закрытия старого не мешает открыть новое 7ms
+ ✓ tests/connectionSwitch.test.ts > stateAfterSwitch: состояние меняется только после успеха > успех: DuckDB подключён, ClickHouse сброшен, движок duckdb, ошибки нет 0ms
+ ✓ tests/connectionSwitch.test.ts > stateAfterSwitch: состояние меняется только после успеха > успех из «ничего не подключено»: результаты не сбрасываются 0ms
+ ✓ tests/connectionSwitch.test.ts > stateAfterSwitch: состояние меняется только после успеха > сбой при подключённом ClickHouse: ClickHouse и движок остаются, показана ошибка 0ms
+ ✓ tests/connectionSwitch.test.ts > stateAfterSwitch: состояние меняется только после успеха > сбой, прежний DuckDB остался открытым или восстановлен: состояние прежнее 0ms
+ ✓ tests/connectionSwitch.test.ts > stateAfterSwitch: состояние меняется только после успеха > сбой, прежний DuckDB потерян: отключённое состояние и сброс результатов, ошибка остаётся 0ms
+ ✓ tests/connectionSwitch.test.ts > stateAfterSwitch: состояние меняется только после успеха > сбой при «ничего не подключено»: состояние прежнее 0ms
+ ✓ tests/connectionSwitch.test.ts > App.tsx: подключения > пункты меню подключения не меняют ClickHouse и движок до подключения 1ms
+ ✓ tests/connectionSwitch.test.ts > App.tsx: подключения > подключения идут через connectDuckDb / switchConnection 0ms
+ ✓ tests/appHotkeys.test.ts > resolveHotkeyAction: сочетания по умолчанию > Ctrl+Enter, Ctrl+S, Ctrl+Shift+S, Ctrl+Shift+F 3ms
+ ✓ tests/appHotkeys.test.ts > resolveHotkeyAction: сочетания по умолчанию > русская раскладка: Ctrl+S по физической клавише 0ms
+ ✓ tests/appHotkeys.test.ts > resolveHotkeyAction: сочетания по умолчанию > metaKey считается как Ctrl 0ms
+ ✓ tests/appHotkeys.test.ts > resolveHotkeyAction: сочетания по умолчанию > несвязанное сочетание — null 0ms
+ ✓ tests/appHotkeys.test.ts > переназначенное сочетание заменяет прежнее, а не дополняет > visualize переназначен на Alt+R: Ctrl+Enter больше ничего не делает, Alt+R срабатывает 1ms
+ ✓ tests/appHotkeys.test.ts > переназначенное сочетание заменяет прежнее, а не дополняет > saveFile переназначен: Ctrl+S свободно 0ms
+ ✓ tests/appHotkeys.test.ts > переназначенное сочетание заменяет прежнее, а не дополняет > запись сочетания в другом порядке/регистре распознаётся 0ms
+ ✓ tests/appHotkeys.test.ts > поля ввода и окна > в обычном поле ввода (input/textarea) сочетания приложения не перехватываются, включая Esc 0ms
+ ✓ tests/appHotkeys.test.ts > поля ввода и окна > в редакторе SQL сочетания работают 0ms
+ ✓ tests/appHotkeys.test.ts > поля ввода и окна > вне полей ввода (кнопки, таблица) работают 0ms
+ ✓ tests/appHotkeys.test.ts > поля ввода и окна > пока открыто окно, работает только Esc 0ms
+ ✓ tests/appHotkeys.test.ts > переключение вкладок > Ctrl+2 выбирает вторую вкладку, если она есть 1ms
+ ✓ tests/appHotkeys.test.ts > переключение вкладок > вкладки с таким номером нет: сочетание свободно для других действий 0ms
+ ✓ tests/appHotkeys.test.ts > переключение вкладок > другой модификатор в настройках 0ms
+ ✓ tests/appHotkeys.test.ts > переключение вкладок > в окне и в поле ввода вкладки не переключаются 0ms
+ ✓ tests/appHotkeys.test.ts > classifyHotkeyTarget > input / textarea / select — поле 0ms
+ ✓ tests/appHotkeys.test.ts > classifyHotkeyTarget > contenteditable внутри редактора SQL — редактор; вне его — поле 0ms
+ ✓ tests/appHotkeys.test.ts > classifyHotkeyTarget > поле поиска внутри редактора остаётся полем 0ms
+ ✓ tests/appHotkeys.test.ts > classifyHotkeyTarget > прочие элементы и отсутствие цели — other 0ms
+ ✓ tests/appHotkeys.test.ts > вкладки и повтор запроса > Alt+N, Alt+X, Alt+Enter 0ms
+ ✓ tests/appHotkeys.test.ts > вкладки и повтор запроса > Ctrl+Enter по-прежнему visualize; в окне и в поле ввода не срабатывает 0ms
+ ✓ tests/appHotkeys.test.ts > вкладки и повтор запроса > переназначение из настроек 0ms
+ ✓ tests/appHotkeys.test.ts > сохранение вкладки как шаблона > Ctrl+Shift+K вызывает saveAsSnippet, Ctrl+K по-прежнему открывает шаблоны 0ms
+ ✓ tests/appHotkeys.test.ts > подсказки берут сочетание из настроек > сочетание по умолчанию 0ms
+ ✓ tests/appHotkeys.test.ts > подсказки берут сочетание из настроек > переназначенное сочетание 0ms
+ ✓ tests/appHotkeys.test.ts > подсказки берут сочетание из настроек > пустое значение в настройках — берётся сочетание по умолчанию 0ms
+ ✓ tests/appHotkeys.test.ts > подсказки берут сочетание из настроек > таблица умолчаний содержит все действия приложения 1ms
+ ✓ tests/appHotkeys.test.ts > App.tsx: обработчик горячих клавиш > использует resolveHotkeyAction и не держит второй обработчик Ctrl+Enter / Ctrl+S 2ms
+ ✓ tests/appHotkeys.test.ts > App.tsx: обработчик горячих клавиш > подсказки не содержат зашитых сочетаний 0ms
+ ✓ tests/sqlUtils.test.ts > sqlUtils > formatColumnType > should format Enum types correctly 3ms
+ ✓ tests/sqlUtils.test.ts > sqlUtils > formatColumnType > should return the type as-is for other types 0ms
+ ✓ tests/sqlUtils.test.ts > sqlUtils > splitBySemicolonIgnoringQuotes > should split simple queries 1ms
+ ✓ tests/sqlUtils.test.ts > sqlUtils > splitBySemicolonIgnoringQuotes > should ignore semicolons inside single quotes 1ms
+ ✓ tests/sqlUtils.test.ts > sqlUtils > splitBySemicolonIgnoringQuotes > should handle empty queries gracefully 0ms
+ ✓ tests/sqlUtils.test.ts > sqlUtils > replaceVariablesInSql > should return original sql if no {{$ is present 0ms
+ ✓ tests/sqlUtils.test.ts > sqlUtils > replaceVariablesInSql > should replace variables defined in SQL comments 0ms
+ ✓ tests/sqlUtils.test.ts > sqlUtils > replaceVariablesInSql > should support block comments /* ... */ 0ms
+ ✓ tests/sqlUtils.test.ts > sqlUtils > replaceVariablesInSql > should resolve variables defined in contextSql when executing a selected snippet 0ms
+ ✓ tests/sqlUtils.test.ts > sqlUtils > replaceVariablesInSql > should replace inline definitions {{$var=value}} seamlessly 0ms
+ ✓ tests/sqlUtils.test.ts > sqlUtils > replaceVariablesInSql > should not interfere with vault secrets {{secret_name}} 0ms
+ ✓ tests/sqlUtils.test.ts > sqlUtils > replaceVariablesInSql > should replace repeated occurrences of the same variable 0ms
+ ✓ tests/sqlUtils.test.ts > sqlUtils > replaceVariablesInSql: кириллические имена > подставляет {{$дата}} из определения и из контекста 0ms
+ ✓ tests/sqlUtils.test.ts > getLastSelectStatement > один запрос: без хвостовой «;» 0ms
+ ✓ tests/sqlUtils.test.ts > getLastSelectStatement > скрипт из двух SELECT — последний 0ms
+ ✓ tests/sqlUtils.test.ts > getLastSelectStatement > DDL перед SELECT не попадает в результат 0ms
+ ✓ tests/sqlUtils.test.ts > getLastSelectStatement > DDL после SELECT: берётся последний SELECT 0ms
+ ✓ tests/sqlUtils.test.ts > getLastSelectStatement > нет SELECT — последний непустой оператор 0ms
+ ✓ tests/sqlUtils.test.ts > getLastSelectStatement > комментарий после «;» не считается оператором 0ms
+ ✓ tests/sqlUtils.test.ts > getLastSelectStatement > комментарии в начале оператора отбрасываются 0ms
+ ✓ tests/sqlUtils.test.ts > getLastSelectStatement > «;» в строке не делит оператор; WITH считается SELECT-подобным 0ms
+ ✓ tests/sqlUtils.test.ts > getLastSelectStatement > пустой ввод 0ms
+ ✓ tests/sqlUtils.test.ts > buildQuickActionSource > до первого запроса — table 0ms
+ ✓ tests/sqlUtils.test.ts > buildQuickActionSource > одиночный SELECT — как раньше 0ms
+ ✓ tests/sqlUtils.test.ts > buildQuickActionSource > скрипт: оборачивается только последний SELECT 0ms
+ ✓ tests/sqlUtils.test.ts > findUnresolvedVariables > все переменные определены в тексте вкладки — пусто 0ms
+ ✓ tests/sqlUtils.test.ts > findUnresolvedVariables > нет определения — имя в списке, без повторов 0ms
+ ✓ tests/sqlUtils.test.ts > findUnresolvedVariables > определение внутри самого запроса считается 0ms
+ ✓ tests/sqlUtils.test.ts > findUnresolvedVariables > системная {{$timestamp}} определена всегда 0ms
+ ✓ tests/sqlUtils.test.ts > findUnresolvedVariables > кириллические имена 0ms
+ ✓ tests/sqlUtils.test.ts > findUnresolvedVariables > без переменных 0ms
+ ✓ tests/sqlUtils.test.ts > {{$now}} > formatLocalNow: локальное время YYYY-MM-DD HH:MM:SS с ведущими нулями 1ms
+ ✓ tests/sqlUtils.test.ts > {{$now}} > {{$now}} заменяется на локальное время без кавычек 0ms
+ ✓ tests/sqlUtils.test.ts > {{$now}} > пользовательское {{$now=…}} имеет приоритет 0ms
+ ✓ tests/sqlUtils.test.ts > {{$now}} > {{$now}} считается определённой 0ms
+ ✓ tests/graphExport.test.ts > buildGraphTextExport: xml > обычный SQL лежит в CDATA как есть 4ms
+ ✓ tests/graphExport.test.ts > buildGraphTextExport: xml > индекс вложенного массива a[b[1]]>0 не ломает CDATA 1ms
+ ✓ tests/graphExport.test.ts > buildGraphTextExport: xml > ]]> в комментарии, в начале и в конце SQL 1ms
+ ✓ tests/graphExport.test.ts > buildGraphTextExport: xml > кириллица и пустой SQL 0ms
+ ✓ tests/graphExport.test.ts > buildGraphTextExport: xml > атрибуты и текст узлов экранируются 1ms
+ ✓ tests/graphExport.test.ts > buildGraphTextExport: json > метаданные и число узлов 2ms
+ ✓ tests/graphExport.test.ts > buildGraphTextExport: json > в JSON нет функций (onToggle и подобных) 1ms
+ ✓ tests/graphExport.test.ts > buildGraphTextExport: json > bigint в данных узла не роняет экспорт 1ms
+ ✓ tests/graphExport.test.ts > buildGraphTextExport: mermaid > идентификаторы a-b и a_b различаются, рёбра ведут к своим узлам 1ms
+ ✓ tests/graphExport.test.ts > buildGraphTextExport: mermaid > кириллические id не склеиваются 0ms
+ ✓ tests/graphExport.test.ts > buildGraphTextExport: mermaid > обычные id остаются без изменений, допустимы только [A-Za-z0-9_] 0ms
+ ✓ tests/graphExport.test.ts > buildGraphTextExport: mermaid > направление и подписи 0ms
+ ✓ tests/graphExport.test.ts > buildGraphTextExport: drawio > размеры ячеек совпадают с размерами узлов раскладки 2ms
+ ✓ tests/graphExport.test.ts > buildGraphTextExport: drawio > измеренный размер узла (React Flow) важнее расчётного 0ms
+ ✓ tests/graphExport.test.ts > buildGraphTextExport: drawio > позиции округляются и сохраняются 0ms
+ ✓ tests/graphExport.test.ts > buildGraphTextExport: drawio > цвета зависят от типа узла 1ms
+ ✓ tests/graphExport.test.ts > buildGraphTextExport: drawio > подписи и рёбра экранируются, рёбра ссылаются на узлы 0ms
+ ✓ tests/graphExport.test.ts > scopedHideScrollbarsCss > все правила действуют только внутри заданной области 1ms
+ ✓ tests/graphExport.test.ts > scopedHideScrollbarsCss > скрывает полосы прокрутки (webkit и scrollbar-width) 0ms
+ ✓ tests/queryRun.test.ts > createRunTracker > новый запуск активен, завершение снимает его и сообщает, остались ли другие 3ms
+ ✓ tests/queryRun.test.ts > createRunTracker > отмена прерывает signal и делает запуск устаревшим 2ms
+ ✓ tests/queryRun.test.ts > createRunTracker > устаревший запуск не сообщает «был активен» и не мешает новому запуску 1ms
+ ✓ tests/queryRun.test.ts > createRunTracker > cancelScope отменяет только запуски своей вкладки 0ms
+ ✓ tests/queryRun.test.ts > createRunTracker > номера запусков растут 0ms
+ ✓ tests/queryRun.test.ts > executeStatsQuery > {{$param}} подставляется до выполнения, SQL берётся из контекста вкладки 1ms
+ ✓ tests/queryRun.test.ts > executeStatsQuery > секрет подставляется, ошибка хранилища не запускает запрос и не трогает состояние «выполняется» 2ms
+ ✓ tests/queryRun.test.ts > executeStatsQuery > успех: onStart один раз, onFinish с wasActive и без остатка 1ms
+ ✓ tests/queryRun.test.ts > executeStatsQuery > ошибка выполнения пробрасывается как есть, запуск снимается 1ms
+ ✓ tests/queryRun.test.ts > executeStatsQuery > отмена во время выполнения: результат отбрасывается, сообщение об отмене, флаг не сбрасывается устаревшим запуском 1ms
+ ✓ tests/queryRun.test.ts > executeStatsQuery > AbortError от fetch после отмены превращается в сообщение об отмене 1ms
+ ✓ tests/queryRun.test.ts > executeStatsQuery > старая статистика, доработавшая после отмены и нового запуска, не сбрасывает «выполняется» нового 0ms
+ ✓ tests/queryRun.test.ts > executeStatsQuery > если уже идёт другой запуск, onStart сообщает о нём 0ms
+ ✓ tests/clickhouse.test.ts > clickhouse utils > parseClickhouseCopy > should parse COPY TO with parentheses 3ms
+ ✓ tests/clickhouse.test.ts > clickhouse utils > parseClickhouseCopy > should parse COPY FROM without parentheses 1ms
+ ✓ tests/clickhouse.test.ts > clickhouse utils > parseClickhouseCopy > should return null for normal SELECT queries 1ms
+ ✓ tests/clickhouse.test.ts > clickhouse utils > getClickhouseUrl > should format URL with protocol and host 1ms
+ ✓ tests/clickhouse.test.ts > clickhouse utils > getClickhouseUrl > should strip http:// from host if mistakenly provided 0ms
+ ✓ tests/clickhouse.test.ts > clickhouse utils > getClickhouseUrl > should append database and default_format to query string 0ms
+ ✓ tests/clickhouse.test.ts > clickhouse utils > getClickhouseUrl > should append custom query params 0ms
+ ✓ tests/clickhouse.test.ts > clickhouse utils > getClickhouseHeaders > should include user and key if provided 0ms
+ ✓ tests/clickhouse.test.ts > clickhouse utils > getClickhouseHeaders > should not include user and key if empty 0ms
+ ✓ tests/clickhouse.test.ts > clickhouse utils > getClickhouseHeaders > should allow overriding Content-Type 0ms
+ ✓ tests/clickhouse.test.ts > clickhouse utils > parseClickhouseCopy: хвостовой ; и комментарий > COPY … TO 'x.csv'; -- готово распознаётся 1ms
+ ✓ tests/clickhouse.test.ts > clickhouse utils > parseClickhouseCopy: хвостовой ; и комментарий > блочный комментарий и несколько ; после пути 0ms
+ ✓ tests/clickhouse.test.ts > clickhouse utils > parseClickhouseCopy: хвостовой ; и комментарий > комментарий перед запросом и после него 0ms
+ ✓ tests/clickhouse.test.ts > clickhouse utils > parseClickhouseCopy: хвостовой ; и комментарий > -- внутри пути не принимается за комментарий 0ms
+ ✓ tests/clickhouse.test.ts > clickhouse utils > parseClickhouseCopy: хвостовой ; и комментарий > обычный SELECT с хвостовым комментарием по-прежнему не COPY 0ms
+ ✓ tests/clickhouse.test.ts > clickhouse utils > getClickhouseUrl: default_format > без БД и параметров ставится default_format=JSON (защита от маршрутизации на сайт) 0ms
+ ✓ tests/clickhouse.test.ts > clickhouse utils > getClickhouseUrl: default_format > с БД default_format не добавляется (формат задаёт FORMAT в тексте запроса) 0ms
+ ✓ tests/clickhouse.test.ts > clickhouse utils > parseClickhouseResponse > JSON с data и meta разбирается 1ms
+ ✓ tests/clickhouse.test.ts > clickhouse utils > parseClickhouseResponse > HTML вместо JSON на запрос FORMAT JSON — ошибка с началом ответа 2ms
+ ✓ tests/clickhouse.test.ts > clickhouse utils > parseClickhouseResponse > TSV вместо JSON на запрос FORMAT JSON — ошибка 1ms
+ ✓ tests/clickhouse.test.ts > clickhouse utils > parseClickhouseResponse > пустой ответ INSERT/DDL — успех с text 0ms
+ ✓ tests/clickhouse.test.ts > clickhouse utils > parseClickhouseResponse > свой формат пользователя (CSV) — текст, не ошибка 0ms
+ ✓ tests/clickhouse.test.ts > clickhouse utils > parseClickhouseResponse > больше maxRows — ошибка, а не усечение 0ms
+ ✓ tests/schemaDbCache.test.ts > schemaDbCache (IndexedDB database schema cache) > should save and get schema cache entry 8ms
+ ✓ tests/schemaDbCache.test.ts > schemaDbCache (IndexedDB database schema cache) > should get all schema cache entries 3ms
+ ✓ tests/schemaDbCache.test.ts > schemaDbCache (IndexedDB database schema cache) > should import schema cache entries 1ms
+ ✓ tests/schemaDbCache.test.ts > schemaDbCache (IndexedDB database schema cache) > should cleanup stale schema cache entries older than threshold 3ms
+ ✓ tests/resultStorage.test.ts > resultStorage (IndexedDB query results cache) > should save tab result and retrieve it from cache or DB 8ms
+ ✓ tests/resultStorage.test.ts > resultStorage (IndexedDB query results cache) > should remove tab result by id 3ms
+ ✓ tests/resultStorage.test.ts > resultStorage (IndexedDB query results cache) > should cleanup orphaned tab results 3ms
+ ✓ tests/sqlHighlight.test.ts > sqlHighlight (HTML-подсветка для статических представлений) > подсвечивает ключевые слова, строки и числа 4ms
+ ✓ tests/sqlHighlight.test.ts > sqlHighlight (HTML-подсветка для статических представлений) > экранирует HTML 0ms
+ ✓ tests/sqlHighlight.test.ts > sqlHighlight (HTML-подсветка для статических представлений) > highlightSqlHtml подсвечивает вхождения выбранного текста 1ms
+ ✓ tests/sqlHighlight.test.ts > sqlHighlight (HTML-подсветка для статических представлений) > выделенное слово gt/lt/amp не ломает HTML-сущности 1ms
+ ✓ tests/sqlHighlight.test.ts > sqlHighlight (HTML-подсветка для статических представлений) > выделенные знаки >, <, & по-прежнему подсвечиваются целиком, слова рядом с сущностями — тоже 1ms
+ ✓ tests/sqlHighlight.test.ts > sqlHighlight (HTML-подсветка для статических представлений) > подсвечивает переменные с кириллическими именами 2ms
+ ✓ tests/sqlHighlight.test.ts > sqlHighlight (HTML-подсветка для статических представлений) > незакрытая переменная с длинным значением не вешает подсветку 0ms
+ ✓ tests/sqlHighlight.test.ts > sqlHighlight (HTML-подсветка для статических представлений) > закрытая переменная со значением по-прежнему подсвечивается целиком 0ms
+ ✓ tests/sqlHighlight.test.ts > sqlHighlight: имена переменных с пробелами > подсвечивает {{$Период с=2024-01-01}} целиком 0ms
+ ✓ tests/sqlHighlight.test.ts > sqlHighlight: имена переменных с пробелами > подсвечивает {{$Период с}} без значения 0ms
+ ✓ tests/sqlHighlight.test.ts > sqlHighlight: имена переменных с пробелами > длинное имя без закрытия не вешает подсветку 0ms
+ ✓ tests/clickhouseFormat.test.ts > needsJsonFormat > обычный SELECT — да 4ms
+ ✓ tests/clickhouseFormat.test.ts > needsJsonFormat > комментарий перед запросом не мешает (запуск всей вкладки) 1ms
+ ✓ tests/clickhouseFormat.test.ts > needsJsonFormat > формат задан пользователем — нет 0ms
+ ✓ tests/clickhouseFormat.test.ts > needsJsonFormat > слово format в комментарии или строке формат не задаёт 1ms
+ ✓ tests/clickhouseFormat.test.ts > needsJsonFormat > COPY ... TO / FROM не получает FORMAT JSON (в том числе с комментарием в начале) 0ms
+ ✓ tests/clickhouseFormat.test.ts > needsJsonFormat > формат пользователя не перебивается и при комментарии в начале 0ms
+ ✓ tests/clickhouseFormat.test.ts > needsJsonFormat > не запрос на чтение — нет 0ms
+ ✓ tests/clickhouseFormat.test.ts > stripCommentsAndLiterals > убирает комментарии, содержимое строк оставляет пустым, учитывает экранирование 0ms
+ ✓ tests/clickhouseFormat.test.ts > appendJsonFormat > добавляет с новой строки и убирает ; в конце 1ms
+ ✓ tests/clickhouseFormat.test.ts > appendJsonFormat > хвостовой -- комментарий не съедает FORMAT 0ms
+ ✓ tests/clickhouseFormat.test.ts > hasFormatClause / getFormatClause > FORMAT в конце оператора (регистр, ;, перевод строки, SETTINGS после) 0ms
+ ✓ tests/clickhouseFormat.test.ts > hasFormatClause / getFormatClause > после -- комментария FORMAT всё ещё виден; внутри комментария и строки — нет 0ms
+ ✓ tests/clickhouseFormat.test.ts > hasFormatClause / getFormatClause > столбец с именем format формата не задаёт 0ms
+ ✓ tests/clickhouseFormat.test.ts > hasFormatClause / getFormatClause > FORMAT в середине запроса (не в конце) формата не задаёт 0ms
+ ✓ tests/clickhouseFormat.test.ts > needsJsonFormat: столбец format > SELECT format FROM t и SELECT x AS format получают FORMAT JSON 0ms
+ ✓ tests/clickhouseFormat.test.ts > needsJsonFormat: столбец format > явный FORMAT после -- комментария в конце не перебивается 0ms
+ ✓ tests/clickhouseFormat.test.ts > isJsonResponseExpected > строки с FORMAT JSON — да; другой формат, INSERT и DDL — нет 0ms
+ ✓ tests/clickhouseFormat.test.ts > copyFormatForPath / appendCopyFormat > формат по расширению 0ms
+ ✓ tests/clickhouseFormat.test.ts > copyFormatForPath / appendCopyFormat > FORMAT дописывается с новой строки и убирает ; в конце 0ms
+ ✓ tests/clickhouseFormat.test.ts > copyFormatForPath / appendCopyFormat > хвостовой -- комментарий не съедает FORMAT 0ms
+ ✓ tests/clickhouseFormat.test.ts > copyFormatForPath / appendCopyFormat > заданный пользователем FORMAT не перебивается (в том числе после -- комментария) 0ms
+ ✓ tests/clickhouseFormat.test.ts > copyFormatForPath / appendCopyFormat > слово format в комментарии, строке и имени столбца формат не задаёт 0ms
+ ✓ tests/clickhouseFormat.test.ts > copyFormatForPath / appendCopyFormat > INSERT для COPY FROM 0ms
+ ✓ tests/clickhouseFormat.test.ts > stripTrailingNoise > убирает хвостовые пробелы, ; и комментарии 0ms
+ ✓ tests/clickhouseFormat.test.ts > stripTrailingNoise > -- и ; внутри кавычек сохраняются 0ms
+ ✓ tests/clickhouseFormat.test.ts > stripTrailingNoise > текст без хвоста не меняется 0ms
+ ✓ tests/excelSettingsStorage.test.ts > excelSettingsStorage > getSavedExcelSettings returns default settings when localStorage is empty 3ms
+ ✓ tests/excelSettingsStorage.test.ts > excelSettingsStorage > saves and retrieves excel settings correctly 1ms
+ ✓ tests/excelSettingsStorage.test.ts > excelSettingsStorage > handles corrupted JSON in localStorage gracefully for settings 2ms
+ ✓ tests/excelSettingsStorage.test.ts > excelSettingsStorage > returns default preset when localStorage is empty 2ms
+ ✓ tests/excelSettingsStorage.test.ts > excelSettingsStorage > saves and retrieves custom presets correctly 1ms
+ ✓ tests/excelSettingsStorage.test.ts > excelSettingsStorage > handles corrupted JSON in localStorage gracefully for presets 1ms
+ ✓ tests/excelSettingsStorage.test.ts > excelSettingsStorage > deletes a custom preset correctly 1ms
+ ✓ tests/excelSettingsStorage.test.ts > excelSettingsStorage > does not leak sensitive data in logs on JSON parse failure 1ms
+ ✓ tests/joinTree.test.ts > joinTree helpers > qualifiersIn > алиасы в порядке упоминания 3ms
+ ✓ tests/joinTree.test.ts > joinTree helpers > qualifiersIn > строковые литералы игнорируются 0ms
+ ✓ tests/joinTree.test.ts > joinTree helpers > qualifiersIn > кавычки идентификаторов 0ms
+ ✓ tests/joinTree.test.ts > joinTree helpers > qualifiersIn > числа с точкой не принимаются за алиас 0ms
+ ✓ tests/joinTree.test.ts > joinTree helpers > pickJoinParent > первый ранее объявленный алиас из ON, не сам источник 1ms
+ ✓ tests/joinTree.test.ts > joinTree helpers > pickJoinParent > свой алиас пропускается, даже если он упомянут первым 0ms
+ ✓ tests/joinTree.test.ts > joinTree helpers > pickJoinParent > без известного алиаса — корень 0ms
+ ✓ tests/joinTree.test.ts > joinTree helpers > pickJoinParent > регистр алиасов не важен 0ms
+ ✓ tests/joinTree.test.ts > joinTree helpers > firstKnownQualifier > возвращает первый известный алиас как он написан 1ms
+ ✓ tests/joinTree.test.ts > joinTree helpers > firstKnownQualifier > null, если алиасов нет 0ms
+ ✓ tests/joinTree.test.ts > joinTree helpers > joinEdgeLabel > тип и условие 0ms
+ ✓ tests/joinTree.test.ts > joinTree helpers > joinEdgeLabel > без условия — только тип 0ms
+ ✓ tests/joinTree.test.ts > joinTree helpers > joinEdgeLabel > длинная подпись обрезается с многоточием 0ms
+ ✓ tests/joinTree.test.ts > joinTree helpers > joinEdgeLabel > переводы строк и повторные пробелы схлопываются 0ms
+ ✓ tests/joinTree.test.ts > joinTree helpers > columnsByAlias > колонки по алиасам в порядке первого упоминания, без повторов 1ms
+ ✓ tests/joinTree.test.ts > joinTree helpers > columnsByAlias > alias.* попадает как * 0ms
+ ✓ tests/joinTree.test.ts > joinTree helpers > columnsByAlias > цепочка schema.table.column: алиасом считается table 0ms
+ ✓ tests/joinTree.test.ts > joinTree helpers > columnsByAlias > неизвестные алиасы и колонки без алиаса игнорируются 0ms
+ ✓ tests/joinTree.test.ts > joinTree helpers > conditionChipTexts > части по AND без префикса 0ms
+ ✓ tests/joinTree.test.ts > joinTree helpers > conditionChipTexts > при OR условие остаётся одним чипом 0ms
+ ✓ tests/joinTree.test.ts > joinTree helpers > conditionChipTexts > пробельные символы схлопываются 0ms
+ ✓ tests/joinTree.test.ts > joinTree helpers > countSources > элементы FROM; для UNION — сумма по частям 0ms
+ ✓ tests/templateStorage.test.ts > template storage (quick actions and autocomplete) > getQuickActionTemplates > returns defaults when the key is absent 4ms
+ ✓ tests/templateStorage.test.ts > template storage (quick actions and autocomplete) > getQuickActionTemplates > returns defaults when the JSON is broken 1ms
+ ✓ tests/templateStorage.test.ts > template storage (quick actions and autocomplete) > getQuickActionTemplates > returns defaults when the JSON is not an array 0ms
+ ✓ tests/templateStorage.test.ts > template storage (quick actions and autocomplete) > getQuickActionTemplates > returns the saved list when it is not empty 1ms
+ ✓ tests/templateStorage.test.ts > template storage (quick actions and autocomplete) > getQuickActionTemplates > returns an empty list when an empty array is saved 0ms
+ ✓ tests/templateStorage.test.ts > template storage (quick actions and autocomplete) > getCustomAutocompleteTemplates > returns defaults when the key is absent 0ms
+ ✓ tests/templateStorage.test.ts > template storage (quick actions and autocomplete) > getCustomAutocompleteTemplates > returns defaults when the JSON is broken 0ms
+ ✓ tests/templateStorage.test.ts > template storage (quick actions and autocomplete) > getCustomAutocompleteTemplates > returns defaults when the JSON is not an array 0ms
+ ✓ tests/templateStorage.test.ts > template storage (quick actions and autocomplete) > getCustomAutocompleteTemplates > returns the saved list when it is not empty 1ms
+ ✓ tests/templateStorage.test.ts > template storage (quick actions and autocomplete) > getCustomAutocompleteTemplates > drops entries without a string keyword 1ms
+ ✓ tests/templateStorage.test.ts > template storage (quick actions and autocomplete) > getCustomAutocompleteTemplates > returns an empty list when an empty array is saved 0ms
+ ✓ tests/resultRows.test.ts > uniqueColumnNames > уникальные имена остаются как есть 3ms
+ ✓ tests/resultRows.test.ts > uniqueColumnNames > повторы получают суффикс _1, _2, … по порядку появления (как в обёртке DuckDB) 0ms
+ ✓ tests/resultRows.test.ts > uniqueColumnNames > суффикс не совпадает с настоящим именем другого столбца 1ms
+ ✓ tests/resultRows.test.ts > uniqueColumnNames > регистр различает имена; пустое имя тоже уникализируется 0ms
+ ✓ tests/resultRows.test.ts > uniqueColumnNames > три одинаковых имени дают a, a_1, a_2 — как DuckDB в SELECT * FROM (SELECT 1 a, 2 a, 3 a) 0ms
+ ✓ tests/resultRows.test.ts > uniqueColumnNames > не строки приводятся к строкам 0ms
+ ✓ tests/resultRows.test.ts > rowsFromColumns > дубли имён не схлопываются, значения сохраняются по позициям 1ms
+ ✓ tests/resultRows.test.ts > rowsFromColumns > числовые имена: порядок хранится в columns, а не в объекте 1ms
+ ✓ tests/resultRows.test.ts > rowsFromColumns > нет строк — columns всё равно возвращается; нет столбцов — пусто 1ms
+ ✓ tests/resultRows.test.ts > rowsFromColumns > значения bigint, null, вложенные не меняются 0ms
+ ✓ tests/resultRows.test.ts > rowsFromColumns > имя __proto__ становится обычным ключом и не меняет прототип 0ms
+ ✓ tests/resultRows.test.ts > getResultColumns > нет columns — ключи первой строки 0ms
+ ✓ tests/resultRows.test.ts > getResultColumns > columns используются, если это те же имена, что и ключи строки 0ms
+ ✓ tests/resultRows.test.ts > getResultColumns > columns от другого результата игнорируются 0ms
+ ✓ tests/resultRows.test.ts > getResultColumns > пустой или некорректный результат — пустой список 0ms
+ ✓ tests/resultRows.test.ts > columnsFromMeta > имена из meta ClickHouse / dev-сервера в порядке выдачи 0ms
+ ✓ tests/resultRows.test.ts > columnsFromMeta > нет meta или в ней нет имён — null 0ms
+ ✓ tests/resultRows.test.ts > setOwnKey > обычный ключ записывается как obj[key] 0ms
+ ✓ tests/resultRows.test.ts > setOwnKey > ключ __proto__ становится собственным свойством, а не теряется и не возвращает Object.prototype 0ms
+ ✓ tests/resultRows.test.ts > setOwnKey > rowsFromColumns по-прежнему кладёт значение в столбец __proto__ 0ms
+ ✓ tests/dollarQuotes.test.ts > строки в долларовых кавычках > `$$…$$` — одна строка, `--` и `;` внутри не комментарий и не разделитель 5ms
+ ✓ tests/dollarQuotes.test.ts > строки в долларовых кавычках > `$тег$…$тег$`: `$$` внутри не закрывает строку 1ms
+ ✓ tests/dollarQuotes.test.ts > строки в долларовых кавычках > не метки: `$1`, `$name`, `a$b$`; незакрытая строка тянется до конца 1ms
+ ✓ tests/dollarQuotes.test.ts > строки в долларовых кавычках > LIMIT дописывается после запроса, а не внутрь команды 2ms
+ ✓ tests/dollarQuotes.test.ts > строки в долларовых кавычках > собственный LIMIT после `$$…$$)` виден и запрос не меняется 1ms
+ ✓ tests/dollarQuotes.test.ts > строки в долларовых кавычках > `LIMIT` внутри `$$…$$` собственным лимитом не считается 0ms
+ ✓ tests/clipboard.test.ts > copyTextWith > веб-путь удался → true, текст передан как есть 5ms
+ ✓ tests/clipboard.test.ts > copyTextWith > веб-путь отказал → false 1ms
+ ✓ tests/clipboard.test.ts > copyTextWith > Tauri-путь удался → true, веб-путь не используется 1ms
+ ✓ tests/clipboard.test.ts > copyTextWith > сбой Tauri-пути, запасной веб-путь удался → true 1ms
+ ✓ tests/clipboard.test.ts > copyTextWith > сбой обоих путей → false 1ms
+ ✓ tests/clipboard.test.ts > copyTextWith > синхронное исключение в веб-пути (нет navigator.clipboard) → false, а не исключение 1ms
+ ✓ tests/sqlLiterals.test.ts > dollarQuoteEnd > $$…$$ и $тег$…$тег$: позиция после закрывающей границы 2ms
+ ✓ tests/sqlLiterals.test.ts > dollarQuoteEnd > не строка: параметры, часть идентификатора, не закрытый блок 1ms
+ ✓ tests/sqlLiterals.test.ts > protectLiterals > строки в апострофах заменяются плейсхолдерами и возвращаются без изменений 1ms
+ ✓ tests/sqlLiterals.test.ts > protectLiterals > однострочный плейсхолдер не короче литерала (ширина для форматтера сохраняется), многострочный — короткий 1ms
+ ✓ tests/sqlLiterals.test.ts > protectLiterals > $$…$$ и $тег$…$тег$ прячутся целиком, вместе с апострофами, -- и ; внутри 0ms
+ ✓ tests/sqlLiterals.test.ts > protectLiterals > комментарии и идентификаторы в кавычках не трогаются и не сбивают разбор 0ms
+ ✓ tests/sqlLiterals.test.ts > protectLiterals > обратная косая черта: экранирует только при backslashEscapes или после E 1ms
+ ✓ tests/sqlLiterals.test.ts > protectLiterals > незакрытая строка остаётся как есть (форматтер сообщит об ошибке, как раньше) 0ms
+ ✓ tests/sqlLiterals.test.ts > protectLiterals > protectDivision: // вне строк и комментариев заменяется, внутри — нет; обратно становится // 1ms
+ ✓ tests/sqlLiterals.test.ts > protectLiterals > dollarOnly: строки в апострофах остаются на месте, а $$ внутри них не принимается за блок 0ms
+ ✓ tests/sqlLiterals.test.ts > protectLiterals > плейсхолдер не совпадает с текстом пользователя 0ms
+ ✓ tests/sqlLiterals.test.ts > protectLiterals > спецпоследовательности $& и $1 в литерале при возврате не раскрываются 0ms
+ ✓ tests/formatCellValue.test.ts > formatCellValue > массив — JSON со скобками 2ms
+ ✓ tests/formatCellValue.test.ts > formatCellValue > объект — JSON, а не [object Object] 0ms
+ ✓ tests/formatCellValue.test.ts > formatCellValue > bigint: само значение строкой, внутри структуры — строкой в JSON 0ms
+ ✓ tests/formatCellValue.test.ts > formatCellValue > примитивы — как раньше (String) 1ms
+ ✓ tests/formatCellValue.test.ts > formatCellValue > null и undefined — как String 0ms
+ ✓ tests/formatCellValue.test.ts > formatCellValue > Date — как раньше (String), не JSON-строка в кавычках 1ms
+ ✓ tests/formatCellValue.test.ts > formatCellValue > круговая ссылка не бросает исключение 1ms
+ ✓ tests/formatCellValue.test.ts > formatCellValue > объект с toJSON, бросающим ошибку, не роняет вывод 0ms
+ ✓ tests/formatCellValue.test.ts > formatCellValue > типизированный массив (BLOB) — список чисел в скобках 0ms
+ ✓ tests/formatCellValue.test.ts > formatCellValue > функция не превращается в undefined 0ms
+ ✓ tests/formatCellValue.test.ts > computeColumnStats на вложенных значениях > одинаковые массивы считаются одним значением, разные — разными 1ms
+ ✓ tests/formatCellValue.test.ts > computeColumnStats на вложенных значениях > разные объекты не склеиваются в один «[object Object]» 0ms
+ ✓ tests/formatCellValue.test.ts > computeColumnStats на вложенных значениях > null среди объектов считается пустым 0ms
+ ✓ tests/wasmFiles.test.ts > isSystemVfsFile > пользовательские файлы с именами, начинающимися на src/dist/public, видны 2ms
+ ✓ tests/wasmFiles.test.ts > isSystemVfsFile > служебные файлы и каталоги проекта скрыты 1ms
+ ✓ tests/wasmFiles.test.ts > isSystemVfsFile > регистр имени не важен для служебных имён 0ms
+ ✓ tests/wasmFiles.test.ts > isSystemVfsFile > обычные данные видны 0ms
+ ✓ tests/wasmFiles.test.ts > detectCopyTarget > простой COPY ... TO 1ms
+ ✓ tests/wasmFiles.test.ts > detectCopyTarget > COPY в комментарии не считается 0ms
+ ✓ tests/wasmFiles.test.ts > detectCopyTarget > COPY внутри строки не считается 0ms
+ ✓ tests/wasmFiles.test.ts > detectCopyTarget > COPY FROM и обычные запросы не считаются 0ms
+ ✓ tests/wasmFiles.test.ts > detectCopyTarget > после COPY стоят комментарий или несколько операторов 0ms
+ ✓ tests/wasmFiles.test.ts > detectCopyTarget > строка внутри подзапроса не принимается за цель 0ms
+ ✓ tests/wasmFiles.test.ts > detectCopyTarget > удвоенная кавычка в имени разворачивается 0ms
+ ✓ tests/wasmFiles.test.ts > describeRegisterResult > зарегистрирован сразу 0ms
+ ✓ tests/wasmFiles.test.ts > describeRegisterResult > регистрация отложена до запроса — не «успешно» 0ms
+ ✓ tests/wasmFiles.test.ts > describeRegisterResult > сбой синхронизации с сервером — предупреждение 0ms
+ ✓ tests/wasmFiles.test.ts > duckdbWasm.ts использует вынесенные функции (3.15) > нет прежней регулярки COPY по всему тексту 0ms
+ ✓ tests/wasmFiles.test.ts > duckdbWasm.ts использует вынесенные функции (3.15) > список файлов с dev-сервера запрашивается только при hasDevVfsServer() 0ms
+ ✓ tests/wasmFiles.test.ts > duckdbWasm.ts использует вынесенные функции (3.15) > registerWasmFile не возвращает безусловное true 0ms
+ ✓ tests/excelParse.test.ts > excelParse > parseExcelDate > строка без пояса разбирается как UTC (время не сдвигается) 4ms
+ ✓ tests/excelParse.test.ts > excelParse > parseExcelDate > доли секунды сохраняются 0ms
+ ✓ tests/excelParse.test.ts > excelParse > parseExcelDate > строка только с датой остаётся полуночью UTC 0ms
+ ✓ tests/excelParse.test.ts > excelParse > parseExcelDate > явный часовой пояс учитывается как раньше 0ms
+ ✓ tests/excelParse.test.ts > excelParse > parseExcelDate > число — миллисекунды эпохи 0ms
+ ✓ tests/excelParse.test.ts > excelParse > parseExcelDate > мусор даёт Invalid Date (вызывающий код оставит строку) 0ms
+ ✓ tests/excelParse.test.ts > excelParse > extractExcelComments > снимает ограничители /* и */ 1ms
+ ✓ tests/excelParse.test.ts > excelParse > extractExcelComments > склеивает несколько комментариев и игнорирует код 0ms
+ ✓ tests/excelParse.test.ts > excelParse > extractExcelComments > без комментариев — пустая строка 0ms
+ ✓ tests/excelParse.test.ts > excelParse > parseExcelDate: короткое смещение (+03) > «+03» даёт валидную дату с учётом пояса 0ms
+ ✓ tests/excelParse.test.ts > excelParse > parseExcelDate: короткое смещение (+03) > отрицательное смещение и доли секунды 0ms
+ ✓ tests/excelParse.test.ts > excelParse > parseExcelDate: короткое смещение (+03) > вариант с T и без секунд 0ms
+ ✓ tests/excelParse.test.ts > excelParse > sanitizeExportFileBase > расширение .xlsx убирается (без двойного расширения) 0ms
+ ✓ tests/excelParse.test.ts > excelParse > sanitizeExportFileBase > имя без расширения и точки внутри имени не меняются 0ms
+ ✓ tests/excelParse.test.ts > excelParse > sanitizeExportFileBase > недопустимые символы \ / : * ? " < > | заменяются на _ 0ms
+ ✓ tests/excelParse.test.ts > excelParse > sanitizeExportFileBase > пустое имя или одно расширение — запасное имя 0ms
+ ✓ tests/columnActionsSql.test.ts > selectRange > диапазон вперёд и назад даёт один и тот же порядок столбцов 3ms
+ ✓ tests/columnActionsSql.test.ts > selectRange > якорь = цель → один столбец 0ms
+ ✓ tests/columnActionsSql.test.ts > selectRange > нет якоря или якоря нет в списке → только цель 0ms
+ ✓ tests/columnActionsSql.test.ts > selectRange > цели нет в списке → пусто 0ms
+ ✓ tests/columnActionsSql.test.ts > toggleColumn > добавляет столбец вне диапазона, порядок как в результате 0ms
+ ✓ tests/columnActionsSql.test.ts > toggleColumn > убирает столбец из середины диапазона 0ms
+ ✓ tests/columnActionsSql.test.ts > toggleColumn > убирает последний → пусто; остаётся один → один 0ms
+ ✓ tests/columnActionsSql.test.ts > toggleColumn > столбца нет в списке → выбор не меняется (без чужих имён) 0ms
+ ✓ tests/columnActionsSql.test.ts > formatSelectedColumns > имена через запятую 1ms
+ ✓ tests/columnActionsSql.test.ts > reduceColumnClick (последовательности кликов) > клик b, Shift+d → диапазон b..d; якорь остаётся b 1ms
+ ✓ tests/columnActionsSql.test.ts > reduceColumnClick (последовательности кликов) > Ctrl убирает столбец из середины диапазона и добавляет вне диапазона 0ms
+ ✓ tests/columnActionsSql.test.ts > reduceColumnClick (последовательности кликов) > Cmd (macOS) работает как Ctrl 0ms
+ ✓ tests/columnActionsSql.test.ts > reduceColumnClick (последовательности кликов) > снимаем до одного → один столбец; до нуля → пусто 0ms
+ ✓ tests/columnActionsSql.test.ts > reduceColumnClick (последовательности кликов) > Shift без выбора и без якоря → один столбец 0ms
+ ✓ tests/columnActionsSql.test.ts > reduceColumnClick (последовательности кликов) > якорь снят Ctrl-ом → Shift берёт диапазон от первого выбранного 0ms
+ ✓ tests/columnActionsSql.test.ts > reduceColumnClick (последовательности кликов) > простой клик сбрасывает мультивыбор 0ms
+ ✓ tests/tabModified.test.ts > nextIsModified > вкладка без сохранённого содержимого: любое изменение — «изменено» 2ms
+ ✓ tests/tabModified.test.ts > nextIsModified > вкладка из файла: изменено, только если текст отличается от сохранённого 0ms
+ ✓ tests/tabModified.test.ts > setTabSql > меняет текст и флаг только у нужной вкладки 2ms
+ ✓ tests/tabModified.test.ts > setTabSql > текст не изменился: вкладка возвращается как есть 0ms
+ ✓ tests/tabModified.test.ts > setTabSql > возврат к сохранённому тексту снимает флаг у вкладки из файла 0ms
+ ✓ tests/tabModified.test.ts > setTabSql > исходный массив не меняется 0ms
+ ✓ tests/tabModified.test.ts > восстановление версии > восстановленный текст ставит флаг «изменено», и закрытие требует подтверждения 0ms
+ ✓ tests/tabModified.test.ts > восстановление версии > восстановление текста, равного сохранённому в файле, флаг не ставит 0ms
+ ✓ tests/tabModified.test.ts > shouldConfirmClose > подтверждение только для изменённой вкладки 0ms
+ ✓ tests/tabModified.test.ts > formatWithFeedback > успех: ok и отформатированный текст 0ms
+ ✓ tests/tabModified.test.ts > formatWithFeedback > сбой форматтера: ok=false, исходный текст не подменяется, ошибка возвращается 0ms
+ ✓ tests/tabModified.test.ts > formatWithFeedback > форматтер бросил не Error — тоже сбой 0ms
+ ✓ tests/tabModified.test.ts > formatWithFeedback > форматтер вернул не строку — сбой 0ms
+ ✓ tests/sessionStorage.test.ts > sessionStorage > should return null if there is no data 5ms
+ ✓ tests/sessionStorage.test.ts > sessionStorage > should return null and not crash if JSON is corrupted 1ms
+ ✓ tests/sessionStorage.test.ts > sessionStorage > should return null if JSON is not an array 0ms
+ ✓ tests/sessionStorage.test.ts > sessionStorage > should return parsed tabs if data is valid 1ms
+ ✓ tests/tabResultState.test.ts > mergeTabResult: прежнее поведение > нет записи: создаётся пустая запись и применяются обновления 3ms
+ ✓ tests/tabResultState.test.ts > mergeTabResult: прежнее поведение > не переданные поля остаются как были; страница и запрос обновляются всегда 1ms
+ ✓ tests/tabResultState.test.ts > mergeTabResult: прежнее поведение > исходная запись не изменяется 0ms
+ ✓ tests/tabResultState.test.ts > mergeTabResult: прежнее поведение > видимость результата: ошибка делает видимым, сброс (results: null) и очистка ошибки — нет 0ms
+ ✓ tests/tabResultState.test.ts > mergeTabResult: прежнее поведение > shouldPersistTabResult: запись сохраняется только при изменении results или error 0ms
+ ✓ tests/tabResultState.test.ts > mergeTabResult: порядок столбцов > columns сохраняются вместе с результатом и сбрасываются, если новый результат пришёл без них 0ms
+ ✓ tests/tabResultState.test.ts > COPY ClickHouse пишет результат в исходную вкладку > строки результата COPY TO / FROM (форма как раньше) 1ms
+ ✓ tests/tabResultState.test.ts > COPY ClickHouse пишет результат в исходную вкладку > результат COPY попадает в запись исходной вкладки, а запись другой вкладки не меняется 0ms
+ ✓ tests/sqlTokens.test.ts > splitSqlSegments > сегменты без потерь склеиваются в исходный текст 3ms
+ ✓ tests/sqlTokens.test.ts > splitSqlSegments > различает код, строки, строчные и блочные комментарии 1ms
+ ✓ tests/sqlTokens.test.ts > splitSqlSegments > удвоенная кавычка не закрывает строку 0ms
+ ✓ tests/sqlTokens.test.ts > splitSqlSegments > обратная косая черта экранирует кавычку по умолчанию и не экранирует при backslashEscapes: false 0ms
+ ✓ tests/sqlTokens.test.ts > splitSqlSegments > незакрытая строка и незакрытый блочный комментарий идут до конца текста 0ms
+ ✓ tests/sqlTokens.test.ts > splitSqlSegments > -- внутри строки и /* внутри -- комментария не начинают комментарий 0ms
+ ✓ tests/sqlTokens.test.ts > maskSql > длина сохраняется, комментарии и строки заменяются пробелами, переводы строк остаются 1ms
+ ✓ tests/tableActionBlock.test.ts > appendTableActionBlock > разделитель — пустая строка, /* ------ */, перевод строки 2ms
+ ✓ tests/tableActionBlock.test.ts > appendTableActionBlock > первое действие дописывает блок в конец и запоминает его начало и текст 1ms
+ ✓ tests/tableActionBlock.test.ts > appendTableActionBlock > последовательные сортировки и фильтр заменяют последний блок; текст выше не меняется 0ms
+ ✓ tests/tableActionBlock.test.ts > appendTableActionBlock > группировка, «оставить», «удалить», distinct никогда не заменяются и дают новый блок 1ms
+ ✓ tests/tableActionBlock.test.ts > appendTableActionBlock > сортировка после группировки дописывает новый блок, а следующий фильтр заменяет сортировку, но не группировку 0ms
+ ✓ tests/tableActionBlock.test.ts > appendTableActionBlock > если пользователь правил блок или печатал под ним, дописывается новый блок 0ms
+ ✓ tests/tableActionBlock.test.ts > appendTableActionBlock > если текст выше блока изменился (сдвиг начала), блок не находится и дописывается новый 0ms
+ ✓ tests/tableActionBlock.test.ts > appendTableActionBlock > запомненного блока нет или он испорчен: новый блок в конец 0ms
+ ✓ tests/tableActionBlock.test.ts > appendTableActionBlock > пустая вкладка: блок без разделителя, начало 0 1ms
+ ✓ tests/tableActionBlock.test.ts > appendTableActionBlock > блок, оставшийся единственным текстом, заменяется целиком вместе с разделителем 0ms
+ ✓ tests/workspaceBundle.test.ts > isWorkspaceBundle > пакет в том виде, в каком его создаёт generateWorkspaceBundleObject 2ms
+ ✓ tests/workspaceBundle.test.ts > isWorkspaceBundle > готовые конфигурации из docs/ принимаются (онбординг через default_config.json не ломается) 2ms
+ ✓ tests/workspaceBundle.test.ts > isWorkspaceBundle > пустой data допустим 0ms
+ ✓ tests/workspaceBundle.test.ts > isWorkspaceBundle > массив шаблонов (экспорт sql_snippets_*.json) — не пакет 0ms
+ ✓ tests/workspaceBundle.test.ts > isWorkspaceBundle > массив версий (экспорт истории) — не пакет 0ms
+ ✓ tests/workspaceBundle.test.ts > isWorkspaceBundle > null, число, строка, boolean, undefined — не пакет 0ms
+ ✓ tests/workspaceBundle.test.ts > isWorkspaceBundle > объект без app / version / data — не пакет 0ms
+ ✓ tests/workspaceBundle.test.ts > isWorkspaceBundle > data не объект (массив, null, строка) — не пакет 0ms
+ ✓ tests/workspaceBundle.test.ts > isWorkspaceBundle > чужое приложение или нечисловая версия — не пакет 0ms
+ ✓ tests/markdownTable.test.ts > cellToText > null и undefined → null; числа и строки как есть; объекты → JSON 2ms
+ ✓ tests/markdownTable.test.ts > escapeMdCell > экранирует | и заменяет переводы строк на <br> 1ms
+ ✓ tests/markdownTable.test.ts > isNumericColumn > числа и bigint с пропусками — да; строки или только null — нет 0ms
+ ✓ tests/markdownTable.test.ts > buildMarkdownTable > заголовок, разделитель с выравниванием и строки 0ms
+ ✓ tests/markdownTable.test.ts > buildMarkdownTable > экранирует и заголовки, и значения; короткие строки дополняет пустыми 0ms
+ ✓ tests/markdownTable.test.ts > buildMarkdownTable > нет столбцов → пустая строка 0ms
+ ✓ tests/markdownTable.test.ts > resultRowsToMarkdown > обычный вид: без номера строки, числовые столбцы вправо 0ms
+ ✓ tests/markdownTable.test.ts > resultRowsToMarkdown > транспонированный вид: поле + столбец на строку, нумерация с firstRowNumber 0ms
+ ✓ tests/markdownTable.test.ts > resultRowsToMarkdown > пустой результат → пустая строка 0ms
+ ✓ tests/markdownTable.test.ts > resultRowsToMarkdown > columns задают порядок столбцов: числовые имена не переставляются по возрастанию 0ms
+ ✓ tests/markdownTable.test.ts > resultRowsToMarkdown > столбцы с уникализированными именами выводятся отдельными столбцами 0ms
+ ✓ tests/markdownTable.test.ts > resultRowsToMarkdown > columns от другого результата игнорируются 0ms
+ ✓ tests/columnSelection.test.ts > quoteIdent > оборачивает в двойные кавычки и удваивает внутренние 2ms
+ ✓ tests/columnSelection.test.ts > buildGroupBySql > для одного столбца совпадает с прежним SQL 1ms
+ ✓ tests/columnSelection.test.ts > buildGroupBySql > для нескольких столбцов нумерует GROUP BY и ORDER BY по счётчику 0ms
+ ✓ tests/columnSelection.test.ts > buildGroupBySql > убирает повторы столбцов и сохраняет порядок 0ms
+ ✓ tests/columnSelection.test.ts > buildGroupBySql > пустой SQL или пустой список → пустая строка 0ms
+ ✓ tests/columnSelection.test.ts > buildKeepColumnsSql > оставляет только выбранные столбцы 0ms
+ ✓ tests/columnSelection.test.ts > buildKeepColumnsSql > пустые входные данные → пустая строка 0ms
+ ✓ tests/columnSelection.test.ts > buildRemoveColumnsSql > оставляет остальные столбцы в порядке результата 0ms
+ ✓ tests/columnSelection.test.ts > buildRemoveColumnsSql > исключены все столбцы → пустая строка 0ms
+ ✓ tests/columnSelection.test.ts > buildRemoveColumnsSql > нечего исключать (имён нет в результате) → пустая строка 0ms
+ ✓ tests/columnSelection.test.ts > buildRemoveColumnsSql > экранирует кавычки в именах 0ms
+ ✓ tests/columnSelection.test.ts > buildRemoveColumnsSql > пустой SQL → пустая строка 0ms
+ ✓ tests/columnSelection.test.ts > buildDistinctSql > SELECT DISTINCT по выбранным столбцам 0ms
+ ✓ tests/columnSelection.test.ts > buildDistinctSql > пустые входные данные → пустая строка 0ms
+ ✓ tests/snippetTrash.test.ts > snippetTrash > название категории и перевод 2ms
+ ✓ tests/snippetTrash.test.ts > snippetTrash > trashSnippet: категория «Корзина», первой строкой SQL — прежняя категория, остальное без изменений 1ms
+ ✓ tests/snippetTrash.test.ts > snippetTrash > исходный шаблон не изменяется 0ms
+ ✓ tests/snippetTrash.test.ts > snippetTrash > повторное «удаление» шаблона из «Корзины» его не меняет (строка не дублируется) 0ms
+ ✓ tests/snippetTrash.test.ts > snippetTrash > категория «Меню действий» и job-шаблон: после «удаления» -- @job больше не первая строка 0ms
+ ✓ tests/snippetTrash.test.ts > snippetTrash > getTrashedFrom: читает только первую строку 0ms
+ ✓ tests/snippetTrash.test.ts > snippetTrash > restoreFromTrash: категория возвращается, строка убирается; round-trip даёт исходный шаблон 1ms
+ ✓ tests/snippetTrash.test.ts > snippetTrash > restoreFromTrash без строки trashedFrom или вне «Корзины» не меняет шаблон 0ms
+ ✓ tests/snippetTrash.test.ts > snippetTrash > isTrashed 1ms
+ ✓ tests/snippetTrash.test.ts > snippetTrash > withoutTrash: экспорт и файл настроек без «Корзины», порядок сохранён 1ms
+ ✓ tests/filteredSql.test.ts > generateFilteredSortedSql > возвращает исходный SQL без ; если нет фильтров и сортировок 2ms
+ ✓ tests/filteredSql.test.ts > generateFilteredSortedSql > пустой SQL -> пустая строка 0ms
+ ✓ tests/filteredSql.test.ts > generateFilteredSortedSql > строит WHERE и ORDER BY с экранированием кавычек 1ms
+ ✓ tests/filteredSql.test.ts > generateFilteredSortedSql > использует String для ClickHouse и VARCHAR для DuckDB в IS NULL 0ms
+ ✓ tests/filteredSql.test.ts > generateFilteredSortedSql > не вкладывает обёртку повторно (lazy unboxing) 0ms
+ ✓ tests/filteredSql.test.ts > generateFilteredSortedSql > из скрипта в обёртку берётся только последний оператор 0ms
+ ✓ tests/filteredSql.test.ts > generateFilteredSortedSql > комментарий после последней ; не становится оператором и не прячет скобку 0ms
+ ✓ tests/filteredSql.test.ts > generateFilteredSortedSql > ; внутри строки не делит оператор, а хвостовой -- комментарий внутри оператора остаётся (скобка на новой строке) 1ms
+ ✓ tests/openFile.test.ts > decideOpenFile > новый файл — открыть 2ms
+ ✓ tests/openFile.test.ts > decideOpenFile > тот же путь — переключиться на вкладку, не дублировать 1ms
+ ✓ tests/openFile.test.ts > decideOpenFile > путь другого регистра — другой файл (регистр не приводим) 0ms
+ ✓ tests/openFile.test.ts > decideOpenFile > без пути (браузер) дубликаты не определяются, вкладки без пути не совпадают 0ms
+ ✓ tests/openFile.test.ts > decideOpenFile > слишком большой файл — отказ; ровно предел — можно 0ms
+ ✓ tests/openFile.test.ts > decideOpenFile > уже открытый файл переключается, даже если он вырос сверх предела 0ms
+ ✓ tests/openFile.test.ts > decideOpenFile > свой предел 0ms
+ ✓ tests/openFile.test.ts > decideOpenFile > нет вкладок 0ms
+ ✓ tests/snippetDraft.test.ts > черновик шаблона из вкладки > первая непустая строка 2ms
+ ✓ tests/snippetDraft.test.ts > черновик шаблона из вкладки > диалект по активному подключению; без подключения — General 1ms
+ ✓ tests/snippetDraft.test.ts > черновик шаблона из вкладки > черновик: название — имя вкладки как есть, описание — первая строка, текст — всё содержимое 1ms
+ ✓ tests/snippetDraft.test.ts > черновик шаблона из вкладки > пустая вкладка — черновика нет 0ms
+ ✓ tests/snippetDraft.test.ts > черновик шаблона из вкладки > описание при автозаполнении ограничено 400 символами, текст шаблона — нет 1ms
+ ✓ tests/excelSaveDirective.test.ts > hasExcelSaveDirective > директива в блочном комментарии с путём 3ms
+ ✓ tests/excelSaveDirective.test.ts > hasExcelSaveDirective > нет директивы или нет пути 1ms
+ ✓ tests/excelSaveDirective.test.ts > hasExcelSaveDirective > упоминание в строке не включает автоэкспорт 0ms
+ ✓ tests/excelSaveDirective.test.ts > hasExcelSaveDirective > строчный комментарий -- не включает автоэкспорт 0ms
+ ✓ tests/excelSaveDirective.test.ts > hasExcelSaveDirective > незакрытый блочный комментарий не включает автоэкспорт 0ms
+ ✓ tests/excelSaveDirective.test.ts > hasExcelSaveDirective > блочный комментарий внутри строки не считается 0ms
+ ✓ tests/excelSaveDirective.test.ts > hasExcelSaveDirective > директива после строки с апострофом-литералом всё ещё находится 0ms
+ ✓ tests/vaultStorage.test.ts > vaultStorage utils > parseClickhouseUri > should parse basic http URI 3ms
+ ✓ tests/vaultStorage.test.ts > vaultStorage utils > parseClickhouseUri > should parse https URI with credentials and database 1ms
+ ✓ tests/vaultStorage.test.ts > vaultStorage utils > parseClickhouseUri > should handle special double-escaped characters in password (@@ and ::) 0ms
+ ✓ tests/vaultStorage.test.ts > vaultStorage utils > parseClickhouseUri > should handle username only (no password) 0ms
+ ✓ tests/vaultStorage.test.ts > vaultStorage utils > parseClickhouseUri > should handle URI without protocol (fallback to http) 0ms
+ ✓ tests/vaultStorage.test.ts > vaultStorage utils > parseClickhouseUri > should return null for empty or invalid input 0ms
+ ✓ tests/graphSelection.test.ts > defaultSelectedNodeId > узел результата (id оканчивается на result) предпочтительнее первого 2ms
+ ✓ tests/graphSelection.test.ts > defaultSelectedNodeId > нет узла результата: первый узел 0ms
+ ✓ tests/graphSelection.test.ts > defaultSelectedNodeId > пустой список: null 0ms
+ ✓ tests/graphSelection.test.ts > reconcileSelectedNodeId > ничего не выбрано: выбирается узел по умолчанию 0ms
+ ✓ tests/graphSelection.test.ts > reconcileSelectedNodeId > выбранный узел есть в новом графе: выбор сохраняется 0ms
+ ✓ tests/graphSelection.test.ts > reconcileSelectedNodeId > выбранного узла в новом графе нет: выбирается узел по умолчанию, а не остаётся «висеть» старый 0ms
+ ✓ tests/graphSelection.test.ts > reconcileSelectedNodeId > граф пуст: выбора нет 0ms
+ ✓ tests/graphSelection.test.ts > findSelectedNode > возвращает актуальный объект узла, а не тот, что был при выборе 0ms
+ ✓ tests/graphSelection.test.ts > findSelectedNode > нет id или узла: null 0ms
+ ✓ tests/copyGuard.test.ts > shouldLeaveCopyToBrowser > нет выделения, фокус на странице — копирует приложение 2ms
+ ✓ tests/copyGuard.test.ts > shouldLeaveCopyToBrowser > фокус в поле ввода — копирует браузер 0ms
+ ✓ tests/copyGuard.test.ts > shouldLeaveCopyToBrowser > фокус в редакторе (contenteditable) — копирует браузер 0ms
+ ✓ tests/copyGuard.test.ts > shouldLeaveCopyToBrowser > остаток выделения в редакторе при фокусе вне него не мешает копировать ячейку 0ms
+ ✓ tests/copyGuard.test.ts > shouldLeaveCopyToBrowser > выделенный текст вне редактора (например, в описании) — копирует браузер, как раньше 0ms
+ ✓ tests/copyGuard.test.ts > shouldLeaveCopyToBrowser > пустое выделение не считается 0ms
+ ✓ tests/copyGuard.test.ts > shouldLeaveCopyToBrowser > тег в верхнем регистре и пустой тег 0ms
+ ✓ tests/tabNames.test.ts > nextTabName > нет вкладок — «Вкладка 1» 2ms
+ ✓ tests/tabNames.test.ts > nextTabName > подряд 1..3 — следующая 4 0ms
+ ✓ tests/tabNames.test.ts > nextTabName > дыра: закрыли «Вкладка 2» — новая снова «Вкладка 2» (раньше было 3) 0ms
+ ✓ tests/tabNames.test.ts > nextTabName > закрыли первую — новая «Вкладка 1» 1ms
+ ✓ tests/tabNames.test.ts > nextTabName > переименованные вкладки и чужие названия номер не занимают 0ms
+ ✓ tests/tabNames.test.ts > nextTabName > порядок вкладок не важен 0ms
+ ✓ tests/tabNames.test.ts > nextTabName > английский язык: «Tab N», русские вкладки тоже занимают номера 0ms
+ ✓ tests/tabNames.test.ts > nextTabName > метасимволы в слове не ломают разбор 0ms
+ ✓ tests/schemaKeys.test.ts > buildSchemaDbKey > формат ключей прежний (чтобы сохранённый кэш схемы подхватывался) 2ms
+ ✓ tests/schemaKeys.test.ts > buildSchemaDbKey > ClickHouse без БД — default 0ms
+ ✓ tests/schemaKeys.test.ts > buildSchemaDbKey > разные движки дают разные ключи 1ms
+ ✓ tests/schemaKeys.test.ts > buildTableColumnsKey > одинаковое имя таблицы в DuckDB и ClickHouse — разные ключи 0ms
+ ✓ tests/schemaKeys.test.ts > buildTableColumnsKey > один движок — один и тот же ключ 0ms
+ ✓ tests/schemaKeys.test.ts > buildTableColumnsKey > карта столбцов двух движков не пересекается 0ms
+ ✓ tests/sessionStorageQuota.test.ts > saveSessionTabs: переполнение localStorage > если запись в IndexedDB не удалась, прежняя сессия в localStorage остаётся 9ms
+ ✓ tests/nodePropsEqual.test.ts > isNodePropsEqual (мемоизация узлов графа, в том числе ConstantNode) > одинаковые данные (разные объекты) — равны 2ms
+ ✓ tests/nodePropsEqual.test.ts > isNodePropsEqual (мемоизация узлов графа, в том числе ConstantNode) > тот же объект data — равны 0ms
+ ✓ tests/nodePropsEqual.test.ts > isNodePropsEqual (мемоизация узлов графа, в том числе ConstantNode) > другое значение в data — не равны 0ms
+ ✓ tests/nodePropsEqual.test.ts > isNodePropsEqual (мемоизация узлов графа, в том числе ConstantNode) > другое число ключей — не равны 0ms
+ ✓ tests/nodePropsEqual.test.ts > isNodePropsEqual (мемоизация узлов графа, в том числе ConstantNode) > изменилось выделение — не равны 0ms
+ ✓ tests/nodePropsEqual.test.ts > isNodePropsEqual (мемоизация узлов графа, в том числе ConstantNode) > изменилась позиция точек подключения — не равны 0ms
+ ✓ tests/nodePropsEqual.test.ts > isNodePropsEqual (мемоизация узлов графа, в том числе ConstantNode) > data отсутствует: равны только когда обе пустые одинаково 0ms
+ ✓ tests/nodePropsEqual.test.ts > isNodePropsEqual (мемоизация узлов графа, в том числе ConstantNode) > вложенные объекты сравниваются по ссылке (поверхностно) 0ms
+ ✓ tests/pageRowsLimit.test.ts > clampPageRows: настройка Max rows > нормальные значения не меняются 2ms
+ ✓ tests/pageRowsLimit.test.ts > clampPageRows: настройка Max rows > больше предела обрезается до 50 000 1ms
+ ✓ tests/pageRowsLimit.test.ts > clampPageRows: настройка Max rows > 0, отрицательное, пустое и нечисловое → значение по умолчанию 1ms
+ ✓ tests/pageRowsLimit.test.ts > clampPageRows: настройка Max rows > дробное округляется вниз 0ms
+ ✓ tests/pageRowsLimit.test.ts > clampPageRows: настройка Max rows > защита бэкенда остаётся выше предела страницы 0ms
+ ✓ tests/snippetDialects.test.ts > диалекты шаблонов > известные названия приводятся к каноническому написанию, прочие остаются как есть 2ms
+ ✓ tests/snippetDialects.test.ts > диалекты шаблонов > повторы, различающиеся регистром, схлопываются; порядок сохраняется 1ms
+ ✓ tests/linesSuffix.test.ts > linesSuffix > RU: строка / строки / строк 3ms
+ ✓ tests/linesSuffix.test.ts > linesSuffix > EN: lines без изменений 0ms
+ ✓ tests/pagination.test.ts > clampPage (страница после удаления шаблона) > страница в пределах — без изменений 2ms
+ ✓ tests/pagination.test.ts > clampPage (страница после удаления шаблона) > удалили единственный шаблон на последней странице: 21 → 20 элементов, страница 2 → 1 0ms
+ ✓ tests/pagination.test.ts > clampPage (страница после удаления шаблона) > удалили последний на странице 3 из 3: 41 → 40 элементов, страница 3 → 2 0ms
+ ✓ tests/pagination.test.ts > clampPage (страница после удаления шаблона) > пустой список — страница 1 0ms
+ ✓ tests/pagination.test.ts > clampPage (страница после удаления шаблона) > нулевая, отрицательная и дробная страница 0ms
+ ✓ tests/pagination.test.ts > clampPage (страница после удаления шаблона) > нулевой размер страницы не ломает расчёт 0ms
+ ✓ tests/resultTsv.test.ts > resultRowsToTsv: прежнее поведение > обычный вид: # и столбцы, номера строк с firstRowNumber 2ms
+ ✓ tests/resultTsv.test.ts > resultRowsToTsv: прежнее поведение > транспонированный вид: строка на поле, столбец на строку результата 0ms
+ ✓ tests/resultTsv.test.ts > resultRowsToTsv: прежнее поведение > значения приводятся через String (вложенное — без JSON, как раньше) 0ms
+ ✓ tests/resultTsv.test.ts > resultRowsToTsv: прежнее поведение > нет строк — пустая строка 0ms
+ ✓ tests/resultTsv.test.ts > resultRowsToTsv: порядок из columns > числовые имена идут в порядке выдачи, а не по возрастанию ключей 0ms
+ ✓ tests/resultTsv.test.ts > resultRowsToTsv: порядок из columns > уникализированные дубли выводятся двумя столбцами 0ms
+ ✓ tests/resultTsv.test.ts > resultRowsToTsv: порядок из columns > columns от другого результата игнорируются, берутся ключи строки 0ms
+ ✓ tests/canvasLimits.test.ts > safePixelRatio > малые изображения: желаемый коэффициент 2ms
+ ✓ tests/canvasLimits.test.ts > safePixelRatio > длинная сторона ограничивается 16000 px 0ms
+ ✓ tests/canvasLimits.test.ts > safePixelRatio > площадь ограничивается 0ms
+ ✓ tests/canvasLimits.test.ts > safePixelRatio > никогда не больше желаемого 0ms
+ ✓ tests/quickActionDefaults.test.ts > шаблоны быстрых действий по умолчанию > «Структура таблицы» оборачивает источник в SELECT * FROM, а не ставит алиас после DESCRIBE 3ms
+ ✓ tests/quickActionDefaults.test.ts > шаблоны быстрых действий по умолчанию > до первого запроса {table} остаётся именем таблицы 0ms
+ ✓ tests/quickActionDefaults.test.ts > шаблоны быстрых действий по умолчанию > «Количество строк» не менялось 0ms
 
- Test Files  69 passed (69)
-      Tests  1088 passed (1088)
-   Start at  18:14:38
-   Duration  32.10s (transform 1.47s, setup 0ms, collect 4.52s, tests 4.75s, environment 16ms, prepare 6.12s)
+ Test Files  74 passed (74)
+      Tests  1133 passed (1133)
+   Start at  11:43:50
+   Duration  3.79s (transform 4.25s, setup 0ms, collect 13.72s, tests 6.24s, environment 22ms, prepare 12.49s)

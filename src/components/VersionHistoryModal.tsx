@@ -31,10 +31,9 @@ interface VersionHistoryModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentSql: string;
-  onRestoreVersion?: (sql: string, dialect?: string) => void;
+  onRestoreVersion?: (sql: string) => void;
   theme: 'dark' | 'light';
   uiVisibility?: UiVisibilitySettings;
-  currentDialect?: string;
   currentTabTitle?: string;
 }
 
@@ -99,7 +98,6 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
   onRestoreVersion,
   theme,
   uiVisibility,
-  currentDialect,
   currentTabTitle
 }) => {
   const currentSql = typeof rawCurrentSql === 'string' ? rawCurrentSql : '';
@@ -185,7 +183,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
   };
 
   const handleRestore = (ver: SqlVersionItem) => {
-    onRestoreVersion?.(ver.sql, currentDialect);
+    onRestoreVersion?.(ver.sql);
     setRestoredId(ver.id);
     setTimeout(() => {
       setRestoredId(null);

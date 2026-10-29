@@ -7,6 +7,12 @@ import {
   findTemplateMarker,
   fillTemplateSheet,
   toCellValue,
+  findHeaderMarker,
+  writeHeader,
+  checkHeaderMarker,
+  parseTemplateTitles,
+  applyTextMarkers,
+  sqlUsesTemplate,
 } from '../src/utils/excelTemplate';
 
 /** Минимальная имитация листа exceljs (только то, что использует excelTemplate.ts). Поведение настоящего exceljs проверяет excelTemplate.exceljs.test.ts. */
@@ -218,5 +224,144 @@ describe('заполнение листа', () => {
     const ws = makeTemplate('[[table]]');
     fillTemplateSheet(ws, findTemplateMarker(ws)!, columns, [{ name: 'A', sum: 1 }], {}, { valuesOnly: true });
     expect([val(ws, 3, 2), val(ws, 3, 3), val(ws, 4, 2), val(ws, 4, 3)]).toEqual(['name', 'sum', 'A', 1]);
+  });
+});
+
+describe('маркер [[header]]', () => {
+  const columns = ['name', 'sum'];
+  /** 1 заголовок, 2 [[header]] (C2 уже оформлена), 3 ведущая строка [[rows]], 4 итог. */
+  function makeHeaderTemplate() {
+    const ws = new FakeSheet();
+    ws.getCell(1, 1).value = 'Отчёт';
+    ws.getCell(2, 2).value = '[[header]]'; ws.getCell(2, 2).style = { font: { bold: true } };
+    ws.getCell(2, 3).style = { fill: { type: 'pattern' } };
+    ws.getCell(3, 2).value = '[[rows]]'; ws.getCell(3, 2).style = { border: { top: { style: 'thin' } } };
+    ws.getCell(4, 3).value = { formula: 'SUM(C3:C3)' };
+    return ws;
+  }
+
+  it('находит только клетку, целиком равную [[header]]; [[rows]] ищется как раньше', () => {
+    const ws = makeHeaderTemplate();
+    expect(findHeaderMarker(ws)).toEqual({ row: 2, col: 2 });
+    expect(findTemplateMarker(ws)).toEqual({ row: 3, col: 2, mode: 'rows' });
+    ws.getCell(2, 2).value = ' [[ Header ]] ';
+    expect(findHeaderMarker(ws)).toEqual({ row: 2, col: 2 });
+    ws.getCell(2, 2).value = 'x [[header]]';
+    expect(findHeaderMarker(ws)).toBeNull();
+  });
+
+  it('пишет имена колонок вправо без сдвига; оформленная клетка сохраняет стиль, пустая берёт стиль маркера', () => {
+    const ws = makeHeaderTemplate();
+    writeHeader(ws, { row: 2, col: 2 }, ['name', 'sum', 'extra']);
+    expect([val(ws, 2, 2), val(ws, 2, 3), val(ws, 2, 4)]).toEqual(['name', 'sum', 'extra']);
+    expect(ws.getCell(2, 2).style).toEqual({ font: { bold: true } });
+    expect(ws.getCell(2, 3).style).toEqual({ fill: { type: 'pattern' } });
+    expect(ws.getCell(2, 4).style).toEqual({ font: { bold: true } });
+    expect(val(ws, 3, 2)).toBe('[[rows]]'); // строка данных не тронута
+  });
+
+  it('только значения: стили не меняются', () => {
+    const ws = makeHeaderTemplate();
+    writeHeader(ws, { row: 2, col: 2 }, ['name', 'sum', 'extra'], true);
+    expect(ws.getCell(2, 4).style).toEqual({});
+  });
+
+  it('вместе с [[rows]]: шапка на месте, данные от [[rows]], остальное сдвигается', () => {
+    const ws = makeHeaderTemplate();
+    writeHeader(ws, findHeaderMarker(ws)!, columns);
+    const res = fillTemplateSheet(ws, findTemplateMarker(ws)!, columns, [{ name: 'A', sum: 1 }, { name: 'B', sum: 2 }]);
+    expect(res).toEqual({ written: 2, shifted: 1 });
+    expect([val(ws, 2, 2), val(ws, 2, 3)]).toEqual(['name', 'sum']);
+    expect([val(ws, 3, 2), val(ws, 4, 2)]).toEqual(['A', 'B']);
+    expect(val(ws, 5, 3)).toEqual({ formula: 'SUM(C3:C4)' });
+  });
+
+  it('[[header]] ниже [[rows]]: уезжает вместе с остальным содержимым', () => {
+    const ws = new FakeSheet();
+    ws.getCell(1, 2).value = '[[rows]]';
+    ws.getCell(3, 2).value = '[[header]]';
+    writeHeader(ws, findHeaderMarker(ws)!, columns);
+    fillTemplateSheet(ws, findTemplateMarker(ws)!, columns, [{ name: 'A', sum: 1 }, { name: 'B', sum: 2 }, { name: 'C', sum: 3 }]);
+    expect([val(ws, 5, 2), val(ws, 5, 3)]).toEqual(['name', 'sum']);
+    expect([val(ws, 1, 2), val(ws, 2, 2), val(ws, 3, 2)]).toEqual(['A', 'B', 'C']);
+  });
+
+  it('пустой результат: шапка записана, маркер [[rows]] убран, ничего не сдвинуто', () => {
+    const ws = makeHeaderTemplate();
+    writeHeader(ws, findHeaderMarker(ws)!, columns);
+    expect(fillTemplateSheet(ws, findTemplateMarker(ws)!, columns, [])).toEqual({ written: 0, shifted: 0 });
+    expect([val(ws, 2, 2), val(ws, 2, 3)]).toEqual(['name', 'sum']);
+    expect(val(ws, 3, 2)).toBeNull();
+    expect(val(ws, 4, 3)).toEqual({ formula: 'SUM(C3:C3)' });
+  });
+
+  it('недопустимые сочетания — ошибка', () => {
+    expect(() => checkHeaderMarker(null, { row: 3, col: 2, mode: 'rows' })).not.toThrow();
+    expect(() => checkHeaderMarker({ row: 2, col: 2 }, { row: 3, col: 2, mode: 'rows' })).not.toThrow();
+    expect(() => checkHeaderMarker({ row: 2, col: 2 }, { row: 3, col: 2, mode: 'table' })).toThrow('[[table]]');
+    expect(() => checkHeaderMarker({ row: 3, col: 1 }, { row: 3, col: 2, mode: 'rows' })).toThrow('в одной строке (3)');
+  });
+});
+
+describe('[[title]] и [[subtitle]]', () => {
+  it('заголовок и подзаголовок из блочных комментариев', () => {
+    expect(parseTemplateTitles('# Продажи\n## 2026 год\n@template: a.xlsx')).toEqual({ title: 'Продажи', subtitle: '2026 год' });
+    expect(parseTemplateTitles('# Только заголовок')).toEqual({ title: 'Только заголовок', subtitle: '' });
+    // как в нативном экспорте: один «##» задаёт и заголовок, и подзаголовок
+    expect(parseTemplateTitles('## Один')).toEqual({ title: 'Один', subtitle: 'Один' });
+    expect(parseTemplateTitles('@file: x')).toEqual({ title: '', subtitle: '' });
+    expect(parseTemplateTitles('')).toEqual({ title: '', subtitle: '' });
+  });
+  it('«#» в строке директивы (путь) не становится заголовком', () => {
+    expect(parseTemplateTitles('@template: C:/a#b/form.xlsx\n# Реальный')).toEqual({ title: 'Реальный', subtitle: '' });
+    expect(parseTemplateTitles('@template: C:/a#b/form.xlsx')).toEqual({ title: '', subtitle: '' });
+  });
+  it('sqlUsesTemplate: только директива в блочном комментарии', () => {
+    expect(sqlUsesTemplate('/* @template: a.xlsx */ select 1')).toBe(true);
+    expect(sqlUsesTemplate('/* @template_values: a.xlsx */ select 1')).toBe(true);
+    expect(sqlUsesTemplate('-- @template: a.xlsx\nselect 1')).toBe(false);
+    expect(sqlUsesTemplate('select 1')).toBe(false);
+    expect(sqlUsesTemplate('')).toBe(false);
+  });
+
+  const titles = { title: 'Продажи', subtitle: '2026' };
+  it('заменяет маркер в любой клетке, в том числе внутри текста, без учёта регистра', () => {
+    const ws = new FakeSheet();
+    ws.getCell(1, 1).value = 'Отчёт: [[title]]';
+    ws.getCell(2, 1).value = '[[ SubTitle ]]';
+    ws.getCell(3, 1).value = 'без маркера';
+    ws.getCell(4, 1).value = 5;
+    applyTextMarkers([ws], titles);
+    expect([val(ws, 1, 1), val(ws, 2, 1), val(ws, 3, 1), val(ws, 4, 1)]).toEqual(['Отчёт: Продажи', '2026', 'без маркера', 5]);
+  });
+  it('пустое значение даёт пустую клетку; формулы и [[table]]/[[rows]]/[[header]] не меняются', () => {
+    const ws = new FakeSheet();
+    ws.getCell(1, 1).value = '[[title]]';
+    ws.getCell(2, 1).value = { formula: 'A1&"[[title]]"' };
+    ws.getCell(3, 1).value = '[[rows]]';
+    ws.getCell(4, 1).value = '[[header]]';
+    applyTextMarkers([ws], { title: '', subtitle: '' });
+    expect(val(ws, 1, 1)).toBeNull();
+    expect(val(ws, 2, 1)).toEqual({ formula: 'A1&"[[title]]"' });
+    expect([val(ws, 3, 1), val(ws, 4, 1)]).toEqual(['[[rows]]', '[[header]]']);
+  });
+  it('форматированный текст: заменяются маркеры внутри одного фрагмента; подчинённая клетка объединения пропускается', () => {
+    const ws = new FakeSheet();
+    ws.getCell(1, 1).value = { richText: [{ text: 'Итоги ', font: { bold: true } }, { text: '[[title]]' }] };
+    applyTextMarkers([ws], titles);
+    expect(val(ws, 1, 1)).toEqual({ richText: [{ text: 'Итоги ', font: { bold: true } }, { text: 'Продажи' }] });
+
+    const master: any = { value: '[[title]]' };
+    const slave: any = { value: '[[title]]', master };
+    const fake: any = { eachRow: (_o: any, fn: any) => fn({ eachCell: (_p: any, cb: any) => { cb(master); cb(slave); } }) };
+    applyTextMarkers([fake], titles);
+    expect(master.value).toBe('Продажи');
+    expect(slave.value).toBe('[[title]]'); // не трогаем: exceljs отдаёт в неё значение главной клетки
+  });
+  it('маркер, разбитый между фрагментами форматированного текста, не заменяется', () => {
+    const ws = new FakeSheet();
+    ws.getCell(1, 1).value = { richText: [{ text: '[[ti' }, { text: 'tle]]' }] };
+    applyTextMarkers([ws], titles);
+    expect(val(ws, 1, 1)).toEqual({ richText: [{ text: '[[ti' }, { text: 'tle]]' }] });
   });
 });

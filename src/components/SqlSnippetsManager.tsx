@@ -22,6 +22,8 @@ import {
   PlaySquare
 } from 'lucide-react';
 import { saveSnippetsToDB, addSnippetToDB, updateSnippetInDB, deleteSnippetFromDB, cachedSnippets, getSnippetExportFilename, migrateLegacySnippets } from '../utils/snippetsStorage';
+import { canonicalDialect, uniqueDialects } from '../utils/snippetDialects';
+import type { SnippetDraft } from '../utils/snippetDraft';
 import { SqlEditor, highlightSqlHtml } from './SqlEditor';
 import { t } from '../utils/i18n';
 
@@ -96,7 +98,7 @@ FROM _temp_staging;`
   },
 
   // ==========================================
-  // SELECT & Фильтрация (10 snippets)
+  // SELECT & Фильтрация
   // ==========================================
   {
     id: 'gen-select-basic',
@@ -180,7 +182,7 @@ FROM _temp_staging;`
   },
 
   // ==========================================
-  // Агрегация & GROUP BY (7 snippets)
+  // Агрегация & GROUP BY
   // ==========================================
   {
     id: 'gen-group-by',
@@ -240,7 +242,7 @@ FROM _temp_staging;`
   },
 
   // ==========================================
-  // СОЕДИНЕНИЯ (JOIN) (6 snippets)
+  // СОЕДИНЕНИЯ (JOIN)
   // ==========================================
   {
     id: 'gen-inner-join',
@@ -292,7 +294,7 @@ FROM _temp_staging;`
   },
 
   // ==========================================
-  // Подзапросы & CTE (7 snippets)
+  // Подзапросы & CTE
   // ==========================================
   {
     id: 'gen-cte-basic',
@@ -352,7 +354,7 @@ FROM _temp_staging;`
   },
 
   // ==========================================
-  // Оконные функции (6 snippets)
+  // Оконные функции
   // ==========================================
   {
     id: 'gen-row-number',
@@ -404,7 +406,7 @@ FROM _temp_staging;`
   },
 
   // ==========================================
-  // МОДИФИКАЦИЯ ДАННЫХ (DML) (6 snippets)
+  // МОДИФИКАЦИЯ ДАННЫХ (DML)
   // ==========================================
   {
     id: 'gen-insert-values',
@@ -456,7 +458,7 @@ FROM _temp_staging;`
   },
 
   // ==========================================
-  // Схема и Таблицы (DDL) (4 snippets)
+  // Схема и Таблицы (DDL)
   // ==========================================
   {
     id: 'gen-create-table',
@@ -492,7 +494,7 @@ FROM _temp_staging;`
   },
 
   // ==========================================
-  // Функции строк & дат (4 snippets)
+  // Функции строк & дат
   // ==========================================
   {
     id: 'gen-string-functions',
@@ -528,7 +530,7 @@ FROM _temp_staging;`
   },
 
   // ==========================================
-  // POSTGRESQL (20 snippets)
+  // POSTGRESQL
   // ==========================================
   {
     id: 'pg-jsonb-extract',
@@ -692,7 +694,7 @@ FROM _temp_staging;`
   },
 
   // ==========================================
-  // ORACLE (20 snippets)
+  // ORACLE
   // ==========================================
   {
     id: 'ora-connect-by',
@@ -856,7 +858,7 @@ FROM _temp_staging;`
   },
 
   // ==========================================
-  // CLICKHOUSE (20 snippets)
+  // CLICKHOUSE
   // ==========================================
   {
     id: 'ch-uniq-exact',
@@ -1020,7 +1022,7 @@ FROM _temp_staging;`
   },
 
   // ==========================================
-  // DUCKDB (20 snippets)
+  // DUCKDB
   // ==========================================
   {
     id: 'duck-read-parquet-s3',
@@ -1523,6 +1525,8 @@ interface SqlSnippetsManagerProps {
   uiVisibility?: UiVisibilitySettings;
   initialCategory?: string;
   initialEditSnippetId?: string;
+  /** Черновик нового шаблона (из вкладки): при открытии форма создания заполняется его полями. */
+  draft?: SnippetDraft;
 }
 
 const LOCAL_STORAGE_FAVORITES_KEY = 'sql_favorite_snippets_ids_v1';
@@ -1551,7 +1555,8 @@ export function SqlSnippetsManager({
   theme,
   uiVisibility,
   initialCategory,
-  initialEditSnippetId
+  initialEditSnippetId,
+  draft
 }: SqlSnippetsManagerProps) {
   const [customSnippets, setCustomSnippets] = useState<Snippet[]>(() => cachedSnippets || []);
   const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
@@ -1599,7 +1604,6 @@ export function SqlSnippetsManager({
     }
   }, [initialEditSnippetId]);
 
-  // Form states
   const [formTitle, setFormTitle] = useState('');
   const [formCategory, setFormCategory] = useState(initialCategory || 'Запросы');
   const [formSql, setFormSql] = useState('');
@@ -1610,6 +1614,7 @@ export function SqlSnippetsManager({
   const [copyFailedId, setCopyFailedId] = useState<string | null>(null);
   const rightPanelRef = useRef<HTMLDivElement>(null);
   const hasInitializedEditRef = useRef<boolean>(false);
+  const hasInitializedDraftRef = useRef<boolean>(false);
 
   // Load custom snippets, favorites and deleted IDs
   useEffect(() => {
@@ -1683,7 +1688,10 @@ export function SqlSnippetsManager({
   const allSnippets = useMemo(() => {
     if (!isOpen) return [];
     const deletedSet = new Set(deletedIds);
-    return rawSnippets.filter(s => !deletedSet.has(s.id));
+    // диалект, сохранённый с другим регистром («ClickHouse»), показывается и считается как «Clickhouse»
+    return rawSnippets
+      .filter(s => !deletedSet.has(s.id))
+      .map(s => (s.dialect && canonicalDialect(s.dialect) !== s.dialect ? { ...s, dialect: canonicalDialect(s.dialect) } : s));
   }, [isOpen, rawSnippets, deletedIds]);
 
   useLayoutEffect(() => {
@@ -1704,6 +1712,21 @@ export function SqlSnippetsManager({
     }
   }, [initialEditSnippetId, isOpen, rawSnippets]);
 
+  // Черновик из вкладки: форма нового шаблона открывается заполненной (один раз за открытие окна)
+  useLayoutEffect(() => {
+    if (draft && isOpen && !hasInitializedDraftRef.current) {
+      setEditingSnippetId(null);
+      setFormTitle(draft.title);
+      setFormSql(draft.sql);
+      setFormDescription(draft.description);
+      setFormDialect(draft.dialect || 'General');
+      setIsCreating(true);
+      hasInitializedDraftRef.current = true;
+    } else if (!draft || !isOpen) {
+      hasInitializedDraftRef.current = false;
+    }
+  }, [draft, isOpen]);
+
   // Scroll to top when entering create/edit mode
   useEffect(() => {
     if (isCreating && rightPanelRef.current) {
@@ -1715,13 +1738,12 @@ export function SqlSnippetsManager({
 
   const isInitializingEdit = Boolean(initialEditSnippetId && isOpen && !hasInitializedEditRef.current);
 
-  // Extract all distinct dialects and regular categories
   const { categories, categorySuggestions, dialectSuggestions, knownDialectSet } = useMemo(() => {
     if (!isOpen) {
       return { 
         categories: ['Все'], 
         categorySuggestions: [ACTION_MENU_CATEGORY, JOBS_CATEGORY, 'Запросы', 'Схемы', 'Агрегаты'], 
-        dialectSuggestions: ['General', 'PostgreSQL', 'MySQL', 'SQLite', 'ClickHouse', 'DuckDB'], 
+        dialectSuggestions: ['General', 'PostgreSQL', 'MySQL', 'SQLite', 'Clickhouse', 'DuckDB'], 
         knownDialectSet: new Set<string>() 
       };
     }
@@ -1742,7 +1764,6 @@ export function SqlSnippetsManager({
     const regularCategories = rawCategories.filter(c => !knownDialectSet.has(c) && c !== ACTION_MENU_CATEGORY && c !== JOBS_CATEGORY && c !== 'Все' && c !== 'Избранное');
     const activeDialects = Array.from(new Set(liveSnippets.map(s => s.dialect).filter((d): d is string => Boolean(d))));
 
-    // Sort alphabetically
     const sortedCategories = [...regularCategories].sort(naturalStringCompare);
     const sortedDialects = [...activeDialects].sort(naturalStringCompare);
 
@@ -1764,11 +1785,11 @@ export function SqlSnippetsManager({
     const categorySuggestions = Array.from(new Set([ACTION_MENU_CATEGORY, JOBS_CATEGORY, 'Запросы', 'Схемы', 'Агрегаты', 'Соединения (JOIN)', 'Транзакции', ...regularCategories]));
     
     // Move General to the bottom of suggestions too
-    const activeDialectSuggestions = Array.from(new Set(['PostgreSQL', 'MySQL', 'SQLite', 'Oracle', 'ClickHouse', 'DuckDB', 'MS SQL', ...activeDialects]));
-    const dialectSuggestions = Array.from(new Set([
+    const activeDialectSuggestions = uniqueDialects(['PostgreSQL', 'MySQL', 'SQLite', 'Oracle', 'Clickhouse', 'DuckDB', 'MS SQL', ...activeDialects]);
+    const dialectSuggestions = [
       ...activeDialectSuggestions.filter(d => d !== 'General'),
       'General'
-    ]));
+    ];
 
     return { categories, categorySuggestions, dialectSuggestions, knownDialectSet };
   }, [isOpen, allSnippets, uiVisibility?.showSnippetFavorites]);
@@ -1801,7 +1822,6 @@ export function SqlSnippetsManager({
     return counts;
   }, [isOpen, allSnippets, favoriteIds]);
 
-  // Filter and sort snippets alphabetically by title
   const filteredSnippets = useMemo(() => {
     if (!isOpen) return [];
 
@@ -1847,7 +1867,7 @@ export function SqlSnippetsManager({
     if (!formTitle.trim() || !formSql.trim()) return;
 
     const finalCategory = formCategory.trim() || 'Общие';
-    const finalDialect = formDialect.trim() || 'General';
+    const finalDialect = canonicalDialect(formDialect) || 'General';
 
     // If this snippet was in deleted list previously, remove it from deleted
     if (editingSnippetId && deletedIds.includes(editingSnippetId)) {
@@ -1997,14 +2017,12 @@ export function SqlSnippetsManager({
   };
 
 
-  // Export to JSON
   const handleExportJson = () => {
     const listToExport = allSnippets.length > 0 ? withoutTrash(allSnippets) : POPULAR_SNIPPETS;
     const blob = new Blob([JSON.stringify(listToExport, null, 2)], { type: 'application/json' });
     downloadFileWithFallback(blob, `sql_snippets_${new Date().toISOString().slice(0,10)}.json`);
   };
   
-  // Export to ZIP
   const handleExportZip = async () => {
     // Export all snippets that the user currently sees (custom + popular, minus deleted)
     const listToExport = allSnippets.length > 0 ? withoutTrash(allSnippets) : POPULAR_SNIPPETS;

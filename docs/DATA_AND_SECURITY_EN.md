@@ -10,7 +10,7 @@ All data is stored locally, in the browser or WebView profile (desktop and Andro
 
 | Key | Contents |
 | :--- | :--- |
-| `sql_visualizer_session_v2` | UI state: active tab, dialect, graph direction, theme, path of the open DuckDB database, ClickHouse connection parameters **without the password**, schema panel state. The `tabs` field in this record is a leftover from older versions and is not written: tab contents are stored in `sql_visualizer_tabs_session` |
+| `sql_visualizer_session_v2` | UI state: active tab, graph direction, theme, path of the open DuckDB database, ClickHouse connection parameters **without the password**, schema panel state. The `tabs` field in this record is a leftover from older versions and is not written: tab contents are stored in `sql_visualizer_tabs_session` |
 | `sql_visualizer_tabs_session` | Tab contents (SQL, file name, modified flag). If localStorage overflows, tab texts move to IndexedDB `sql_visualizer_tabs_db` |
 | `sql_visualizer_ui_visibility_v1` | UI and engine settings: page sizes, zoom, DuckDB parameters (memory, directories, threads), **Init SQL**, sync path |
 | `sql_visualizer_hotkeys_v1`, `sql_visualizer_formatter_v1` | Hotkeys, formatter rules |
@@ -34,7 +34,7 @@ All data is stored locally, in the browser or WebView profile (desktop and Andro
 
 ### Files (desktop)
 
-* The workspace sync file: the path from settings; if a folder is given, `sql_visualizer_workspace_sync.json` inside it.
+* The workspace sync file: the path from settings; if a folder is given, `sql_visualizer_workspace_sync.json` inside it. On desktop the file is written to a temporary `*.tmp` file in the same folder and then renamed, so an interrupted write (window closed, disk full) leaves the previous file intact; concurrent session saves run one after another.
 * SQL files saved by the user; Excel reports (including those from `@excel_save`); Excel templates are read from the path in `@template` / `@template_values` (read only); ClickHouse `COPY TO` exports.
 * DuckDB databases and temporary files: the `.duckdb` file and the `temp_directory` and `extension_directory` folders from settings.
 

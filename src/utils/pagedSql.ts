@@ -1,9 +1,7 @@
 // Построение запроса для страницы результата.
 //
-// Раньше `executeDuckDbQueryWithPagination` / `executeClickhouseQueryWithPagination` работали с текстом запроса как со строкой:
-// искали LIMIT по всему тексту (в подзапросах, CTE, строках, комментариях), дописывали LIMIT в конец (после `;`, комментария,
-// SETTINGS, FORMAT) и на странице ≥ 2 заново выполняли весь скрипт, включая CREATE/INSERT.
-// Здесь это сделано чистой функцией: строки и комментарии маскируются (sqlTokens), ключевые слова ищутся только вне скобок.
+// Чистая функция: строки и комментарии маскируются (sqlTokens), LIMIT и служебные слова ищутся только вне скобок,
+// LIMIT вставляется перед `;`, SETTINGS и FORMAT, подготовительные операторы выполняются только на странице 1.
 
 import { splitBySemicolonIgnoringQuotes } from '../lib/sqlUtils';
 import { maskSql, splitSqlSegments } from './sqlTokens';

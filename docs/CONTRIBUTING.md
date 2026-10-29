@@ -115,8 +115,8 @@ npx cap open android
 ### Release Build (CI)
 The release is built by GitHub Actions (`.github/workflows/build.yml`), which is started **manually** (Actions → *Build Applications (Desktop & Android)* → *Run workflow*).
 1. Set the same version in `package.json`, `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml` (CI takes the release tag `v<version>` from `tauri.conf.json`).
-2. Run `npm run lint` and `bun test` locally. CI runs `npm run lint` before the build but does **not** run the tests.
-3. Start the workflow. Two jobs run: desktop builds (Windows `windows-latest`, macOS `macos-latest`, Linux `ubuntu-22.04`) and the Android APK (`assembleDebug`, i.e. a debug-signed APK).
+2. Run `npm run lint` and `bun test` locally. On every push the `Tests` workflow (`.github/workflows/test.yml`: type check and `npm test`) runs; the release build calls it first and does not start unless it passes. Rust tests (`cargo test`) are not part of CI.
+3. Start the workflow. After the tests, two jobs run: desktop builds (Windows `windows-latest`, macOS `macos-latest`, Linux `ubuntu-22.04`) and the Android APK (`assembleDebug`, i.e. a debug-signed APK).
 4. The result is a **draft** release on GitHub with the installers and the APK; review and publish it manually.
 5. CI deletes `package-lock.json` / `bun.lock` and runs `npm install`, so dependency versions are resolved anew on every build.
 6. Application identifiers differ on purpose: `com.sqlflow.visualizer` (Tauri) and `com.sqlvisualizer.app` (Capacitor). Do not change them: users' data is tied to them.
@@ -240,8 +240,8 @@ npx cap open android
 ### Сборка релиза (CI)
 Релиз собирает GitHub Actions (`.github/workflows/build.yml`), запуск **вручную** (Actions → *Build Applications (Desktop & Android)* → *Run workflow*).
 1. Укажите одинаковую версию в `package.json`, `src-tauri/tauri.conf.json` и `src-tauri/Cargo.toml` (тег релиза `v<версия>` CI берёт из `tauri.conf.json`).
-2. Запустите локально `npm run lint` и `bun test`. CI выполняет `npm run lint` перед сборкой, а тесты **не** запускает.
-3. Запустите workflow. Выполняются две задачи: десктопные сборки (Windows `windows-latest`, macOS `macos-latest`, Linux `ubuntu-22.04`) и Android APK (`assembleDebug`, то есть APK с отладочной подписью).
+2. Запустите локально `npm run lint` и `bun test`. На каждый push работает workflow `Tests` (`.github/workflows/test.yml`: проверка типов и `npm test`); сборка релиза вызывает его первым и не стартует, если он не прошёл. Тесты Rust (`cargo test`) в CI не входят.
+3. Запустите workflow. После тестов выполняются две задачи: десктопные сборки (Windows `windows-latest`, macOS `macos-latest`, Linux `ubuntu-22.04`) и Android APK (`assembleDebug`, то есть APK с отладочной подписью).
 4. Результат — **черновик** релиза на GitHub с установщиками и APK; проверьте и опубликуйте его вручную.
 5. CI удаляет `package-lock.json` / `bun.lock` и выполняет `npm install`, поэтому версии зависимостей определяются заново при каждой сборке.
 6. Идентификаторы приложений разные намеренно: `com.sqlflow.visualizer` (Tauri) и `com.sqlvisualizer.app` (Capacitor). Менять их нельзя: с ними связаны данные пользователей.

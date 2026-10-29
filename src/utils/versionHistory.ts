@@ -185,7 +185,6 @@ export async function getVersionById(id: string): Promise<SqlVersionItem | null>
 
 export async function cleanupOldVersions(): Promise<void> {
   const db = await openDB();
-  // Get all items to check their categories and timestamps
   const allItems = await new Promise<SqlVersionItem[]>((resolve) => {
     const tx = db.transaction(STORE_NAME, 'readonly');
     const store = tx.objectStore(STORE_NAME);
@@ -194,17 +193,14 @@ export async function cleanupOldVersions(): Promise<void> {
     req.onerror = () => resolve([]);
   });
 
-  // Separate auto and manual versions
   const autoVersions = allItems.filter(item => item.isAutoSave);
   const manualVersions = allItems.filter(item => !item.isAutoSave);
 
-  // Sort both arrays by timestamp descending (newest first)
   autoVersions.sort((a, b) => b.timestamp - a.timestamp);
   manualVersions.sort((a, b) => b.timestamp - a.timestamp);
 
   const toDeleteIds: string[] = [];
 
-  // If auto versions exceed 300, delete the oldest ones
   if (autoVersions.length > MAX_AUTO_VERSIONS) {
     const excess = autoVersions.slice(MAX_AUTO_VERSIONS);
     for (const item of excess) {
@@ -212,7 +208,6 @@ export async function cleanupOldVersions(): Promise<void> {
     }
   }
 
-  // If manual versions exceed 100, delete the oldest ones
   if (manualVersions.length > MAX_MANUAL_VERSIONS) {
     const excess = manualVersions.slice(MAX_MANUAL_VERSIONS);
     for (const item of excess) {

@@ -37,7 +37,6 @@ app.use((req, res, next) => {
 
 const PORT = 3000;
 
-// Healthcheck endpoint
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", mode: duckdbModule ? "native_duckdb_server" : "wasm_duckdb_server" });
 });
@@ -150,9 +149,7 @@ app.post("/api/duckdb/configure", async (req, res) => {
 app.post("/api/duckdb/disconnect", (req, res) => {
   if (db) {
     try {
-      // DuckDB Node.js API might not have a close() method or it might close automatically.
-      // But we can reset our reference to it.
-      // We check if close exists before calling it.
+      // close() есть не во всех версиях DuckDB Node API
       if (typeof (db as any).close === 'function') {
         (db as any).close();
       }

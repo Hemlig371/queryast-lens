@@ -195,6 +195,38 @@ export const computeChangeCase = (text: string, start: number, end: number, targ
   return { from: wordStart, to: wordEnd, insert: converted, selStart: start, selEnd: start };
 };
 
+/**
+ * Комментирование (пункт меню редактора; то же, что делает сочетание «Комментирование выделения»):
+ * - без выделения — переключает `-- ` в начале строки с курсором;
+ * - с выделением — оборачивает его в блочный комментарий или снимает обёртку, если выделение уже целиком в блочном комментарии.
+ */
+export const computeToggleComment = (text: string, start: number, end: number): TextEdit => {
+  if (start === end) {
+    const lineStart = lineStartOf(text, start);
+    let lineEnd = text.indexOf('\n', start);
+    if (lineEnd === -1) lineEnd = text.length;
+    const lineText = text.slice(lineStart, lineEnd);
+    let insert: string;
+    let diff: number;
+    if (lineText.startsWith('-- ')) { insert = lineText.slice(3); diff = -3; }
+    else if (lineText.startsWith('--')) { insert = lineText.slice(2); diff = -2; }
+    else { insert = '-- ' + lineText; diff = 3; }
+    const pos = Math.max(lineStart, start + (start > lineStart ? diff : 0));
+    return { from: lineStart, to: lineEnd, insert, selStart: pos, selEnd: pos };
+  }
+  const selected = text.slice(start, end);
+  const trimmed = selected.trim();
+  let insert: string;
+  if (trimmed.startsWith('/*') && trimmed.endsWith('*/')) {
+    const firstIdx = selected.indexOf('/*');
+    const lastIdx = selected.lastIndexOf('*/');
+    insert = selected.slice(0, firstIdx) + selected.slice(firstIdx + 2, lastIdx) + selected.slice(lastIdx + 2);
+  } else {
+    insert = `/*${selected}*/`;
+  }
+  return { from: start, to: end, insert, selStart: start, selEnd: start + insert.length };
+};
+
 /** Вставка текста буфера в начало/конец каждой выбранной строки (Ctrl+Alt+V / Ctrl+Shift+V). */
 export const computePasteLines = (text: string, start: number, end: number, clip: string, atEnd: boolean): TextEdit | null => {
   if (!clip) return null;

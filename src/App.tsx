@@ -24,7 +24,6 @@ import { nextTabName } from './utils/tabNames';
 import { decideOpenFile, MAX_OPEN_FILE_BYTES } from './utils/openFile';
 
 import { 
-  Play, 
   Code, 
   Database, 
   FileText, 
@@ -32,7 +31,8 @@ import {
   Terminal, 
   Copy, 
   Check, 
-  X, 
+  X,
+  Pencil, 
   Plus,
   AlertTriangle,
   HelpCircle, 
@@ -96,7 +96,6 @@ import { looksLikeMermaid, formatMermaidIssue } from './utils/mermaidParse';
 import type { MarkdownPreviewHandle } from './components/MarkdownPreview';
 const MarkdownPreview = lazy(() => import('./components/MarkdownPreview'));
 import { nodeTypes, edgeTypes } from './components/CustomNodes';
-import { sqlPresets, SQLPreset } from './components/SQLPresets';
 import { SqlSnippetsManager, ACTION_MENU_CATEGORY } from './components/SqlSnippetsManager';
 import { ActionMenuTabContent, ACTION_MENU_TAB_ID } from './components/ActionMenuTabContent';
 import { SqlEditor, SqlEditorRef, highlightSqlHtml, getBaseHighlight } from './components/SqlEditor';
@@ -132,6 +131,8 @@ import { createRunTracker, executeStatsQuery } from './utils/queryRun';
 import { mergeTabResult, shouldPersistTabResult } from './utils/tabResultState';
 import { copyResultRows, type CopyResultInput } from './utils/copyResult';
 import { hasExcelSaveDirective } from './utils/excelParse';
+import { sqlUsesTemplate } from './utils/excelTemplate';
+import { buildSnippetDraft, type SnippetDraft } from './utils/snippetDraft';
 import { shouldLeaveCopyToBrowser, isSelectionInEditor } from './utils/copyGuard';
 import { reconcileSelectedNodeId, findSelectedNode } from './utils/graphSelection';
 import { appendTableActionBlock, type TableActionKind } from './utils/tableActionBlock';
@@ -145,13 +146,10 @@ export default function App() {
   const savedSession = useMemo(() => getSavedSession(), []);
 
   const [theme, setTheme] = useState<'dark' | 'light'>(() => savedSession?.theme || 'dark');
-  const [dialect, setDialect] = useState<'PostgreSQL' | 'Oracle' | 'Clickhouse' | 'DuckDB' | ''>(() => (savedSession?.dialect as any) || 'PostgreSQL');
   const [direction, setDirection] = useState<'LR' | 'TB'>(() => savedSession?.direction || 'LR');
-  const [activePresetId, setActivePresetId] = useState<string>(sqlPresets[0].id);
   const [isWrapSql, setIsWrapSql] = useState<boolean>(() => savedSession?.isWrapSql ?? isNarrowNow());
   const [isMaximizedSql, setIsMaximizedSql] = useState<boolean>(() => savedSession?.isMaximizedSql ?? true);
   
-  // DuckDB Integration State
   const [duckDbConnectedPath, setDuckDbConnectedPath] = useState<string | null>(null);
   const [recentDuckDbPath, setRecentDuckDbPath] = useState<string | null>(null);
   const [recentClickhouseConfigs, setRecentClickhouseConfigs] = useState<ClickhouseConfig[]>([]);
@@ -208,7 +206,6 @@ export default function App() {
   const [homeDirPath, setHomeDirPath] = useState<string>('');
   const [expandedSchemaNodes, setExpandedSchemaNodes] = useState<Record<string, boolean>>(() => savedSession?.expandedSchemaNodes || {});
 
-  // Clickhouse Integration State
   const [clickhouseConfig, setClickhouseConfig] = useState<ClickhouseConfig | null>(() => savedSession?.clickhouseConfig || null);
   const [showClickhouseModal, setShowClickhouseModal] = useState<boolean>(false);
   const [activeEngine, setActiveEngine] = useState<'duckdb' | 'clickhouse'>(() => savedSession?.activeEngine || 'duckdb');
@@ -311,12 +308,12 @@ export default function App() {
     }
   };
 
-  // Interactive Results Table States
   const [selectedResultCell, setSelectedResultCell] = useState<{ rowIndex: number; colKey: string } | null>(null);
   // Мультивыбор столбцов в шапке (Shift — диапазон, Ctrl/Cmd — добавить/убрать). Пусто, пока выбран один столбец или ничего.
   const [multiSelectedCols, setMultiSelectedCols] = useState<string[]>([]);
   const columnAnchorRef = useRef<string | null>(null);
   const [executeContextMenu, setExecuteContextMenu] = useState<{ x: number; y: number; text: string } | null>(null);
+  const [tabContextMenu, setTabContextMenu] = useState<{ x: number; y: number; tabId: string; canSave: boolean } | null>(null);
   const [resultTableContextMenu, setResultTableContextMenu] = useState<{
     x: number;
     y: number;
@@ -344,6 +341,18 @@ export default function App() {
       };
     }
   }, [executeContextMenu]);
+
+  useEffect(() => {
+    if (!tabContextMenu) return;
+    const close = () => setTabContextMenu(null);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setTabContextMenu(null); };
+    window.addEventListener('click', close);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [tabContextMenu]);
 
   useEffect(() => {
     const handleClick = () => setResultTableContextMenu(null);
@@ -388,7 +397,6 @@ export default function App() {
     }
   };
 
-  // Reset column widths on new query results
   useEffect(() => {
     if (tableSizingRef.current) {
       tableSizingRef.current.style.cssText = '';
@@ -644,7 +652,6 @@ export default function App() {
           columns = data;
         }
       } else {
-        // DuckDB
         if (tableType === 'Macros') {
           const macroInfoQuery = `SELECT function_name, parameters, return_type, description FROM duckdb_functions() WHERE function_name = '${tableName.replace(/'/g, "''")}' AND schema_name = '${schemaName.replace(/'/g, "''")}' AND database_name = '${dbName.replace(/'/g, "''")}'`;
           let rows: any[] = [];
@@ -865,7 +872,7 @@ export default function App() {
   const [showSnippetsModal, setShowSnippetsModal] = useState<boolean>(false);
   const [snippetsModalCategory, setSnippetsModalCategory] = useState<string | undefined>(undefined);
   const [snippetsModalEditId, setSnippetsModalEditId] = useState<string | undefined>();
-  const [showPresetsDropdown, setShowPresetsDropdown] = useState<boolean>(false);
+  const [snippetsDraft, setSnippetsDraft] = useState<SnippetDraft | undefined>(undefined);
   const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
   const [showHistoryModal, setShowHistoryModal] = useState<boolean>(false);
   const [lineageHighlightMode, setLineageHighlightMode] = useState<boolean>(false);
@@ -1069,12 +1076,11 @@ export default function App() {
     event.target.value = '';
   };
 
-  // Tabs state for fullscreen editor
   const [tabs, setTabs] = useState<EditorTab[]>(() => {
     if (savedSession?.tabs && savedSession.tabs.length > 0) {
       return savedSession.tabs;
     }
-    return [{ id: '1', title: t('Вкладка 1'), sql: sqlPresets[0].sql }];
+    return [{ id: '1', title: t('Вкладка 1'), sql: '' }];
   });
   const activeTabIdRef = useRef<string>("");
   const lastActiveSqlTabIdRef = useRef<string>('1');
@@ -1114,7 +1120,6 @@ export default function App() {
   // -- IndexedDB Results Sync logic --
   const isRestoringTabRef = useRef<boolean>(false);
 
-  // Load results from IndexedDB when activeTabId changes
   useLayoutEffect(() => {
     isRestoringTabRef.current = true;
     let isMounted = true;
@@ -1168,7 +1173,6 @@ export default function App() {
     return () => { isMounted = false; };
   }, [activeTabId]);
 
-  // Save results to IndexedDB when they change in RAM
   useEffect(() => {
     if (isRestoringTabRef.current || loadedTabId !== activeTabId) return;
     saveTabResult(activeTabId, {
@@ -1352,9 +1356,6 @@ export default function App() {
           if (freshSession?.theme && freshSession.theme !== theme) {
             setTheme(freshSession.theme);
           }
-          if (freshSession?.dialect && freshSession.dialect !== dialect) {
-            setDialect(freshSession.dialect);
-          }
           if (freshSession?.direction && freshSession.direction !== direction) {
             setDirection(freshSession.direction);
           }
@@ -1394,7 +1395,6 @@ export default function App() {
     tabs,
     activeTabId,
     sql: sqlRef.current,
-    dialect,
     direction,
     theme,
     isWrapSql,
@@ -1414,7 +1414,6 @@ export default function App() {
       tabs: tabs.map(t => t.id === activeTabId ? { ...t, sql: sqlRef.current } : t),
       activeTabId,
       sql: sqlRef.current,
-      dialect,
       direction,
       theme,
       isWrapSql,
@@ -1432,7 +1431,6 @@ export default function App() {
     tabs,
     activeTabId,
     // sql not in deps
-    dialect,
     direction,
     theme,
     isWrapSql,
@@ -1475,12 +1473,11 @@ export default function App() {
     autoReconnect();
   }, []);
 
-  // Remove import flag if present from previous reload
   useEffect(() => {
     sessionStorage.removeItem('sql_is_importing_session');
   }, []);
 
-  const saveSessionToStorage = useCallback(async () => {
+  const saveSessionToStorageOnce = useCallback(async () => {
     // Prevent saving anything if session tabs have not loaded yet to avoid data loss
     if (!isTabsLoadedRef.current) {
       return;
@@ -1555,6 +1552,30 @@ export default function App() {
     }
   }, [activeEngine]);
 
+  // Одно сохранение за раз: beforeunload, unload и visibilitychange срабатывают при закрытии почти одновременно.
+  // Повторный вызов во время сохранения ждёт текущее и запускает ещё одно (состояние могло измениться).
+  const saveInFlightRef = useRef<Promise<void> | null>(null);
+  const saveQueuedRef = useRef(false);
+  const saveSessionToStorage = useCallback((): Promise<void> => {
+    if (saveInFlightRef.current) {
+      saveQueuedRef.current = true;
+      return saveInFlightRef.current;
+    }
+    const run = (async () => {
+      try {
+        await saveSessionToStorageOnce();
+        while (saveQueuedRef.current) {
+          saveQueuedRef.current = false;
+          await saveSessionToStorageOnce();
+        }
+      } finally {
+        saveInFlightRef.current = null;
+      }
+    })();
+    saveInFlightRef.current = run;
+    return run;
+  }, [activeEngine, saveSessionToStorageOnce]);
+
   // Listen for explicit session save requests (e.g. before exporting workspace)
   useEffect(() => {
     const handleSaveNow = async (e: Event) => {
@@ -1569,7 +1590,7 @@ export default function App() {
     };
   }, [saveSessionToStorage]);
 
-  // Save session state ONLY on window close/unload, visibility hide, or every 20 minutes
+  // Сессия сохраняется при закрытии, скрытии окна и раз в 10 минут
   useEffect(() => {
     const handleUnload = () => {
       saveSessionToStorage();
@@ -1585,7 +1606,6 @@ export default function App() {
     window.addEventListener('unload', handleUnload);
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    // Background interval: save session once every 10 minutes (10 * 60 * 1000 ms)
     const INTERVAL_10_MIN = 10 * 60 * 1000;
     const intervalId = setInterval(() => {
       saveSessionToStorage();
@@ -2122,7 +2142,6 @@ export default function App() {
         }
       }
 
-      // Fetch DuckDB Macros
       try {
         const macrosQuery = "SELECT DISTINCT f.database_name, f.schema_name, f.function_name as table_name, 'Macros' as table_type, NULL as estimated_rows FROM duckdb_functions() f WHERE f.function_type LIKE '%macro%' ORDER BY database_name, schema_name, table_name";
         let macroRows: any[] = [];
@@ -2255,12 +2274,10 @@ export default function App() {
 
   // Остановка запроса на стороне бэкенда (ClickHouse и/или встроенный DuckDB)
   const cancelBackendQueries = () => {
-    // Also cancel Clickhouse Tauri query if running
     if (isTauriEnvironment() && activeEngine === 'clickhouse') {
       cancelClickhouseQueryTauri().catch(console.error);
     }
 
-    // Cancel DuckDB Tauri query if running natively
     if (isTauriEnv) {
       tauriInvoke('cancel_duckdb_query').catch(() => {
         tauriInvoke('cancel_query').catch(() => {});
@@ -2349,26 +2366,36 @@ export default function App() {
       if (updates.results !== undefined) {
         setDuckDbResults(updates.results);
         setResultColumns(updates.columns ?? null);
+        const runAutoExcelExport = () => {
+          (async () => {
+            try {
+              await exportToExcel({
+                data: updates.results!,
+                columns: updates.columns,
+                columnTypes: updates.colTypes || {},
+                sqlQuery: queryToExec,
+                settings: getSavedExcelSettings(),
+              });
+            } catch (autoErr: any) {
+              console.warn("Autonomous Excel export failed:", autoErr);
+            }
+          })();
+        };
         if (updates.results && Array.isArray(updates.results) && updates.results.length > 0) {
           maybeAutoSelectFirstCell(updates.results, queryToExec);
 
           // Autonomous Excel export (only in Tauri, only for a real `@excel_save: path` directive in a block comment;
           // not when paging through an already exported result)
           if (isTauriEnv && page === 1 && !opts?.skipAutoExport && hasExcelSaveDirective(queryToExec)) {
-            (async () => {
-              try {
-                await exportToExcel({
-                  data: updates.results!,
-                  columns: updates.columns,
-                  columnTypes: updates.colTypes || {},
-                  sqlQuery: queryToExec,
-                  settings: getSavedExcelSettings(),
-                });
-              } catch (autoErr: any) {
-                console.warn("Autonomous Excel export failed:", autoErr);
-              }
-            })();
+            runAutoExcelExport();
           }
+        } else if (
+          updates.results && Array.isArray(updates.results) && updates.results.length === 0 &&
+          !!updates.columns?.length && isTauriEnv && page === 1 && !opts?.skipAutoExport &&
+          hasExcelSaveDirective(queryToExec) && sqlUsesTemplate(queryToExec)
+        ) {
+          // Пустой результат: выгружается только при экспорте по шаблону (@template), остальные экспорты пустой результат не принимают
+          runAutoExcelExport();
         }
       }
       if (updates.error !== undefined) setDuckDbError(updates.error);
@@ -2731,7 +2758,6 @@ export default function App() {
         updateRun({ results: rows, duration: ((performance.now() - queryStartTime) / 1000).toFixed(2), colTypes: {}, columns: Object.keys(rows[0]) });
       };
 
-      // Check for COPY (...) TO / FROM
       const copyCmd = parseClickhouseCopy(cleanSqlHead);
       if (copyCmd) {
         if (copyCmd.type === 'COPY_TO') {
@@ -3057,7 +3083,6 @@ export default function App() {
       setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: currentSql } : t));
     }
 
-    // Now switch to the new active tab
     setActiveTabId(targetId);
 
     if (targetId === ACTION_MENU_TAB_ID) {
@@ -3134,6 +3159,20 @@ export default function App() {
 
   const handleCloseTab = (e: React.MouseEvent, idToClose: string) => {
     e.stopPropagation();
+    requestCloseTab(idToClose);
+  };
+
+  const handleCloseActiveTab = () => requestCloseTab(activeTabId);
+
+  // Повтор последнего выполненного запроса активной вкладки (не текущий текст и не выделение)
+  const handleRerunLast = () => {
+    if (activeTabId === ACTION_MENU_TAB_ID) return;
+    const last = (lastExecutedSql || '').trim();
+    if (!last) return;
+    handleExecuteCurrentEngineQuery(lastExecutedSql, 1, undefined, false, executionModeByTabRef.current[activeTabId]);
+  };
+
+  const requestCloseTab = (idToClose: string) => {
     if (idToClose === ACTION_MENU_TAB_ID) return;
     if (tabs.length <= 1) return;
 
@@ -3150,6 +3189,49 @@ export default function App() {
     if (id === ACTION_MENU_TAB_ID) return;
     setTabs(prev => prev.map(t => t.id === id ? { ...t, title: newTitle } : t));
   };
+  const handleDuplicateTab = (id: string) => {
+    if (id === ACTION_MENU_TAB_ID || tabs.length >= 9) return;
+    const src = tabs.find(x => x.id === id);
+    if (!src) return;
+    const srcSql = id === activeTabId ? sqlRef.current : src.sql;
+    const newId = Date.now().toString();
+    const copy: EditorTab = {
+      id: newId,
+      title: `${src.title} ${t('(копия)')}`,
+      sql: srcSql
+    };
+    setTabs(prev => {
+      const updated = prev.map(x => x.id === activeTabId && activeTabId !== ACTION_MENU_TAB_ID ? { ...x, sql: sqlRef.current } : x);
+      const at = updated.findIndex(x => x.id === id);
+      return [...updated.slice(0, at + 1), copy, ...updated.slice(at + 1)];
+    });
+    setActiveTabId(newId);
+    sqlRef.current = srcSql;
+  };
+
+  // Закрывает все вкладки, кроме выбранной. Вкладки с несохранёнными изменениями файла остаются.
+  const handleCloseOtherTabs = (keepId: string) => {
+    if (keepId === ACTION_MENU_TAB_ID) return;
+    const toClose = tabs.filter(x => x.id !== keepId && !shouldConfirmClose(x));
+    if (toClose.length === 0) return;
+    const closeIds = new Set(toClose.map(x => x.id));
+    let cancelled = 0;
+    closeIds.forEach(cid => { cancelled += runTrackerRef.current.cancelScope(cid); });
+    if (cancelled > 0 && runTrackerRef.current.activeCount() === 0) {
+      cancelBackendQueries();
+      setIsDuckDbRunning(false);
+    }
+    const keepSql = keepId === activeTabId ? sqlRef.current : tabs.find(x => x.id === keepId)?.sql ?? '';
+    setTabs(prev => prev
+      .map(x => x.id === keepId ? { ...x, sql: keepSql } : x)
+      .filter(x => !closeIds.has(x.id)));
+    if (activeTabId !== keepId && closeIds.has(activeTabId)) {
+      setActiveTabId(keepId);
+      sqlRef.current = keepSql;
+    }
+    closeIds.forEach(cid => { removeTabResult(cid).catch(console.error); });
+  };
+
   const sqlEditorRef = useRef<SqlEditorRef>(null);
 
   const handleSqlChangeTimeoutRef = useRef<any>(null);
@@ -3375,7 +3457,6 @@ export default function App() {
           targetFilePath = savePath;
         }
 
-        // Write text file in Tauri
         let fileWritten = false;
         if ((window as any).__TAURI__?.fs?.writeTextFile) {
           await (window as any).__TAURI__.fs.writeTextFile(targetFilePath, currentSql);
@@ -3509,6 +3590,22 @@ export default function App() {
       }
       return t;
     }));
+  };
+
+  /** Шаблон из вкладки: открывается форма нового шаблона с названием (имя вкладки), описанием (первая строка), диалектом (активное подключение) и всем текстом вкладки. */
+  const handleSaveTabAsSnippet = (tabId?: string) => {
+    const id = tabId ?? activeTabId;
+    if (id === ACTION_MENU_TAB_ID) return;
+    const tab = tabs.find(tb => tb.id === id);
+    if (!tab) return;
+    // текст активной вкладки в редакторе может быть новее сохранённого в списке вкладок
+    const sql = id === activeTabId ? sqlRef.current : tab.sql;
+    const draft = buildSnippetDraft({ title: tab.title, sql }, { activeEngine, duckDbConnectedPath, clickhouseConfig });
+    if (!draft) return;
+    setSnippetsModalCategory(undefined);
+    setSnippetsModalEditId(undefined);
+    setSnippetsDraft(draft);
+    setShowSnippetsModal(true);
   };
 
   // Ctrl+Enter / Ctrl+S / Ctrl+Shift+S обрабатываются только глобальным настраиваемым обработчиком ниже
@@ -3713,7 +3810,6 @@ export default function App() {
     const { content, filename, mimeType } = buildGraphTextExport(format, {
       nodes,
       edges,
-      dialect,
       direction,
       sql: getActiveTabSql(),
     });
@@ -3730,7 +3826,6 @@ export default function App() {
     }
   };
 
-  // Sync document.documentElement with theme
   useEffect(() => {
     if (theme === 'dark') {
       document.documentElement.classList.add('dark');
@@ -3761,6 +3856,10 @@ export default function App() {
       handleFormatSql,
       handleSelectTab,
       handleExportExcel,
+      handleSaveTabAsSnippet,
+      handleAddTab,
+      handleCloseActiveTab,
+      handleRerunLast,
       exportWorkspaceSettings,
       settingsImportFileInputRef,
       isDuckDbRunning,
@@ -3802,6 +3901,7 @@ export default function App() {
   useEffect(() => {
     backPressRef.current = () => {
       if (executeContextMenu) { setExecuteContextMenu(null); return true; }
+      if (tabContextMenu) { setTabContextMenu(null); return true; }
       if (resultTableContextMenu) { setResultTableContextMenu(null); return true; }
       if (schemaContextMenu) { setSchemaContextMenu(null); return true; }
       if (tabToClosePendingConfirm) { setTabToClosePendingConfirm(null); return true; }
@@ -3811,6 +3911,7 @@ export default function App() {
         setShowSnippetsModal(false);
         setSnippetsModalCategory(undefined);
         setSnippetsModalEditId(undefined);
+        setSnippetsDraft(undefined);
         return true;
       }
       if (showHistoryModal) { setShowHistoryModal(false); return true; }
@@ -3878,6 +3979,10 @@ export default function App() {
         handleFormatSql: currentHandleFormatSql,
         handleSelectTab: currentHandleSelectTab,
         handleExportExcel: currentHandleExportExcel,
+        handleSaveTabAsSnippet: currentHandleSaveTabAsSnippet,
+        handleAddTab: currentHandleAddTab,
+        handleCloseActiveTab: currentHandleCloseActiveTab,
+        handleRerunLast: currentHandleRerunLast,
         exportWorkspaceSettings: currentExportWorkspaceSettings,
         settingsImportFileInputRef: currentSettingsImportFileInputRef,
         isDuckDbRunning: currentIsDuckDbRunning,
@@ -4070,6 +4175,7 @@ export default function App() {
           currentSetShowSnippetsModal(false);
           setSnippetsModalCategory(undefined);
           setSnippetsModalEditId(undefined);
+          setSnippetsDraft(undefined);
           acted = true;
         } else if (currentShowHistoryModal) {
           currentSetShowHistoryModal(false);
@@ -4125,6 +4231,22 @@ export default function App() {
         e.preventDefault();
         e.stopPropagation();
         currentHandleExportExcel?.();
+      } else if (action === 'saveAsSnippet') {
+        e.preventDefault();
+        e.stopPropagation();
+        currentHandleSaveTabAsSnippet?.();
+      } else if (action === 'newTab') {
+        e.preventDefault();
+        e.stopPropagation();
+        currentHandleAddTab?.();
+      } else if (action === 'closeTab') {
+        e.preventDefault();
+        e.stopPropagation();
+        currentHandleCloseActiveTab?.();
+      } else if (action === 'rerunLast') {
+        e.preventDefault();
+        e.stopPropagation();
+        currentHandleRerunLast?.();
       }
     };
 
@@ -4134,7 +4256,6 @@ export default function App() {
 
   const handleVisualize = (
     queryText = sqlRef.current,
-    currentDialect = dialect,
     currentDir = direction
   ) => {
     setMarkdownSource(null);
@@ -4157,7 +4278,7 @@ export default function App() {
       return;
     }
 
-    const result = parseSqlToAst(queryText, currentDialect);
+    const result = parseSqlToAst(queryText);
     if (result.error) {
       setError(result.error);
       setAstResult(null);
@@ -4252,7 +4373,7 @@ export default function App() {
         const graphData = astToGraph(
           astResult,
           'main_',
-          dialect,
+          undefined,
           {},
           {
             collapsedQueries,
@@ -4278,16 +4399,7 @@ export default function App() {
         setSelectedNodeId(null);
       }
     }
-  }, [astResult, dialect, direction, collapsedQueries, handleToggleExpand, setNodes, setEdges]);
-
-  const handlePresetChange = (presetId: string) => {
-    const preset = sqlPresets.find(p => p.id === presetId);
-    if (preset) {
-      setActivePresetId(presetId);
-      sqlRef.current = preset.sql; setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, sql: preset.sql } : t));
-      setDialect(preset.dialect);
-    }
-  };
+  }, [astResult, direction, collapsedQueries, handleToggleExpand, setNodes, setEdges]);
 
   const handleDirectionChange = (newDir: 'LR' | 'TB') => {
     setDirection(newDir);
@@ -4395,8 +4507,15 @@ export default function App() {
   const [isExportingExcel, setIsExportingExcel] = useState<boolean>(false);
   const [showExcelPresetsMenu, setShowExcelPresetsMenu] = useState<boolean>(false);
 
+  /** Экспорт в Excel доступен при непустом результате, а при пустом — только для запроса с @template и известными колонками. */
+  const isExcelExportAvailable = (): boolean => {
+    if (!duckDbResults) return false;
+    if (duckDbResults.length > 0) return true;
+    return !!resultColumns?.length && sqlUsesTemplate(lastExecutedSql || getActiveTabSql());
+  };
+
   const handleExportExcelWithPreset = async (preset: ExcelPreset) => {
-    if (!duckDbResults || duckDbResults.length === 0) return;
+    if (!isExcelExportAvailable()) return;
     setIsExportingExcel(true);
     try {
       const activeSql = lastExecutedSql || getActiveTabSql();
@@ -4518,7 +4637,7 @@ export default function App() {
   };
 
   const doFormat = (text: string): Promise<string> =>
-    formatSqlText(text, dialect, formatterSettingsRef.current || formatterSettings);
+    formatSqlText(text, formatterSettingsRef.current || formatterSettings, { clickhouse: activeEngine === 'clickhouse' });
 
   const handleFormatSql = async () => {
     // «Отформатировано» показывается только после успешного форматирования
@@ -4572,6 +4691,12 @@ export default function App() {
     }
   };
 
+  // Пункты контекстного меню редактора: устойчивые обработчики (React.memo редактора не должен терять эффект), актуальные функции берутся из ref
+  const editorMenuActionsRef = useRef({ execute: handleExecuteDuckDb, visualize: () => handleVisualize() });
+  editorMenuActionsRef.current = { execute: handleExecuteDuckDb, visualize: () => handleVisualize() };
+  const onEditorMenuExecute = useCallback(() => { editorMenuActionsRef.current.execute(); }, []);
+  const onEditorMenuVisualize = useCallback(() => { editorMenuActionsRef.current.visualize(); }, []);
+
   const handleCompactSql = useCallback(() => {
     setIsCompacted(true);
     setTimeout(() => setIsCompacted(false), 1500);
@@ -4616,7 +4741,7 @@ export default function App() {
       {/* CORE WORKSPACE */}
       <main className="flex flex-1 overflow-hidden relative">
         
-        {/* LEFT PANEL: INPUT & CONFIG (40% WIDTH) */}
+        {/* LEFT PANEL: INPUT & CONFIG */}
         {showLeftPanel && (
         <aside id="control-panel" className={`w-[40%] min-w-[380px] max-w-[580px] max-md:w-full max-md:min-w-0 max-md:max-w-none border-r flex flex-col shrink-0 transition-colors ${
           theme === 'dark' ? 'bg-slate-750/50 border-slate-600' : 'bg-slate-200/80 border-slate-400/60'
@@ -4713,7 +4838,7 @@ export default function App() {
                   title={t('Открыть SQL Query редактор')}
                 >
                   <Maximize2 className="w-3.5 h-3.5" />
-                  <span>Editor</span>
+                  <span>{t('Редактор')}</span>
                 </button>
                 )}
               </div>
@@ -4735,7 +4860,7 @@ export default function App() {
                     theme={theme}
                     activeEngine={activeEngine}
                     isDuckDbRunning={isDuckDbRunning}
-                    onExecuteSql={(sqlToExec, dialect, isSeq) => {
+                    onExecuteSql={(sqlToExec, _unused, isSeq) => {
                       handleExecuteCurrentEngineQuery(sqlToExec, 1, undefined, false, isSeq ? 'sequential' : undefined);
                     }}
                     onOpenSnippetsManager={(cat, snippetId) => {
@@ -4759,6 +4884,9 @@ export default function App() {
                     extractedTableName={extractedTableName}
                     isQuickActionsEnabled={(uiVisibility.showDuckDbConfig || uiVisibility.showClickhouseConfig) && !!duckDbResults && duckDbResults.length > 0 && !isAnyQueryRunning}
                     schemaTables={duckDbSchema || undefined}
+                    onExecute={(uiVisibility.showDuckDbConfig || uiVisibility.showClickhouseConfig) ? onEditorMenuExecute : undefined}
+                    executeState={isDuckDbRunning ? 'running' : ((!duckDbConnectedPath && !clickhouseConfig) || isAnyQueryRunning) ? 'disabled' : 'ready'}
+                    onVisualize={onEditorMenuVisualize}
                   />
                 ) : (
                   <div className="flex-1" />
@@ -4782,76 +4910,6 @@ export default function App() {
             >
               <Settings className="w-3.5 h-3.5" />
             </button>
-
-            {/* PRESETS BUTTON & POPOVER */}
-            {uiVisibility.showPresets && (
-            <div className="relative">
-              <button
-                onClick={() => setShowPresetsDropdown(!showPresetsDropdown)}
-                className={`text-xs px-2 py-1.5 rounded-md border transition-colors shrink-0 font-medium ${
-                  showPresetsDropdown
-                    ? (theme === 'dark' ? 'bg-slate-700 border-slate-600 text-slate-200' : 'bg-slate-200 border-slate-300 text-slate-800')
-                    : (theme === 'dark' 
-                        ? 'bg-slate-800/60 hover:bg-slate-700/60 border-slate-700/80 text-slate-400 hover:text-slate-300' 
-                        : 'bg-slate-200/50 hover:bg-slate-200 border-slate-300/80 text-slate-500 hover:text-slate-700')
-                }`}
-                title={t('Готовые шаблоны и примеры SQL')}
-              >
-                {t('Пресеты')}
-              </button>
-
-              {/* PRESETS DROPDOWN POPOVER */}
-              {showPresetsDropdown && (
-                <>
-                  <div 
-                    className="fixed inset-0 z-30" 
-                    onClick={() => setShowPresetsDropdown(false)} 
-                  />
-                  <div className={`absolute bottom-full mb-1.5 left-0 max-md:fixed max-md:inset-x-2 max-md:bottom-2 max-md:mb-0 max-md:w-auto max-md:max-h-[70vh] max-md:overflow-y-auto z-40 rounded-lg border shadow-xl p-2 w-72 animate-in fade-in duration-150 ${
-                    theme === 'dark' ? 'bg-slate-800 border-slate-600 text-slate-200' : 'bg-white border-slate-300 text-slate-800'
-                  }`}>
-                    <div className="flex items-center justify-between pb-1.5 border-b border-slate-600/40 mb-1.5">
-                      <span className="text-[10px] uppercase font-bold text-slate-400">{t('Готовые SQL пресеты')}</span>
-                      <button 
-                        onClick={() => setShowPresetsDropdown(false)}
-                        className="p-0.5 rounded hover:bg-slate-700/50 text-slate-400 hover:text-slate-200"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
-                    <div className="space-y-1 max-h-60 overflow-y-auto pr-1">
-                      {sqlPresets.map((preset) => (
-                        <button
-                          key={preset.id}
-                          onClick={() => {
-                            handlePresetChange(preset.id);
-                            setShowPresetsDropdown(false);
-                          }}
-                          className={`w-full text-left p-1.5 rounded transition-all text-xs flex flex-col gap-0.5 border ${
-                            activePresetId === preset.id
-                              ? theme === 'dark' ? 'bg-amber-950/40 border-amber-500/50 text-amber-200 font-semibold' : 'bg-amber-50 border-amber-300 text-amber-900 font-semibold'
-                              : theme === 'dark' ? 'hover:bg-slate-700/60 border-transparent text-slate-300' : 'hover:bg-slate-100 border-transparent text-slate-700'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="truncate pr-1 font-medium">{preset.title}</span>
-                            <span className="text-[9px] px-1 py-0.2 rounded bg-slate-700/40 text-slate-300 font-mono shrink-0">
-                              {preset.dialect}
-                            </span>
-                          </div>
-                          {preset.description && (
-                            <span className="text-[10px] text-slate-400 line-clamp-1 leading-tight font-normal">
-                              {preset.description}
-                            </span>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-            )}
 
             {/* WRAP TEXT BUTTON */}
             <button
@@ -4934,8 +4992,7 @@ export default function App() {
                 onClick={() => handleVisualize()}
                 className="px-3 py-1.5 shrink-0 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-md shadow-md shadow-blue-900/20 active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5"
               >
-                <Play className="w-3 h-3 fill-current" />
-                <span>Visualize</span>
+                <span>{t('Визуализировать')}</span>
               </button>
             </div>
           </div>
@@ -4943,7 +5000,7 @@ export default function App() {
         </aside>
         )}
 
-        {/* RIGHT PANEL: INTERACTIVE CANVAS (70% WIDTH) */}
+        {/* RIGHT PANEL: INTERACTIVE CANVAS */}
         <section className={`flex-1 max-md:min-w-0 flex flex-col h-full relative transition-colors ${showLeftPanel ? 'max-md:hidden' : ''} ${
           theme === 'dark' ? 'bg-slate-850 text-slate-200' : 'bg-slate-200 text-slate-800'
         }`}>
@@ -5002,7 +5059,7 @@ export default function App() {
                     title={t('Подсветка взаимосвязей (Data Lineage) выделенного узла')}
                   >
                     <Workflow className="w-3 h-3" />
-                    <span>Focus</span>
+                    <span>{t('Фокус')}</span>
                   </button>
                   )}
                   <button
@@ -5015,7 +5072,7 @@ export default function App() {
                     title={t('Монохромный режим: граф в оттенках серого')}
                   >
                     <Contrast className="w-3 h-3" />
-                    <span>Monochrome</span>
+                    <span>{t('Монохром')}</span>
                   </button>
                 </div>
               </>
@@ -5031,7 +5088,7 @@ export default function App() {
                     ? 'bg-slate-850 border-slate-600 text-slate-200 hover:text-slate-100' 
                     : 'bg-slate-100 border-slate-300 text-slate-700 hover:text-slate-900 shadow-sm'
                 }`}
-                title={showLeftPanel ? 'Hide Editor Panel' : 'Show Editor Panel'}
+                title={showLeftPanel ? t('Скрыть панель редактора') : t('Показать панель редактора')}
               >
                 {showLeftPanel ? <PanelLeftClose className="w-3.5 h-3.5" /> : <PanelLeftOpen className="w-3.5 h-3.5" />}
               </button>
@@ -5045,7 +5102,7 @@ export default function App() {
                     ? (theme === 'dark' ? 'bg-slate-750 border-slate-500 text-slate-200' : 'bg-slate-200 border-slate-300 text-slate-700')
                     : (theme === 'dark' ? 'bg-slate-850 border-slate-600 text-slate-200 hover:text-slate-100' : 'bg-slate-100 border-slate-300 text-slate-700 hover:text-slate-900 shadow-sm')
                 }`}
-                title={showMiniMap ? 'Hide MiniMap' : 'Show MiniMap'}
+                title={showMiniMap ? t('Скрыть миникарту') : t('Показать миникарту')}
               >
                 <Map className="w-3.5 h-3.5" />
               </button>
@@ -5059,7 +5116,7 @@ export default function App() {
                     ? 'bg-slate-850 border-slate-600 text-slate-200 hover:text-slate-100' 
                     : 'bg-slate-100 border-slate-300 text-slate-700 hover:text-slate-900 shadow-sm'
                 }`}
-                title={theme === 'dark' ? 'Switch to Light Theme' : 'Switch to Dark Theme'}
+                title={theme === 'dark' ? t('Включить светлую тему') : t('Включить тёмную тему')}
               >
                 {theme === 'dark' ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5 text-blue-500" />}
               </button>
@@ -5072,7 +5129,7 @@ export default function App() {
                   onClick={() => setShowExportMenu(!showExportMenu)}
                   disabled={isExporting || (nodes.length === 0 && !docMode)}
                   className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-medium transition-all bg-blue-600 hover:bg-blue-500 border-blue-500 text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                  title="Export entire graph as image/vector scheme"
+                  title={t('Экспорт всего графа как изображения или вектора')}
                 >
                   {isExporting ? (
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -5101,9 +5158,9 @@ export default function App() {
                       >
                         <div className="flex items-center gap-2">
                           <ImageIcon className="w-3.5 h-3.5 text-blue-500" />
-                          <span className="font-semibold">PNG Image</span>
+                          <span className="font-semibold">{t('PNG изображение')}</span>
                         </div>
-                        <span className="text-[10px] opacity-70 font-mono">With Bg</span>
+                        <span className="text-[10px] opacity-70 font-mono">{t('С фоном')}</span>
                       </button>
                       )}
 
@@ -5117,9 +5174,9 @@ export default function App() {
                       >
                         <div className="flex items-center gap-2">
                           <ImageIcon className="w-3.5 h-3.5 text-cyan-500" />
-                          <span className="font-semibold">PNG Transparent</span>
+                          <span className="font-semibold">{t('PNG прозрачный')}</span>
                         </div>
-                        <span className={`text-[10px] font-mono ${theme === 'dark' ? 'text-cyan-300' : 'text-cyan-600'}`}>No Bg</span>
+                        <span className={`text-[10px] font-mono ${theme === 'dark' ? 'text-cyan-300' : 'text-cyan-600'}`}>{t('Без фона')}</span>
                       </button>
                       )}
                       
@@ -5133,9 +5190,9 @@ export default function App() {
                       >
                         <div className="flex items-center gap-2">
                           <Code className="w-3.5 h-3.5 text-emerald-500" />
-                          <span className="font-semibold">SVG Vector</span>
+                          <span className="font-semibold">{t('SVG вектор')}</span>
                         </div>
-                        <span className="text-[10px] opacity-70 font-mono">With Bg</span>
+                        <span className="text-[10px] opacity-70 font-mono">{t('С фоном')}</span>
                       </button>
                       )}
 
@@ -5149,9 +5206,9 @@ export default function App() {
                       >
                         <div className="flex items-center gap-2">
                           <Code className="w-3.5 h-3.5 text-teal-500" />
-                          <span className="font-semibold">SVG Transparent</span>
+                          <span className="font-semibold">{t('SVG прозрачный')}</span>
                         </div>
-                        <span className={`text-[10px] font-mono ${theme === 'dark' ? 'text-teal-300' : 'text-teal-600'}`}>No Bg</span>
+                        <span className={`text-[10px] font-mono ${theme === 'dark' ? 'text-teal-300' : 'text-teal-600'}`}>{t('Без фона')}</span>
                       </button>
                       )}
 
@@ -5164,9 +5221,9 @@ export default function App() {
                       >
                         <div className="flex items-center gap-2">
                           <ImageIcon className="w-3.5 h-3.5 text-amber-500" />
-                          <span className="font-semibold">JPEG Image</span>
+                          <span className="font-semibold">{t('JPEG изображение')}</span>
                         </div>
-                        <span className="text-[10px] opacity-70 font-mono">With Bg</span>
+                        <span className="text-[10px] opacity-70 font-mono">{t('С фоном')}</span>
                       </button>
                       )}
 
@@ -5180,14 +5237,14 @@ export default function App() {
                       >
                         <div className="flex items-center gap-2">
                           <FileJson className="w-3.5 h-3.5 text-amber-400" />
-                          <span className="font-semibold">JSON Data</span>
+                          <span className="font-semibold">{t('JSON данные')}</span>
                         </div>
                         <div className="flex items-center gap-1">
                           <button
                             disabled={docMode}
                             onClick={() => exportGraphText('json', true)}
                             className={`p-1.5 rounded transition-colors flex items-center gap-1 ${copied === 'json' ? 'text-emerald-500' : theme === 'dark' ? 'hover:bg-slate-600 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-300 text-slate-500 hover:text-slate-800'}`}
-                            title="Copy JSON to clipboard"
+                            title={t('Копировать JSON в буфер')}
                           >
                             {copied === 'json' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                           </button>
@@ -5195,7 +5252,7 @@ export default function App() {
                             disabled={docMode}
                             onClick={() => exportGraphText('json')}
                             className={`p-1.5 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-600 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-300 text-slate-500 hover:text-slate-800'}`}
-                            title="Download JSON file"
+                            title={t('Скачать файл JSON')}
                           >
                             <Download className="w-3.5 h-3.5" />
                           </button>
@@ -5211,14 +5268,14 @@ export default function App() {
                       >
                         <div className="flex items-center gap-2">
                           <FileCode className="w-3.5 h-3.5 text-purple-400" />
-                          <span className="font-semibold">XML Schema</span>
+                          <span className="font-semibold">{t('XML схема')}</span>
                         </div>
                         <div className="flex items-center gap-1">
                           <button
                             disabled={docMode}
                             onClick={() => exportGraphText('xml', true)}
                             className={`p-1.5 rounded transition-colors flex items-center gap-1 ${copied === 'xml' ? 'text-emerald-500' : theme === 'dark' ? 'hover:bg-slate-600 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-300 text-slate-500 hover:text-slate-800'}`}
-                            title="Copy XML to clipboard"
+                            title={t('Копировать XML в буфер')}
                           >
                             {copied === 'xml' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                           </button>
@@ -5226,7 +5283,7 @@ export default function App() {
                             disabled={docMode}
                             onClick={() => exportGraphText('xml')}
                             className={`p-1.5 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-600 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-300 text-slate-500 hover:text-slate-800'}`}
-                            title="Download XML file"
+                            title={t('Скачать файл XML')}
                           >
                             <Download className="w-3.5 h-3.5" />
                           </button>
@@ -5242,14 +5299,14 @@ export default function App() {
                       >
                         <div className="flex items-center gap-2">
                           <Workflow className="w-3.5 h-3.5 text-emerald-400" />
-                          <span className="font-semibold">Mermaid Diagram</span>
+                          <span className="font-semibold">{t('Mermaid диаграмма')}</span>
                         </div>
                         <div className="flex items-center gap-1">
                           <button
                             disabled={docMode}
                             onClick={() => exportGraphText('mermaid', true)}
                             className={`p-1.5 rounded transition-colors flex items-center gap-1 ${copied === 'mermaid' ? 'text-emerald-500' : theme === 'dark' ? 'hover:bg-slate-600 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-300 text-slate-500 hover:text-slate-800'}`}
-                            title="Copy Mermaid to clipboard"
+                            title={t('Копировать Mermaid в буфер')}
                           >
                             {copied === 'mermaid' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                           </button>
@@ -5257,7 +5314,7 @@ export default function App() {
                             disabled={docMode}
                             onClick={() => exportGraphText('mermaid')}
                             className={`p-1.5 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-600 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-300 text-slate-500 hover:text-slate-800'}`}
-                            title="Download Mermaid file"
+                            title={t('Скачать файл Mermaid')}
                           >
                             <Download className="w-3.5 h-3.5" />
                           </button>
@@ -5273,14 +5330,14 @@ export default function App() {
                       >
                         <div className="flex items-center gap-2">
                           <Workflow className="w-3.5 h-3.5 text-cyan-400" />
-                          <span className="font-semibold">Draw.io Diagram</span>
+                          <span className="font-semibold">{t('Draw.io диаграмма')}</span>
                         </div>
                         <div className="flex items-center gap-1">
                           <button
                             disabled={docMode}
                             onClick={() => exportGraphText('drawio')}
                             className={`p-1.5 rounded transition-colors ${theme === 'dark' ? 'hover:bg-slate-600 text-slate-400 hover:text-slate-200' : 'hover:bg-slate-300 text-slate-500 hover:text-slate-800'}`}
-                            title="Download Draw.io file"
+                            title={t('Скачать файл Draw.io')}
                           >
                             <Download className="w-3.5 h-3.5" />
                           </button>
@@ -5369,7 +5426,7 @@ export default function App() {
                   <Database className="w-6 h-6" />
                 </div>
                 <div className={`text-xs max-w-xs leading-normal ${theme === 'dark' ? 'text-slate-300' : 'text-slate-600'}`}>
-                  {t('Введите SQL-запрос в редактор слева и нажмите ')} <strong className={theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}>Visualize</strong> {t(' для построения логического графа.')}
+                  {t('Введите SQL-запрос в редактор слева и нажмите ')} <strong className={theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}>{t('Визуализировать')}</strong> {t(' для построения логического графа.')}
                 </div>
                 <div className={`text-xs max-w-xs leading-normal italic ${theme === 'dark' ? 'text-slate-300' : 'text-slate-600'}`}>
                   {t('Поддерживается построение произвольных диаграмм (')}<strong className={theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}>Mermaid</strong> {t(' синтаксис).')}
@@ -5390,7 +5447,7 @@ export default function App() {
                 <span className="flex-1 min-w-0 break-words">
                   <strong>{mermaidNotice.kind === 'error' ? 'Mermaid: ' : t('Mermaid: пропущено') + '\n'}</strong>{mermaidNotice.text}
                 </span>
-                <button type="button" onClick={() => setMermaidNotice(null)} className="shrink-0 opacity-70 hover:opacity-100" aria-label="close">
+                <button type="button" onClick={() => setMermaidNotice(null)} className="shrink-0 opacity-70 hover:opacity-100" aria-label={t('Закрыть')}>
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>
@@ -5884,7 +5941,7 @@ export default function App() {
                     title={t('Вернуться к графу')}
                   >
                     <Workflow className="w-3.5 h-3.5" />
-                    <span>Graph</span>
+                    <span>{t('Граф')}</span>
                   </button>
                 </>
                 )}
@@ -5926,6 +5983,11 @@ export default function App() {
                       <div
                         key={tab.id}
                         onClick={() => handleSelectTab(tab.id)}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          const tabSql = tab.id === activeTabId ? sqlRef.current : tab.sql;
+                          setTabContextMenu({ x: e.clientX, y: e.clientY, tabId: tab.id, canSave: Boolean(tabSql && tabSql.trim()) });
+                        }}
                         className={`group flex items-center gap-2 px-3 py-1.5 rounded-t-lg border-t border-x cursor-pointer text-xs font-medium transition-all max-w-[200px] shrink-0 ${
                           isActive
                             ? theme === 'dark'
@@ -6008,7 +6070,7 @@ export default function App() {
                         theme={theme}
                         activeEngine={activeEngine}
                         isDuckDbRunning={isDuckDbRunning}
-                        onExecuteSql={(sqlToExec, dialect, isSeq) => {
+                        onExecuteSql={(sqlToExec, _unused, isSeq) => {
                           handleExecuteCurrentEngineQuery(sqlToExec, 1, undefined, false, isSeq ? 'sequential' : undefined);
                         }}
                         onOpenSnippetsManager={(cat, snippetId) => {
@@ -6035,6 +6097,9 @@ export default function App() {
                         isQuickActionsEnabled={(uiVisibility.showDuckDbConfig || uiVisibility.showClickhouseConfig) && !!duckDbResults && duckDbResults.length > 0 && !isAnyQueryRunning}
                         isFullScreen={true}
                         schemaTables={duckDbSchema || undefined}
+                        onExecute={(uiVisibility.showDuckDbConfig || uiVisibility.showClickhouseConfig) ? onEditorMenuExecute : undefined}
+                        executeState={isDuckDbRunning ? 'running' : ((!duckDbConnectedPath && !clickhouseConfig) || isAnyQueryRunning) ? 'disabled' : 'ready'}
+                        onVisualize={() => { onEditorMenuVisualize(); setIsMaximizedSql(false); }}
                       />
                     </ErrorBoundary>
                   )}
@@ -6106,7 +6171,7 @@ export default function App() {
                   <div className={`px-3 h-[37px] border-b flex items-center justify-between shrink-0 transition-colors ${theme === 'dark' ? 'border-slate-700 bg-slate-800' : 'border-slate-300 bg-slate-100'}`}>
                     <span className={`text-xs font-semibold flex items-center gap-2 text-sm truncate shrink-0 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>
                       <Database className="w-3.5 h-3.5 text-teal-500" />
-                      <span>Schema Browser</span>
+                      <span>{t('Схема БД')}</span>
                       {isSchemaLoading && (
                         <span className="flex items-center gap-1 text-[10px] font-normal text-blue-400 animate-pulse ml-1">
                         </span>
@@ -6969,10 +7034,10 @@ export default function App() {
                           onClick={handleExportExcel}
                           onContextMenu={(e) => {
                             e.preventDefault();
-                            if (!duckDbResults || duckDbResults.length === 0 || isExportingExcel) return;
+                            if (!isExcelExportAvailable() || isExportingExcel) return;
                             setShowExcelPresetsMenu(prev => !prev);
                           }}
-                          disabled={!duckDbResults || duckDbResults.length === 0 || isExportingExcel}
+                          disabled={!isExcelExportAvailable() || isExportingExcel}
                           className={`h-6 px-1.5 flex items-center gap-1.5 rounded transition-colors text-xs shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${
                             theme === 'dark'
                               ? 'hover:bg-slate-700 text-slate-400'
@@ -7513,6 +7578,75 @@ export default function App() {
               </div>
             )}
 
+            {/* TAB CONTEXT MENU */}
+            {tabContextMenu && (
+              <div
+                className={`fixed z-[99999] [transform:translateZ(0)] w-40 overflow-y-auto rounded-lg border shadow-xl py-1 text-xs select-none ${
+                  theme === 'dark'
+                    ? 'bg-slate-800 border-slate-700 text-slate-200'
+                    : 'bg-white border-slate-200 text-slate-800'
+                }`}
+                style={(() => {
+                  const scale = (uiVisibility.uiScale ?? 100) / 100;
+                  return {
+                    left: Math.max(8, Math.min(tabContextMenu.x / scale, (window.innerWidth / scale) - 170)),
+                    top: Math.max(8, Math.min(tabContextMenu.y / scale, (window.innerHeight / scale) - 170)),
+                    maxHeight: window.innerHeight / scale - 16,
+                  };
+                })()}
+              >
+                <button
+                  type="button"
+                  disabled={!tabContextMenu.canSave}
+                  className={`w-full text-left px-3 py-1.5 flex items-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${theme === 'dark' ? 'hover:bg-slate-700' : 'hover:bg-slate-100'} disabled:hover:bg-transparent`}
+                  title={tabContextMenu.canSave ? undefined : t('Вкладка пуста')}
+                  onClick={() => {
+                    handleSaveTabAsSnippet(tabContextMenu.tabId);
+                    setTabContextMenu(null);
+                  }}
+                >
+                  <Layers className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                  <span className="flex-1">{t('Сохранить шаблон')}</span>
+                </button>
+                <div className={`my-1 border-t ${theme === 'dark' ? 'border-slate-700' : 'border-slate-200'}`} />
+                <button
+                  type="button"
+                  disabled={tabs.length >= 9}
+                  className={`w-full text-left px-3 py-1.5 flex items-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${theme === 'dark' ? 'hover:bg-slate-700' : 'hover:bg-slate-100'} disabled:hover:bg-transparent`}
+                  onClick={() => {
+                    handleDuplicateTab(tabContextMenu.tabId);
+                    setTabContextMenu(null);
+                  }}
+                >
+                  <Copy className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                  <span className="flex-1">{t('Дублировать')}</span>
+                </button>
+                <button
+                  type="button"
+                  className={`w-full text-left px-3 py-1.5 flex items-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${theme === 'dark' ? 'hover:bg-slate-700' : 'hover:bg-slate-100'} disabled:hover:bg-transparent`}
+                  onClick={() => {
+                    setEditingTabId(tabContextMenu.tabId);
+                    setTabContextMenu(null);
+                  }}
+                >
+                  <Pencil className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                  <span className="flex-1">{t('Переименовать')}</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={tabs.length <= 1}
+                  className={`w-full text-left px-3 py-1.5 flex items-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${theme === 'dark' ? 'hover:bg-slate-700' : 'hover:bg-slate-100'} disabled:hover:bg-transparent`}
+                  onClick={() => {
+                    handleCloseOtherTabs(tabContextMenu.tabId);
+                    setTabContextMenu(null);
+                  }}
+                >
+                  <X className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                  <span className="flex-1">{t('Закрыть остальные')}</span>
+                </button>
+              </div>
+            )}
+
             {/* EXECUTE CONTEXT MENU */}
             {executeContextMenu && (
               <div 
@@ -7779,76 +7913,6 @@ export default function App() {
                   <Settings className="w-3.5 h-3.5" />
                 </button>
 
-                {/* PRESETS BUTTON & POPOVER IN FOOTER */}
-                {uiVisibility.showPresets && (
-                <div className="relative">
-                  <button
-                    onClick={() => setShowPresetsDropdown(!showPresetsDropdown)}
-                    className={`text-xs px-2.5 py-1 rounded transition-colors flex items-center gap-1 font-medium ${
-                      showPresetsDropdown
-                        ? (theme === 'dark' ? 'bg-slate-700/80 text-slate-100 border border-slate-600' : 'bg-slate-400/40 text-slate-900 border border-slate-400')
-                        : (theme === 'dark' 
-                            ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/40 border border-transparent' 
-                            : 'text-slate-700 hover:text-slate-900 hover:bg-slate-400/30 border border-transparent')
-                    }`}
-                    title={t('Готовые шаблоны и примеры SQL')}
-                  >
-                    <span>{t('Пресеты')}</span>
-                    <ChevronDown className="w-3 h-3 opacity-60" />
-                  </button>
-
-                  {showPresetsDropdown && (
-                    <>
-                      <div 
-                        className="fixed inset-0 z-40" 
-                        onClick={() => setShowPresetsDropdown(false)} 
-                      />
-                      <div className={`absolute bottom-full mb-2 left-0 max-md:fixed max-md:inset-x-2 max-md:bottom-2 max-md:mb-0 max-md:w-auto max-md:max-h-[70vh] max-md:overflow-y-auto z-50 rounded-lg border shadow-2xl p-2 w-80 animate-in fade-in duration-150 ${
-                        theme === 'dark' ? 'bg-slate-800 border-slate-600 text-slate-200' : 'bg-white border-slate-300 text-slate-800'
-                      }`}>
-                        <div className="flex items-center justify-between pb-1.5 border-b border-slate-600/40 mb-1.5">
-                          <span className="text-xs uppercase font-bold text-slate-400">{t('Готовые SQL пресеты')}</span>
-                          <button 
-                            onClick={() => setShowPresetsDropdown(false)}
-                            className="p-0.5 rounded hover:bg-slate-700/50 text-slate-400 hover:text-slate-200"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                        <div className="space-y-1 max-h-64 overflow-y-auto pr-1">
-                          {sqlPresets.map((preset) => (
-                            <button
-                              key={preset.id}
-                              onClick={() => {
-                                handlePresetChange(preset.id);
-                                setShowPresetsDropdown(false);
-                              }}
-                              className={`w-full text-left p-2 rounded transition-all text-xs flex flex-col gap-0.5 border ${
-                                activePresetId === preset.id
-                                  ? theme === 'dark' ? 'bg-amber-950/50 border-amber-500/60 text-amber-200 font-semibold' : 'bg-amber-50 border-amber-300 text-amber-900 font-semibold'
-                                  : theme === 'dark' ? 'hover:bg-slate-700/60 border-transparent text-slate-300' : 'hover:bg-slate-100 border-transparent text-slate-700'
-                              }`}
-                            >
-                              <div className="flex items-center justify-between">
-                                <span className="truncate pr-1 font-medium">{preset.title}</span>
-                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-700/40 text-slate-300 font-mono shrink-0">
-                                  {preset.dialect}
-                                </span>
-                              </div>
-                              {preset.description && (
-                                <span className="text-[10px] text-slate-400 line-clamp-1 leading-tight font-normal">
-                                  {preset.description}
-                                </span>
-                              )}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </div>
-                )}
-
                 {(uiVisibility.showSearchSql ?? true) && (
                 <button
                   onClick={(e) => {
@@ -7990,8 +8054,7 @@ export default function App() {
                   }}
                   className="flex items-center justify-center gap-1.5 px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md transition-all"
                 >
-                  <Play className="w-3.5 h-3.5 fill-current" />
-                  <span>Visualize</span>
+                  <span>{t('Визуализировать')}</span>
                 </button>
                 )}
               </div>
@@ -8004,10 +8067,12 @@ export default function App() {
       <SqlSnippetsManager
         isOpen={showSnippetsModal}
         initialEditSnippetId={snippetsModalEditId}
+        draft={snippetsDraft}
         onClose={() => {
           setShowSnippetsModal(false);
           setSnippetsModalCategory(undefined);
           setSnippetsModalEditId(undefined);
+          setSnippetsDraft(undefined);
         }}
         onInsertSnippet={handleInsertSnippet}
         theme={theme}
@@ -8038,13 +8103,9 @@ export default function App() {
         isOpen={showHistoryModal}
         onClose={() => setShowHistoryModal(false)}
         currentSql={getActiveTabSql()}
-        currentDialect={dialect}
         currentTabTitle={activeTabTitleRef.current}
-        onRestoreVersion={(restoredSql, restoredDialect) => {
+        onRestoreVersion={(restoredSql) => {
           sqlRef.current = restoredSql; setTabs(prev => setTabSql(prev, activeTabId, restoredSql));
-          if (restoredDialect) {
-            setDialect(restoredDialect as any);
-          }
         }}
         theme={theme}
         uiVisibility={uiVisibility}

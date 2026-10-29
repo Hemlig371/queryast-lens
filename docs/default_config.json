@@ -408,7 +408,6 @@
     ],
     "sql_visualizer_session_v2": {
       "activeTabId": "1787933478927",
-      "dialect": "PostgreSQL",
       "direction": "LR",
       "theme": "dark",
       "isWrapSql": false,
@@ -928,7 +927,6 @@
     "app_lang": "ru",
     "sql_visualizer_ui_visibility_v1": {
       "showEditorToggleBtn": true,
-      "showPresets": false,
       "showSnippets": true,
       "showHistory": true,
       "showDuckDbConfig": true,

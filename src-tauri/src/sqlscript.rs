@@ -1,6 +1,7 @@
 //! Разбор скрипта SQL на операторы по `;`.
 //! Строки в одинарных и двойных кавычках (удвоенная кавычка не закрывает), комментарии `-- …` и `/* … */` пропускаются.
 //! Обратная косая черта в строках не экранирует (как в DuckDB: `'C:\data\'` — законченная строка).
+//! Строки в долларовых кавычках `$$…$$` и `$тег$…$тег$` пропускаются целиком (как `dollarQuoteEnd` на фронтенде).
 //! Куски из одних пробелов и комментариев в результат не попадают. Только стандартная библиотека.
 
 #[derive(Clone, Copy, PartialEq)]
@@ -10,6 +11,40 @@ enum State {
     Double,
     LineComment,
     BlockComment,
+}
+
+fn is_ident_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '_' || c == '$' || (c as u32) >= 0x80
+}
+
+/// Индекс сразу после закрывающей границы строки в долларовых кавычках, которая начинается в `pos`; None — такой строки здесь нет или она не закрыта.
+fn dollar_quote_end(chars: &[char], pos: usize) -> Option<usize> {
+    if chars.get(pos) != Some(&'$') {
+        return None;
+    }
+    // граница не может быть продолжением идентификатора (`a$$`, `x$tag$`) и параметром (`$1`)
+    if pos > 0 && is_ident_char(chars[pos - 1]) {
+        return None;
+    }
+    let mut j = pos + 1;
+    if let Some(&first) = chars.get(j) {
+        if first.is_ascii_alphabetic() || first == '_' || (first as u32) >= 0x80 {
+            while j < chars.len() && (chars[j].is_ascii_alphanumeric() || chars[j] == '_' || (chars[j] as u32) >= 0x80) {
+                j += 1;
+            }
+        }
+    }
+    if chars.get(j) != Some(&'$') {
+        return None;
+    }
+    let delim = &chars[pos..=j];
+    let start = j + 1;
+    if start + delim.len() > chars.len() {
+        return None;
+    }
+    (start..=chars.len() - delim.len())
+        .find(|&k| &chars[k..k + delim.len()] == delim)
+        .map(|k| k + delim.len())
 }
 
 /// Операторы скрипта без завершающей `;`, с исходными пробелами и комментариями внутри.
@@ -39,7 +74,15 @@ pub fn split_statements(sql: &str) -> Vec<String> {
                     i += 1;
                     continue;
                 }
-                if c == '-' && next == Some('-') {
+                if c == '$' {
+                    if let Some(end) = dollar_quote_end(&chars, i) {
+                        cur.extend(chars[i..end].iter());
+                        has_code = true;
+                        i = end;
+                        continue;
+                    }
+                    has_code = true;
+                } else if c == '-' && next == Some('-') {
                     state = State::LineComment;
                 } else if c == '/' && next == Some('*') {
                     state = State::BlockComment;
@@ -156,5 +199,28 @@ mod tests {
     #[test]
     fn non_ascii_text() {
         assert_eq!(split_statements("SELECT 'Иванов;'; SELECT 'Пётр'"), vec!["SELECT 'Иванов;'", "SELECT 'Пётр'"]);
+    }
+
+    #[test]
+    fn dollar_quoted_string_is_one_piece() {
+        assert_eq!(split_statements("SELECT $$a;b$$; SELECT 2"), vec!["SELECT $$a;b$$", "SELECT 2"]);
+        assert_eq!(split_statements("SELECT $t$a;b$$c$t$; SELECT 2"), vec!["SELECT $t$a;b$$c$t$", "SELECT 2"]);
+    }
+
+    #[test]
+    fn quote_inside_dollar_string_does_not_swallow_script() {
+        // апостроф внутри $$…$$ не открывает «строку» до конца скрипта
+        assert_eq!(
+            split_statements("INSERT INTO t VALUES ($$it's$$); INSERT INTO t VALUES (2); SELEC 1"),
+            vec!["INSERT INTO t VALUES ($$it's$$)", "INSERT INTO t VALUES (2)", "SELEC 1"]
+        );
+        assert_eq!(split_statements("SELECT $$\"x /* y$$; SELECT 2"), vec!["SELECT $$\"x /* y$$", "SELECT 2"]);
+    }
+
+    #[test]
+    fn dollar_is_not_a_quote_in_params_identifiers_or_unclosed() {
+        assert_eq!(split_statements("SELECT $1; SELECT $2"), vec!["SELECT $1", "SELECT $2"]);
+        assert_eq!(split_statements("SELECT a$$b; SELECT 2"), vec!["SELECT a$$b", "SELECT 2"]);
+        assert_eq!(split_statements("SELECT $$abc; SELECT 2"), vec!["SELECT $$abc", "SELECT 2"]);
     }
 }

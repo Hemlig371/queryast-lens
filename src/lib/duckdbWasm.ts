@@ -23,7 +23,10 @@ export async function getDuckDbWasm() {
   if (duckDbInitPromise) return duckDbInitPromise;
 
   duckDbInitPromise = new Promise(async (resolve, reject) => {
+    // После таймаута промис уже отклонён: поздний результат этой попытки не должен ни сбросить промис повторной попытки, ни создать второй экземпляр.
+    let timedOut = false;
     let timer = setTimeout(() => {
+      timedOut = true;
       duckDbInitPromise = null;
       reject(new Error("DuckDB WASM worker initialization timed out"));
     }, 10000);
@@ -62,10 +65,18 @@ export async function getDuckDbWasm() {
       } catch (_) {}
 
       clearTimeout(timer);
+      if (dbInstance) {
+        // Экземпляр уже создан другой попыткой (например, повторной после таймаута): лишний воркер освобождаем.
+        try { await db.terminate(); } catch (_) {}
+        if (!timedOut) resolve(dbInstance);
+        return;
+      }
+      // Поздний успех после таймаута тоже годится: следующий вызов getDuckDbWasm сразу получит готовый экземпляр.
       dbInstance = db;
-      resolve(db);
+      if (!timedOut) resolve(db);
     } catch (err) {
       clearTimeout(timer);
+      if (timedOut) return;
       duckDbInitPromise = null;
       reject(err);
     }
@@ -161,7 +172,7 @@ export async function connectDuckDbWasmFile(file: File, options?: DuckDbConfigOp
   try {
     await connInstance.query(`ATTACH '${fileName}' AS attached_db`);
   } catch (_) {
-    // Registered in in-browser WASM filesystem
+    // Не база данных — остаётся обычным файлом в виртуальной ФС
   }
 
   return fileName;
@@ -176,7 +187,6 @@ export async function attachDuckDbWasmFile(file: File): Promise<string> {
   const arrayBuffer = await file.arrayBuffer();
   const fileName = file.name || "attached.duckdb";
 
-  // Register the file buffer in WASM virtual filesystem using single fileName
   try {
     await db.dropFile(fileName);
   } catch (_) {}
@@ -187,7 +197,6 @@ export async function attachDuckDbWasmFile(file: File): Promise<string> {
   // Determine database alias without extension (e.g. "my_data" from "my_data.duckdb")
   const rawAlias = fileName.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_]/g, '_') || 'attached_db';
 
-  // Execute ATTACH in DuckDB WASM
   const escapedFileName = fileName.replace(/'/g, "''");
   const escapedAlias = rawAlias.replace(/"/g, '""');
   await connInstance.query(`ATTACH '${escapedFileName}' AS "${escapedAlias}"`);
@@ -526,7 +535,6 @@ export async function registerWasmFile(fileName: string, buffer: Uint8Array): Pr
   let serverSync: WasmRegisterResult['serverSync'] = 'skipped';
   let error: string | undefined;
 
-  // Store in memory map with buffer immediately
   registeredVfsFiles.set(cleanFileName, { buffer, size: buffer.byteLength, loadedAt: new Date() });
   wasmRegisteredSet.delete(cleanFileName);
 

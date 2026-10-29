@@ -49,6 +49,15 @@ describe('sqlFormat', () => {
     it('*/ внутри хвостового -- комментария не закрывает блок раньше времени', () => {
       expect(compactSql('SELECT a -- done */ x\nFROM t')).toBe('SELECT a /* done * / x */ FROM t');
     });
+
+    it('/* внутри хвостового -- комментария не остаётся вложенным комментарием', () => {
+      expect(compactSql('SELECT a -- see /* x\nFROM t')).toBe('SELECT a /* see / * x */ FROM t');
+      expect(compactSql('SELECT a -- /**/ x\nFROM t')).toBe('SELECT a /* / ** / x */ FROM t');
+    });
+
+    it('обычный хвостовой комментарий без /* и */ не меняется', () => {
+      expect(compactSql('SELECT a -- 5 / 2 * 3\nFROM t')).toBe('SELECT a /* 5 / 2 * 3 */ FROM t');
+    });
   });
 
   describe('compactSql: новое поведение (3.6)', () => {
@@ -100,7 +109,7 @@ describe('sqlFormat', () => {
 // ---- форматтер и «в одну строку» не меняют содержимое литералов ----
 describe('литералы и //', () => {
   const cfg = { keywordCase: 'upper' as const, tabWidth: 2, useTabs: false, expressionWidth: 120, denseOperators: false, leadingCommas: false };
-  const fmt = (sql: string, dialect = 'DuckDB') => formatSqlText(sql, dialect, cfg);
+  const fmt = (sql: string) => formatSqlText(sql, cfg);
 
   it('многострочный литерал: пустые строки и отступы внутри сохраняются', async () => {
     const out = await fmt("select a, 'x\n\n   y\n\n\n  z' as s from t where b = 1");

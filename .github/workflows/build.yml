@@ -4,7 +4,11 @@ on:
   workflow_dispatch:
 
 jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+
   build-tauri:
+    needs: test
     permissions:
       contents: write
     strategy:
@@ -71,6 +75,7 @@ jobs:
           prerelease: false
 
   build-android-apk:
+    needs: test
     permissions:
       contents: write
     runs-on: ubuntu-latest

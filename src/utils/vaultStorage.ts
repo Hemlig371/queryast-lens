@@ -401,12 +401,11 @@ export async function changeVaultPin(oldPin: string, newPin: string): Promise<vo
  * Throws a descriptive error if vault is locked or key is not found.
  */
 export function replaceSecretsInSql(sql: string): string {
-  // CRITICAL: Instant exit if no template macro present
+  // Без макросов {{…}} Vault не трогаем
   if (!sql.includes('{{')) {
     return sql;
   }
 
-  // Check if vault is unlocked
   if (!isVaultUnlocked() || !memoryVault) {
     throw new Error('Хранилище ключей заблокировано. Введите ПИН-код в настройках (вкладка «Элементы UI»).');
   }
@@ -416,7 +415,6 @@ export function replaceSecretsInSql(sql: string): string {
     secretMap.set(s.name, s.value);
   }
 
-  // Replace {{key_name}}
   return sql.replace(/\{\{([a-zA-Z0-9_\-]+)\}\}/g, (match, keyName) => {
     if (!secretMap.has(keyName)) {
       return match;

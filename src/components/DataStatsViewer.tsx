@@ -72,7 +72,6 @@ export const DataStatsViewer: React.FC<DataStatsViewerProps> = React.memo(({
 
   const rawColumns = useMemo(() => getResultColumns(data, columnOrder), [data, columnOrder]);
 
-  // Classify column types
   const colAnalysis = useMemo(() => {
     const res: Record<
       string,
@@ -158,7 +157,6 @@ export const DataStatsViewer: React.FC<DataStatsViewerProps> = React.memo(({
     return keys.includes('column_name') || keys.includes('column_type') || keys.includes('approx_unique');
   }, [data]);
 
-  // Summarize normalized data extraction
   const summarizeList = useMemo(() => {
     if (!isSummarizeMode || !data || data.length === 0) return [];
 
@@ -651,7 +649,6 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
     return Math.min(count, maxCap);
   }, [data, xAxisCol, chartType, colAnalysis]);
 
-  // Prepare chart data with category limit and sorting
   const chartData = useMemo(() => {
     if (!xAxisCol) return [];
 
@@ -718,7 +715,6 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
         return { name, value: val };
       });
     } else {
-      // Direct mapping
       // нечисловые значения (null, текст) не превращаются в 0: такие точки пропускаются
       data.forEach((row, i) => {
         const v = toChartNumber(row[yAxisCol]);

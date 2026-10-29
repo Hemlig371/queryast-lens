@@ -81,7 +81,7 @@ export const ClickhouseModal: React.FC<ClickhouseModalProps> = ({
   };
 
   const [isTesting, setIsTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string; rows?: any[] } | null>(null);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   if (!isOpen) return null;
 
@@ -153,6 +153,11 @@ export const ClickhouseModal: React.FC<ClickhouseModalProps> = ({
               success: false,
               message: proxyData.error,
             });
+            setIsTesting(false);
+            return;
+          } else {
+            // пустой ответ прокси: без этой ветки кнопка «Проверить» молча ничего не показывала
+            setTestResult({ success: false, message: t('Не удалось подключиться к серверу ClickHouse') });
             setIsTesting(false);
             return;
           }
@@ -393,14 +398,6 @@ export const ClickhouseModal: React.FC<ClickhouseModalProps> = ({
                   )}
                   <span>{testResult.message}</span>
                 </div>
-
-                {testResult.rows && testResult.rows.length > 0 && (
-                  <div className={`p-2 rounded font-mono text-[11px] overflow-x-auto ${
-                    theme === 'dark' ? 'bg-slate-900 border border-slate-700 text-emerald-300' : 'bg-white border border-slate-200 text-emerald-800'
-                  }`}>
-                    <pre>{JSON.stringify(testResult.rows, null, 2)}</pre>
-                  </div>
-                )}
               </div>
             )}
           </div>

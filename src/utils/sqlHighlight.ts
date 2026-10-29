@@ -189,7 +189,17 @@ export const applySelectionToHtml = (html: string, theme: 'dark' | 'light', sele
       if (part.startsWith('<') && part.endsWith('>')) {
         return part;
       }
-      return part.replace(regex, `<span class="${highlightClass}">${'$1'}</span>`);
+      // Совпадение не должно начинаться или заканчиваться внутри HTML-сущности (`&gt;`, `&lt;`, `&amp;`):
+      // иначе выделенное слово `gt` превращает `&gt;` в видимый текст. Целую сущность (выделен знак `>`) подсвечиваем как раньше.
+      const entities: Array<[number, number]> = [];
+      part.replace(/&(?:amp|lt|gt);/g, (m, off: number) => { entities.push([off, off + m.length]); return m; });
+      return part.replace(regex, (m: string, g1: string, off: number) => {
+        const end = off + m.length;
+        for (const [s0, e0] of entities) {
+          if ((off > s0 && off < e0) || (end > s0 && end < e0)) return m;
+        }
+        return `<span class="${highlightClass}">${g1}</span>`;
+      });
     }).join('');
   } catch (e) {
     return html;

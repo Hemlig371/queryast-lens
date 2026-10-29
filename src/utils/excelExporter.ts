@@ -5,7 +5,7 @@ import { ExcelSettings } from '../types/excelSettings';
 import { downloadFileWithFallback } from './exportUtils';
 import { getSavedExcelPresets } from './excelSettingsStorage';
 import { getResultColumns } from './resultRows';
-import { parseTemplateDirective, buildFromTemplate, resolveTemplatePath } from './excelTemplate';
+import { parseTemplateDirective, parseTemplateTitles, buildFromTemplate, resolveTemplatePath } from './excelTemplate';
 
 export interface ExportExcelOptions {
   data: any[];
@@ -131,7 +131,10 @@ export async function exportToExcel({
   filename,
   settings: initialSettings
 }: ExportExcelOptions): Promise<void> {
-  if (!data || data.length === 0) {
+  // Экспорт по шаблону допускает пустой результат (маркер [[rows]] убирается, [[header]] и [[table]] пишут имена колонок)
+  const templateComments = sqlQuery ? extractExcelComments(sqlQuery) : '';
+  const templateDirective = parseTemplateDirective(templateComments);
+  if (!data || (data.length === 0 && !templateDirective)) {
     throw new Error('Нет данных для экспорта в Excel');
   }
 
@@ -140,7 +143,7 @@ export async function exportToExcel({
   let parsedFilename = settings.defaultFileName || '';
   let resolvedAutoSavePath: string | undefined;
 
-  const rawColumns = getResultColumns(data, columns);
+  const rawColumns = data.length === 0 && columns && columns.length > 0 ? [...columns] : getResultColumns(data, columns);
   if (rawColumns.length === 0) {
     throw new Error('Колонки таблицы не найдены');
   }
@@ -292,8 +295,6 @@ export async function exportToExcel({
   }
 
   // Экспорт по шаблону (@template) — отдельный путь, нативное оформление не применяется (см. excelTemplate.ts)
-  const templateComments = sqlQuery ? extractExcelComments(sqlQuery) : '';
-  const templateDirective = parseTemplateDirective(templateComments);
   if (templateDirective) {
     const sheetDirective = templateComments.match(/@sheet:\s*([^@\n*]+)/);
     // сохранение поверх самого шаблона испортило бы его
@@ -310,6 +311,7 @@ export async function exportToExcel({
       columns: rawColumns,
       rows: data,
       columnTypes,
+      ...parseTemplateTitles(templateComments),
     });
     const templateBase = sanitizeExportFileBase(parsedFilename, sanitizeSheetName(settings.defaultFileName || 'report', 'report'));
     const templateFileName = filename || `${templateBase}_${new Date().toISOString().slice(0, 10)}.xlsx`;
@@ -322,7 +324,6 @@ export async function exportToExcel({
   workbook.creator = 'QueryAST Lens';
   workbook.created = new Date();
 
-  // Split Logic
   const splitIndex = settings.splitByColumnIndex;
   let sheetsData: Record<string, any[]> = {};
   let activeColumns = [...rawColumns];
@@ -401,7 +402,6 @@ export async function exportToExcel({
     };
   });
 
-  // Number Format String
   let numFormatStr: string | undefined = undefined;
   if (settings.numberFormat === 'integer') {
     numFormatStr = '#,##0';
@@ -411,8 +411,7 @@ export async function exportToExcel({
     numFormatStr = settings.customNumberFormat || '#,##0.00 ₽';
   }
 
-  // BUGFIX: ExcelJS does not support the "showZeros" property in WorksheetView serialization.
-  // The only way to native hide zeros in Excel while preserving mathematical values is via custom Number Formats.
+  // ExcelJS не сериализует showZeros: нули скрываются через числовой формат, значения остаются.
   if (settings.showZeroValues === false) {
     if (numFormatStr && !numFormatStr.includes(';')) {
       numFormatStr = `${numFormatStr};-${numFormatStr};;@`;
@@ -421,7 +420,6 @@ export async function exportToExcel({
     }
   }
 
-  // Date Format String
   let dateFormatStr = 'dd.mm.yyyy';
   if (settings.dateFormat === 'DD.MM.YYYY HH:MM:SS') {
     dateFormatStr = 'dd.mm.yyyy hh:mm:ss';
@@ -429,7 +427,6 @@ export async function exportToExcel({
     dateFormatStr = 'yyyy-mm-dd';
   }
 
-  // Border Style Object
   const borderColorArgb = cleanHexColor(settings.borderColor);
   const getBorderStyleDef = (styleName: string) => {
     switch (styleName) {
@@ -454,7 +451,6 @@ export async function exportToExcel({
     return undefined;
   }
 
-  // Helper to estimate formatted string length for width calculation
   function formatSampleValue(val: any, col: ColMeta): string {
     if (val === null || val === undefined) return '';
     if (col.isDate || val instanceof Date) {
@@ -480,7 +476,6 @@ export async function exportToExcel({
 
   const hasColIndexRow = settings.enableColumnIndexRow;
   
-  // Row Indices Mapping
   const hasTotalsRow = settings.enableTotalsRow;
   const totalsRowPos = settings.totalsRowPosition; // 'top' or 'bottom'
   const effectiveCatCols = settings.enableFirstColumnStyle 
@@ -526,7 +521,6 @@ export async function exportToExcel({
     totalsRowIdx = dataEndRowIdx + 1;
   }
 
-  // Primary Sheet
   const mainSheet = workbook.addWorksheet(primarySheetName, {
     properties: {
       defaultRowHeight: Math.max(20, Math.ceil(settings.dataFontSize * 1.6))
@@ -565,11 +559,9 @@ export async function exportToExcel({
     }
   });
 
-  // Determine if Totals column is active
   const hasTotalsCol = settings.enableTotalsColumn;
   const totalsColPos = settings.totalsColumnPosition; // 'right' or 'left'
 
-  // Build column metadata array
 
   const colsMeta: ColMeta[] = baseColsMeta.map(c => ({...c}));
 
@@ -600,7 +592,7 @@ export async function exportToExcel({
   }
 
   // 1. Calculate Column Widths First (so usable width is known for row height estimation)
-  // OPTIMIZATION: Only sample the first 50 rows to prevent massive CPU overhead on huge datasets
+  // Ширина считается по первым 50 строкам
   const sampleData = sheetData.slice(0, 50);
 
   colsMeta.forEach((col, colIdx) => {
@@ -676,17 +668,14 @@ export async function exportToExcel({
     }
   });
 
-  // 1.5 Apply Base Formatting to Columns (Massive Performance Boost)
-  // Instead of assigning these properties to 500,000 individual cells, we assign them to the 20 columns
+  // 1.5 Базовое оформление задаётся столбцам, а не каждой ячейке (быстрее на больших выгрузках)
   colsMeta.forEach((col, colIdx) => {
     const sheetCol = mainSheet.getColumn(colIdx + 1);
 
-    // Hide column if requested
     if (hideColKey && col.key === hideColKey) {
       sheetCol.hidden = true;
     }
 
-    // Formats
     if (col.isRowIndexCol) {
       sheetCol.numFmt = 'General';
     } else if (numFormatStr && (col.isNumeric || col.isTotalCol)) {
@@ -695,7 +684,6 @@ export async function exportToExcel({
       sheetCol.numFmt = dateFormatStr;
     }
 
-    // Alignments
     if (col.isRowIndexCol) {
       sheetCol.alignment = {
         vertical: 'middle',
@@ -712,7 +700,6 @@ export async function exportToExcel({
       };
     }
 
-    // Fonts
     const firstDataColIdx = settings.enableRowIndexColumn ? 1 : 0;
     const isCategoryCol = settings.enableFirstColumnStyle && effectiveCatCols > 0 && (colIdx >= firstDataColIdx && colIdx < firstDataColIdx + effectiveCatCols);
     const targetFormattedColKey = settings.totalsColumnPosition === 'left'
@@ -812,7 +799,7 @@ export async function exportToExcel({
     });
   }
 
-  // PRE-COMPUTE variables outside the data loop for MASSIVE performance boost
+  // Считается один раз, вне цикла по строкам
   const dataColsForTotals = colsMeta.filter(cm => !cm.isRowIndexCol && !cm.isTotalCol);
   const colsToSum = dataColsForTotals.length > effectiveCatCols 
     ? dataColsForTotals.slice(effectiveCatCols) 
@@ -826,7 +813,7 @@ export async function exportToExcel({
     totalsLastLetter = mainSheet.getColumn(lastColIdx + 1).letter;
   }
 
-  // PRE-COMPUTE row patterns outside the loop (calling cleanHexColor inside a 500,000 cell loop causes lag)
+  // Цвета считаются один раз, вне цикла по строкам
   const totalsRowBg = settings.totalsRowBgColor ? cleanHexColor(settings.totalsRowBgColor) : undefined;
   const totalsColBg = settings.totalsColumnBgColor ? cleanHexColor(settings.totalsColumnBgColor) : undefined;
   const firstColBg = settings.firstColumnBgColor ? cleanHexColor(settings.firstColumnBgColor) : undefined;
@@ -896,9 +883,7 @@ export async function exportToExcel({
              cell.value = Number(rawVal);
           }
         } else if (col.isDate && rawVal) {
-          // OPTIMIZATION: Only parse to Date object if it is not already a string, or if we know it's a date.
-          // In reality, exceljs converts Date objects. To save CPU, if rawVal is already a string that Excel can understand
-          // as a date, we could skip it, but Excel strictly requires standard JS Dates to apply Date formatting correctly.
+          // Формат даты в Excel применяется только к значениям типа Date
           if (rawVal instanceof Date) {
             cell.value = rawVal;
           } else {
@@ -1200,7 +1185,7 @@ export async function exportToExcel({
     // Apply styling independently of column styles
     titleCell.font = {
       name: settings.fontFamily,
-      size: settings.reportTitleFontSize,
+      size: settings.reportTitleFontSize || 14,
       bold: settings.reportTitleBold,
       italic: settings.reportTitleItalic,
       color: { argb: cleanHexColor(settings.reportTitleColor) }
@@ -1220,7 +1205,7 @@ export async function exportToExcel({
       wrapText: false
     };
     // No borders for title
-    titleRow.height = Math.max(25, Math.ceil(settings.reportTitleFontSize * 1.5));
+    titleRow.height = Math.max(25, Math.ceil((settings.reportTitleFontSize || 14) * 1.5));
 
     if (settings.reportSubtitle && reportSubtitleRowIdx > 0) {
       const subtitleRow = mainSheet.getRow(reportSubtitleRowIdx);
@@ -1261,7 +1246,6 @@ export async function exportToExcel({
     metaSheet.getColumn(1).width = 30;
     metaSheet.getColumn(2).width = 60;
 
-    // Header Title
     const titleCell = metaSheet.getCell('A1');
     titleCell.value = 'Информация о выгрузке отчета     ';
     titleCell.font = { name: settings.fontFamily, size: 14, bold: true, color: { argb: cleanHexColor(settings.headerTextColor) } };
@@ -1280,7 +1264,6 @@ export async function exportToExcel({
     
     metaSheet.getRow(1).height = 30;
 
-    // Metadata Key/Value Rows
     const metaInfo = [
       ['Дата и время выгрузки', new Date().toLocaleString('ru-RU')],
       ['Количество строк', data.length],
@@ -1306,7 +1289,6 @@ export async function exportToExcel({
       if (border) vCell.border = border;
     });
 
-    // SQL Section
     const sqlStartRow = metaInfo.length + 5;
     const sqlHeaderCell = metaSheet.getCell(`A${sqlStartRow}`);
     sqlHeaderCell.value = 'Исходный SQL-запрос                                   ';
@@ -1343,14 +1325,11 @@ export async function exportToExcel({
     metaSheet.getRow(sqlTextRow).height = Math.min(400, Math.max(200, lineCount * 15));
   }
 
-  // Write to Binary Buffer
   const buffer = await workbook.xlsx.writeBuffer();
 
-  // Generate File Name
   const baseName = sanitizeExportFileBase(parsedFilename, sanitizeSheetName(settings.defaultFileName || 'report', 'report'));
   const exportFileName = filename || `${baseName}_${new Date().toISOString().slice(0, 10)}.xlsx`;
 
-  // Download File (Web Blob or Tauri API)
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   await downloadFileWithFallback(blob, exportFileName, resolvedAutoSavePath);
 }

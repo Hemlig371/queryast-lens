@@ -110,3 +110,50 @@ describe('экспорт по шаблону на настоящем exceljs', (
     await expect(buildFromTemplate({ ...input, sheetName: 'Нет такого' }, await makeTemplateBuffer('[[rows]]'))).rejects.toThrow(/нет листа/);
   });
 });
+
+describe('[[header]], [[title]], [[subtitle]] и пустой результат на настоящем exceljs', () => {
+  async function makeBuffer(rowsMarker = '[[rows]]', headerRow = 4, rowsCell = 'B5'): Promise<Uint8Array> {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Отчет');
+    ws.getCell('A1').value = 'Отчёт: [[title]]';
+    ws.getCell('A2').value = '[[subtitle]]';
+    ws.mergeCells('A2:C2');
+    ws.getCell(`B${headerRow}`).value = '[[header]]';
+    ws.getCell(`B${headerRow}`).font = { bold: true };
+    ws.getCell(`C${headerRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEEEEEE' } };
+    ws.getCell(rowsCell).value = rowsMarker;
+    ws.getCell('A7').value = 'Подпись';
+    return new Uint8Array(await wb.xlsx.writeBuffer());
+  }
+  const base = { path: '/tmp/template.xlsx', columns, columnTypes: { sum: 'Float64' }, title: 'Продажи', subtitle: '2026' };
+
+  it('шапка на месте, данные от [[rows]], заголовки подставлены, подпись сдвинута', async () => {
+    const out = await buildFromTemplate({ ...base, rows }, await makeBuffer());
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(out as any);
+    const ws = wb.getWorksheet('Отчет')!;
+    expect(ws.getCell('A1').value).toBe('Отчёт: Продажи');
+    expect(ws.getCell('A2').value).toBe('2026');
+    expect(ws.model.merges).toContain('A2:C2');
+    expect([ws.getCell('B4').value, ws.getCell('C4').value]).toEqual(['name', 'sum']);
+    expect(ws.getCell('B4').font?.bold).toBe(true);
+    expect(ws.getCell('C4').fill).toBeTruthy();
+    expect([ws.getCell('B5').value, ws.getCell('B6').value, ws.getCell('B7').value]).toEqual(['A', 'B', 'C']);
+    expect(ws.getCell('A9').value).toBe('Подпись');
+  });
+
+  it('пустой результат: имена колонок записаны, маркер [[rows]] убран, подпись на месте', async () => {
+    const out = await buildFromTemplate({ ...base, rows: [] }, await makeBuffer());
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(out as any);
+    const ws = wb.getWorksheet('Отчет')!;
+    expect([ws.getCell('B4').value, ws.getCell('C4').value]).toEqual(['name', 'sum']);
+    expect(ws.getCell('B5').value).toBeNull();
+    expect(ws.getCell('A7').value).toBe('Подпись');
+  });
+
+  it('[[header]] вместе с [[table]] и в одной строке с [[rows]] — ошибка', async () => {
+    await expect(buildFromTemplate({ ...base, rows }, await makeBuffer('[[table]]'))).rejects.toThrow('[[table]]');
+    await expect(buildFromTemplate({ ...base, rows }, await makeBuffer('[[rows]]', 5, 'C5'))).rejects.toThrow('в одной строке');
+  });
+});

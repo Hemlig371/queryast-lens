@@ -8,11 +8,17 @@
  * применяется ко всем вставляемым строкам. Всё, что ниже ведущей строки, сдвигается вниз;
  * область печати, объединённые ячейки, высоты строк, разрывы страниц и формулы на этом листе сдвигаются вместе с ним.
  *
+ * Дополнительно:
+ *   [[header]] — отдельный маркер: сюда (вправо от клетки) записываются имена колонок SQL, ничего не сдвигая;
+ *               используется вместе с [[rows]], данные начинаются от клетки [[rows]];
+ *   [[title]] / [[subtitle]] — в любой клетке любого листа (в том числе внутри текста) заменяются
+ *               на `# Заголовок` / `## Подзаголовок` из блочных комментариев запроса.
+ *
  * Модуль не зависит от нативного экспорта (excelExporter.ts): подключается одним переходом в exportToExcel.
  * Лист передаётся как `any`: нужен только небольшой набор методов exceljs (проверяется в tests/excelTemplate*.test.ts).
  */
 
-import { parseExcelDate } from './excelParse';
+import { parseExcelDate, extractExcelComments } from './excelParse';
 import { t } from './i18n';
 
 export type TemplateMode = 'table' | 'rows';
@@ -24,6 +30,8 @@ export interface TemplateMarker {
 }
 
 const MARKER_RE = /^\s*\[\[\s*(table|rows)\s*\]\]\s*$/i;
+const HEADER_RE = /^\s*\[\[\s*header\s*\]\]\s*$/i;
+const TEXT_MARKER_RE = /\[\[\s*(title|subtitle)\s*\]\]/gi;
 
 export interface TemplateDirective {
   path: string;
@@ -125,6 +133,105 @@ export function findTemplateMarker(ws: any): TemplateMarker | null {
     }
   }
   return null;
+}
+
+export interface HeaderMarker {
+  row: number;
+  col: number;
+}
+
+/** Первый (по строкам, затем по столбцам) маркер [[header]] на листе. */
+export function findHeaderMarker(ws: any): HeaderMarker | null {
+  const lastRow = ws.rowCount || 0;
+  const lastCol = ws.columnCount || 0;
+  for (let r = 1; r <= lastRow; r++) {
+    for (let c = 1; c <= lastCol; c++) {
+      const text = cellText(ws.getCell(r, c).value);
+      if (text !== null && HEADER_RE.test(text)) return { row: r, col: c };
+    }
+  }
+  return null;
+}
+
+/** Допустимость сочетания [[header]] с маркером данных; иначе ошибка. */
+export function checkHeaderMarker(header: HeaderMarker | null, marker: TemplateMarker): void {
+  if (!header) return;
+  if (marker.mode === 'table') {
+    throw new Error(t('Маркер [[header]] нельзя использовать вместе с [[table]]: [[table]] записывает имена колонок сам'));
+  }
+  if (header.row === marker.row) {
+    throw new Error(t('Маркеры [[header]] и [[rows]] находятся в одной строке ({row}): разместите их в разных строках').replace('{row}', String(marker.row)));
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Заголовок и подзаголовок отчёта: [[title]] / [[subtitle]]
+// ---------------------------------------------------------------------------------------------
+
+export interface TemplateTitles {
+  title: string;
+  subtitle: string;
+}
+
+/**
+ * `# Заголовок` и `## Подзаголовок` из склеенных блочных комментариев. Правила те же, что у нативного экспорта
+ * (один `## …` без `#` задаёт и заголовок, и подзаголовок), но строки директив (начинаются с `@`) не разбираются:
+ * `#` внутри пути (`@template: /a#b.xlsx`) не должен становиться заголовком. Нет значения — пустая строка.
+ */
+export function parseTemplateTitles(comments: string): TemplateTitles {
+  const text = (comments || '').split(/\r?\n/).filter(line => !/^\s*@/.test(line)).join('\n');
+  const title = text.match(/#\s*([^#\n@]+)/);
+  const subtitle = text.match(/##\s*([^#\n@]+)/);
+  return { title: title ? title[1].trim() : '', subtitle: subtitle ? subtitle[1].trim() : '' };
+}
+
+/** В запросе есть директива `@template` или `@template_values` (в блочном комментарии). */
+export function sqlUsesTemplate(sqlQuery: string): boolean {
+  return !!sqlQuery && sqlQuery.includes('@template') && parseTemplateDirective(extractExcelComments(sqlQuery)) !== null;
+}
+
+/**
+ * Заменяет [[title]] и [[subtitle]] в текстовых клетках всех листов (маркер может стоять внутри текста).
+ * Формулы и ссылки не меняются; в форматированном тексте заменяются маркеры, целиком лежащие в одном фрагменте;
+ * в объединённых клетках пишется только главная. Пустое значение даёт пустую клетку.
+ */
+export function applyTextMarkers(sheets: readonly any[], titles: TemplateTitles): void {
+  const sub = (str: string): string => str.replace(TEXT_MARKER_RE, (_m, key: string) => (key.toLowerCase() === 'title' ? titles.title : titles.subtitle));
+  for (const ws of sheets) {
+    if (!ws || typeof ws.eachRow !== 'function') continue;
+    ws.eachRow({ includeEmpty: false }, (row: any) => {
+      row.eachCell({ includeEmpty: false }, (cell: any) => {
+        if (cell.master && cell.master !== cell) return; // подчинённая клетка объединения
+        const v = cell.value;
+        if (typeof v === 'string') {
+          if (!v.includes('[[')) return;
+          const next = sub(v);
+          if (next !== v) cell.value = next === '' ? null : next;
+        } else if (v && typeof v === 'object' && Array.isArray(v.richText)) {
+          const parts = v.richText.map((f: any) => ({ ...f, text: sub(String(f.text ?? '')) }));
+          if (parts.some((f: any, i: number) => f.text !== (v.richText[i].text ?? ''))) {
+            cell.value = parts.every((f: any) => f.text === '') ? null : { richText: parts };
+          }
+        }
+      });
+    });
+  }
+}
+
+const hasStyle = (st: any): boolean => !!st && Object.keys(st).length > 0;
+
+/**
+ * Записывает имена колонок вправо от клетки [[header]]. Ничего не сдвигает.
+ * Оформление: клетка с заданным оформлением в шаблоне сохраняет его, пустая берёт оформление клетки маркера.
+ * В режиме «только значения» оформление не меняется.
+ */
+export function writeHeader(ws: any, marker: HeaderMarker, columns: readonly string[], valuesOnly = false): void {
+  const markerStyle = clone(ws.getCell(marker.row, marker.col).style);
+  columns.forEach((name, j) => {
+    const cell = ws.getCell(marker.row, marker.col + j);
+    if (!valuesOnly && j > 0 && !hasStyle(cell.style)) cell.style = clone(markerStyle ?? {});
+    cell.value = name;
+  });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -268,7 +375,6 @@ export function fillTemplateSheet(
   }
 
   // 4. Освободить вставляемые строки (значения от сдвинутой копии/шаблона) и задать им оформление ведущей
-  const hasStyle = (st: any) => !!st && Object.keys(st).length > 0;
   const lastDataCol = mc + columns.length - 1;
   for (let i = 0; i < total; i++) {
     const r = m + i;
@@ -358,6 +464,9 @@ export interface TemplateExportInput {
   columnTypes?: Record<string, string>;
   /** @template_values: без оформления и сдвига строк. */
   valuesOnly?: boolean;
+  /** Значения для [[title]] и [[subtitle]] (`# …`, `## …` из запроса). */
+  title?: string | null;
+  subtitle?: string | null;
 }
 
 async function readTemplateBytes(fullPath: string): Promise<Uint8Array> {
@@ -406,6 +515,11 @@ export async function buildFromTemplate(input: TemplateExportInput, bytesOverrid
   if (!sheet || !marker) {
     throw new Error(t('В шаблоне не найден маркер [[table]] или [[rows]] (в одной клетке, без другого текста)'));
   }
+
+  const headerMarker = findHeaderMarker(sheet);
+  checkHeaderMarker(headerMarker, marker);
+  applyTextMarkers(workbook.worksheets, { title: input.title ?? '', subtitle: input.subtitle ?? '' });
+  if (headerMarker) writeHeader(sheet, headerMarker, input.columns, !!input.valuesOnly);
 
   fillTemplateSheet(sheet, marker, input.columns, input.rows, input.columnTypes || {}, { valuesOnly: !!input.valuesOnly });
   // значения формул пересчитает Excel при открытии

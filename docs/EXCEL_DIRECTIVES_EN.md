@@ -29,7 +29,7 @@ This document describes how the application reads directives from SQL comments w
 | `@group_hide: true` | `true`/`false`/`1`/`0` | Do not repeat the group value in child rows | Works together with `@group`. |
 | `@protect: password` | text | Protects the sheet with a password | Enables protection; sorting, auto-filter, column width and row height changes remain allowed. The password must not contain `@` or `*`. This protects against accidental edits; it is not encryption. |
 | `@excel_save: path` | path | *(Desktop)* Saves the file without a dialog | See section 4. |
-| `@template: path` | path to `.xlsx` | *(Desktop)* Fills a ready-made template with the query result | See section 6. Native formatting (`@preset`, `@totals`, `@group`, `@split`, `@skip`, `@hide`, `@protect`, `# Title`) is not applied in this mode. |
+| `@template: path` | path to `.xlsx` | *(Desktop)* Fills a ready-made template with the query result | See section 6. Native formatting (`@preset`, `@totals`, `@group`, `@split`, `@skip`, `@hide`, `@protect`) is not applied in this mode; `# Title` and `## Subtitle` are output only through the `[[title]]` and `[[subtitle]]` markers. |
 | `@template_values: path` | path to `.xlsx` | *(Desktop)* Only writes values into a ready-made template, no formatting | See section 6. No rows are inserted and nothing is shifted. |
 
 Column numbers in `@split`, `@skip`, `@hide` and `@group` refer to the original result columns (before `@skip` removal and before the `@split` column is dropped). A value consisting only of digits is always treated as a number, so a column named like `2024` cannot be referenced by name. If a name is not found, the directive is ignored.
@@ -37,7 +37,7 @@ Column numbers in `@split`, `@skip`, `@hide` and `@group` refer to the original 
 ## 3. Limits
 
 * At most 1,500,000 cells (rows × columns). Above that, an error asks you to reduce the selection.
-* No data produces the error "Нет данных для экспорта в Excel" (no data to export).
+* No data produces the error "Нет данных для экспорта в Excel" (no data to export). Exception: export from a template (`@template`, `@template_values`, section 6) accepts an empty result when the column names are known.
 * Column type (number, date) is taken from the type returned by the database; if it is missing, the first 50 non-empty values are inspected.
 * `@protect` uses lightweight password hashing (100 iterations) so that the export does not hang.
 * A string that starts with `=` is written to Excel as a formula, so Excel formulas and SQL can be mixed in one report, e.g. `SELECT 'Total' AS name, '=SUM(B2:B10)' AS value`. This also applies to data from the database: a value such as `=== total ===` or `=1+1` becomes a formula too (`=== total ===` gives a formula error).
@@ -78,7 +78,9 @@ A template is a regular `.xlsx` that you prepare yourself: header, category colu
 | Marker | What is inserted |
 | :--- | :--- |
 | `[[table]]` | The whole result: column names from SQL as the first row, then the data |
-| `[[rows]]` | Data rows only (the header is already in the template) |
+| `[[rows]]` | Data rows only (the column names are already in the template or are written by the `[[header]]` marker) |
+| `[[header]]` | Column names of the SQL result only: written to the right of the marker cell, no rows are shifted. Used together with `[[rows]]` |
+| `[[title]]`, `[[subtitle]]` | May be placed in any cell of any sheet, including inside text (`Report: [[title]]`). Replaced with `# Title` and `## Subtitle` from the query's block comments |
 
 * Data goes from the marker cell to the right (SQL columns) and down (result rows).
 * The row with the marker is the **lead row**: its formatting (number format, font, fill, borders, row height, merges inside the row) is applied to every inserted row. If the result has more columns than the template styles, the extra columns take the formatting of the marker cell.
@@ -87,7 +89,9 @@ A template is a regular `.xlsx` that you prepare yourself: header, category colu
 * Values: numbers as numbers, dates as dates, NULL as an empty cell, a string starting with `=` as a formula.
 * The template path is given the same way as the `@excel_save` path: used as is, a full path is recommended. The file is read on every export.
 * `@sheet: name` selects the template sheet to fill; without it the first sheet with a marker is used. The first marker found is filled; other sheets are left unchanged. `@file` and `@excel_save` work as usual.
-* Empty result: `[[table]]` writes only the header, `[[rows]]` just removes the marker.
+* Empty result: `[[table]]` writes only the column names, `[[rows]]` just removes the marker, `[[header]]` writes the column names. The result's column names must be known; otherwise the export stops with the error "Колонки таблицы не найдены" (columns not found).
+* **`[[header]]`** is placed in its own cell; data starts at the `[[rows]]` cell. The markers must be in different rows; combining it with `[[table]]` is not allowed (error). No rows are inserted or shifted; if `[[header]]` is below `[[rows]]`, it moves together with the rest of the content. A cell to the right of the marker that already has formatting in the template keeps it; empty cells get the marker cell's formatting. The number of cells equals the number of result columns; existing values further to the right are overwritten. The marker is searched on the same sheet as `[[rows]]`.
+* **`[[title]]` and `[[subtitle]]`** take their values from `# …` and `## …` (same rules as the regular export: a lone `## …` without `#` sets both title and subtitle). Lines starting with `@` are skipped when parsing, so a `#` in the template path does not become a title. If there is no value, the marker is replaced with an empty string. Formulas are not changed; in rich text, a marker that lies entirely within one text run is replaced; in merged cells the value is written to the top-left cell. The title is not inserted into the first rows of the sheet automatically: the template decides the place.
 * **`@template_values: path`** — same marker and the same path/`@sheet` rules, but the result is only written as values starting at the marker cell. No formatting is copied, rows are not shifted, the print area, merges and formulas are not changed; everything else in the template stays as is. If the result is shorter than what the template had, old values below remain. A date format is set only if the cell is "General".
 * `@excel_save` is the path for the **result** (a file or folder, used as is); `@template` is the path **to the template** (both are given the same way). If `@excel_save` equals the template, the export stops with an error so the template is not overwritten.
 * Not supported: conditional formatting, data validation, images and cell notes below the lead row are not moved; a merge that crosses the lead row is not extended; shapes, text boxes, form controls and charts of the template are not kept in the result (the `exceljs` library does not preserve them); formulas on other sheets that refer to this sheet are not adjusted. A missing marker, sheet or file gives a clear error.

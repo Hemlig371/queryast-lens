@@ -159,6 +159,12 @@ describe('dirnameOf / joinPath', () => {
     expect(dirnameOf('/db.duckdb')).toBe('/');
     expect(dirnameOf('db.duckdb')).toBe('');
   });
+  test('корень диска Windows сохраняет разделитель', () => {
+    expect(dirnameOf('C:\\db.duckdb')).toBe('C:\\');
+    expect(dirnameOf('d:/db.duckdb')).toBe('d:/');
+    expect(dirnameOf('C:\\data\\db.duckdb')).toBe('C:\\data');
+    expect(joinPath(dirnameOf('C:\\db.duckdb'), 'a.csv')).toBe('C:\\a.csv');
+  });
   test('joinPath сохраняет стиль', () => {
     expect(joinPath('C:\\data', 'a.csv')).toBe('C:\\data\\a.csv');
     expect(joinPath('/home/u/', 'a.csv')).toBe('/home/u/a.csv');
@@ -169,6 +175,9 @@ describe('dirnameOf / joinPath', () => {
 describe('pickFileTreeRoot', () => {
   test('настройка важнее всего', () => {
     expect(pickFileTreeRoot({ configured: ' /x ', dbPath: '/a/b.db', home: '/h' })).toBe('/x');
+  });
+  test('БД в корне диска: корень дерева — C:\\, а не C:', () => {
+    expect(pickFileTreeRoot({ dbPath: 'C:\\db.duckdb', home: 'C:\\Users\\u' })).toBe('C:\\');
   });
   test('папка БД, затем домашняя', () => {
     expect(pickFileTreeRoot({ dbPath: '/a/b.db', home: '/h' })).toBe('/a');

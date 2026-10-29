@@ -44,7 +44,6 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
     }
   };
 
-  // Sync preset name input when selection changes
   const handleSelectPreset = (id: string) => {
     setSelectedPresetId(id);
     const target = presets.find(p => p.id === id);
@@ -1008,7 +1007,7 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
                   <input
                     type="number"
                     value={excelSettings.reportTitleFontSize}
-                    onChange={(e) => updateExcel({ reportTitleFontSize: Number(e.target.value) })}
+                    onChange={(e) => updateExcel({ reportTitleFontSize: Number(e.target.value) || 14 })}
                     min="8" max="48"
                     className={`w-full ${inputClass}`}
                   />
@@ -1076,7 +1075,7 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
                   <input
                     type="number"
                     value={excelSettings.reportSubtitleFontSize}
-                    onChange={(e) => updateExcel({ reportSubtitleFontSize: Number(e.target.value) })}
+                    onChange={(e) => updateExcel({ reportSubtitleFontSize: Number(e.target.value) || 11 })}
                     min="6" max="48"
                     className={`w-full ${inputClass}`}
                   />

@@ -105,6 +105,36 @@ describe('classifyHotkeyTarget', () => {
   });
 });
 
+describe('вкладки и повтор запроса', () => {
+  const ctx = { target: 'editor' as const, modalOpen: false, tabCount: 3 };
+  const ev = (o: Partial<HotkeyEventLike>) => ({ key: '', code: '', ctrlKey: false, shiftKey: false, altKey: true, metaKey: false, ...o }) as HotkeyEventLike;
+  it('Alt+N, Alt+X, Alt+Enter', () => {
+    expect(resolveHotkeyAction(ev({ key: 'n', code: 'KeyN' }), {}, ctx)).toEqual({ action: 'newTab' });
+    expect(resolveHotkeyAction(ev({ key: 'x', code: 'KeyX' }), {}, ctx)).toEqual({ action: 'closeTab' });
+    expect(resolveHotkeyAction(ev({ key: 'Enter', code: 'Enter' }), {}, ctx)).toEqual({ action: 'rerunLast' });
+  });
+  it('Ctrl+Enter по-прежнему visualize; в окне и в поле ввода не срабатывает', () => {
+    expect(resolveHotkeyAction(ev({ key: 'Enter', code: 'Enter', altKey: false, ctrlKey: true }), {}, ctx)).toEqual({ action: 'visualize' });
+    expect(resolveHotkeyAction(ev({ key: 'n', code: 'KeyN' }), {}, { ...ctx, modalOpen: true })).toBeNull();
+    expect(resolveHotkeyAction(ev({ key: 'n', code: 'KeyN' }), {}, { ...ctx, target: 'field' })).toBeNull();
+  });
+  it('переназначение из настроек', () => {
+    expect(resolveHotkeyAction(ev({ key: 'j', code: 'KeyJ' }), { newTab: 'Alt+J' }, ctx)).toEqual({ action: 'newTab' });
+    expect(resolveHotkeyAction(ev({ key: 'n', code: 'KeyN' }), { newTab: 'Alt+J' }, ctx)).toBeNull();
+  });
+});
+
+describe('сохранение вкладки как шаблона', () => {
+  it('Ctrl+Shift+K вызывает saveAsSnippet, Ctrl+K по-прежнему открывает шаблоны', () => {
+    const ctx = { target: 'editor' as const, modalOpen: false, tabCount: 1 };
+    const ev = (o: Partial<HotkeyEventLike>) => ({ key: 'k', code: 'KeyK', ctrlKey: false, shiftKey: false, altKey: false, metaKey: false, ...o }) as HotkeyEventLike;
+    expect(resolveHotkeyAction(ev({ ctrlKey: true, shiftKey: true, key: 'K' }), {}, ctx)).toEqual({ action: 'saveAsSnippet' });
+    expect(resolveHotkeyAction(ev({ ctrlKey: true }), {}, ctx)).toEqual({ action: 'openSnippets' });
+    // при открытом окне не срабатывает
+    expect(resolveHotkeyAction(ev({ ctrlKey: true, shiftKey: true, key: 'K' }), {}, { ...ctx, modalOpen: true })).toBeNull();
+  });
+});
+
 describe('подсказки берут сочетание из настроек', () => {
   it('сочетание по умолчанию', () => {
     expect(hotkeyHint('Форматировать SQL', {}, 'formatSql')).toBe('Форматировать SQL (Ctrl+Shift+F)');
@@ -118,7 +148,7 @@ describe('подсказки берут сочетание из настроек
     expect(hotkeyHint('Форматировать SQL', { formatSql: '' }, 'formatSql')).toBe('Форматировать SQL (Ctrl+Shift+F)');
   });
   it('таблица умолчаний содержит все действия приложения', () => {
-    for (const id of ['visualize', 'saveFile', 'openFile', 'copySql', 'commentBlock', 'toggleWrap', 'formatSql', 'openSnippets', 'toggleMaximized', 'toggleTheme', 'openSettings', 'exportResultsCopy', 'saveAsFile', 'refreshSchema', 'escapeAction', 'toggleMiniMap', 'exportGraph', 'toggleColumnStats', 'openActionMenu', 'exportSettings', 'importSettings', 'exportExcelReport']) {
+    for (const id of ['visualize', 'saveFile', 'openFile', 'copySql', 'commentBlock', 'toggleWrap', 'formatSql', 'openSnippets', 'toggleMaximized', 'toggleTheme', 'openSettings', 'exportResultsCopy', 'saveAsFile', 'refreshSchema', 'escapeAction', 'toggleMiniMap', 'exportGraph', 'toggleColumnStats', 'openActionMenu', 'exportSettings', 'importSettings', 'exportExcelReport', 'saveAsSnippet', 'newTab', 'closeTab', 'rerunLast']) {
       expect(typeof (APP_HOTKEY_DEFAULTS as any)[id]).toBe('string');
     }
   });

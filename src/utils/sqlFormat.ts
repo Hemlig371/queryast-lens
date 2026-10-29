@@ -20,7 +20,8 @@ const nextLineBlank = (lineBlank: boolean, seg: SqlSegment): boolean => {
 };
 
 const inlineDashToBlock = (lineCommentText: string): string => {
-  const safeCommentText = lineCommentText.slice(2).replace(/\*\//g, '* /');
+  // Внутри `/* … */` не должно остаться ни `*/` (закроет комментарий раньше), ни `/*` (вложенный комментарий путает разбор)
+  const safeCommentText = lineCommentText.slice(2).replace(/\*\//g, '* /').replace(/\/\*/g, '/ *');
   return `/* ${safeCommentText.trim()} */`;
 };
 
@@ -75,13 +76,14 @@ export const compactSql = (text: string): string => {
   return protectedSql.restore(resultLines.join('\n'));
 };
 
-export const formatSqlText = async (text: string, dialect: string, cfg: FormatterSettings): Promise<string> => {
+export const formatSqlText = async (
+  text: string,
+  cfg: FormatterSettings,
+  opts: { clickhouse?: boolean } = {}
+): Promise<string> => {
   // sql-formatter тяжёлый: подгружаем при первом форматировании, а не при старте приложения
   const { format: formatSql } = await import('sql-formatter');
-  const primaryLang =
-    dialect === 'PostgreSQL' || dialect === 'Oracle' || dialect === 'Clickhouse' || dialect === 'DuckDB' ? 'postgresql' :
-    dialect === 'MySQL' ? 'mysql' :
-    dialect === 'SQLite' ? 'sqlite' : 'postgresql';
+  const primaryLang = 'postgresql';
 
   const fallbackLangs = [primaryLang, 'postgresql', 'mysql', 'sqlite', 'sql'].filter(
     (lang, index, self) => self.indexOf(lang) === index
@@ -151,7 +153,7 @@ export const formatSqlText = async (text: string, dialect: string, cfg: Formatte
 
   // строковые литералы (в том числе многострочные и `$$…$$`) и `//` не должны попадать в форматтер и в регулярные
   // подстановки ниже: они заменяются плейсхолдерами и возвращаются точным исходным текстом после всех подстановок.
-  const protectedSql = protectLiterals(text, { backslashEscapes: dialect === 'Clickhouse', protectDivision: true });
+  const protectedSql = protectLiterals(text, { backslashEscapes: !!opts.clickhouse, protectDivision: true });
   let preprocessedText = convertInlineDashComments(protectedSql.text);
   
   // sql-formatter doesn't support queries starting with FROM properly.

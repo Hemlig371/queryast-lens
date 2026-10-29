@@ -51,15 +51,15 @@ export async function saveSessionTabs(tabs: EditorTab[]): Promise<void> {
     }));
     
     try {
-      // Synchronously save to localStorage
       localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sanitizedTabs));
     } catch (e: any) {
       if (e.name === 'QuotaExceededError' || e.code === 22 || (e.message && e.message.includes('quota'))) {
         console.warn('LocalStorage quota exceeded. Falling back to IndexedDB for tabs session.');
-        // Обязательно удаляем ключ из localStorage, чтобы при следующей загрузке 
-        // fallback в getSessionTabs переключился на чтение из IndexedDB.
-        localStorage.removeItem(LOCAL_STORAGE_KEY);
+        // Сначала пишем в IndexedDB: если запись не удалась, прежняя сессия в localStorage остаётся.
         await saveToIndexedDb(sanitizedTabs);
+        // Ключ localStorage удаляем обязательно: иначе getSessionTabs прочитает устаревшие данные
+        // и не дойдёт до IndexedDB.
+        localStorage.removeItem(LOCAL_STORAGE_KEY);
       } else {
         throw e;
       }
@@ -71,7 +71,6 @@ export async function saveSessionTabs(tabs: EditorTab[]): Promise<void> {
 
 export async function getSessionTabs(): Promise<EditorTab[] | null> {
   try {
-    // 1. Try reading from localStorage first (new method)
     const localData = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (localData) {
       try {
@@ -103,10 +102,8 @@ export async function getSessionTabs(): Promise<EditorTab[] | null> {
             
             req.onsuccess = () => {
               if (req.result && req.result.length > 0) {
-                // Sort by the old _order field
                 const sorted = req.result.sort((a: any, b: any) => (a._order || 0) - (b._order || 0));
                 
-                // Remove the _order property
                 const cleaned = sorted.map((t: any) => {
                   const { _order, ...rest } = t;
                   return rest as EditorTab;

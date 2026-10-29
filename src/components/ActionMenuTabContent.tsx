@@ -290,7 +290,6 @@ export const ActionMenuTabContent: React.FC<ActionMenuTabContentProps> = ({
       const popularFiltered = POPULAR_SNIPPETS.filter(s => !customIds.has(s.id));
       const all = [...customSnippets, ...popularFiltered];
 
-      // Read deleted IDs from localStorage
       let deletedIds: string[] = [];
       try {
         const rawDel = localStorage.getItem('sql_deleted_snippets_ids_v1');
@@ -300,7 +299,6 @@ export const ActionMenuTabContent: React.FC<ActionMenuTabContentProps> = ({
       }
 
       const activeList = all.filter(s => !deletedIds.includes(s.id));
-      // Filter for Action Menu category
       const actionMenuSnippets = activeList.filter(s => s.category === ACTION_MENU_CATEGORY);
       cachedActionMenuSnippets = actionMenuSnippets;
       setSnippets(actionMenuSnippets);
@@ -331,7 +329,6 @@ export const ActionMenuTabContent: React.FC<ActionMenuTabContentProps> = ({
     if (isDuckDbRunning) return;
     setRunningSnippetId(snippet.id);
     
-    // Check if multi-statement pipeline
     const statements = splitBySemicolonIgnoringQuotes(modifiedSql)
       .map(s => s.trim())
       .filter(Boolean);
@@ -340,7 +337,6 @@ export const ActionMenuTabContent: React.FC<ActionMenuTabContentProps> = ({
     onExecuteSql(modifiedSql, snippet.dialect, isSequential);
   };
 
-  // Stats & Filters
   const { stats, availableDialects } = useMemo(() => {
     let duckdbCount = 0;
     let clickhouseCount = 0;
@@ -376,18 +372,15 @@ export const ActionMenuTabContent: React.FC<ActionMenuTabContentProps> = ({
 
   const filteredSnippets = useMemo(() => {
     return snippets.filter(s => {
-      // Dialect filter
       if (selectedDialectFilter !== 'Все') {
         const d = (s.dialect || 'General').trim();
         if (d !== selectedDialectFilter) return false;
       }
 
-      // Jobs filter
       if (onlyJobs) {
         if (!s.sql.trim().startsWith('-- @job')) return false;
       }
 
-      // Search query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const displayTitle = s.isCustom ? s.title : t(s.title);

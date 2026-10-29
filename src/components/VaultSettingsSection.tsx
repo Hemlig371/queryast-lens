@@ -25,7 +25,6 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
   const [unlocked, setUnlocked] = useState<boolean>(false);
   const [secrets, setSecrets] = useState<VaultSecret[]>([]);
 
-  // Input states
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState<string | null>(null);
 
@@ -37,17 +36,14 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [copyFailedKey, setCopyFailedKey] = useState<string | null>(null);
 
-  // Change PIN state
   const [isChangingPin, setIsChangingPin] = useState(false);
   const [oldPin, setOldPin] = useState('');
   const [newPin, setNewPin] = useState('');
   const [changePinError, setChangePinError] = useState<string | null>(null);
   const [changePinSuccess, setChangePinSuccess] = useState(false);
 
-  // Confirmation state for reset
   const [isConfirmingReset, setIsConfirmingReset] = useState(false);
 
-  // ClickHouse URI format copy state
   const [copiedFormat, setCopiedFormat] = useState(false);
   const [copyFormatFailed, setCopyFormatFailed] = useState(false);
 
