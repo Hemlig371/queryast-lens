@@ -36,5 +36,5 @@ jobs:
           const m=x.match(/<testsuites[^>]*>/)[0];
           const g=k=>+((m.match(new RegExp(k+'=\"(\\\\d+)\"'))||[0,0])[1]);
           const t=g('tests'),f=g('failures'),e=g('errors');
-          console.log(\`### Тесты\n\n✅: \${t-f-e}\n❌: \${f+ +e}\n\nAll: \${t}\`);
+          console.log(\`### Тесты\n\n✅: \${t-f-e}\n❌: \${f+e}\n\nAll: \${t}\`);
           " >> "$GITHUB_STEP_SUMMARY"
