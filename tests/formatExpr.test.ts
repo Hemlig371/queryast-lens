@@ -7,14 +7,14 @@ const bin = (operator: string, left: any, right: any, parentheses = false) =>
   ({ type: 'binary_expr', operator, left, right, ...(parentheses ? { parentheses: true } : {}) });
 
 // Найти первое WHERE-выражение / колонку SELECT в разобранном запросе
-const whereOf = (sql: string) => {
-  const a = parseSqlToAst(sql);
-  return (Array.isArray(a) ? a[0] : a).where;
+// parseSqlToAst возвращает { ast, error }; ast — объект или массив операторов
+const firstStatement = (sql: string) => {
+  const { ast, error } = parseSqlToAst(sql);
+  if (error || !ast) throw new Error(`не разобрано: ${sql} (${error})`);
+  return Array.isArray(ast) ? ast[0] : ast;
 };
-const colOf = (sql: string, i = 0) => {
-  const a = parseSqlToAst(sql);
-  return (Array.isArray(a) ? a[0] : a).columns[i].expr;
-};
+const whereOf = (sql: string) => firstStatement(sql).where;
+const colOf = (sql: string, i = 0) => firstStatement(sql).columns[i].expr;
 
 describe('formatExpr: узлы с полем expr (D-01)', () => {
   describe('на готовом AST (без парсера)', () => {
