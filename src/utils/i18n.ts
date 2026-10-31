@@ -400,7 +400,7 @@ export const EN_DICT: Record<string, string> = {
   "Источник (отношение):": "Source relation:",
   "Макс. строк:": "Max rows:",
   "Лимит памяти:": "Memory limit:",
-  "Каталог временных файлов:": "Temp directory:",
+  "Временные файлы:": "Temp directory:",
   "Каталог расширений:": "Extensions dir:",
   "Потоки (0 = авто):": "Threads (0 = auto):",
   "Скрипт Init SQL:": "Init SQL script:",
