@@ -1,6 +1,5 @@
 name: Tests
 
-# Лёгкая проверка на каждый push (типы + unit-тесты). Также вызывается из build.yml: сборка без зелёных тестов не стартует.
 on:
   push:
   workflow_call:
@@ -27,4 +26,15 @@ jobs:
         run: npm run lint
 
       - name: Unit tests
-        run: npm test
+        run: npx vitest run --reporter=default --reporter=github-actions --reporter=junit --outputFile.junit=test-results.xml
+
+      - name: Test summary
+        if: always()
+        run: |
+          node -e "
+          const x=require('fs').readFileSync('test-results.xml','utf8');
+          const m=x.match(/<testsuites[^>]*>/)[0];
+          const g=k=>(m.match(new RegExp(k+'=\"(\\\\d+)\"'))||[0,0])[1];
+          const t=g('tests'),f=g('failures'),e=g('errors');
+          console.log(\`### Тесты\n\n✅: \${t-f-e}\n❌: \${f+ +e}\n\nAll: \${t}\`);
+          " >> "$GITHUB_STEP_SUMMARY"

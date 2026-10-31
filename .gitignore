@@ -5,7 +5,6 @@ coverage/
 .DS_Store
 *.log
 .env*
-!.env.example
 src-tauri/target/
 test-results*
 *.tmp
