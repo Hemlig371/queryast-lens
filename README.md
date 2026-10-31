@@ -30,7 +30,7 @@ Cross-platform SQL Query Workbench and analytical database client (DuckDB, Click
 * **SQL Variables & Macros**: Parameterize your queries using local variables directly in SQL comments (e.g., `{{$limit=100}}`).
 * **Engine Support**:
   * **DuckDB**: Direct disk file querying (`.duckdb`, `.parquet`, `.csv`, `.json`) on Desktop via C++/Rust IPC, or in-memory execution via WebAssembly (VFS).
-  * **ClickHouse**: HTTP API integration with authentication, `COPY TO / COPY FROM` streaming pipelines, and cancellation of running queries. `COPY FROM` is not available on Android. Native Capacitor HTTP support for CORS bypass on Android. URI connection string parser with double-escaping support (`@@` / `::` for special characters in passwords).
+  * **ClickHouse**: HTTP API integration with authentication, `COPY TO / COPY FROM` streaming pipelines, and cancellation of running queries. `COPY FROM` is not available on Android. Native Capacitor HTTP support for CORS bypass on Android. Connection URI strings are supported.
 * **DuckDB Init Script (`duckDbInitSql`)**: Custom startup SQL execution for PRAGMAs, timezone setup, and auto-loading extensions upon connecting.
 * **Schema Introspection**: Object explorer for tables, views, and column data types with quick-injection context menus.
 * **Encoding & Minification**: Support for opening scripts in Windows-1251 (ANSI) encoding, plus SQL compacting to a single line with automatic `--` to `/* */` comment conversion.
@@ -57,7 +57,7 @@ Cross-platform SQL Query Workbench and analytical database client (DuckDB, Click
 
 #### 🌳 AST Visualization & Data Lineage
 * **Interactive AST Graphs**: Parses SQL into abstract syntax trees with customizable layout orientation (Left-to-Right / Top-to-Bottom).
-* **Data Lineage Tracing**: Selecting a node highlights everything upstream and downstream of it in the graph (tables, CTEs, subqueries, JOINs). Works on graph nodes within one query; there is no column-level lineage and no tracking between separate queries.
+* **Data Lineage Tracing**: Selecting a node highlights everything upstream and downstream of it in the graph (tables, CTEs, subqueries, JOINs). Works within one query.
 * **Diagram & Schema Exports**: Export node graphs to PNG, SVG, JPEG, JSON, Mermaid, Draw.io, and raw XML Schema formats.
 * **Two-way Mermaid Support**: In addition to export, paste raw Mermaid diagrams (`graph TD; ...` flowcharts and `erDiagram` entity-relationship diagrams) into the editor to visualize them directly as interactive node graphs.
 * **Markdown Preview**: The **Markdown** button renders notes with tables, highlighted SQL blocks and ```` ```mermaid ```` diagrams (flowchart/graph and erDiagram; static SVG, openable as an interactive graph). Pure Mermaid text still opens as a graph.
@@ -68,7 +68,7 @@ Cross-platform SQL Query Workbench and analytical database client (DuckDB, Click
 * **WASM VFS File Manager**: Visual GUI modal for DuckDB WebAssembly to drag-and-drop, inspect, delete, and upload `.parquet`, `.csv`, `.json`, and `.duckdb` files.
 * **File Tree (Desktop)**: the files panel under the schema shows folders on disk with search, sorting by name, date or size, a context menu (open with, show in file manager, rename, move to trash) and moving files and folders between folders by drag and drop. Dragging a file into the editor inserts its path.
 * **Workspace Synchronization**: Automatic background import/export of workspace sessions and tabs via a shared directory or cloud storage path (Dropbox, local NAS) in Desktop mode.
-* **Version History & Schema Cache**: Automatic query snapshot tracking and IndexedDB schema caching with automated stale record cleanup.
+* **Version History & Schema Cache**: Automatic query snapshot tracking (old snapshots are trimmed by limits) and IndexedDB schema caching.
 * **Localization & UI Zoom**: Built-in interface language toggling (RU/EN) and adjustable UI scaling (70%–150%).
 
 ---
@@ -126,7 +126,7 @@ rm -f squashfs-root/usr/lib/libwayland-*.so*
 * **Локальные SQL-переменные**: Поддержка макросов в комментариях. Подстановка значений вида `{{$limit=100}}` перед выполнением запроса.
 * **Локальный и сетевой движки**:
   * **DuckDB**: Прямое чтение дисковых файлов (`.duckdb`, `.parquet`, `.csv`, `.json`) в десктоп-версии через C++/Rust IPC без ограничений памяти WASM или работа в браузере через WebAssembly (VFS).
-  * **ClickHouse**: Подключение по HTTP API с поддержкой авторизации, потоковых операций `COPY TO / COPY FROM` и отмены долгих запросов. `COPY FROM` на Android недоступен. Нативная поддержка Capacitor HTTP для обхода CORS на мобильных устройствах. Парсер URI-строк подключения с двойным экранированием спецсимволов (`@@` / `::` в паролях).
+  * **ClickHouse**: Подключение по HTTP API с поддержкой авторизации, потоковых операций `COPY TO / COPY FROM` и отмены долгих запросов. `COPY FROM` на Android недоступен. Нативная поддержка Capacitor HTTP для обхода CORS на мобильных устройствах. Поддерживаются URI-строки подключения.
 * **Скрипт инициализации DuckDB (`duckDbInitSql`)**: Возможность задания стартовых PRAGMA-параметров, часовых поясов и подключения расширений при старте сессии.
 * **Управление схемой БД (Introspection)**: Браузер таблиц, представлений и колонок с типами данных. Включает контекстное меню для быстрой вставки имен объектов в редактор.
 * **Кодировки и сжатие**: Открытие скриптов в кодировке Windows-1251 (ANSI), а также безопасное сжатие SQL в одну строку с автоматической конвертацией однострочных комментариев `--` в блочные `/* */`.
@@ -145,7 +145,7 @@ rm -f squashfs-root/usr/lib/libwayland-*.so*
 
 #### 🌳 AST-Визуализация & Data Lineage
 * **Интерактивный граф запроса**: Разбор SQL-запросов на узлы AST (`node-sql-parser`) и построение интерактивных графов (`@xyflow/react`) с возможностью переключения ориентации (слева-направо / сверху-вниз).
-* **Отслеживание Data Lineage**: При выборе узла подсвечивается всё, что находится выше и ниже него по графу (таблицы, CTE, подзапросы, JOIN). Работает по узлам графа внутри одного запроса; построчного (по колонкам) lineage и связей между отдельными запросами нет.
+* **Отслеживание Data Lineage**: При выборе узла подсвечивается всё, что находится выше и ниже него по графу (таблицы, CTE, подзапросы, JOIN). Работает внутри одного запроса.
 * **Экспорт графов и схем**: Сохранение диаграмм в форматы PNG, SVG, JPEG, JSON, Mermaid, Draw.io и сырую схему XML Schema.
 * **Двусторонний Mermaid**: Помимо экспорта, поддержка визуализации вставленных в редактор Mermaid-диаграмм (блок-схемы `graph TD; ...` и ER-диаграммы `erDiagram`) в виде интерактивного графа узлов.
 * **Markdown-предпросмотр**: кнопка **Markdown** показывает заметки с таблицами, подсвеченными SQL-блоками и диаграммами ```` ```mermaid ```` (flowchart/graph и erDiagram; статичный SVG, можно открыть как интерактивный граф). Чистый Mermaid по-прежнему открывается как граф.
@@ -156,7 +156,7 @@ rm -f squashfs-root/usr/lib/libwayland-*.so*
 * **Файловый менеджер WASM VFS**: Графический интерфейс для управления виртуальной файловой системой DuckDB WASM (Drag & Drop загрузка, инспекция и удаление `.parquet`, `.csv`, `.json`, `.duckdb`).
 * **Дерево файлов (десктоп)**: панель файлов под схемой показывает папки на диске с поиском, сортировкой по имени, дате или размеру, контекстным меню (открыть с помощью, показать в проводнике, переименовать, в корзину) и переносом файлов и папок между папками перетаскиванием. Перетаскивание файла в редактор вставляет его путь.
 * **Синхронизация рабочего пространства**: Фоновый автоматический обмен сессиями, вкладками и настройками через общий файл/папку (Dropbox, сетевой диск) в десктоп-версии (Tauri).
-* **История версий и кэш**: Автоматическое сохранение снимков запросов и кэширование схем в IndexedDB с процедурами автоочистки устаревших записей.
+* **История версий и кэш**: Автоматическое сохранение снимков запросов (старые снимки удаляются по лимитам) и кэширование схем в IndexedDB.
 * **Мультиязычный интерфейс и зум**: Поддержка переключения языков интерфейса (RU/EN) и масштабирование интерфейса (70%–150%).
 
 ---

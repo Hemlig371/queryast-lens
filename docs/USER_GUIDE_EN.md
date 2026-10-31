@@ -17,7 +17,6 @@ QueryAST Lens is a cross-platform SQL Workbench for local and cloud analytics (D
 3. [Excel Report Engine & SQL Directives](#3-excel-report-engine--sql-directives)
    * [Block Comments Rule](#3-excel-report-engine--sql-directives)
    * [Directives Reference](#directives-reference)
-   * [Comprehensive SQL Report Example](#comprehensive-sql-report-example)
 4. [AST Graph & Data Lineage](#4-ast-graph--data-lineage)
    * [Dependency Lineage Analysis](#dependency-lineage-analysis)
    * [Bidirectional Mermaid](#bidirectional-mermaid)
@@ -45,7 +44,7 @@ Switching between engines is done via the top control panel (selector **DuckDB**
   SELECT * FROM 'data.parquet' LIMIT 50;
   ```
   A `.duckdb` database file opened in WASM mode (including on Android) is read into memory as a whole: changes to the database live only in memory and are not written back to the file.
-* **VFS File Manager**: Open the VFS modal via settings or the file panel to drag and drop your Parquet/CSV files into the virtual file system.
+* **VFS File Manager**: Open the VFS modal via settings or the file panel and add your Parquet/CSV files to the virtual file system with the "Upload file" button (dropping files onto this window is not supported).
 * **In Desktop Version (Tauri)**: Queries access the local file system directly without browser memory limits. You can open local `.duckdb` database files or read absolute paths from disk.
 
 ### ClickHouse (Connection, FORMAT JSON & Notes)
@@ -55,29 +54,23 @@ Switching between engines is done via the top control panel (selector **DuckDB**
   https://user:password@clickhouse-host:8443/default
   ```
   > **Tip:** If your password contains special characters like `@` or `:`, use double escaping: `@@` and `::`.
-* **Automatic `FORMAT JSON`**: For select queries (`SELECT`, `SHOW`, `DESCRIBE`, `EXPLAIN`), the client automatically appends `FORMAT JSON` if no format is explicitly provided. This is required for correct column type parsing and grid rendering.
-* **Custom FORMAT**: If you explicitly specify another format in your query (e.g., `FORMAT Pretty` or `FORMAT CSV`), the client will not overwrite it and will output the raw text response.
+* **Automatic `FORMAT JSON`**: for `SELECT`, `SHOW`, `DESCRIBE`, `EXPLAIN` the client appends `FORMAT JSON` unless a format is given (needed for column types and the grid). Another format (`FORMAT Pretty`, `FORMAT CSV`) is not overwritten — the raw text response is shown.
 * The application supports streaming queries `COPY TO / COPY FROM`, (`COPY FROM` is not available in the Android version), as well as canceling a running query (the HTTP request is aborted and ClickHouse stops the execution).
 * **The password is not saved**: host, user and database are remembered, but the password has to be entered again after a restart. To avoid typing it, store the connection string (URI with password) in the Vault (see section 5) under a name with the `ch_` prefix: the connection form then shows a list of such secrets, and choosing one fills in all fields.
 
 ### Row Count Limit (Core LIMIT)
 * **Built-in Result Limit**: To protect the browser and system from memory overflow during accidental `SELECT *` without filters, the application caps the page size by default (typically **100 rows**).
 * **Overriding the Limit**:
-  1. **Via SQL Query**: If the query text contains `LIMIT` followed by a number (e.g., `LIMIT 500`), the engine assumes the limit is yours and does not append `LIMIT 100` on the first page. The check is simple: `LIMIT <number>` is searched anywhere in the query, including inside a CTE, subquery or comment. If `LIMIT` appears only inside a CTE, the outer query stays unrestricted. The table still shows one page of the configured size (100 rows by default).
+  1. **Via SQL Query**: If the query text contains `LIMIT` followed by a number (e.g., `LIMIT 500`), the engine assumes the limit is yours and does not append `LIMIT 100` on the first page. Only a top-level `LIMIT` of the last statement counts: a `LIMIT` inside a CTE, subquery, string or comment is ignored, and the outer query is still capped. The table still shows one page of the configured size (100 rows by default).
   2. **Via UI Settings**: In **Settings**, you can change the global page size / max rows separately for DuckDB and ClickHouse.
-  3. When navigating pagination pages (`> 1`), the engine automatically wraps the query into a safe subquery with `OFFSET` to prevent syntax conflicts.
-  4. At most 500,000 rows per query are passed to the interface (desktop DuckDB, WASM, ClickHouse); above that the query ends with an error (add a LIMIT or save the result with COPY).
+  3. At most 500,000 rows per query are passed to the interface (desktop DuckDB, WASM, ClickHouse); above that the query ends with an error (add a LIMIT or save the result with COPY).
 
 ### Pre-configured Workspace Bundle (default_config_en.json)
 For a quick jump-start with tuned SQL formatting, rich Excel report presets, and analytical templates, reference bundles are provided:
 👉 **English configuration:** [`docs/default_config_en.json`](./default_config_en.json)  
 👉 **Russian configuration:** [`docs/default_config.json`](./default_config.json)
 
-**What is included in this bundle:**
-* Polished SQL formatter rules (uppercase keywords, tab indentation).
-* Complete Excel export styling presets ("Flat Table", "Report (No Totals)", "Report (Formula Totals)", "Formatted (All Totals)", "Formatted (Subtotals)").
-* Custom autocomplete snippets (Unpivot, Columns regex, getvariable/setvariable, CTE, Read Parquet/CSV).
-* Quick action templates and ready-to-run queries (Window functions, ClickHouse MergeTree/Bitmap/Quantiles, Mermaid system architectures).
+The bundle contains SQL formatter rules, Excel export presets, autocomplete and quick action templates, and analytical snippets.
 
 **How to import:**
 1. Download or copy [`docs/default_config_en.json`](./default_config_en.json) (or `default_config.json`) to your computer.
@@ -141,7 +134,7 @@ Before execution, the editor automatically performs safe variable substitution. 
 * `Alt + M` — Toggle graph navigator minimap.
 * `Ctrl + Alt + S` / `Ctrl + Alt + A` — Export / import full workspace configuration (Workspace JSON).
 * `Ctrl + R` — Refresh database schema and table list.
-* `Esc` — Cancel running query, reset cell zoom, or close open modal window.
+* `Esc` — Cancel running query (stopping is guaranteed only in Tauri), reset cell zoom, or close open modal window.
 
 ---
 
@@ -154,57 +147,28 @@ When exporting query results to `.xlsx` (via the **Export to Excel** button), yo
 
 ### Directives Reference
 
-| Directive | Purpose | Example inside `/* ... */` |
-| :--- | :--- | :--- |
-| `# Title` | Main report title on the first row of the sheet | `# Revenue Report` |
-| `## Subtitle` | Subtitle with metadata or date range | `## Period: 2024 Q1-Q3` |
-| `@file: name` | Overrides the generated filename | `@file: revenue_report_2024` |
-| `@sheet: name` | Sets the Excel worksheet name | `@sheet: Sales Summary` |
-| `@preset: name` | Applies a styling preset by name (case-insensitive): the built-in "По умолчанию" (Default) or your own preset from Settings. If no preset has that name, the directive is silently ignored | `@preset: По умолчанию` |
-| `@totals: function` | Sets the function of the native totals (`SUM`, `AVERAGE`/`AVG`, `COUNT`). The totals row is enabled in Settings by default, the totals column is not; the directive does not enable them | `@totals: SUM` |
-| `@split: column` | Splits results into separate worksheets by column name or index (1-based) | `@split: department` |
-| `@group: N` | Groups rows by column name or index | `@group: 1` |
-| `@group_cols: N` | Number of category columns on the left | `@group_cols: 2` |
-| `@group_hide: true` | Hides repeating values in grouped columns for a tree-like view | `@group_hide: true` |
-| `@hide: column` | Visually hides the specified column in the Excel sheet | `@hide: internal_id` |
-| `@skip: column` | Completely excludes the column from the generated file | `@skip: raw_payload` |
-| `@protect: password` | Protects the worksheet from accidental editing | `@protect: readonly2024` |
-| `@excel_save: path` | *(Desktop)* Direct report save to disk without dialog prompt | `@excel_save: /reports/out.xlsx` |
-| `@template: path` | *(Desktop)* Fills a ready `.xlsx` template that has a `[[table]]` or `[[rows]]` marker with the result: the formatting of the leading row is applied to all rows, the content below is shifted down | `@template: /forms/report.xlsx` |
-| `@template_values: path` | *(Desktop)* Writes values into the template starting at the marker cell; formatting and the position of everything else stay unchanged | `@template_values: /forms/report.xlsx` |
+| Directive | Purpose |
+| :--- | :--- |
+| `# Title` | Main report title on the first row of the sheet |
+| `## Subtitle` | Subtitle with metadata or date range |
+| `@file: name` | Overrides the generated filename |
+| `@sheet: name` | Sets the Excel worksheet name |
+| `@preset: name` | Applies a styling preset by name (case-insensitive): the built-in "По умолчанию" (Default) or your own preset from Settings. If no preset has that name, the directive is silently ignored |
+| `@totals: function` | Sets the function of the native totals (`SUM`, `AVERAGE`/`AVG`, `COUNT`). The totals row is enabled in Settings by default, the totals column is not; the directive does not enable them |
+| `@split: column` | Splits results into separate worksheets by column name or index (1-based) |
+| `@group: N` | Groups rows by column name or index |
+| `@group_cols: N` | Number of category columns on the left |
+| `@group_hide: true` | Hides repeating values in grouped columns for a tree-like view |
+| `@hide: column` | Visually hides the specified column in the Excel sheet |
+| `@skip: column` | Completely excludes the column from the generated file |
+| `@protect: password` | Protects the worksheet from accidental editing |
+| `@excel_save: path` | *(Desktop)* Direct report save to disk without dialog prompt |
+| `@template: path` | *(Desktop)* Fills a ready `.xlsx` template that has a `[[table]]` or `[[rows]]` marker with the result: the formatting of the leading row is applied to all rows, the content below is shifted down |
+| `@template_values: path` | *(Desktop)* Writes values into the template starting at the marker cell; formatting and the position of everything else stay unchanged |
 
-**Notes and limitations:**
-* `@split`, `@skip`, `@hide` accept a single column (name or 1-based number). A name made only of digits (e.g. `2024`) is treated as a number.
-* The title is taken from the first `#` in block comments, so do not use `#` in comment text for other purposes.
-* No report is created if the result has more than 1.5 million cells (rows × columns): reduce the selection first.
-* `@template` and `@template_values` take the template sheet name from `@sheet`; the template path is given the same way as the `@excel_save` path. See section 6 of [`EXCEL_DIRECTIVES_EN.md`](./EXCEL_DIRECTIVES_EN.md).
-* Detailed reference: [`EXCEL_DIRECTIVES_EN.md`](./EXCEL_DIRECTIVES_EN.md).
-* **`@excel_save` (desktop)**: the file is created automatically when the result arrives and contains exactly the rows the query returned, i.e. one page (100 rows by default) or as many as your own `LIMIT` allows. Moving to another page or changing sorting or filters overwrites the file with the new data. To export everything, set the page size to `0` in Settings or use an explicit large `LIMIT`.
+* **`@excel_save` (desktop)**: the file is created automatically when the result arrives and contains exactly the rows the query returned, i.e. one page (100 rows by default) or as many as your own `LIMIT` allows. Moving to another page or changing sorting or filters overwrites the file with the new data. To export everything, use an explicit large `LIMIT`.
 
-### Comprehensive SQL Report Example
-
-```sql
-/*
-# Branch Sales Summary
-## Export generated automatically
-@file: monthly_sales
-@sheet: Sales
-@preset: По умолчанию
-@totals: SUM
-@group: 1
-@group_hide: true
-*/
-
-SELECT 
-    region AS "Region",
-    city AS "City",
-    manager_name AS "Manager",
-    deal_count AS "Deals Count",
-    total_revenue AS "Revenue",
-    margin_pct AS "Margin (%)"
-FROM sales_data
-ORDER BY region, city;
-```
+Full reference (parsing rules, limits, `@excel_save`, `@template`, example): [`EXCEL_DIRECTIVES_EN.md`](./EXCEL_DIRECTIVES_EN.md).
 
 ### Custom Excel Presets & Visual Style Builder
 In addition to built-in presets, the **Settings $\to$ Excel** tab provides a complete visual formatting designer:
@@ -223,7 +187,7 @@ In addition to built-in presets, the **Settings $\to$ Excel** tab provides a com
 To build the graph, click the **Visualize** button on the panel below the editor or press `Ctrl + Enter`:
 1. All tables, views, subqueries, and CTEs (`WITH cte AS (...)`) are parsed out.
 2. An oriented dependency graph is built.
-3. Clicking a node or clicking **Focus** highlights all nodes and edges upstream and downstream of the selected node (Data Lineage). Highlighting works on graph nodes (tables, CTEs, subqueries, `JOIN`s) within one query; there is no column-level lineage and no tracking between separate queries.
+3. Clicking a node or clicking **Focus** highlights all nodes and edges upstream and downstream of the selected node (Data Lineage). Works on graph nodes within one query.
 
    The **Monochrome** button to the right of Focus turns the graph grayscale (the same in dark and light themes, and in exports). The choice is remembered.
 4. The graph controls panel allows toggling layout orientation (`LR` / `TB`).
@@ -236,7 +200,6 @@ To build the graph, click the **Visualize** button on the panel below the editor
 6. **SQL parsing**: the PostgreSQL grammar (`node-sql-parser`) is used, plus heuristic parsing for constructs it does not understand. DuckDB, ClickHouse and Oracle use the same parsing, so dialect-specific constructs may be shown in a simplified way.
 
 ### Bidirectional Mermaid
-* You can export the query graph to a Mermaid diagram format via the export menu.
 * **Reverse import & visualization is also supported**: paste Mermaid diagram syntax into the editor and click the **Markdown** button next to **Visualize** (pure Mermaid text opens as an interactive graph):
   ```mermaid
   graph TD
@@ -246,7 +209,7 @@ To build the graph, click the **Visualize** button on the panel below the editor
   ```
   The app will automatically parse it and render an interactive node graph.
 * Supported: `flowchart` / `graph` — all node shapes (including `A@{ shape: cyl, label: "DB" }`), arrows `-->`, `---`, `-.->`, `==>`, `<-->`, `--x`, `--o`, `~~~`, labels `-->|text|` and `-- text -->`, `&`, `;`, `%%` comments, quoted labels, Unicode identifiers, `subgraph` (nested, and links to a subgraph), `classDef` / `class` / `style` / `linkStyle`.
-* `flowchart`/`graph` and `erDiagram` are supported (entities with attributes `type name PK, FK, UK "comment"`, `||--o{` relationships in crow's-foot notation, dotted `..` lines, labels, `direction`). Lines are orthogonal and merging edges join into a bus. `direction` inside a `subgraph` applies when its nodes have no links to outside nodes (as in Mermaid). Other diagram types (`sequenceDiagram`, `gantt`, ...) are not supported — the app tells you so.
+* `erDiagram`: entities with attributes `type name PK, FK, UK "comment"`, `||--o{` relationships in crow's-foot notation, dotted `..` lines, labels, `direction`. Lines are orthogonal and merging edges join into a bus. `direction` inside a `subgraph` applies when its nodes have no links to outside nodes (as in Mermaid). Other diagram types (`sequenceDiagram`, `gantt`, ...) are not supported — the app tells you so.
 * Statements that cannot be parsed are skipped; the list with **line numbers** is shown above the graph while the rest of the diagram is built.
 
 ### Markdown preview
@@ -255,19 +218,18 @@ Select a fragment (or leave the whole text) in the editor and click **Markdown**
 * ` ```sql ` blocks are highlighted; ` ```mermaid ` blocks are drawn as diagrams (flowchart/graph, erDiagram). Each diagram has an **Open as graph** button in its corner that builds an interactive graph from that block.
 * The document text can be selected with the mouse and copied. The clipboard receives HTML suitable for Word: headings, lists, tables with borders, monospaced code and diagrams as images (light palette). Buttons and language labels are not copied.
 * **Export**: the "Export" menu offers `PNG Image` and `JPEG Image` — the whole document is saved as one picture (900 px wide, colors of the current theme) regardless of the window size. The other menu items are disabled in document mode. A document that is too long (hundreds of screens) is not exported as a whole — select part of the text.
-* If the selected text is a pure Mermaid diagram, the button still builds the interactive graph as before.
 
 ### Graph Export
 Graphs can be saved in the following formats:
 * Raster and vector images: **PNG**, **SVG**, **JPEG**.
-* Schema formats: **Mermaid (.mmd)**, **Draw.io XML (.drawio)**, **JSON Data**, **XML Schema**.
+* Schema formats: **Mermaid (.mmd)**, **Draw.io XML (.drawio.xml)**, **JSON Data**, **XML Schema**.
 
 ---
 
 ## 5. Secure Vault & Secret Substitution
 
 The application includes an encrypted secrets vault (**Encrypted Vault**) using the hardware standard **AES-256 GCM** via the Web Crypto API:
-1. Open **Settings -> Vault** and set a master PIN code.
+1. Open **Settings -> "UI Elements"**, the **"Keys & Secrets (PIN code)"** block (at the bottom of the tab), and set a master PIN code.
 2. Add secrets, such as `CLICKHOUSE_PASS` or `PROD_TOKEN`.
 3. In your SQL queries, you can reference saved keys:
    ```sql
@@ -351,17 +313,19 @@ When DuckDB options are enabled in **UI Elements**, additional connection parame
 * Engine parameters are applied when the connection to the database is made: changed values take effect on the next connection, not immediately in the open session.
 * The default paths (`./tmp`, `./extensions`) are relative to the application's working directory; if the application is installed in a protected folder, set absolute paths. The application does not show errors in these parameters or in Init SQL: if an extension did not load, run the script manually in the editor to see the error.
 
-#### Loading Custom DuckDB Extensions:
-* Download or compile binary `.duckdb_extension` files for your platform.
-* Place them into the folder designated by **Extensions Dir** (defaults to `./extensions`), or extract your extensions archive directly to disk.
-* Check the **`allow_unsigned_extensions`** option if the binaries are not officially signed by DuckDB Labs.
-* In the **Init SQL Script** field, specify the load directive: `LOAD 'extension_name';` (e.g. `LOAD 'spatial';` or `LOAD 'httpfs';`). The extension will automatically be initialized on startup.
-* A categorized directory of tested official and community extensions is available in: [**docs/extension_list.md**](./extension_list.md).
+#### Custom DuckDB Extensions
+Put the `.duckdb_extension` files into **Extensions Dir**, enable `allow_unsigned_extensions` (if the extension is not signed by DuckDB Labs) and add `LOAD 'extension_name';` to **Init SQL Script**. Tested extensions: [**docs/extension_list.md**](./extension_list.md).
 
 ### Custom Autocomplete & Quick Actions
 * **Autocomplete Templates**: The **Formats** tab allows adding, editing, and deleting custom SQL snippets and macros that appear in the editor's autocomplete dropdown.
 * **Quick Actions**: Template actions displayed in the schema tree context menu (e.g., "Duplicate rows", "Copy table", "Export to Parquet"). They support the `{table}` placeholder for dynamic substitution.
-* **Schema and files**: the database-icon button opens a panel with a file tree at the bottom (folders are read when expanded; size shows as a badge and in the tooltip). Drag a file into the editor to insert its path in single quotes. On desktop, double-click opens text files (`sql, md, txt, py, sh, yml, yaml, toml, ini, log`) in a tab and Office/PDF documents in the external app. The root is set in Settings ("File tree root folder"), otherwise the open DB's folder, then the home folder. Browser and mobile builds show the DuckDB-WASM virtual file system list (drag only). The list refreshes via the button and when the window regains focus (at most once per 10 s); `Ctrl + R` refreshes only the database schema. Above the tree are a search box and three sort buttons (by name, by modified date, by size; clicking again reverses the direction, folders always come first; the choice is remembered). Search filters only what is already loaded: it does not expand folders or read the disk, but folders that contain a match are shown expanded. On desktop, right-clicking a file or folder opens a menu: "Open with…" (files only; Windows and macOS), "Show in file manager", "Rename" (in place; Enter or leaving the field applies, Esc cancels) and "Delete (move to trash)" — to the OS trash, without confirmation. A file or folder can be dragged into another folder of the tree (dropping on a file moves it into that file's folder; dropping on empty space in the list moves it to the root folder); the target is highlighted as on hover. If the move is impossible (a folder dropped into itself or a subfolder, the name is taken, another drive), the target flashes red for 1–2 seconds, nothing changes and no message appears; dropping into the same folder does nothing. Dragging a file into the editor still inserts its path; a folder inserts nothing. Open tabs follow a rename or move; a tab of a deleted file stays as unsaved.
+* **Schema and files**: the database-icon button opens a panel with a file tree at the bottom. The root is set in Settings ("File tree root folder"), otherwise the open DB's folder, then the home folder. Browser and mobile builds show the DuckDB-WASM virtual file system list (drag only).
+  * Folders are read when expanded; the list refreshes via the button and when the window regains focus (at most once per 10 s). `Ctrl + R` refreshes only the database schema.
+  * Above the tree: search (filters only what is loaded, does not expand folders) and sort by name, date or size (clicking again reverses the direction, folders always come first; the choice is remembered).
+  * Dragging a file into the editor inserts its path in single quotes; a folder inserts nothing.
+  * Desktop: double-click opens text files (`sql, md, txt, py, sh, yml, yaml, toml, ini, log`) in a tab and Office/PDF documents in the external app.
+  * Desktop, right-click: "Open with…" (files only; Windows and macOS), "Show in file manager", "Rename" (in place; Enter applies, Esc cancels), "Delete (move to OS trash)" without confirmation.
+  * A file or folder can be dragged into another folder of the tree (onto empty space — to the root). If the move is impossible (a folder into itself or a subfolder, the name is taken, another drive), the target flashes red for 1–2 s and nothing changes. Open tabs follow a rename or move; a tab of a deleted file stays as unsaved.
 
 ### Custom Keyboard Shortcuts (Hotkeys)
 The **Hotkeys** tab enables remapping all editor, tab, and graph shortcuts to match your preferred keybindings (DBeaver, DataGrip, VS Code). Click on any key binding button and press your desired shortcut.

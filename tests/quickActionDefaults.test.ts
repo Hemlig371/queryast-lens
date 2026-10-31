@@ -20,3 +20,12 @@ describe('шаблоны быстрых действий по умолчанию
     expect(DEFAULT_QUICK_ACTIONS.find((a) => a.id === 'qa-1')!.template).toBe('SELECT COUNT(*) FROM {table};');
   });
 });
+
+describe('B-06: подстановка {table}', () => {
+  it('$\', $& и $$ в источнике остаются буквальными', async () => {
+    const { applyQuickActionTemplate } = await import('../src/utils/quickActionTemplates');
+    expect(applyQuickActionTemplate('SELECT * FROM {table} LIMIT 1', "t$'x")).toBe("SELECT * FROM t$'x LIMIT 1");
+    expect(applyQuickActionTemplate('SELECT * FROM {table}', 'a$&b')).toBe('SELECT * FROM a$&b');
+    expect(applyQuickActionTemplate('{table} {table}', 'x$$y')).toBe('x$$y x$$y');
+  });
+});

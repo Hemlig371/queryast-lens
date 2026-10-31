@@ -186,7 +186,6 @@ describe('excelExporter utils', () => {
       const cols = ['id', 'amount'];
       const colTypes = { id: 'Int32', amount: 'Int32' };
 
-      // Should run without errors and apply the preset
       await exportToExcel({
         data: dataSample,
         columns: cols,

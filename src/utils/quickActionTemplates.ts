@@ -6,6 +6,11 @@ export interface QuickActionTemplate {
   template: string;
 }
 
+/** Подставляет источник в `{table}`. Функция-заменитель: `$'`, `$&`, `$$` в тексте источника остаются буквальными. */
+export function applyQuickActionTemplate(template: string, table: string): string {
+  return template.replace(/\{table\}/g, () => table);
+}
+
 export const DEFAULT_QUICK_ACTIONS: QuickActionTemplate[] = [
   {
     id: 'qa-1',

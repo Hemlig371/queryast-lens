@@ -18,8 +18,9 @@ import {
 import { BarChart3, PieChart as PieIcon, TrendingUp, Info, List, Copy, Check, TableProperties, RefreshCw, Loader2, Image as ImageIcon, Code } from 'lucide-react';
 import { formatColumnType } from '../lib/sqlUtils';
 import { copyToClipboard } from '../utils/exportUtils';
-import { formatStatVal as formatStatValPure, toChartNumber, selectTopN } from '../utils/statFormat';
+import { formatStatVal as formatStatValPure, toChartNumber, selectTopN, groupRowsByCategory, chartPoint } from '../utils/statFormat';
 import { getResultColumns } from '../utils/resultRows';
+import { buildRemoteStatsQuery, parseRemoteStatsRows, type RemoteColumnStats } from '../utils/remoteStats';
 
 interface DataStatsViewerProps {
   data: Record<string, any>[];
@@ -42,12 +43,12 @@ const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'
 const DATE_REGEX = /^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|^\d{1,2}[-/.]\d{1,2}[-/.]\d{4}|^\d{4}-\d{2}-\d{2}/;
 
 const getNullPctColor = (pct: number, isDark: boolean) => {
-  if (pct === 0) return isDark ? '#4ade80' : '#16a34a'; // green
-  if (pct >= 90) return isDark ? '#f87171' : '#dc2626'; // red
-  return isDark ? '#94a3b8' : '#64748b'; // neutral gray for mid-range
+  if (pct === 0) return isDark ? '#4ade80' : '#16a34a';
+  if (pct >= 90) return isDark ? '#f87171' : '#dc2626';
+  return isDark ? '#94a3b8' : '#64748b';
 };
 
-export const DataStatsViewer: React.FC<DataStatsViewerProps> = React.memo(({
+const DataStatsViewerInner: React.FC<DataStatsViewerProps> = ({
   data,
   columns: columnOrder,
   theme,
@@ -62,14 +63,6 @@ export const DataStatsViewer: React.FC<DataStatsViewerProps> = React.memo(({
   onExecuteQuery,
   onInsertSql,
 }) => {
-  if (!data || data.length === 0) {
-    return (
-      <div className={`p-4 text-center text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
-        {t("Нет данных для визуализации.")}
-      </div>
-    );
-  }
-
   const rawColumns = useMemo(() => getResultColumns(data, columnOrder), [data, columnOrder]);
 
   const colAnalysis = useMemo(() => {
@@ -149,7 +142,6 @@ export const DataStatsViewer: React.FC<DataStatsViewerProps> = React.memo(({
     return res;
   }, [data, rawColumns]);
 
-  // Check if data is already in DuckDB SUMMARIZE output format
   const isSummarizeResultFormat = useMemo(() => {
     if (!data || data.length === 0) return false;
     const firstRow = data[0];
@@ -270,7 +262,7 @@ export const DataStatsViewer: React.FC<DataStatsViewerProps> = React.memo(({
     try {
       const blobPromise = import('html-to-image').then(({ toBlob }) => toBlob(chartEl, {
         pixelRatio: 2,
-        backgroundColor: undefined, // transparent background
+        backgroundColor: undefined,
         filter: (node) => {
           if (node instanceof HTMLElement) {
             if (node.tagName === 'BUTTON' || node.classList.contains('recharts-tooltip-wrapper')) {
@@ -315,7 +307,7 @@ export const DataStatsViewer: React.FC<DataStatsViewerProps> = React.memo(({
   const [selectedLimit, setSelectedLimit] = useState<'1M' | '10M' | '50M' | '100M' | 'ALL'>('1M');
   const [isFetchingRemote, setIsFetchingRemote] = useState<boolean>(false);
   const [remoteError, setRemoteError] = useState<string | null>(null);
-  const [remoteStats, setRemoteStats] = useState<Record<string, { count: number; nullPct: number; uniqueCount: any; sum?: number; avg?: number; min?: any; max?: any }> | null>(null);
+  const [remoteStats, setRemoteStats] = useState<Record<string, RemoteColumnStats> | null>(null);
   const [remoteStatsInfo, setRemoteStatsInfo] = useState<{ limit: string; totalCount?: number } | null>(null);
 
   const handleFetchDatasetStats = async () => {
@@ -374,61 +366,7 @@ export const DataStatsViewer: React.FC<DataStatsViewerProps> = React.memo(({
           break;
       }
 
-      let query = '';
-      if (isClickhouse) {
-        query = `WITH src AS (
-    SELECT * FROM ${target} ${limitClause}
-)
-
-SELECT 'total_count' AS metric, COLUMNS('.*') APPLY (x -> toFloat64(count(x)))
-FROM src
-
-UNION ALL
-
-SELECT 'null_count' AS metric, COLUMNS('.*') APPLY (x -> toFloat64(countIf(isNull(x) OR toString(x) = '')))
-FROM src
-
-UNION ALL
-
-SELECT 'null_percent' AS metric, COLUMNS('.*') APPLY (x -> round(toFloat64(countIf(isNull(x) OR toString(x) = '')) * 100.0 / count(), 2))
-FROM src
-
-UNION ALL
-
-SELECT 'unique_count' AS metric, COLUMNS('.*') APPLY (x -> toFloat64(uniqExact(x)))
-FROM src
-
-UNION ALL
-
-SELECT 'sum' AS metric, COLUMNS('.*') APPLY (x -> round(sum(toFloat64OrDefault(toString(x), 0.0)), 4))
-FROM src`;
-      } else {
-        query = `WITH src AS (
-    SELECT * FROM ${target} ${limitClause}
-)
-
-SELECT 'metric' AS metric, COLUMNS(*)::DOUBLE FROM src WHERE 1=0
-
-UNION ALL
-
-SELECT 'total_count' AS metric, count(COLUMNS(*))::DOUBLE FROM src
-
-UNION ALL
-
-SELECT 'null_count' AS metric, sum(CASE WHEN COLUMNS(*) IS NULL OR CAST(COLUMNS(*) AS VARCHAR) = '' THEN 1 ELSE 0 END)::DOUBLE FROM src
-
-UNION ALL
-
-SELECT 'null_percent' AS metric, round(sum(CASE WHEN COLUMNS(*) IS NULL OR CAST(COLUMNS(*) AS VARCHAR) = '' THEN 1 ELSE 0 END) * 100.0 / NULLIF(count(*), 0), 2)::DOUBLE FROM src
-
-UNION ALL
-
-SELECT 'unique_count' AS metric, count(DISTINCT COLUMNS(*))::DOUBLE FROM src
-
-UNION ALL
-
-SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 4)::DOUBLE FROM src`;
-      }
+      const query = buildRemoteStatsQuery(target, limitClause, isClickhouse);
 
       const rows = await onExecuteQuery(query);
 
@@ -436,109 +374,13 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
         throw new Error(t('База данных вернула пустой результат'));
       }
 
-      let processedRows = rows;
-      if (isClickhouse) {
-        const prefix = 'toFloat64(count(';
-        const suffix = '))';
-        processedRows = rows.map((row) => {
-          const newRow: Record<string, any> = {};
-          Object.entries(row).forEach(([key, val]) => {
-            if (key === 'metric') {
-              newRow[key] = val;
-            } else if (key.startsWith(prefix) && key.endsWith(suffix)) {
-              const cleanKey = key.slice(prefix.length, key.length - suffix.length);
-              newRow[cleanKey] = val;
-            } else {
-              newRow[key] = val;
-            }
-          });
-          return newRow;
-        });
-      }
-
-      const parsed: Record<string, { count: number; nullPct: number; uniqueCount: any; sum?: number; avg?: number; min?: any; max?: any }> = {};
-
-      const metricMap: Record<string, Record<string, any>> = {};
-      processedRows.forEach((r) => {
-        if (r.metric) metricMap[String(r.metric)] = r;
-      });
-
-      if (metricMap['total_count'] || metricMap['null_count']) {
-        const totalCountRow = metricMap['total_count'] || {};
-        const nullCountRow = metricMap['null_count'] || {};
-        const nullPctRow = metricMap['null_percent'] || {};
-        const uniqueCountRow = metricMap['unique_count'] || {};
-        const sumRow = metricMap['sum'] || {};
-
-        const firstRow = processedRows[0] || {};
-        const colKeys = Object.keys(firstRow).filter((k) => k !== 'metric');
-
-        colKeys.forEach((col) => {
-          const cnt = Number(totalCountRow[col]) || 0;
-          const nCnt = Number(nullCountRow[col]) || 0;
-          const nPct = Number(nullPctRow[col]) || 0;
-          const uCnt = uniqueCountRow[col] !== undefined ? uniqueCountRow[col] : '-';
-          const sVal = sumRow[col] !== undefined && sumRow[col] !== null ? Number(sumRow[col]) : undefined;
-          const validCount = cnt - nCnt;
-          const aVal = sVal !== undefined && validCount > 0 ? Number((sVal / validCount).toFixed(2)) : undefined;
-
-          parsed[col] = {
-            count: cnt,
-            nullPct: nPct,
-            uniqueCount: uCnt,
-            sum: sVal,
-            avg: aVal,
-          };
-        });
-      } else {
-        // Fallback for any standard column-wise summarize result
-        const getVal = (row: Record<string, any>, ...keys: string[]) => {
-          for (const k of keys) {
-            if (row[k] !== undefined && row[k] !== null) return row[k];
-            const lowerK = k.toLowerCase();
-            for (const rk of Object.keys(row)) {
-              if (rk.toLowerCase() === lowerK && row[rk] !== undefined && row[rk] !== null) {
-                return row[rk];
-              }
-            }
-          }
-          return undefined;
-        };
-
-        processedRows.forEach((row) => {
-          const colName = String(getVal(row, 'column_name', 'name') ?? '');
-          if (!colName) return;
-
-          const countVal = Number(getVal(row, 'count')) || 0;
-          const rawNullPct = getVal(row, 'null_percentage', 'null_pct', 'null_percent');
-          let nullPct = 0;
-          if (typeof rawNullPct === 'number') {
-            nullPct = rawNullPct;
-          } else if (typeof rawNullPct === 'string') {
-            nullPct = parseFloat(rawNullPct.replace('%', '')) || 0;
-          }
-
-          const approxUniq = getVal(row, 'approx_unique', 'unique_count', 'unique');
-          const minVal = getVal(row, 'min');
-          const maxVal = getVal(row, 'max');
-          const avgVal = getVal(row, 'avg');
-
-          parsed[colName] = {
-            count: countVal,
-            nullPct: Number(nullPct.toFixed(2)),
-            uniqueCount: approxUniq !== undefined && approxUniq !== null ? approxUniq : '-',
-            min: minVal,
-            max: maxVal,
-            avg: avgVal !== undefined && avgVal !== null && !isNaN(Number(avgVal)) ? Number(Number(avgVal).toFixed(2)) : undefined,
-          };
-        });
-      }
+      const { parsed, totalRows } = parseRemoteStatsRows(rows, isClickhouse);
 
       setRemoteStats(parsed);
       const sampleCol = Object.keys(parsed)[0];
       setRemoteStatsInfo({
         limit: selectedLimit,
-        totalCount: sampleCol ? parsed[sampleCol]?.count : undefined,
+        totalCount: totalRows !== undefined ? totalRows : (sampleCol ? parsed[sampleCol]?.count : undefined),
       });
     } catch (err: any) {
       const rawMsg = err?.message !== undefined ? String(err.message) : String(err);
@@ -664,14 +506,9 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
     let rawItems: { name: string; value: number; [key: string]: any }[] = [];
 
     if (isCategorical) {
-      const groups: Record<string, any[]> = {};
-      data.forEach((row) => {
-        const key = String(row[xAxisCol] ?? 'null');
-        if (!groups[key]) groups[key] = [];
-        groups[key].push(row);
-      });
+      const groups = groupRowsByCategory(data, xAxisCol);
 
-      rawItems = Object.entries(groups).map(([name, rows]) => {
+      rawItems = Array.from(groups.entries()).map(([name, rows]) => {
         let val = 0;
         if (aggMode === 'count') {
           val = rows.length;
@@ -719,11 +556,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
       data.forEach((row, i) => {
         const v = toChartNumber(row[yAxisCol]);
         if (v === null) return;
-        rawItems.push({
-          name: String(row[xAxisCol] ?? `#${i + 1}`),
-          value: v,
-          ...row,
-        });
+        rawItems.push(chartPoint(row, String(row[xAxisCol] ?? `#${i + 1}`), v));
       });
     }
 
@@ -750,11 +583,9 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
 
   return (
     <div className="flex flex-col h-full overflow-hidden pt-1.5 px-3 pb-3 gap-3">
-      {/* Control Toolbar */}
       <div className={`flex flex-col gap-2 p-2 rounded-md text-xs border ${
         isDark ? 'bg-slate-800/80 border-slate-700 text-slate-200' : 'bg-slate-50 border-slate-200 text-slate-700'
       }`}>
-        {/* Row 1: Chart Selector + Info Line */}
         <div className="flex flex-wrap items-center justify-between gap-2">
           {isSummarizeMode ? (
             <>
@@ -798,7 +629,6 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
             </>
           ) : (
             <>
-              {/* Chart Type Selector */}
               <div className="flex items-center gap-1 bg-slate-700/20 p-0.5 rounded border border-slate-600/30">
                 <button
                   onClick={handleListClick}
@@ -844,7 +674,6 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                 </button>
               </div>
 
-              {/* Reference Info Line */}
               {chartType === 'list' && listSubMode === 'columns' ? (
                 <div className="flex flex-col gap-1">
                   <div className={`text-[11px] flex items-center gap-2 flex-wrap ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
@@ -976,10 +805,8 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
           )}
         </div>
 
-        {/* Row 2: Selectors for X, Y, Aggregation */}
         {!isSummarizeMode && !(chartType === 'list' && listSubMode === 'columns') && (
           <div className="flex items-center gap-3 flex-wrap">
-            {/* X Axis Selector & Category Limit Selector */}
             <div className="flex items-center gap-1.5">
               <span className="opacity-70">{t("Ось X :")}</span>
               <select
@@ -996,7 +823,6 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                 ))}
               </select>
 
-              {/* Category limit selector right after X axis (only for graphical charts) */}
               {chartType !== 'list' && (
                 <select
                   value={categoryLimit}
@@ -1014,7 +840,6 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
               )}
             </div>
 
-            {/* Y Axis Selector */}
             {chartType !== 'pie' && (
               <div className="flex items-center gap-1.5">
                 <span className="opacity-70">{t("Ось Y :")}</span>
@@ -1034,7 +859,6 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
               </div>
             )}
 
-            {/* Aggregation Mode Selector */}
             <div className="flex items-center gap-1.5">
               <span className="opacity-70">{t("Агрегация:")}</span>
               <select
@@ -1054,7 +878,6 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
               </select>
             </div>
 
-            {/* Category Sorting Selector */}
             <div className="flex items-center gap-1.5">
               <span className="opacity-70">{t("Сортировка:")}</span>
               <select
@@ -1073,7 +896,6 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
         )}
       </div>
 
-      {/* Chart Canvas / List */}
       <div className="flex-1 min-h-0 w-full relative" ref={chartContainerRef}>
         {!isSummarizeMode && chartType !== 'list' && (
           <button
@@ -1125,7 +947,6 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                           : 'bg-white border-slate-200 text-slate-800 hover:border-amber-400'
                     }`}
                   >
-                    {/* Background Bar Fill */}
                     <div
                       className={`absolute left-0 top-0 bottom-0 pointer-events-none transition-all ${
                         isSelected
@@ -1135,7 +956,6 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                       style={{ width: `${uniqPct}%` }}
                     />
 
-                    {/* Header: Column Name + Raw Type */}
                     <div className="relative z-10 flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5 min-w-0 truncate">
                         {isSelected && (
@@ -1155,9 +975,7 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                       </span>
                     </div>
 
-                    {/* Full Stats Grid: 3 in a row with inline labels and values */}
                     <div className="relative z-10 grid grid-cols-3 gap-x-2 gap-y-1 text-[11px] leading-tight">
-                      {/* Row 1: Уникальных, Пустых, Среднее */}
                       <div className="flex items-center gap-1 min-w-0 truncate text-teal-600 dark:text-teal-400" title={`${t("Уникальных:")} ${formatStatVal(info.uniqueCount)}`}>
                         <span className="shrink-0">{t("Уникальных:")}</span>
                         <b className="truncate">{formatStatVal(info.uniqueCount)}</b>
@@ -1175,7 +993,6 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                         </b>
                       </div>
 
-                      {/* Row 2: Мин, Макс, Медиана */}
                       <div className="flex items-center gap-1 min-w-0 truncate text-slate-800 dark:text-slate-100" title={`${t("Мин:")} ${minStr ?? '-'}`}>
                         <span className="shrink-0">{t("Мин:")}</span>
                         <b className="truncate">{minStr ?? '-'}</b>
@@ -1228,7 +1045,6 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                             : 'bg-white border-slate-200 text-slate-800 hover:border-amber-400'
                       }`}
                     >
-                      {/* Background Bar Fill for unique count visual */}
                       <div
                         className={`absolute left-0 top-0 bottom-0 pointer-events-none transition-all ${
                           isSelected
@@ -1285,7 +1101,6 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
                           : 'bg-white border-slate-200 text-slate-800 hover:border-teal-400'
                       }`}
                     >
-                      {/* Background Bar Fill */}
                       <div
                         className={`absolute left-0 top-0 bottom-0 pointer-events-none transition-all ${
                           isDark ? 'bg-teal-500/20' : 'bg-teal-500/15'
@@ -1402,4 +1217,16 @@ SELECT 'sum' AS metric, round(COALESCE(sum(TRY_CAST(COLUMNS(*) AS DOUBLE)), 0), 
       </div>
     </div>
   );
+};
+
+// Пустой результат обрабатывается снаружи: у Inner всегда есть данные, число хуков не меняется между рендерами
+export const DataStatsViewer: React.FC<DataStatsViewerProps> = React.memo((props) => {
+  if (!props.data || props.data.length === 0) {
+    return (
+      <div className={`p-4 text-center text-xs ${props.theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
+        {t("Нет данных для визуализации.")}
+      </div>
+    );
+  }
+  return <DataStatsViewerInner {...props} />;
 });

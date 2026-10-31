@@ -27,3 +27,14 @@ describe('nextTabName', () => {
     expect(nextTabName(['a+b 1'], 'a+b')).toBe('a+b 2');
   });
 });
+
+describe('J-11: displayTabTitle', () => {
+  it('«Вкладка N» выводится на текущем языке, остальные названия без изменений', async () => {
+    const { displayTabTitle } = await import('../src/utils/tabNames');
+    const tr = (s: string) => (s === 'Вкладка' ? 'Tab' : s);
+    expect(displayTabTitle('Вкладка 3', tr)).toBe('Tab 3');
+    expect(displayTabTitle('Вкладка', tr)).toBe('Вкладка');
+    expect(displayTabTitle('Вкладка 3 копия', tr)).toBe('Вкладка 3 копия');
+    expect(displayTabTitle('report.sql', tr)).toBe('report.sql');
+  });
+});

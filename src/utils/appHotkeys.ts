@@ -120,6 +120,11 @@ export function resolveHotkeyAction(
   return null;
 }
 
+/** Выполнение и перезапуск не повторяются при удержании клавиши (автоповтор keydown запускал бы запрос снова и снова). */
+export function isBlockedRepeat(action: string, e: { repeat?: boolean }): boolean {
+  return e.repeat === true && (action === 'visualize' || action === 'rerunLast');
+}
+
 /** Текст подсказки кнопки: «Название (сочетание из настроек)». */
 export function hotkeyHint(label: string, hotkeys: Record<string, string | undefined>, id: AppHotkeyId): string {
   const combo = hotkeys[id] || APP_HOTKEY_DEFAULTS[id];

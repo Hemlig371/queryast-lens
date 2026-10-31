@@ -420,7 +420,6 @@ export function routeEdges(
     return c.x > box.x && c.x < box.x + box.width && c.y > box.y && c.y < box.y + box.height;
   };
 
-  // зазоры между колонками
   const gapRange = (k: number): [number, number] => {
     if (k < 0) return [cols[0].lo - 70, cols[0].lo];
     if (k >= nCols - 1) return [cols[nCols - 1].hi, cols[nCols - 1].hi + 70];

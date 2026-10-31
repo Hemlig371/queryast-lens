@@ -83,18 +83,17 @@ function estimateStringExcelWidth(str: string, fontSize: number = 11): number {
     const charCode = str.charCodeAt(i);
     // Use a simpler, safer estimation based mostly on character count.
     // This ensures columns are wide enough to prevent premature wrapping.
-    if (charCode >= 65 && charCode <= 90) { // A-Z (Uppercase)
+    if (charCode >= 65 && charCode <= 90) {
       width += 1.25;
-    } else if (charCode >= 1040 && charCode <= 1071) { // Cyrillic Uppercase
+    } else if (charCode >= 1040 && charCode <= 1071) {
       width += 1.25;
-    } else if (charCode === 1025) { // Ё
+    } else if (charCode === 1025) {
       width += 1.25;
     } else {
-      width += 1.1; // Lowercase, numbers, punctuation
+      width += 1.1;
     }
   }
   
-  // Scale width based on font size relative to standard 11pt font
   return width * (fontSize / 11);
 }
 
@@ -148,7 +147,6 @@ export async function exportToExcel({
     throw new Error('Колонки таблицы не найдены');
   }
 
-  // Parse SQL query for title/subtitle overrides and metadata tags
   if (sqlQuery) {
     const combinedComments = extractExcelComments(sqlQuery);
 
@@ -167,7 +165,7 @@ export async function exportToExcel({
       const titleMatch = combinedComments.match(/#\s*([^#\n@]+)/);
       if (titleMatch) {
         settings.reportTitle = titleMatch[1].trim();
-        settings.enableReportTitle = true; // Force enable if specifically requested
+        settings.enableReportTitle = true;
       }
       
       const subtitleMatch = combinedComments.match(/##\s*([^#\n@]+)/);
@@ -368,21 +366,18 @@ export async function exportToExcel({
     sheetsData[primarySheetName] = data;
   }
 
-  // Skip / Exclude column from report output if specified
   const skipIndex = settings.skipColumnIndex;
   if (skipIndex !== null && skipIndex !== undefined && skipIndex > 0 && skipIndex <= rawColumns.length) {
     const skipColKey = rawColumns[skipIndex - 1];
     activeColumns = activeColumns.filter(c => c !== skipColKey);
   }
 
-  // Hide column visually in worksheet (without excluding data/formulas) if specified
   const hideIndex = settings.hideColumnIndex;
   let hideColKey: string | null = null;
   if (hideIndex !== null && hideIndex !== undefined && hideIndex > 0 && hideIndex <= rawColumns.length) {
     hideColKey = rawColumns[hideIndex - 1];
   }
 
-  // Pre-calculate base colsMeta once
   interface ColMeta {
     key: string;
     header: string;
@@ -477,7 +472,7 @@ export async function exportToExcel({
   const hasColIndexRow = settings.enableColumnIndexRow;
   
   const hasTotalsRow = settings.enableTotalsRow;
-  const totalsRowPos = settings.totalsRowPosition; // 'top' or 'bottom'
+  const totalsRowPos = settings.totalsRowPosition;
   const effectiveCatCols = settings.enableFirstColumnStyle 
     ? Math.max(0, settings.categoryColumnsCount ?? 1)
     : 0;
@@ -560,7 +555,7 @@ export async function exportToExcel({
   });
 
   const hasTotalsCol = settings.enableTotalsColumn;
-  const totalsColPos = settings.totalsColumnPosition; // 'right' or 'left'
+  const totalsColPos = settings.totalsColumnPosition;
 
 
   const colsMeta: ColMeta[] = baseColsMeta.map(c => ({...c}));
@@ -591,7 +586,6 @@ export async function exportToExcel({
     });
   }
 
-  // 1. Calculate Column Widths First (so usable width is known for row height estimation)
   // Ширина считается по первым 50 строкам
   const sampleData = sheetData.slice(0, 50);
 
@@ -602,14 +596,12 @@ export async function exportToExcel({
     } else if (settings.autoColumnWidth) {
       let maxLen = 10;
 
-      // 1. Header length estimation (bold font + filter dropdown arrow)
       if (col.header) {
         const filterButtonWidth = settings.enableAutoFilter ? 6 : 2;
         const estimatedHeaderWidth = Math.ceil(estimateStringExcelWidth(String(col.header), settings.headerFontSize) * 1.1) + filterButtonWidth;
         if (estimatedHeaderWidth > maxLen) maxLen = estimatedHeaderWidth;
       }
 
-      // 2. Data length estimation (accounting for proportional font width and padding)
       if (col.isTotalCol) {
         let grandTotal = 0;
         const dataCols = colsMeta.filter(cm => !cm.isRowIndexCol && !cm.isTotalCol);
@@ -658,7 +650,6 @@ export async function exportToExcel({
         if (calculatedWidth < 14) calculatedWidth = 14;
       }
 
-      // Cap at maxColumnWidth if defined
       const maxCap = settings.maxColumnWidth || 50;
       calculatedWidth = Math.min(calculatedWidth, maxCap);
 
@@ -719,7 +710,6 @@ export async function exportToExcel({
     }
   });
 
-  // 2. Populate Header Row (Row 1)
   const headerRow = mainSheet.getRow(headerRowIdx);
 
   let maxHeaderLines = 1;
@@ -761,7 +751,6 @@ export async function exportToExcel({
     }
   });
 
-  // 2b. Populate Column Index Row (if enabled)
   if (hasColIndexRow && colIndexRowIdx > 0) {
     const colIndexRow = mainSheet.getRow(colIndexRowIdx);
     const indexFontSize = Math.max(6, settings.dataFontSize - 2);
@@ -821,7 +810,6 @@ export async function exportToExcel({
   const zebraColBg = settings.columnZebraBgColor ? cleanHexColor(settings.columnZebraBgColor) : undefined;
   const dataBorder = getCellBorder(false);
 
-  // 3. Populate Data Rows
   sheetData.forEach((rowObj, dataIndex) => {
     const currentExcelRowIdx = dataStartRowIdx + dataIndex;
     const excelRow = mainSheet.getRow(currentExcelRowIdx);
@@ -849,7 +837,6 @@ export async function exportToExcel({
         const rowNum = (hasTotalsRow && totalsRowPos === 'top') ? dataIndex + 2 : dataIndex + 1;
         cell.value = rowNum;
       } else if (col.isTotalCol) {
-        // Horizontal Total Column Formula stretched across data columns (skipping category columns)
         if (colsToSum.length > 0) {
           const rawColFunc = settings.totalsColumnFunction || 'SUM';
           const totalsColFunc = rawColFunc === 'COUNT' ? 'COUNTA' : rawColFunc;
@@ -899,7 +886,6 @@ export async function exportToExcel({
         }
       }
 
-      // Fills / Zebra / Totals formatting
       const firstDataColIdx = settings.enableRowIndexColumn ? 1 : 0;
       const isCategoryCol = settings.enableFirstColumnStyle && effectiveCatCols > 0 && (colIdx >= firstDataColIdx && colIdx < firstDataColIdx + effectiveCatCols);
       
@@ -960,7 +946,6 @@ export async function exportToExcel({
     });
   });
 
-  // 3.5 Apply Category Auto-Grouping and Pseudo-Merging (if enabled)
   if (
     settings.categoryGroupColumn &&
     settings.categoryGroupColumn > 0 &&
@@ -995,7 +980,6 @@ export async function exportToExcel({
       const isLastInGroup = i === sheetData.length - 1 || currentVal !== nextVal;
 
       if (!isNewGroup) {
-        // Child row: assign outline level
         row.outlineLevel = 1;
         if (settings.categoryGroupCollapse) {
           row.hidden = true;
@@ -1004,7 +988,6 @@ export async function exportToExcel({
         if (settings.categoryGroupCleanDuplicates && cell) {
           cell.value = '';
 
-          // Cleanly remove top border and keep bottom only on the last element of the group
           if (cell.border) {
             const existingBorder = cell.border;
             cell.border = {
@@ -1016,7 +999,6 @@ export async function exportToExcel({
         }
       } else {
         if (settings.categoryGroupCleanDuplicates && cell) {
-          // Main / Parent row of the category: remove bottom border if group continues
           if (cell.border && !isLastInGroup) {
             cell.border = {
               ...cell.border,
@@ -1060,7 +1042,6 @@ export async function exportToExcel({
     }
   }
 
-  // 4. Populate Totals Row (if enabled)
   if (hasTotalsRow && totalsRowIdx > 0) {
     const totalsRow = mainSheet.getRow(totalsRowIdx);
     totalsRow.height = Math.max(24, Math.ceil(settings.totalFontSize * 1.7));
@@ -1150,7 +1131,6 @@ export async function exportToExcel({
     });
   }
 
-  // 5. Apply AutoFilter to Header Row
   if (settings.enableAutoFilter) {
     mainSheet.autoFilter = {
       from: { row: headerRowIdx, column: 1 },
@@ -1158,7 +1138,6 @@ export async function exportToExcel({
     };
   }
 
-  // 5.6 Protect Sheet
   if (settings.protectSheet) {
     // ВАЖНО: В браузере защита со стандартным хэшированием (spinCount = 100000) вызывает фриз на несколько секунд.
     // Снижаем spinCount до 100, так как защита листа от изменений — это не криптографическая защита от взлома.
@@ -1174,7 +1153,6 @@ export async function exportToExcel({
     });
   }
 
-  // 5.7 Populate Report Title and Subtitle (After columns are formatted)
   if (settings.enableReportTitle && reportTitleRowIdx > 0) {
     const titleRow = mainSheet.getRow(reportTitleRowIdx);
     const firstDataColIdx = settings.enableRowIndexColumn ? 2 : 1;
@@ -1204,7 +1182,6 @@ export async function exportToExcel({
       horizontal: 'left',
       wrapText: false
     };
-    // No borders for title
     titleRow.height = Math.max(25, Math.ceil((settings.reportTitleFontSize || 14) * 1.5));
 
     if (settings.reportSubtitle && reportSubtitleRowIdx > 0) {
@@ -1234,7 +1211,6 @@ export async function exportToExcel({
 
   }
 
-  // 6. Secondary Sheet (SQL Query & Metadata)
   if (settings.includeSqlSheet) {
     const rawMetaSheetName = settings.sqlSheetName || 'Метаданные';
     const metaSheetName = sanitizeSheetName(rawMetaSheetName, 'Метаданные');
@@ -1311,7 +1287,7 @@ export async function exportToExcel({
     metaSheet.mergeCells(`A${sqlTextRow}:B${sqlTextRow}`);
     const sqlCell = metaSheet.getCell(`A${sqlTextRow}`);
     sqlCell.value = sqlQuery || '-- SQL Запрос не указан';
-    sqlCell.font = { name: 'Consolas', size: 10 }; // Monospace font as requested
+    sqlCell.font = { name: 'Consolas', size: 10 };
     sqlCell.alignment = { vertical: 'top', horizontal: 'left', wrapText: true };
     sqlCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F8FAFC' } };
     const sqlBorder = getCellBorder(false);

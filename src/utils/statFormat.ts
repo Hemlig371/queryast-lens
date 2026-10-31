@@ -56,3 +56,20 @@ export function selectTopN<T extends { name: string; value: number }>(items: rea
   }
   return sortStatItems(items, sortMode).slice(0, limit);
 }
+
+/** Строки по значению столбца (null → 'null'). Map, а не объект: категории `constructor`, `__proto__`, `toString` обычные ключи. */
+export function groupRowsByCategory<T extends Record<string, any>>(rows: readonly T[], column: string): Map<string, T[]> {
+  const groups = new Map<string, T[]>();
+  for (const row of rows) {
+    const key = String(row[column] ?? 'null');
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(row);
+    else groups.set(key, [row]);
+  }
+  return groups;
+}
+
+/** Точка графика: поля строки не должны перетирать `name` и `value` (столбцы с такими именами бывают в результате). */
+export function chartPoint<T extends Record<string, any>>(row: T, name: string, value: number): T & { name: string; value: number } {
+  return { ...row, name, value };
+}

@@ -25,7 +25,7 @@ Understanding the file structure helps navigate and extend the application:
   * `WasmFileManagerModal.tsx`, `VersionHistoryModal.tsx`, `ClickhouseModal.tsx`, `VaultSettingsSection.tsx`, `ExcelSettingsTab.tsx`: file manager of the WASM virtual file system, snapshots with diff, connection form, vault, Excel presets.
   * `FileTreePanel.tsx`: file tree under the schema (search, sorting, context menu, move by drag and drop); the logic is in `utils/fileTree.ts` and `utils/fileTreeProviders.ts`.
 * **Core Logic & Utilities (`src/utils/` & `src/lib/`)**:
-  * Graph: `astToGraph.ts` (SQL parsing, CTE extraction, lineage, layout), `mermaidParse.ts` / `erParse.ts` (flowchart and erDiagram text → common model) / `mermaidToGraph.ts` / `mermaidSvg.ts` / `edgePath.ts` (Mermaid), `graphExport.ts`, `canvasLimits.ts`.
+  * Graph: `astToGraph.ts` (SQL parsing, CTE extraction, lineage, layout), `mermaidParse.ts` / `erParse.ts` (текст flowchart и erDiagram → общая модель) / `mermaidToGraph.ts` / `mermaidSvg.ts` / `edgePath.ts` (Mermaid), `graphExport.ts`, `canvasLimits.ts`.
   * Documents: `markdown.ts` (own Markdown renderer, no external library), `documentExport.ts`, `documentClipboard.ts`.
   * Excel: `excelExporter.ts` (report generation with `exceljs`, SQL directive parsing), `excelParse.ts`, `excelSettingsStorage.ts`.
   * Storage: `sessionStorage.ts`, `resultStorage.ts`, `schemaDbCache.ts`, `snippetsStorage.ts`, `versionHistory.ts`, `vaultStorage.ts` (AES-256 GCM), `appSession.ts`.
@@ -69,10 +69,7 @@ Understanding the file structure helps navigate and extend the application:
   bun test
   ```
 
-* **Self-Verification Checklist before Build**:
-  1. `npm run lint` — verify no missing types, bad imports, or TypeScript errors.
-  2. `bun test` — all parsing, storage, and engine unit tests pass.
-  3. `npm run build` — confirm production bundle compiles cleanly.
+* **Before a build**: `npm run lint`, `bun test`, `npm run build`.
 
 ### Coding Rules & Conventions
 
@@ -150,7 +147,7 @@ The release is built by GitHub Actions (`.github/workflows/build.yml`), which is
   * `WasmFileManagerModal.tsx`, `VersionHistoryModal.tsx`, `ClickhouseModal.tsx`, `VaultSettingsSection.tsx`, `ExcelSettingsTab.tsx`: файловый менеджер виртуальной ФС WASM, снимки версий с diff, форма подключения, хранилище секретов, пресеты Excel.
   * `FileTreePanel.tsx`: дерево файлов под схемой (поиск, сортировка, контекстное меню, перенос перетаскиванием); логика — `utils/fileTree.ts` и `utils/fileTreeProviders.ts`.
 * **Бизнес-логика и утилиты (`src/utils/` и `src/lib/`)**:
-  * Граф: `astToGraph.ts` (разбор SQL, CTE, lineage, раскладка), `mermaidParse.ts` / `erParse.ts` (flowchart and erDiagram text → common model) / `mermaidToGraph.ts` / `mermaidSvg.ts` / `edgePath.ts` (Mermaid), `graphExport.ts`, `canvasLimits.ts`.
+  * Граф: `astToGraph.ts` (разбор SQL, CTE, lineage, раскладка), `mermaidParse.ts` / `erParse.ts` (текст flowchart и erDiagram → общая модель) / `mermaidToGraph.ts` / `mermaidSvg.ts` / `edgePath.ts` (Mermaid), `graphExport.ts`, `canvasLimits.ts`.
   * Документы: `markdown.ts` (собственный рендерер Markdown, без внешней библиотеки), `documentExport.ts`, `documentClipboard.ts`.
   * Excel: `excelExporter.ts` (генерация отчётов на `exceljs`, разбор SQL-директив), `excelParse.ts`, `excelSettingsStorage.ts`.
   * Хранилища: `sessionStorage.ts`, `resultStorage.ts`, `schemaDbCache.ts`, `snippetsStorage.ts`, `versionHistory.ts`, `vaultStorage.ts` (AES-256 GCM), `appSession.ts`.
@@ -194,10 +191,7 @@ The release is built by GitHub Actions (`.github/workflows/build.yml`), which is
   bun test
   ```
 
-* **Чек-лист перед сборкой**:
-  1. `npm run lint` — отсутствие ошибок компиляции и типов.
-  2. `bun test` — успешное прохождение всех тестов парсера, экспорта и хранилищ.
-  3. `npm run build` — корректная компиляция продакшн-бандла.
+* **Перед сборкой**: `npm run lint`, `bun test`, `npm run build`.
 
 ### Правила и соглашения по коду
 

@@ -67,7 +67,7 @@ export const compactSql = (text: string): string => {
     } else if (seg.type === 'code') {
       buf += seg.text.replace(/\s+/g, ' ');
     } else {
-      buf += seg.text; // строка или блочный комментарий — как есть
+      buf += seg.text;
     }
     lineBlank = nextLineBlank(lineBlank, seg);
   }
@@ -179,17 +179,16 @@ export const formatSqlText = async (
         formatted = formatted.replace(/^SELECT\s+\*\s+/i, '');
       }
 
-      // Apply custom clause line wrapping if expressionWidth >= 0
       if (cfg.expressionWidth >= 0) {
         const maxWidth = cfg.expressionWidth;
         const indent = cfg.useTabs ? '\t' : ' '.repeat(cfg.tabWidth || 2);
 
-        // 1. Clean up WITH clause line breaks and align CTE definitions
         formatted = formatted.replace(
           /(^|\n)(\s*)WITH\s+([\s\S]+?)(?=\n\s*(?:SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|;|$))/gi,
           (match, prefix, baseIndent, body) => {
             const singleLineWith = `${baseIndent}WITH ${body.replace(/\s+/g, ' ')}`;
-            if (singleLineWith.length <= maxWidth) {
+            // комментарий `--` в теле: склейка в одну строку закомментировала бы остаток
+            if (!body.includes('--') && singleLineWith.length <= maxWidth) {
               return prefix + singleLineWith;
             }
             const cleanedBody = body.replace(

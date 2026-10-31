@@ -229,7 +229,6 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
         theme === 'dark' ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'
       }`}
     >
-      {/* SECTION HEADER */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Key className="w-4 h-4 text-amber-500" />
@@ -268,7 +267,6 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
         )}
       </div>
 
-      {/* CONFIRMATION BANNER FOR RESET */}
       {isConfirmingReset && (
         <div
           className={`p-3 rounded-lg border flex flex-col gap-2.5 ${
@@ -327,7 +325,6 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
         </code>).
       </p>
 
-      {/* STATE 1: NOT CONFIGURED */}
       {!configured && (
         <form onSubmit={handleSetupPin} className="space-y-2.5 pt-1">
           <div className="flex items-center gap-2">
@@ -361,7 +358,6 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
         </form>
       )}
 
-      {/* STATE 2: CONFIGURED BUT LOCKED */}
       {configured && !unlocked && (
         <div className="space-y-2.5 pt-1">
           <form onSubmit={handleUnlock} className="flex items-center gap-2">
@@ -411,10 +407,8 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
         </div>
       )}
 
-      {/* STATE 3: UNLOCKED */}
       {configured && unlocked && (
         <div className="space-y-3 pt-1">
-          {/* ADD SECRET FORM */}
           <form onSubmit={handleAddSecret} className="space-y-2">
             <div className="flex flex-col sm:flex-row gap-2">
               <input
@@ -456,7 +450,6 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
               </div>
             )}
 
-            {/* CLICKHOUSE URI FORMAT COPYABLE HINT */}
             <div className="flex flex-wrap items-center gap-1.5 text-[11px] pt-0.5">
               <span className={theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}>
                 ClickHouse URI:
@@ -483,7 +476,6 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
             </div>
           </form>
 
-          {/* SECRETS LIST */}
           <div className="space-y-1.5">
             {secrets.length === 0 ? (
               <div className={`p-3 rounded-lg border text-center text-xs ${
@@ -566,7 +558,6 @@ export const VaultSettingsSection: React.FC<VaultSettingsSectionProps> = ({ them
             )}
           </div>
 
-          {/* CHANGE PIN TOGGLE & FORM */}
           <div className="pt-1">
             {!isChangingPin ? (
               <button

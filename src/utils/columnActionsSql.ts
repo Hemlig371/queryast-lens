@@ -27,7 +27,6 @@ export function buildGroupBySql(baseSql: string, cols: string[]): string {
   return `${wrapSub(select, baseSql)}\nGROUP BY ${positions}\nORDER BY ${list.length + 1} DESC`;
 }
 
-/** Оставить только выбранные столбцы. */
 export function buildKeepColumnsSql(baseSql: string, cols: string[]): string {
   const list = uniq(cols);
   if (!baseSql.trim() || list.length === 0) return '';

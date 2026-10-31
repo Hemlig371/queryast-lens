@@ -101,7 +101,7 @@ describe('schemaDbCache (IndexedDB database schema cache)', () => {
     await saveSchemaCache(freshEntry);
     await saveSchemaCache(staleEntry);
 
-    await cleanupOldSchemaCaches(7); // Clean older than 7 days
+    await cleanupOldSchemaCaches(7);
 
     const fresh = await getSchemaCache('fresh_db');
     expect(fresh).not.toBeNull();

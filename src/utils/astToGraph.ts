@@ -223,6 +223,16 @@ function formatOver(over: any): string {
   return ` OVER (${[name, partitionStr, orderStr, frameStr].filter(Boolean).join(' ')})`;
 }
 
+const EXPR_OPERAND_TYPES = new Set(['unary_expr', 'case', 'interval', 'cast']);
+
+function formatCastTarget(t: any): string {
+  if (t === null || t === undefined) return '';
+  if (typeof t === 'string') return t;
+  let out = String(t.dataType ?? '');
+  if (t.length !== undefined && t.length !== null) out += `(${t.length}${t.scale !== undefined && t.scale !== null ? `, ${t.scale}` : ''})`;
+  return out;
+}
+
 export function formatExpr(expr: any): string {
   if (expr === null || expr === undefined) return '';
   if (typeof expr === 'string') return expr;
@@ -230,7 +240,8 @@ export function formatExpr(expr: any): string {
   if (typeof expr === 'boolean') return expr ? 'TRUE' : 'FALSE';
 
   if (expr.ast !== undefined) return formatExpr(expr.ast);
-  if (expr.expr !== undefined) return formatExpr(expr.expr);
+  // у этих узлов expr — операнд, а не обёртка: без собственной ветки пропали бы NOT, CASE, CAST, INTERVAL
+  if (expr.expr !== undefined && !EXPR_OPERAND_TYPES.has(expr.type)) return formatExpr(expr.expr);
   if (Array.isArray(expr)) return expr.map(formatExpr).join(', ');
 
   const overStr = expr && expr.over ? formatOver(expr.over) : '';
@@ -263,7 +274,9 @@ export function formatExpr(expr: any): string {
       return prefix + (tblVal ? `${tblVal}.${colVal}` : colVal);
     case 'unary_expr':
       const uOp = expr.operator || '';
-      const uExpr = formatExpr(expr.expr);
+      let uExpr = formatExpr(expr.expr);
+      // скобки операнда: без них NOT (a OR b) превратится в NOT a OR b
+      if (expr.expr && expr.expr.type === 'binary_expr' && expr.expr.parentheses) uExpr = `(${uExpr})`;
       return `${uOp} ${uExpr}`.trim();
       
     case 'binary_expr':
@@ -276,6 +289,8 @@ export function formatExpr(expr: any): string {
       if (upperOp === 'BETWEEN' || upperOp === 'NOT BETWEEN') {
          if (Array.isArray(expr.right)) {
              right = expr.right.map(formatExpr).join(' AND ');
+         } else if (expr.right && expr.right.type === 'expr_list' && Array.isArray(expr.right.value)) {
+             right = expr.right.value.map(formatExpr).join(' AND ');
          } else {
              right = formatExpr(expr.right);
          }
@@ -314,8 +329,16 @@ export function formatExpr(expr: any): string {
       return formatExpr(expr.value);
     case 'star':
       return '*';
-    case 'interval':
-      return `INTERVAL ${expr.value} ${expr.unit}`;
+    case 'interval': {
+      const ivValue = expr.expr !== undefined ? formatExpr(expr.expr) : expr.value;
+      return `INTERVAL ${ivValue}${expr.unit ? ` ${expr.unit}` : ''}`;
+    }
+    case 'cast': {
+      const targets = (Array.isArray(expr.target) ? expr.target : [expr.target]).map(formatCastTarget).filter(Boolean).join(' ');
+      const castInner = formatExpr(expr.expr);
+      if (expr.symbol === '::') return `${castInner}::${targets}`;
+      return `${String(expr.keyword || 'CAST').toUpperCase()}(${castInner} AS ${targets})`;
+    }
     case 'case':
       const cases = expr.args?.map((arg: any) => {
         if (!arg) return '';
@@ -323,7 +346,8 @@ export function formatExpr(expr: any): string {
         if (arg.type === 'else') return `ELSE ${formatExpr(arg.result)}`;
         return '';
       }).filter(Boolean).join(' ');
-      return `CASE ${cases} END`;
+      const caseSubject = expr.expr !== undefined && expr.expr !== null ? `${formatExpr(expr.expr)} ` : '';
+      return `CASE ${caseSubject}${cases} END`;
     default:
       if (expr.value !== undefined) {
         if (typeof expr.value === 'object' && expr.value !== null) return formatExpr(expr.value);
@@ -449,7 +473,6 @@ function splitByTopLevelCommas(text: string): string[] {
   return parts.filter(Boolean);
 }
 
-// Новая утилита для разбиения длинных условий WHERE/HAVING на строки
 function splitConditions(text: string): { name: string }[] {
   const tokens = tokenizeSql(text);
   const parts: { name: string }[] = [];
@@ -598,6 +621,14 @@ function splitProcedureStatements(bodyStr: string): string[] {
   return statements;
 }
 
+// `/` разделяет скрипты (Oracle) только на отдельной строке; в остальных случаях это деление: SUM(CASE … END) / COUNT(*)
+function isSlashOnOwnLine(sql: string, start: number, end: number): boolean {
+  const lineStart = sql.lastIndexOf('\n', start - 1) + 1;
+  let lineEnd = sql.indexOf('\n', end);
+  if (lineEnd === -1) lineEnd = sql.length;
+  return sql.slice(lineStart, start).trim() === '' && sql.slice(end, lineEnd).trim() === '';
+}
+
 export function splitQueries(sql: string): string[] {
   const tokens = tokenizeSql(sql);
   const queries: string[] = [];
@@ -625,7 +656,7 @@ export function splitQueries(sql: string): string[] {
       else if (t.value === ')') parenDepth = Math.max(0, parenDepth - 1);
       
       else if (t.value === ';' || (t.value === '/' && parenDepth === 0 && blockDepth === 0)) {
-        const isDivision = t.value === '/' && lastWord !== 'END' && !isProc && currentStart !== t.start;
+        const isDivision = t.value === '/' && (!isSlashOnOwnLine(sql, t.start, t.end) || (lastWord !== 'END' && !isProc && currentStart !== t.start));
         
         if (parenDepth === 0 && !isDivision) {
           if (!isProc || (isProc && blockDepth === 0 && hasSeenBegin)) {
@@ -668,6 +699,20 @@ export function splitQueries(sql: string): string[] {
   return queries;
 }
 
+const SET_OPERAND_HEAD = new Set(['SELECT', 'WITH', 'VALUES']);
+
+/** С позиции idx (после EXCEPT) начинается запрос: [ALL|DISTINCT] SELECT | WITH | VALUES | (SELECT | (WITH. */
+function isSetOperandStart(tokens: Token[], idx: number): boolean {
+  const skip = (i: number) => {
+    while (i < tokens.length && (tokens[i].type === 'whitespace' || tokens[i].type === 'comment')) i++;
+    return i;
+  };
+  let i = skip(idx);
+  if (i < tokens.length && tokens[i].type === 'word' && /^(ALL|DISTINCT)$/i.test(String(tokens[i].value || ''))) i = skip(i + 1);
+  if (i < tokens.length && tokens[i].type === 'symbol' && tokens[i].value === '(') i = skip(i + 1);
+  return i < tokens.length && tokens[i].type === 'word' && SET_OPERAND_HEAD.has(String(tokens[i].value || '').toUpperCase());
+}
+
 function splitTopLevelUnion(sql: string): { parts: string[], ops: string[] } | null {
   const tokens = tokenizeSql(sql);
   const parts: string[] = [];
@@ -687,6 +732,9 @@ function splitTopLevelUnion(sql: string): { parts: string[], ops: string[] } | n
         while (nextIdx < tokens.length && (tokens[nextIdx].type === 'whitespace' || tokens[nextIdx].type === 'comment')) {
            nextIdx++;
         }
+
+        // ClickHouse: SELECT * EXCEPT (a, b) — модификатор столбцов, а не операция над множествами
+        if (upper === 'EXCEPT' && !isSetOperandStart(tokens, nextIdx)) continue;
 
         let op = upper;
         let splitEnd = t.end;
@@ -908,7 +956,7 @@ export function transformNodeSqlParserUnion(ast: any): any {
   if (!ast) return ast;
   if (Array.isArray(ast)) return ast.map(transformNodeSqlParserUnion);
   
-  // Добавлена поддержка ast.set_op (в нем хранится UNION ALL)
+  // ast.set_op хранит UNION ALL
   if (ast.type === 'select' && (ast._next || ast.union || ast.set_op)) {
     const queries: any[] = [];
     const ops: string[] = [];
@@ -1041,8 +1089,12 @@ function parseTableOrSubqueryCore(str: string, dialect: string): any {
   return { table: str, as: null };
 }
 
-// Ключевое слово соединения (с ClickHouse-модификаторами: GLOBAL, ANY/ALL/ASOF/SEMI/ANTI, ARRAY JOIN)
-const JOIN_KEYWORD_RE = /(?:GLOBAL\s+)?(?:(?:ANY|ALL|ASOF|SEMI|ANTI)\s+)?(?:(?:LEFT|RIGHT|FULL)\s+(?:OUTER\s+)?(?:ARRAY\s+)?|INNER\s+|CROSS\s+|NATURAL\s+(?:(?:LEFT|RIGHT|FULL)\s+)?|LATERAL\s+|ARRAY\s+)?JOIN\b/iy;
+// Ключевое слово соединения (с модификаторами: GLOBAL, ANY/ALL/ASOF/SEMI/ANTI до или после направления, ARRAY JOIN, DuckDB POSITIONAL JOIN)
+const JOIN_MOD = '(?:(?:ANY|ALL|ASOF|SEMI|ANTI)\\s+)?';
+const JOIN_KEYWORD_RE = new RegExp(
+  `(?:GLOBAL\\s+)?${JOIN_MOD}(?:(?:LEFT|RIGHT|FULL)\\s+(?:OUTER\\s+)?(?:ARRAY\\s+)?${JOIN_MOD}|INNER\\s+${JOIN_MOD}|CROSS\\s+|NATURAL\\s+(?:(?:LEFT|RIGHT|FULL)\\s+)?|LATERAL\\s+|ARRAY\\s+|POSITIONAL\\s+)?JOIN\\b`,
+  'iy',
+);
 
 /**
  * Обход текста только на верхнем уровне: вне скобок и кавычек. onWord вызывается в начале каждого слова
@@ -1165,7 +1217,7 @@ function extractCtes(sql: string, dialect: string): { ctes: any[], mainSql: stri
   workingSql = workingSql.substring(withMatch[0].length).trim();
 
   while (true) {
-    const cteHeaderMatch = workingSql.match(/^([A-Za-z0-9_\u0400-\u04FFёЁ]+)(?:\s*\([^)]+\))?\s+AS\s*(?:((?:NOT\s+)?MATERIALIZED)\s*)?\(/i);
+    const cteHeaderMatch = workingSql.match(/^("(?:[^"]|"")+"|`[^`]+`|[A-Za-z0-9_\u0400-\u04FFёЁ]+)(?:\s*\([^)]+\))?\s+AS\s*(?:((?:NOT\s+)?MATERIALIZED)\s*)?\(/i);
     if (!cteHeaderMatch) {
       // ClickHouse: в WITH бывают и «выражение AS псевдоним» (константы, скалярные подзапросы) — пропускаем такой элемент
       let itemEnd = -1;
@@ -1365,11 +1417,13 @@ function parseHeuristicSelect(sql: string, dialect: string): any {
     // ClickHouse: LIMIT [offset,] n BY выражение — ограничение по группам, а не по всему результату
     const limitBy = limitBlock.match(/^([\s\S]*?)\bBY\b([\s\S]*)$/i);
     const parts = limitBlock.split(/\s*,|\s+OFFSET\s+/i);
+    // MySQL/ClickHouse: LIMIT offset, count — первое число смещение
+    const commaForm = !/\sOFFSET\s/i.test(limitBlock) && limitBlock.includes(',');
     const limitVal = parts[0]?.trim() || '10';
     const offsetVal = parts[1]?.trim() || '0';
     ast.limit = limitBy
       ? { raw: `LIMIT ${limitBy[1].trim()} BY ${limitBy[2].trim().replace(/\s+/g, ' ')}` }
-      : { value: [ { type: 'number', value: parseInt(limitVal) || limitVal }, { type: 'number', value: parseInt(offsetVal) || offsetVal } ] };
+      : { ...(commaForm ? { seperator: ',' } : {}), value: [ { type: 'number', value: parseInt(limitVal) || limitVal }, { type: 'number', value: parseInt(offsetVal) || offsetVal } ] };
   }
 
   return ast;
@@ -1645,6 +1699,13 @@ export function parseSingleSqlToAst(sql: string, dialect = 'PostgreSQL'): any {
   }
 
   const unionResult = splitTopLevelUnion(cleanSql);
+  // INSERT … SELECT … UNION: разрезается только тело SELECT (parseHeuristicDml разбирает его отдельно), а не весь оператор
+  if (unionResult && /^\s*INSERT\b/i.test(cleanSql)) {
+    try {
+      const ast = parseHeuristicDml(cleanSql, dialect);
+      if (ast) return { ast, error: null };
+    } catch (err: any) {}
+  }
   if (unionResult) {
     const asts = unionResult.parts.map(part => {
       const res = parseSingleSqlToAst(part, dialect);
@@ -2226,7 +2287,7 @@ function buildDataPipeline(ast: any, prefix: string, dialect: string, ctx: Graph
     filters.forEach(f => {
       const fId = `${prefix}filter_${f.t.toLowerCase()}`;
       const condText = formatExpr(f.val);
-      const condColumns = splitConditions(condText); // Передаем разбитый массив в свойство columns
+      const condColumns = splitConditions(condText);
       
       if (rootId) {
         // условие — чипы на карточке источника, чей алиас упомянут первым (без алиаса — на первом источнике FROM)
@@ -2309,8 +2370,12 @@ function buildDataPipeline(ast: any, prefix: string, dialect: string, ctx: Graph
   if (ast.limit && (!Array.isArray(ast.limit.value) || ast.limit.value.length > 0)) {
     const lVal = ast.limit.value?.[0]?.value || '0';
     const oVal = ast.limit.value?.[1]?.value;
-    const hasOffset = Array.isArray(ast.limit.value) && ast.limit.seperator !== ',' && oVal !== undefined && String(oVal) !== '0' && String(oVal) !== '';
-    resultChips.push({ kind: 'limit', text: ast.limit.raw ? String(ast.limit.raw) : `LIMIT ${lVal}${hasOffset ? ` OFFSET ${oVal}` : ''}` });
+    // LIMIT a, b — это LIMIT b OFFSET a
+    const commaForm = Array.isArray(ast.limit.value) && ast.limit.seperator === ',' && oVal !== undefined;
+    const countVal = commaForm ? oVal : lVal;
+    const offsetVal = commaForm ? lVal : oVal;
+    const hasOffset = Array.isArray(ast.limit.value) && offsetVal !== undefined && String(offsetVal) !== '0' && String(offsetVal) !== '';
+    resultChips.push({ kind: 'limit', text: ast.limit.raw ? String(ast.limit.raw) : `LIMIT ${countVal}${hasOffset ? ` OFFSET ${offsetVal}` : ''}` });
   }
 
   // 4.7 PROJECTION (SELECT Columns)
@@ -2629,7 +2694,7 @@ export function getLayoutedElements(nodes: GraphNode[], edges: GraphEdge[], dire
   for (const node of nodes) {
     if (node.type === 'frameNode') {
       const r = treeFrames[node.id];
-      if (!r) continue; // пустая рамка не рисуется
+      if (!r) continue;
       newNodes.push({
         ...node,
         position: { x: r.x, y: r.y },

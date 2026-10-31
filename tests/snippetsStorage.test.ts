@@ -138,7 +138,7 @@ describe('snippetsStorage (IndexedDB storage)', () => {
       expect(res.fileName).toBe('Отчет_по_объему.sql');
     });
 
-    // Новое поведение: буква «ё» не вырезается
+    // Буква «ё» не вырезается
     it('keeps the letter ё in the file name', () => {
       const res = getSnippetExportFilename('Отчёт по объёму', 'snip123');
       expect(res.baseName).toBe('Отчёт_по_объёму');

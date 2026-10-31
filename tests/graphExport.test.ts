@@ -241,3 +241,18 @@ describe('scopedHideScrollbarsCss', () => {
     expect(css).toContain('scrollbar-width: none');
   });
 });
+
+describe('текстовые экспорты: целевая таблица и условия (D-15)', () => {
+  const nodes = [
+    { id: 'x', type: 'tableNode', position: { x: 0, y: 0 }, data: { label: 'x', title: 'Table', tableName: 'x', chips: [{ kind: 'filter', text: 'x.k = 1' }] } },
+    { id: 't', type: 'tableNode', position: { x: 300, y: 0 }, data: { label: 'sales_mart', title: 'Target (INSERT)' } },
+  ];
+  const edges = [{ id: 'e', source: 'x', target: 't' }];
+  for (const format of ['mermaid', 'drawio', 'xml'] as const) {
+    it(`${format}: есть имя цели и условие WHERE`, () => {
+      const { content } = buildGraphTextExport(format, input({ nodes, edges }));
+      expect(content).toContain('sales_mart');
+      expect(content).toContain('x.k = 1');
+    });
+  }
+});

@@ -170,3 +170,13 @@ describe('литералы и //', () => {
   });
 });
 
+
+describe('C-08: WITH в одну строку и комментарий --', () => {
+  const cfg = { keywordCase: 'upper' as const, tabWidth: 2, useTabs: false, expressionWidth: 120, denseOperators: false, leadingCommas: false };
+  it('-- в теле CTE не склеивается с кодом', async () => {
+    const out = await formatSqlText('WITH a AS (\n  -- only active\n  VALUES (1)\n)\nSELECT * FROM a', cfg);
+    expect(out).toMatch(/-- only active\s*\n/);
+    expect(out).not.toMatch(/-- only active[^\n]*\S/);
+    expect(out).toContain('VALUES');
+  });
+});

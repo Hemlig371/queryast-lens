@@ -22,7 +22,6 @@ fn nearest_existing_dir(path: &Path) -> PathBuf {
     PathBuf::from(".")
 }
 
-/// В папку можно записать файл.
 fn can_write_in(dir: &Path) -> bool {
     let probe = dir.join(format!(".queryast_write_probe_{}", std::process::id()));
     match std::fs::File::create(&probe) {

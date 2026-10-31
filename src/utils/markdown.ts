@@ -92,7 +92,6 @@ function findEmphasisClose(s: string, from: number, delim: string): number {
     const ch = s[j];
     if (ch === '\\') { j++; continue; }
     if (ch === '`') {
-      // пропускаем код-спан
       const run = /^`+/.exec(s.substring(j))![0];
       const end = s.indexOf(run, j + run.length);
       if (end !== -1) j = end + run.length - 1;
@@ -151,13 +150,11 @@ export function renderInline(text: string, ctx?: Ctx): string {
   while (i < s.length) {
     const ch = s[i];
 
-    // \-экранирование
     if (ch === '\\' && i + 1 < s.length && ESCAPABLE.includes(s[i + 1])) {
       plain += s[i + 1];
       i += 2;
       continue;
     }
-    // перенос строки внутри абзаца
     if (ch === '\n') {
       const hard = / {2,}$/.test(plain) || plain.endsWith('\\');
       if (hard) {
@@ -173,7 +170,6 @@ export function renderInline(text: string, ctx?: Ctx): string {
       continue;
     }
 
-    // код-спан
     if (ch === '`') {
       const run = /^`+/.exec(s.substring(i))![0];
       const end = s.indexOf(run, i + run.length);
@@ -190,7 +186,6 @@ export function renderInline(text: string, ctx?: Ctx): string {
       continue;
     }
 
-    // картинка и ссылка
     if ((ch === '!' && s[i + 1] === '[') || ch === '[') {
       const isImage = ch === '!';
       const open = isImage ? i + 1 : i;
@@ -227,7 +222,6 @@ export function renderInline(text: string, ctx?: Ctx): string {
       continue;
     }
 
-    // <автоссылка> и простые теги
     if (ch === '<') {
       const auto = /^<((?:https?:\/\/|mailto:)[^\s<>]+|[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+)>/i.exec(s.substring(i));
       if (auto) {
@@ -250,7 +244,6 @@ export function renderInline(text: string, ctx?: Ctx): string {
       continue;
     }
 
-    // эмфаза
     if (ch === '*' || ch === '_' || ch === '~') {
       const run = /^[*_~]+/.exec(s.substring(i))![0];
       const tryDelims: Array<[string, string]> = [];
@@ -452,7 +445,6 @@ export function renderBlocks(lines: string[], ctx: Ctx, tight = false): string {
     const line = lines[i];
     if (!line.trim()) { i++; continue; }
 
-    // fenced code
     const fence = RE_FENCE.exec(line);
     if (fence) {
       const fenceChar = fence[2][0];
@@ -465,12 +457,11 @@ export function renderBlocks(lines: string[], ctx: Ctx, tight = false): string {
         body.push(indent ? lines[i].replace(new RegExp(`^ {0,${indent}}`), '') : lines[i]);
         i++;
       }
-      i++; // закрывающая ограда (или конец текста)
+      i++;
       html += renderCodeBlock(body.join('\n'), fence[3], ctx);
       continue;
     }
 
-    // heading
     const h = RE_HEADING.exec(line);
     if (h) {
       const level = h[1].length;
@@ -484,14 +475,12 @@ export function renderBlocks(lines: string[], ctx: Ctx, tight = false): string {
       continue;
     }
 
-    // hr
     if (RE_HR.test(line)) {
       html += '<hr>';
       i++;
       continue;
     }
 
-    // blockquote
     if (RE_QUOTE.test(line)) {
       const quote: string[] = [];
       while (i < lines.length && lines[i].trim() && (RE_QUOTE.test(lines[i]) || (quote.length > 0 && !startsBlock(lines[i], lines[i + 1])))) {
@@ -502,7 +491,6 @@ export function renderBlocks(lines: string[], ctx: Ctx, tight = false): string {
       continue;
     }
 
-    // table
     if (line.includes('|') && i + 1 < lines.length && RE_TABLE_DELIM.test(lines[i + 1]) && lines[i + 1].includes('-')) {
       const header = splitTableRow(line);
       const delim = splitTableRow(lines[i + 1]);
@@ -524,7 +512,6 @@ export function renderBlocks(lines: string[], ctx: Ctx, tight = false): string {
       }
     }
 
-    // list
     const lm = RE_LIST.exec(line);
     if (lm && !RE_HR.test(line)) {
       const res = renderList(lines, i, ctx);
@@ -533,7 +520,6 @@ export function renderBlocks(lines: string[], ctx: Ctx, tight = false): string {
       continue;
     }
 
-    // paragraph (+ setext heading)
     const para: string[] = [line];
     i++;
     let setext = 0;

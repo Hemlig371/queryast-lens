@@ -101,7 +101,6 @@ export const replaceVariablesInSql = (sql: string, contextSql?: string): string 
   const varDefs: Record<string, string> = {};
   const defRegex = /\{\{\$([a-zA-Z0-9_\u0400-\u04FF]+)\s*=\s*([^}\r\n]*)\}\}/g;
 
-  // 1. Scan contextSql if provided (e.g. full tab script when user executed a selection)
   if (contextSql && contextSql.includes('{{$')) {
     let m: RegExpExecArray | null;
     while ((m = defRegex.exec(contextSql)) !== null) {
@@ -111,7 +110,6 @@ export const replaceVariablesInSql = (sql: string, contextSql?: string): string 
     }
   }
 
-  // 2. Scan the current sql (overrides or provides definitions)
   let m: RegExpExecArray | null;
   defRegex.lastIndex = 0;
   while ((m = defRegex.exec(sql)) !== null) {
@@ -120,12 +118,10 @@ export const replaceVariablesInSql = (sql: string, contextSql?: string): string 
     varDefs[name] = val;
   }
 
-  // 3. First, replace any inline definition macros {{$name=value}} with their value
   let result = sql.replace(/\{\{\$([a-zA-Z0-9_\u0400-\u04FF]+)\s*=\s*([^}\r\n]*)\}\}/g, (_match, _name, val) => {
     return val.trim();
   });
 
-  // 4. Replace variable usages {{$name}}
   result = result.replace(/\{\{\$([a-zA-Z0-9_\u0400-\u04FF]+)\}\}/g, (match, name) => {
     const key = name.trim();
     if (Object.prototype.hasOwnProperty.call(varDefs, key)) {

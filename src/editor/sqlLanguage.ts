@@ -102,7 +102,7 @@ const readQuoted = (stream: StringStream, state: SqlState): string => {
     }
     if (ch === q) {
       if (stream.peek() === q) {
-        stream.next(); // удвоенная кавычка = экранирование
+        stream.next();
         continue;
       }
       state.quote = null;
@@ -197,26 +197,26 @@ export const sqlLanguage = StreamLanguage.define<SqlState>(sqlParser);
 /** Цвета — те же Tailwind-оттенки, что использовались в HTML-подсветке. */
 export const SQL_COLORS = {
   dark: {
-    keyword: '#60a5fa', // blue-400
-    fn: '#c084fc', // purple-400
-    string: '#34d399', // emerald-400
-    ident: '#14b8a6', // teal-500
-    number: '#fdba74', // orange-300
-    engine: '#fcd34d', // amber-300
-    comment: '#64748b', // slate-500
-    varParam: '#f87171', // red-400
-    varSecret: '#c084fc', // purple-400
+    keyword: '#60a5fa',
+    fn: '#c084fc',
+    string: '#34d399',
+    ident: '#14b8a6',
+    number: '#fdba74',
+    engine: '#fcd34d',
+    comment: '#64748b',
+    varParam: '#f87171',
+    varSecret: '#c084fc',
   },
   light: {
-    keyword: '#1d4ed8', // blue-700
-    fn: '#7e22ce', // purple-700
-    string: '#047857', // emerald-700
-    ident: '#115e59', // teal-800
-    number: '#f97316', // orange-500
-    engine: '#f59e0b', // amber-500
+    keyword: '#1d4ed8',
+    fn: '#7e22ce',
+    string: '#047857',
+    ident: '#115e59',
+    number: '#f97316',
+    engine: '#f59e0b',
     comment: '#64748b',
-    varParam: '#b91c1c', // red-700
-    varSecret: '#7e22ce', // purple-700
+    varParam: '#b91c1c',
+    varSecret: '#7e22ce',
   },
 } as const;
 

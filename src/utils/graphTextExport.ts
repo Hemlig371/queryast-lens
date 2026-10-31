@@ -52,6 +52,20 @@ const makeJsonReplacer = () => {
   };
 };
 
+/** Имя объекта на узле (целевая таблица, CTE, файл), если оно не совпадает с заголовком: заголовок «Target (INSERT)» его не содержит. */
+const nodeObjectName = (data: any): string => {
+  const label = data?.label;
+  const title = data?.title;
+  if (!label || !title || label === title || label === data?.tableName) return '';
+  return String(label);
+};
+
+/** Чипы карточки (условия WHERE/PREWHERE и др.) в виде текста. */
+const nodeChipTexts = (data: any): string[] =>
+  Array.isArray(data?.chips)
+    ? data.chips.filter((c: any) => c && c.text).map((c: any) => String(c.text))
+    : [];
+
 export interface GraphTextExportInput {
   nodes: any[];
   edges: any[];
@@ -122,7 +136,15 @@ export function buildGraphTextExport(
       xml += `    <node id="${escapeXml(n.id)}" type="${escapeXml(nodeType)}">\n`;
       xml += `      <title>${escapeXml(title)}</title>\n`;
       if (n.data?.tableName) xml += `      <tableName>${escapeXml(n.data.tableName)}</tableName>\n`;
+      const objName = nodeObjectName(n.data);
+      if (objName) xml += `      <name>${escapeXml(objName)}</name>\n`;
       if (n.data?.condition) xml += `      <condition>${escapeXml(n.data.condition)}</condition>\n`;
+      const chipTexts = nodeChipTexts(n.data);
+      if (chipTexts.length > 0) {
+        xml += `      <conditions>\n`;
+        chipTexts.forEach((c) => { xml += `        <condition>${escapeXml(c)}</condition>\n`; });
+        xml += `      </conditions>\n`;
+      }
       if (n.data?.columns && Array.isArray(n.data.columns)) {
         xml += `      <columns>\n`;
         n.data.columns.forEach((col: any) => {
@@ -179,6 +201,13 @@ export function buildGraphTextExport(
       if (n.data?.tableName) {
         labelHtml += `<br/><font color="#64748b">Table: ${escapeHtmlText(n.data.tableName)}</font>`;
       }
+      const objName = nodeObjectName(n.data);
+      if (objName) {
+        labelHtml += `<br/><font color="#64748b">${escapeHtmlText(objName)}</font>`;
+      }
+      nodeChipTexts(n.data).forEach((c) => {
+        labelHtml += `<br/><font color="#f97316">▼ ${escapeHtmlText(c)}</font>`;
+      });
       if (n.data?.condition) {
         labelHtml += `<br/><font color="#3b82f6">ON: ${escapeHtmlText(n.data.condition)}</font>`;
       }
@@ -241,7 +270,11 @@ export function buildGraphTextExport(
       else if (data.alias) detail = `Alias: ${data.alias}`;
       else if (data.condition) detail = `Cond: ${data.condition}`;
 
-      const display = detail ? `${title} [${detail}]` : title;
+      const objName = nodeObjectName(data);
+      const head = objName ? `${title}: ${objName}` : title;
+      const chipTexts = nodeChipTexts(data);
+      const base = detail ? `${head} [${detail}]` : head;
+      const display = chipTexts.length > 0 ? `${base} | ${chipTexts.map((c) => `▼ ${c}`).join(' | ')}` : base;
       const cleanId = mermaidId(node.id);
       lines.push(`  ${cleanId}["${sanitize(display)}"]`);
     });

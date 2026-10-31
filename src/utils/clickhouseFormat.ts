@@ -22,7 +22,7 @@ export function stripCommentsAndLiterals(sql: string): string {
       while (i < n) {
         if (sql[i] === '\\') { i += 2; continue; } // в ClickHouse обратная косая черта экранирует
         if (sql[i] === q) {
-          if (sql[i + 1] === q) { i += 2; continue; } // удвоенная кавычка
+          if (sql[i + 1] === q) { i += 2; continue; }
           break;
         }
         i++;

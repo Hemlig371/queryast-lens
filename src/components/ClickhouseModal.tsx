@@ -132,7 +132,6 @@ export const ClickhouseModal: React.FC<ClickhouseModalProps> = ({
           });
         }
       } else {
-        // First try via backend proxy endpoint
         try {
           const proxyData = await fetchApiJson('/api/clickhouse/test', {
             method: 'POST',
@@ -162,7 +161,6 @@ export const ClickhouseModal: React.FC<ClickhouseModalProps> = ({
             return;
           }
         } catch (proxyErr: any) {
-          // Fallback: direct HTTP fetch
           const url = getClickhouseUrl(currentConfig);
           const headers = getClickhouseHeaders(currentConfig);
           const res = await fetch(url, {
@@ -215,7 +213,6 @@ export const ClickhouseModal: React.FC<ClickhouseModalProps> = ({
           theme === 'dark' ? 'bg-slate-850 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'
         }`}
       >
-        {/* HEADER */}
         <div className={`flex items-center justify-between px-4 py-3 border-b select-none ${
           theme === 'dark' ? 'bg-slate-800/80 border-slate-700' : 'bg-slate-100 border-slate-200'
         }`}>
@@ -233,9 +230,7 @@ export const ClickhouseModal: React.FC<ClickhouseModalProps> = ({
           </button>
         </div>
 
-        {/* BODY */}
         <div className="p-4 space-y-4 text-xs overflow-y-auto max-h-[75vh]">
-          {/* HOST & PROTOCOL */}
           <div className="space-y-1.5">
             <label className="font-semibold block text-slate-400">{t("Протокол и хост:порт")}</label>
             <div className="flex gap-2">
@@ -278,7 +273,6 @@ export const ClickhouseModal: React.FC<ClickhouseModalProps> = ({
                   </button>
                 )}
 
-                {/* DROPDOWN MENU */}
                 {isDropdownOpen && vaultSecrets.length > 0 && (
                   <div
                     className={`absolute left-0 right-0 top-full mt-1 z-50 rounded-lg border shadow-xl max-h-48 overflow-y-auto py-1 ${
@@ -318,7 +312,6 @@ export const ClickhouseModal: React.FC<ClickhouseModalProps> = ({
             </div>
           </div>
 
-          {/* USER & PASSWORD */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <label className="font-semibold block text-slate-400">{t("Логин")}</label>
@@ -346,7 +339,6 @@ export const ClickhouseModal: React.FC<ClickhouseModalProps> = ({
             </div>
           </div>
 
-          {/* DATABASE */}
           <div className="space-y-1.5">
             <label className="font-semibold block text-slate-400">{t("База данных")}</label>
             <input
@@ -360,7 +352,6 @@ export const ClickhouseModal: React.FC<ClickhouseModalProps> = ({
             />
           </div>
 
-          {/* TEST CONNECTION BUTTON & STATUS */}
           <div className="pt-2 space-y-2">
             <button
               onClick={handleTestConnection}
@@ -403,7 +394,6 @@ export const ClickhouseModal: React.FC<ClickhouseModalProps> = ({
           </div>
         </div>
 
-        {/* FOOTER BUTTONS */}
         <div className={`flex items-center justify-between px-4 py-3 border-t select-none ${
           theme === 'dark' ? 'bg-slate-800/80 border-slate-700' : 'bg-slate-100 border-slate-200'
         }`}>

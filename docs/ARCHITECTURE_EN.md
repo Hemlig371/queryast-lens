@@ -54,11 +54,13 @@ Query text processing order:
 1. `replaceVariablesInSql` (`src/lib/sqlUtils.ts`): `{{$name=value}}` and `{{$name}}`; definitions are searched in the executed text and in the whole tab text.
 2. `replaceSecretsInSql` (`src/utils/vaultStorage.ts`): `{{NAME}}` from the unlocked Vault. If the text contains `{{` and the Vault is locked, execution stops with a message.
 3. For `sequential`/`parallel` modes the text is split into commands (`splitBySemicolonIgnoringQuotes`).
-4. Paged `LIMIT`/`OFFSET` (page size is the `duckDbMaxRows` / `clickhouseMaxRows` setting, default 100; `0` means no limit). If the text contains `LIMIT <number>`, no limit is added on the first page; on following pages `OFFSET` is added (through a subquery when the query has its own `LIMIT` or a `UNION`). ClickHouse additionally gets `FORMAT JSON` for `SELECT`/`SHOW`/`DESCRIBE`/`EXPLAIN` when no format is specified.
+4. Paged `LIMIT`/`OFFSET` (page size is the `duckDbMaxRows` / `clickhouseMaxRows` setting, default 100, from 1 to 50,000). If the text contains `LIMIT <number>`, no limit is added on the first page; on following pages `OFFSET` is added (through a subquery when the query has its own `LIMIT` or a `UNION`). ClickHouse additionally gets `FORMAT JSON` for `SELECT`/`SHOW`/`DESCRIBE`/`EXPLAIN` when no format is specified.
 5. ClickHouse `COPY … TO/FROM` is recognized before sending (`parseClickhouseCopy`) and executed as a stream on desktop (Rust) or through `CapacitorHttp` (`TO` only).
 6. For DuckDB, after `CREATE/DROP/ATTACH/DETACH/RENAME` the schema is refreshed automatically (the `autoUpdateSchema` setting).
 
-Cancellation: an `AbortController` in the interface plus the native commands `cancel_duckdb_query` (interrupts the DuckDB connection) and `cancel_clickhouse_query` (aborts the HTTP request). The native DuckDB layer holds **one** connection under a lock, so queries run one at a time.
+Cancellation: an `AbortController` in the interface plus the native commands `cancel_duckdb_query` (interrupts the DuckDB connection) and `cancel_clickhouse_query` (aborts the HTTP request). The native DuckDB layer holds **one** connection under a lock, so queries run one at a time. Stopping a query is guaranteed only in Tauri; in WASM and on the dev server only the wait for the result is abandoned.
+
+The three backends (Tauri / WASM / Express) are implemented as branching inside `executeDuckDbQueryWithPagination` and `executeClickhouseQueryWithPagination`: change all branches.
 
 The result cap is 500,000 rows per query (Rust, WASM and ClickHouse); above that the query ends with an error instead of a truncated result.
 
@@ -115,10 +117,3 @@ Three layers: `localStorage` (settings, session), IndexedDB (results, versions, 
 * Tests: `tests/*.test.ts`, Vitest API (`npm test` or `bun test`). They cover pure utilities, storages (on `fake-indexeddb`), graph parsing and layout, Markdown, Mermaid and Excel (superficially). Not covered: `App.tsx`, components, DuckDB-WASM and Rust.
 * Build and release: [CONTRIBUTING](./CONTRIBUTING.md#release-build-ci).
 * Type checking: `npm run lint` (`tsc --noEmit`) covers only `src/**`; `server.ts` and `tests/` are not checked.
-
-## 12. Known architectural limitations
-
-* One large component and two JSX layouts (see section 2).
-* The three ways of executing a query (Tauri / WASM / Express) are implemented as branching inside two large functions (`executeDuckDbQueryWithPagination`, `executeClickhouseQueryWithPagination`) with no shared interface; changes must be made in all branches.
-* The native ClickHouse layer has a single shared cancellation slot for all queries (a second query can abort the first).
-* Errors from graph/document export and SQL parse errors are not shown in the interface (the `error` state in `App.tsx` is not rendered anywhere).

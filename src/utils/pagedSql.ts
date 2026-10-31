@@ -17,6 +17,8 @@ export interface BuildPagedSqlOptions {
   dialect: SqlDialect;
   /** Режим, в котором скрипт был запущен на странице 1. Не задан — обычный запуск. */
   mode?: ExecutionMode;
+  /** Запуск из кнопок листания: страница 1 обрабатывается как страница ≥ 2 со смещением 0 (подготовительные операторы не выполняются). */
+  pagingRun?: boolean;
 }
 
 export interface PagedSql {
@@ -175,9 +177,10 @@ export function buildPagedSql(sql: string, opts: BuildPagedSqlOptions): PagedSql
   const pageSize = Number.isFinite(opts.pageSize) ? Math.max(0, Math.floor(opts.pageSize)) : 0;
   const text = (sql || '').trim();
   const nothing = (): PagedSql => ({ setup: [], main: '', pageable: false, skip: true });
+  const repeatRun = page > 1 || opts.pagingRun === true;
 
   if (opts.mode === 'parallel') {
-    return page > 1 ? nothing() : { setup: [], main: text, pageable: false, skip: false };
+    return repeatRun ? nothing() : { setup: [], main: text, pageable: false, skip: false };
   }
 
   const pieces = splitBySemicolonIgnoringQuotes(text);
@@ -186,7 +189,7 @@ export function buildPagedSql(sql: string, opts: BuildPagedSqlOptions): PagedSql
     if (!isBlankMask(pieces[i])) { lastIdx = i; break; }
   }
   if (lastIdx < 0) {
-    return page > 1 ? nothing() : { setup: [], main: text, pageable: false, skip: false };
+    return repeatRun ? nothing() : { setup: [], main: text, pageable: false, skip: false };
   }
 
   const statements = splitStatements(text);
@@ -195,16 +198,15 @@ export function buildPagedSql(sql: string, opts: BuildPagedSqlOptions): PagedSql
   const info = analyzeStatement(last, opts.dialect);
   const pageable = info.pageable && pageSize > 0;
 
-  if (page > 1 && !pageable) return nothing();
+  if (repeatRun && !pageable) return nothing();
 
   const paged = pageable ? pageStatement(last, info, page, pageSize) : last;
 
   if (opts.mode === 'sequential') {
-    return { setup: page === 1 ? setupStatements : [], main: paged, pageable, skip: false };
+    return { setup: repeatRun ? [] : setupStatements, main: paged, pageable, skip: false };
   }
 
-  // обычный запуск
-  if (page > 1) return { setup: [], main: paged, pageable, skip: false };
+  if (repeatRun) return { setup: [], main: paged, pageable, skip: false };
   if (paged === last) return { setup: [], main: text, pageable, skip: false };
   if (statements.length === 1) return { setup: [], main: paged, pageable, skip: false };
   const prefix = `${pieces.slice(0, lastIdx).join(';')};`;

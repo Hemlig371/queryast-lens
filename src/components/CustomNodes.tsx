@@ -52,7 +52,6 @@ const WarnBadge = ({ warnings }: { warnings?: { key: string; detail?: string }[]
   );
 };
 
-// TABLE NODE (Blue)
 export const TableNode = memo(({ data, selected, targetPosition, sourcePosition }: CustomNodeProps) => {
   return (
     <div className={`w-64 rounded-lg bg-slate-200 dark:bg-slate-800 border-2 ${selected ? 'border-blue-600 dark:border-blue-500 scale-102 ring-2 ring-blue-400/50' : 'border-blue-400/80 dark:border-blue-500/50'} transition-all duration-200 overflow-hidden`}>
@@ -116,7 +115,6 @@ export const TableNode = memo(({ data, selected, targetPosition, sourcePosition 
 
 TableNode.displayName = 'TableNode';
 
-// JOIN NODE (Purple)
 export const JoinNode = memo(({ data, selected, targetPosition, sourcePosition }: CustomNodeProps) => {
   return (
     <div className={`w-64 rounded-lg bg-slate-200 dark:bg-slate-800 border-2 ${selected ? 'border-purple-600 dark:border-purple-500 scale-102 ring-2 ring-purple-400/50' : 'border-purple-400/80 dark:border-purple-500/50'} transition-all duration-200 overflow-hidden`}>
@@ -143,7 +141,6 @@ export const JoinNode = memo(({ data, selected, targetPosition, sourcePosition }
 
 JoinNode.displayName = 'JoinNode';
 
-// FILTER NODE (Orange/Amber)
 export const FilterNode = memo(({ data, selected, targetPosition, sourcePosition }: CustomNodeProps) => {
   return (
     <div className={`w-64 rounded-lg bg-slate-200 dark:bg-slate-800 border-2 ${selected ? 'border-orange-600 dark:border-orange-500 scale-102 ring-2 ring-orange-400/50' : 'border-orange-400/80 dark:border-orange-500/50'} transition-all duration-200 overflow-hidden`}>
@@ -186,7 +183,6 @@ export const FilterNode = memo(({ data, selected, targetPosition, sourcePosition
 
 FilterNode.displayName = 'FilterNode';
 
-// CONSTANT NODE (Slate)
 export const ConstantNode = memo(({ data, selected, targetPosition, sourcePosition }: CustomNodeProps) => {
   return (
     <div className={`w-64 rounded-lg bg-slate-200 dark:bg-slate-800 border-2 ${selected ? 'border-slate-600 dark:border-slate-400 scale-102 ring-2 ring-slate-400/50' : 'border-slate-400/80 dark:border-slate-600'} transition-all duration-200 overflow-hidden`}>
@@ -209,7 +205,6 @@ export const ConstantNode = memo(({ data, selected, targetPosition, sourcePositi
 
 ConstantNode.displayName = 'ConstantNode';
 
-// RESULT NODE (Emerald Green)
 export const ResultNode = memo(({ data, selected, targetPosition, sourcePosition }: CustomNodeProps) => {
   return (
     <div className={`w-64 rounded-lg bg-slate-200 dark:bg-slate-800 border-2 ${selected ? 'border-emerald-600 dark:border-emerald-500 scale-102 ring-2 ring-emerald-400/50' : 'border-emerald-400/80 dark:border-emerald-500/50'} transition-all duration-200 overflow-hidden`}>
@@ -264,7 +259,6 @@ export const ResultNode = memo(({ data, selected, targetPosition, sourcePosition
 
 ResultNode.displayName = 'ResultNode';
 
-// QUERY GROUP NODE
 export const QueryGroupNode = memo(({ data, selected, targetPosition, sourcePosition }: CustomNodeProps) => {
   return (
     <>
@@ -297,7 +291,6 @@ export const QueryGroupNode = memo(({ data, selected, targetPosition, sourcePosi
 
 QueryGroupNode.displayName = 'QueryGroupNode';
 
-// COLLAPSE NODE
 export const CollapseNode = memo(({ data, selected }: CustomNodeProps) => {
   // Компактный заголовок запроса: подпись и кнопка в одну строку. Не часть графа данных — без точек подключения.
   return (

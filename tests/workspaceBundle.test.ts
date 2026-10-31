@@ -57,3 +57,21 @@ describe('isWorkspaceBundle', () => {
     expect(isWorkspaceBundle({ app: 5, version: 1, data: {} })).toBe(false);
   });
 });
+
+describe('A-01: shouldImportSyncFile', () => {
+  it('пустая или нечитаемая метка — импортировать (первый запуск)', async () => {
+    const { shouldImportSyncFile } = await import('../src/utils/workspaceBundle');
+    expect(shouldImportSyncFile('2026-10-31T10:00:00.000Z', '')).toBe(true);
+    expect(shouldImportSyncFile('2026-10-31T10:00:00.000Z', null)).toBe(true);
+    expect(shouldImportSyncFile('2026-10-31T10:00:00.000Z', 'abc')).toBe(true);
+  });
+  it('равная метка (свой файл) — не импортировать', async () => {
+    const { shouldImportSyncFile } = await import('../src/utils/workspaceBundle');
+    expect(shouldImportSyncFile('2026-10-31T10:00:00.000Z', '2026-10-31T10:00:00.000Z')).toBe(false);
+  });
+  it('файл новее — импортировать, старее — нет', async () => {
+    const { shouldImportSyncFile } = await import('../src/utils/workspaceBundle');
+    expect(shouldImportSyncFile('2026-10-31T10:00:01.000Z', '2026-10-31T10:00:00.000Z')).toBe(true);
+    expect(shouldImportSyncFile('2026-10-31T09:59:59.000Z', '2026-10-31T10:00:00.000Z')).toBe(false);
+  });
+});

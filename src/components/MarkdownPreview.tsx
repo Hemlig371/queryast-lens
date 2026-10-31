@@ -83,7 +83,6 @@ export default function MarkdownPreview({ ref, source, theme, onOpenMermaid }: P
     e.preventDefault();
   };
 
-  // «Открыть как граф» и якоря внутри документа (#md-…)
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement | null;
     const root = rootRef.current;

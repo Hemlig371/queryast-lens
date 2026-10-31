@@ -318,7 +318,6 @@ export const ActionMenuTabContent: React.FC<ActionMenuTabContentProps> = ({
     return () => window.removeEventListener('sql_snippets_updated', handleSnippetsUpdated);
   }, []);
 
-  // Reset running snippet state when engine finishes execution
   useEffect(() => {
     if (!isDuckDbRunning && runningSnippetId) {
       setRunningSnippetId(null);
@@ -357,7 +356,6 @@ export const ActionMenuTabContent: React.FC<ActionMenuTabContentProps> = ({
       if (s.sql.trim().startsWith('-- @job')) jobsCount++;
     });
 
-    // Sort dialects: 'General' first, then alphabetical
     const dialectsArr = Array.from(dialectsSet).sort((a, b) => {
       if (a === 'General') return -1;
       if (b === 'General') return 1;
@@ -406,11 +404,9 @@ export const ActionMenuTabContent: React.FC<ActionMenuTabContentProps> = ({
     <div className={`flex-1 flex flex-col h-full overflow-hidden select-none ${
       theme === 'dark' ? 'bg-slate-900 text-slate-100' : 'bg-slate-50 text-slate-800'
     }`}>
-      {/* FILTER & SEARCH BAR */}
       <div className={`px-3.5 py-2 flex flex-wrap items-center justify-between gap-3 ${
         theme === 'dark' ? 'bg-slate-850/50 border-b border-slate-800' : 'bg-slate-100/70 border-b border-slate-200'
       }`}>
-        {/* DIALECT & TYPE FILTERS */}
         <div className="flex items-center gap-1.5 flex-wrap">
           {availableDialects.map(dialectOption => {
             const isSelected = selectedDialectFilter === dialectOption;
@@ -452,7 +448,6 @@ export const ActionMenuTabContent: React.FC<ActionMenuTabContentProps> = ({
           </button>
         </div>
 
-        {/* SEARCH INPUT */}
         <div className="relative min-w-[110px] max-w-[160px] w-full sm:w-auto">
           <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
@@ -469,7 +464,6 @@ export const ActionMenuTabContent: React.FC<ActionMenuTabContentProps> = ({
         </div>
       </div>
 
-      {/* ACTION CARDS GRID */}
       <div className="flex-1 overflow-y-auto p-4">
         {loading ? (
           <div className="flex flex-col items-center justify-center h-48 space-y-3">

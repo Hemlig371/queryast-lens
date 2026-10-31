@@ -85,7 +85,6 @@ const preciseHeight = (node: SizedNodeLike): number | null => {
   }
 };
 
-/** Размер узла по содержимому карточки. */
 export const getNodeDimensions = (node: SizedNodeLike): { width: number; height: number } => {
   if (node.type === 'frameNode') {
     return { width: Number(node.data?.width) || 200, height: Number(node.data?.height) || 150 };

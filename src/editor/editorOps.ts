@@ -56,7 +56,7 @@ const buildSkipMask = (sql: string): Uint8Array => {
       while (j < n) {
         if (c === "'" && sql[j] === '\\' && (sql[j + 1] === "'" || sql[j + 1] === '\\')) { j += 2; continue; }
         if (sql[j] === c) {
-          if (sql[j + 1] === c) { j += 2; continue; } // удвоенная кавычка = экранирование
+          if (sql[j + 1] === c) { j += 2; continue; }
           j++;
           break;
         }
@@ -132,7 +132,6 @@ export interface TextEdit {
   selEnd: number;
 }
 
-/** Начало строки, в которой находится позиция pos. */
 export const lineStartOf = (text: string, pos: number): number =>
   pos <= 0 ? 0 : text.lastIndexOf('\n', pos - 1) + 1;
 

@@ -61,7 +61,6 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
     const isUserPreset = selectedPresetId !== CLASSIC_PRESET_ID;
     const targetName = presetNameInput.trim() || (isUserPreset ? presets.find(p => p.id === selectedPresetId)?.name || t('Пользовательский') : t('Мой пресет'));
     
-    // If we're updating a user preset and kept the same ID or creating a new one
     const idToUpdate = isUserPreset ? selectedPresetId : null;
     const { presets: updatedPresets, targetId } = saveOrUpdateExcelPreset(idToUpdate, targetName, excelSettings);
     
@@ -119,7 +118,6 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
 
   return (
     <div className="space-y-6 text-xs">
-      {/* HEADER ACTION */}
       <div className={`flex items-center justify-between border-b pb-2 ${
         theme === 'dark' ? 'border-slate-700/50' : 'border-slate-300'
       }`}>
@@ -150,10 +148,8 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
         </button>
       </div>
 
-      {/* PRESETS TOOLBAR */}
       <div className={cardClass}>
         <div className="flex flex-wrap items-end gap-2.5">
-          {/* Preset Selector */}
           <div className="w-full sm:w-44 md:w-48">
             <label className={labelClass}>{t('Пресет:')}</label>
             <select
@@ -172,7 +168,6 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
             </select>
           </div>
 
-          {/* Preset Name Input */}
           <div className="flex-1 min-w-[140px]">
             <label className={labelClass}>
               {isSelectedCustom ? t('Название:') : t('Новый пресет:')}
@@ -192,7 +187,6 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
             />
           </div>
 
-          {/* Action Buttons */}
           <div className="flex items-center gap-1.5 shrink-0">
             <button
               type="button"
@@ -229,7 +223,6 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
         </div>
       </div>
 
-      {/* SECTION 1: СТИЛИ И ЦВЕТА */}
       <div className="space-y-4">
         <div className={`flex items-center gap-2 border-b pb-1.5 ${
           theme === 'dark' ? 'border-blue-500/30' : 'border-blue-500/40'
@@ -242,7 +235,6 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
           </h4>
         </div>
 
-        {/* 1.1 Шрифт, Размеры и Сетка таблицы */}
         <div className={cardClass}>
           <div className={`${subHeaderClass} mb-3`}>
             {t('1.1 Шрифт, размеры и сетка')}
@@ -376,7 +368,6 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
           </div>
         </div>
 
-        {/* 1.2 Оформление Заголовка Таблицы */}
         <div className={cardClass}>
           <div className={`${subHeaderClass} mb-3`}>
             {t('1.2 Оформление заголовка таблицы')}
@@ -436,7 +427,6 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
           </div>
         </div>
 
-        {/* {t('1.3 Столбцы категорий')} */}
         <div className={cardClass}>
           <label className="flex items-center gap-2 font-semibold cursor-pointer">
             <input
@@ -515,7 +505,6 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
             </div>
           )}
 
-          {/* Автогруппировка строк по категории */}
           <div className={`${dividerClass} mt-3 pt-3 pl-6 space-y-2.5`}>
             <div className="flex flex-wrap items-center gap-3">
               <span className={`text-xs shrink-0 ${theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}`}>{t('Автогруппировка строк по столбцу:')}</span>
@@ -624,7 +613,6 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
           </div>
         </div>
 
-        {/* {t('1.4 Чередование строк и столбцов')} */}
         <div className={cardClass}>
           <div className={`${subHeaderClass} mb-3`}>
             {t('1.4 Чередование строк и столбцов')}
@@ -691,7 +679,6 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
         </div>
       </div>
 
-      {/* SECTION 2: ДАННЫЕ И ЯЧЕЙКИ */}
       <div className="space-y-4 pt-2">
         <div className={`flex items-center gap-2 border-b pb-1.5 ${
           theme === 'dark' ? 'border-blue-500/30' : 'border-blue-500/40'
@@ -704,7 +691,6 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
           </h4>
         </div>
 
-        {/* 2.1 Выравнивание текста и чисел */}
         <div className={cardClass}>
           <div className={`${subHeaderClass} mb-3`}>
             {t('2.1 Выравнивание значений')}
@@ -751,7 +737,6 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
           </div>
         </div>
 
-        {/* 2.2 Ширина столбцов и Перенос текста */}
         <div className={cardClass}>
           <div className={`${subHeaderClass} mb-3`}>
             {t('2.2 Ширина столбцов и перенос текста')}
@@ -822,7 +807,6 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
           </div>
         </div>
 
-        {/* 2.3 Форматирование Чисел и Дат */}
         <div className={cardClass}>
           <div className={`${subHeaderClass} mb-3`}>
             {t('2.3 Формат чисел и дат')}
@@ -870,7 +854,6 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
           </div>
         </div>
 
-        {/* 2.4 Служебные элементы */}
         <div className={cardClass}>
           <div className={`${subHeaderClass} mb-3`}>
             {t('2.4 Служебные строки и столбцы')}
@@ -948,7 +931,6 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
         </div>
       </div>
 
-      {/* SECTION 3: ЗАГОЛОВОК ОТЧЕТА И ИТОГИ */}
       <div className="space-y-4 pt-2">
         <div className={`flex items-center gap-2 border-b pb-1.5 ${
           theme === 'dark' ? 'border-blue-500/30' : 'border-blue-500/40'
@@ -961,7 +943,6 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
           </h4>
         </div>
 
-        {/* 3.1 Заголовок отчета */}
         <div className={cardClass}>
           <div className="flex items-center justify-between gap-2 mb-3">
             <span className={subHeaderClass}>{t('3.1 Заголовок отчета')}</span>
@@ -1000,7 +981,6 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
                   />
                 </div>
               </div>
-              {/* TITLE STYLE */}
               <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
                 <div className="sm:col-span-2">
                   <label className={labelClass}>{t('Размер (pt):')}</label>
@@ -1068,7 +1048,6 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
                 </div>
               </div>
 
-              {/* SUBTITLE STYLE */}
               <div className={`${dividerClass} grid grid-cols-1 sm:grid-cols-12 gap-3 items-end mt-3 pt-3`}>
                 <div className="sm:col-span-2">
                   <label className={labelClass}>{t('Размер (pt):')}</label>
@@ -1139,7 +1118,6 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
           )}
         </div>
 
-        {/* 3.2 Итоговая Строка */}
         <div className={cardClass}>
           <div className="space-y-2">
             <span className={subHeaderClass}>
@@ -1275,7 +1253,6 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
           )}
         </div>
 
-        {/* 3.3 Итоговый Столбец */}
         <div className={cardClass}>
           <div className="space-y-2">
             <span className={subHeaderClass}>
@@ -1412,7 +1389,6 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
         </div>
       </div>
 
-      {/* SECTION 4: ЛИСТЫ И ПЕЧАТЬ */}
       <div className="space-y-4 pt-2">
         <div className={`flex items-center gap-2 border-b pb-1.5 ${
           theme === 'dark' ? 'border-blue-500/30' : 'border-blue-500/40'
@@ -1425,7 +1401,6 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
           </h4>
         </div>
 
-        {/* 4.1 Файл и Листы */}
         <div className={cardClass}>
           <div className={`${subHeaderClass} mb-3`}>
             {t('4.1 Файл и листы')}
@@ -1530,7 +1505,6 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
           </div>
         </div>
 
-        {/* 4.2 Закрепление и Автофильтр */}
         <div className={cardClass}>
           <div className={`${subHeaderClass} mb-3`}>
             {t('4.2 Закрепление областей и масштаб')}
@@ -1580,7 +1554,6 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
           </div>
         </div>
 
-        {/* 4.3 Параметры Печати */}
         <div className={cardClass}>
           <div className={`${subHeaderClass} mb-3`}>
             {t('4.3 Параметры печати')}
@@ -1691,7 +1664,6 @@ export const ExcelSettingsTab: React.FC<ExcelSettingsTabProps> = ({
           </div>
         </div>
 
-        {/* 4.4 Подсказка по SQL комментариям */}
         <div className={`p-3.5 text-xs rounded-xl border ${
           theme === 'dark'
             ? 'bg-slate-900/60 border-slate-700/60 text-slate-300'

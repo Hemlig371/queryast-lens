@@ -38,8 +38,6 @@ Column numbers in `@split`, `@skip`, `@hide` and `@group` refer to the original 
 
 * At most 1,500,000 cells (rows × columns). Above that, an error asks you to reduce the selection.
 * No data produces the error "Нет данных для экспорта в Excel" (no data to export). Exception: export from a template (`@template`, `@template_values`, section 6) accepts an empty result when the column names are known.
-* Column type (number, date) is taken from the type returned by the database; if it is missing, the first 50 non-empty values are inspected.
-* `@protect` uses lightweight password hashing (100 iterations) so that the export does not hang.
 * A string that starts with `=` is written to Excel as a formula, so Excel formulas and SQL can be mixed in one report, e.g. `SELECT 'Total' AS name, '=SUM(B2:B10)' AS value`. This also applies to data from the database: a value such as `=== total ===` or `=1+1` becomes a formula too (`=== total ===` gives a formula error).
 
 ## 4. `@excel_save` (desktop only)

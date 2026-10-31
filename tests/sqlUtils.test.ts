@@ -64,7 +64,6 @@ SELECT * FROM sales WHERE year = 2024;`;
 -- {{$threshold=99.5}}
 SELECT * FROM logs WHERE tenant = '{{$tenant}}' AND score > {{$threshold}};`;
 
-      // User highlighted only the SELECT query
       const selectedQuery = `SELECT * FROM logs WHERE tenant = '{{$tenant}}' AND score > {{$threshold}};`;
       const result = replaceVariablesInSql(selectedQuery, fullTabSql);
       expect(result).toBe(`SELECT * FROM logs WHERE tenant = 'acme' AND score > 99.5;`);

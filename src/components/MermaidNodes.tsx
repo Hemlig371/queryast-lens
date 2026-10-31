@@ -497,7 +497,6 @@ function HeadSvg({ head, color, style }: { head: HeadShape; color?: string; styl
   const pts = (list: Pt[]) => list.map(p => `${p.x},${p.y}`).join(' ');
   if (head.polygon) return <polygon points={pts(head.polygon)} fill={color || 'currentColor'} stroke="none" {...common} />;
   if (head.lines || head.circle) {
-    // ER: засечки/«лапка» и кольцо «ноль»
     const stroke = color || 'currentColor';
     return (
       <g {...common}>

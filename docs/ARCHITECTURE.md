@@ -54,11 +54,13 @@ flowchart TD
 1. `replaceVariablesInSql` (`src/lib/sqlUtils.ts`): `{{$имя=значение}}` и `{{$имя}}`; определения ищутся в выполняемом тексте и во всём тексте вкладки.
 2. `replaceSecretsInSql` (`src/utils/vaultStorage.ts`): `{{ИМЯ}}` из разблокированного Vault. Если в тексте есть `{{`, а хранилище заблокировано, выполнение прекращается с сообщением.
 3. Для режимов `sequential`/`parallel` текст делится на команды (`splitBySemicolonIgnoringQuotes`).
-4. Постраничный `LIMIT`/`OFFSET` (размер страницы — настройка `duckDbMaxRows` / `clickhouseMaxRows`, по умолчанию 100; `0` — без лимита). Если в тексте найден `LIMIT <число>`, лимит не добавляется на первой странице; на следующих страницах добавляется `OFFSET` (при собственном `LIMIT` или `UNION` — через подзапрос). ClickHouse дополнительно получает `FORMAT JSON` для `SELECT`/`SHOW`/`DESCRIBE`/`EXPLAIN`, если формат не указан.
+4. Постраничный `LIMIT`/`OFFSET` (размер страницы — настройка `duckDbMaxRows` / `clickhouseMaxRows`, по умолчанию 100, от 1 до 50 000). Если в тексте найден `LIMIT <число>`, лимит не добавляется на первой странице; на следующих страницах добавляется `OFFSET` (при собственном `LIMIT` или `UNION` — через подзапрос). ClickHouse дополнительно получает `FORMAT JSON` для `SELECT`/`SHOW`/`DESCRIBE`/`EXPLAIN`, если формат не указан.
 5. `COPY … TO/FROM` для ClickHouse распознаётся до отправки (`parseClickhouseCopy`) и выполняется потоково на десктопе (Rust) либо через `CapacitorHttp` (только `TO`).
 6. Для DuckDB после `CREATE/DROP/ATTACH/DETACH/RENAME` схема обновляется автоматически (настройка `autoUpdateSchema`).
 
-Отмена: `AbortController` в интерфейсе плюс нативные команды `cancel_duckdb_query` (прерывание соединения DuckDB) и `cancel_clickhouse_query` (обрыв HTTP-запроса). Нативный слой DuckDB держит **одно** соединение под блокировкой, поэтому запросы выполняются по очереди.
+Отмена: `AbortController` в интерфейсе плюс нативные команды `cancel_duckdb_query` (прерывание соединения DuckDB) и `cancel_clickhouse_query` (обрыв HTTP-запроса). Нативный слой DuckDB держит **одно** соединение под блокировкой, поэтому запросы выполняются по очереди. Остановка запроса гарантирована только в Tauri; в WASM и на dev-сервере прекращается лишь ожидание результата.
+
+Три бэкенда (Tauri / WASM / Express) реализованы ветвлением внутри `executeDuckDbQueryWithPagination` и `executeClickhouseQueryWithPagination`: правки вносите во все ветки.
 
 Потолок результата — 500 000 строк на запрос (Rust, WASM и ClickHouse); если строк больше, запрос заканчивается ошибкой, а не усечённым результатом.
 
@@ -115,10 +117,3 @@ SQL (выделение или весь текст)
 * Тесты: `tests/*.test.ts`, API Vitest (`npm test` или `bun test`). Покрыты чистые утилиты, хранилища (на `fake-indexeddb`), разбор и раскладка графов, Markdown, Mermaid, Excel (поверхностно). Не покрыты `App.tsx`, компоненты, DuckDB-WASM и Rust.
 * Сборка и релиз: [CONTRIBUTING](./CONTRIBUTING.md#release-build-ci).
 * Проверка типов: `npm run lint` (`tsc --noEmit`) охватывает только `src/**`; `server.ts` и `tests/` не проверяются.
-
-## 12. Известные архитектурные ограничения
-
-* Один большой компонент и два макета JSX (см. раздел 2).
-* Три способа выполнения запроса (Tauri / WASM / Express) реализованы ветвлением внутри двух больших функций (`executeDuckDbQueryWithPagination`, `executeClickhouseQueryWithPagination`) без общего интерфейса; изменения нужно вносить во все ветки.
-* В нативном слое ClickHouse общий слот отмены на все запросы (второй запрос может оборвать первый).
-* Сообщения об ошибках экспорта графа/документа и ошибках разбора SQL в интерфейсе не отображаются (состояние `error` в `App.tsx` нигде не выводится).

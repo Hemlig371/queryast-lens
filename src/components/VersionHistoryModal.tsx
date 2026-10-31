@@ -182,7 +182,15 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
     }
   };
 
-  const handleRestore = (ver: SqlVersionItem) => {
+  const handleRestore = async (ver: SqlVersionItem) => {
+    // текущий текст редактора иначе пропал бы при восстановлении; ошибка записи не должна блокировать восстановление
+    if (currentSql.trim() && currentSql !== ver.sql) {
+      try {
+        await saveVersion(currentSql, currentTabTitle || t('Вкладка'), true);
+      } catch (err) {
+        console.warn('Failed to save version before restore:', err);
+      }
+    }
     onRestoreVersion?.(ver.sql);
     setRestoredId(ver.id);
     setTimeout(() => {
@@ -202,14 +210,11 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
       const zip = new JSZip();
 
       versions.forEach(v => {
-        // 1. Ручной снимок vs Автосохранение
         const rootFolder = v.isAutoSave ? t('Автосохранение') : t('Ручной снимок');
         
-        // 2. Метка (Отдельная папка)
         const rawLabel = v.label && v.label.trim() ? v.label : t('Без метки');
         const tagFolder = rawLabel.replace(/[/\\:*?"<>|]/g, '_').trim() || t('Без_метки');
 
-        // 3. Временная метка
         // Remove commas from formattedTime, then replace unsafe chars with dashes and spaces with underscores
         const safeTime = v.formattedTime.replace(/,/g, '').replace(/[/\\:*?"<>|]/g, '-').replace(/\s+/g, '_');
         const fileName = `${safeTime}.sql`;
@@ -412,7 +417,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
                         <div className="flex items-center gap-1.5 min-w-0 flex-1">
                           <span className={`w-2 h-2 rounded-full shrink-0 ${ver.isAutoSave ? 'bg-amber-500' : 'bg-emerald-500'}`} />
                           <span className={`truncate font-medium ${theme === 'dark' ? 'text-slate-100' : 'text-slate-800'}`}>
-                            {ver.label}
+                            {t(ver.label)}
                           </span>
                         </div>
                         <span className={`text-[10px] font-mono shrink-0 ${

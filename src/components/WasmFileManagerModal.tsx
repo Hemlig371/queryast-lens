@@ -64,7 +64,6 @@ export function WasmFileManagerModal({
     setIsLoading(true);
     setMessage(null);
 
-    // Статус честный по каждому файлу: «успешно» — только если файл зарегистрирован; отложенная регистрация и сбои — отдельно.
     let okCount = 0;
     let postponedCount = 0;
     const failed: string[] = [];
@@ -148,7 +147,6 @@ export function WasmFileManagerModal({
           theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
         }`}
       >
-        {/* MODAL HEADER */}
         <div
           className={`px-5 py-4 border-b flex items-center justify-between shrink-0 ${
             theme === 'dark' ? 'bg-slate-800/80 border-slate-700' : 'bg-slate-100/90 border-slate-200'
@@ -177,7 +175,6 @@ export function WasmFileManagerModal({
           </button>
         </div>
 
-        {/* NOTIFICATION MESSAGES */}
         {message && (
           <div
             className={`px-5 py-2.5 text-xs font-medium flex items-center gap-2 border-b ${
@@ -199,9 +196,7 @@ export function WasmFileManagerModal({
           </div>
         )}
 
-        {/* MODAL BODY */}
         <div className="p-5 flex-1 overflow-y-auto space-y-4">
-          {/* TOP CONTROLS & UPLOAD BUTTON */}
           <div className="flex items-center justify-between gap-3">
             <span className={`text-xs font-semibold ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>
               {t('Загруженные файлы')} ({files.length}):
@@ -245,7 +240,6 @@ export function WasmFileManagerModal({
             </div>
           </div>
 
-          {/* FILE LIST TABLE */}
           {files.length > 0 ? (
             <div className={`rounded-xl border overflow-hidden ${theme === 'dark' ? 'border-slate-800 bg-slate-900/60' : 'border-slate-200 bg-slate-50/50'}`}>
               <div className="divide-y divide-slate-200 dark:divide-slate-800">
@@ -312,7 +306,6 @@ export function WasmFileManagerModal({
           )}
         </div>
 
-        {/* MODAL FOOTER */}
         <div
           className={`px-5 py-3 border-t flex items-center justify-end shrink-0 ${
             theme === 'dark' ? 'bg-slate-800/60 border-slate-700' : 'bg-slate-50 border-slate-200'

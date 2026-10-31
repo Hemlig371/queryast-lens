@@ -137,7 +137,6 @@ describe('заполнение листа', () => {
     const ws = makeTemplate('[[rows]]');
     const res = fillTemplateSheet(ws, findTemplateMarker(ws)!, columns, rows, { sum: 'Float64' });
     expect(res).toEqual({ written: 3, shifted: 2 });
-    // данные
     expect([val(ws, 3, 2), val(ws, 4, 2), val(ws, 5, 2)]).toEqual(['A', 'B', 'C']);
     expect([val(ws, 3, 3), val(ws, 4, 3), val(ws, 5, 3)]).toEqual([10, 20.5, null]);
     // оформление ведущей строки: у всех трёх строк, включая колонку категорий слева

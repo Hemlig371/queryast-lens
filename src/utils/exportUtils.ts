@@ -87,7 +87,6 @@ export async function downloadFileWithFallback(blob: Blob, filename: string, tar
     }
   }
 
-  // Web fallback
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;

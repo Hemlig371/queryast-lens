@@ -8,7 +8,6 @@ import { findMatchingBrackets, wordOccurrenceRegExp } from './editorOps';
 export const EDITOR_FONT_FAMILY =
   'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
 
-/** Тема оформления редактора. */
 export const buildEditorTheme = (theme: 'dark' | 'light'): Extension => {
   const dark = theme === 'dark';
   const colors = SQL_COLORS[theme];
@@ -46,7 +45,6 @@ export const buildEditorTheme = (theme: 'dark' | 'light'): Extension => {
           fontFamily: EDITOR_FONT_FAMILY,
         },
         '.cm-lineNumbers .cm-gutterElement': { padding: '0 8px 0 4px', minWidth: '40px', boxSizing: 'border-box' },
-        // Подсветка совпадений поиска
         '.lens-match': {
           backgroundColor: dark ? 'rgba(251,191,36,0.25)' : 'rgba(254,240,138,0.9)',
           boxShadow: `0 0 0 1px ${dark ? 'rgba(251,191,36,0.4)' : 'rgba(250,204,21,0.6)'}`,
@@ -58,13 +56,11 @@ export const buildEditorTheme = (theme: 'dark' | 'light'): Extension => {
           borderRadius: '2px',
           fontWeight: '600',
         },
-        // Другие вхождения выделенного слова
         '.lens-occurrence': {
           backgroundColor: dark ? 'rgba(251,191,36,0.25)' : 'rgba(254,240,138,0.9)',
           boxShadow: `0 0 0 1px ${dark ? 'rgba(251,191,36,0.4)' : 'rgba(250,204,21,0.6)'}`,
           borderRadius: '2px',
         },
-        // Парные скобки
         '.lens-bracket': {
           backgroundColor: dark ? 'rgba(59,130,246,0.35)' : '#bfdbfe',
           color: dark ? '#bfdbfe' : '#1e3a8a',
@@ -180,7 +176,6 @@ const buildCursorDecorations = (view: EditorView): DecorationSet => {
           }
         }
       } catch {
-        // некорректный шаблон — пропускаем
       }
     }
   } else if (state.doc.length < MAX_BRACKET_DOC) {

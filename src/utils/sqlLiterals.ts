@@ -53,7 +53,7 @@ function quotedEnd(text: string, start: number, backslash: boolean): number {
   while (j < text.length) {
     if (backslash && text[j] === '\\') { j += 2; continue; }
     if (text[j] === quote) {
-      if (text[j + 1] === quote) { j += 2; continue; } // удвоенная кавычка
+      if (text[j + 1] === quote) { j += 2; continue; }
       return j + 1;
     }
     j++;

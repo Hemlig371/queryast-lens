@@ -79,7 +79,7 @@ export function splitSqlSegments(sql: string, opts: SqlTokenOptions = {}): SqlSe
       while (j < n) {
         if (backslash && sql[j] === '\\') { j += 2; continue; }
         if (sql[j] === c) {
-          if (sql[j + 1] === c) { j += 2; continue; } // удвоенная кавычка
+          if (sql[j + 1] === c) { j += 2; continue; }
           j++;
           break;
         }

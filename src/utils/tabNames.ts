@@ -20,3 +20,9 @@ export function nextTabName(existingTitles: readonly string[], ...labels: string
   while (used.has(n)) n++;
   return `${uniq[0] ?? ''} ${n}`.trim();
 }
+
+/** Название вкладки для показа: «Вкладка N», созданная при другом языке, выводится на текущем (в данных остаётся как была). */
+export function displayTabTitle(title: string, translate: (text: string) => string): string {
+  const m = /^Вкладка (\d+)$/.exec(title);
+  return m ? `${translate('Вкладка')} ${m[1]}` : title;
+}

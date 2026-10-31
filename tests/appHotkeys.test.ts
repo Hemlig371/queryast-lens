@@ -170,3 +170,14 @@ describe('App.tsx: обработчик горячих клавиш', () => {
     expect(src).not.toContain('Формат в одну строку (Ctrl+Alt+M)');
   });
 });
+
+describe('B-16: автоповтор keydown', () => {
+  it('visualize и rerunLast при repeat:true блокируются, при обычном нажатии — нет', async () => {
+    const { isBlockedRepeat } = await import('../src/utils/appHotkeys');
+    expect(isBlockedRepeat('visualize', { repeat: true })).toBe(true);
+    expect(isBlockedRepeat('rerunLast', { repeat: true })).toBe(true);
+    expect(isBlockedRepeat('visualize', { repeat: false })).toBe(false);
+    expect(isBlockedRepeat('visualize', {})).toBe(false);
+    expect(isBlockedRepeat('saveFile', { repeat: true })).toBe(false);
+  });
+});

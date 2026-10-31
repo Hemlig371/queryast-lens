@@ -30,7 +30,6 @@ export const getCustomAutocompleteTemplates = (): AutocompleteTemplate[] => {
   return DEFAULT_AUTOCOMPLETE_TEMPLATES;
 };
 
-// Common SQL Keywords and Functions for Autocomplete
 export const SQL_KEYWORDS = [
   'FROM', 'WHERE', 'HAVING', 'LIMIT', 'OFFSET', 'JOIN', 'LEFT JOIN', 'RIGHT JOIN',
   'INNER JOIN', 'FULL OUTER JOIN', 'CROSS JOIN', 'LIKE', 'ILIKE', 'QUALIFY',

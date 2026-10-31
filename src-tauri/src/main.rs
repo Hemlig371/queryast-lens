@@ -225,27 +225,21 @@ async fn execute_query(
     cancel_state: State<'_, DuckDbCancelState>,
     sql: String,
 ) -> Result<QueryResult, String> {
-    let interrupt_handle = {
-        let mut db_guard = db_state.0.lock().unwrap_or_else(|e| e.into_inner());
-        let conn = db_guard
-            .as_mut()
-            .ok_or_else(|| "No active database connection".to_string())?;
-        conn.interrupt_handle()
-    };
-
-    {
-        let mut guard = cancel_state.interrupt_handle.lock().unwrap_or_else(|e| e.into_inner());
-        *guard = Some(interrupt_handle);
-    }
-
     let db_arc = db_state.0.clone();
     let cancel_arc = cancel_state.interrupt_handle.clone();
+    let cancel_for_task = cancel_arc.clone();
 
     let res = tokio::task::spawn_blocking(move || {
+        // Mutex соединения может быть занят предыдущим запросом: ждать его нужно здесь, а не на async-потоке
         let mut db_guard = db_arc.lock().unwrap_or_else(|e| e.into_inner());
         let conn = db_guard
             .as_mut()
             .ok_or_else(|| "No active database connection".to_string())?;
+
+        {
+            let mut guard = cancel_for_task.lock().unwrap_or_else(|e| e.into_inner());
+            *guard = Some(conn.interrupt_handle());
+        }
 
         let panic_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<QueryResult, String> {
             let mut stmt = match conn.prepare(&sql) {
@@ -265,7 +259,6 @@ async fn execute_query(
                         // Повторный execute_batch выполнил бы их второй раз (INSERT дал бы дубли): возвращаем исходную ошибку.
                         return Err(e.to_string());
                     } else {
-                        // Fallback for multi-statement scripts (e.g., CREATE ...; COPY ...)
                         match conn.execute_batch(&sql) {
                             Ok(_) => {
                                 return Ok(QueryResult {

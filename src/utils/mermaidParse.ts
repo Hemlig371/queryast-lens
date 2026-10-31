@@ -349,7 +349,6 @@ function parseNode(sc: Scanner): ParsedNode {
     }
   }
 
-  // :::className
   const cls = /^:::([\p{L}\p{N}_-]+)/u.exec(sc.rest());
   if (cls) {
     node.className = cls[1];
@@ -439,7 +438,7 @@ function parseLink(sc: Scanner): ParsedLink {
     return link;
   }
 
-  const ch = op[0]; // '-' или '='
+  const ch = op[0];
   link.lineType = ch === '=' ? 'thick' : 'solid';
   const head = readHead();
   if (head !== 'none') {

@@ -79,3 +79,17 @@ export function columnsFromMeta(meta: unknown): string[] | null {
   }
   return names;
 }
+
+/**
+ * Запрос, возвращающий те же столбцы под уникальными именами (`a`, `a_1`, …), или null, если имена уже уникальны.
+ * Нужен там, где строки приходят объектами (Express: `stmt.all`) и одноимённые столбцы перезаписывали бы друг друга.
+ * Переименование идёт списком псевдонимов подзапроса, поэтому не зависит от того, как СУБД называет повторы.
+ */
+export function dedupeColumnsSql(query: string, names: readonly unknown[]): string | null {
+  const original = names.map((n) => String(n));
+  if (original.length === 0 || new Set(original).size === original.length) return null;
+  const unique = uniqueColumnNames(original);
+  const aliases = unique.map((n) => `"${n.replace(/"/g, '""')}"`).join(', ');
+  const body = query.replace(/[;\s]+$/, '');
+  return `SELECT * FROM (\n${body}\n) AS _dedup_cols(${aliases})`;
+}

@@ -5,6 +5,7 @@ import { createServer as createViteServer } from "vite";
 import { MAX_RESULT_ROWS, rowLimitMessage } from "./src/utils/rowLimit";
 import { appendCopyFormat } from "./src/utils/clickhouseFormat";
 import { parseClickhouseResponse } from "./src/lib/clickhouse";
+import { dedupeColumnsSql } from "./src/utils/resultRows";
 
 let duckdbModule: any = null;
 async function loadDuckDbModule() {
@@ -24,7 +25,6 @@ const app = express();
 const jsonParser = express.json();
 app.use((req, res, next) => (req.path === "/api/vfs/upload" ? next() : jsonParser(req, res, next)));
 
-// Enable CORS for desktop clients (Tauri) and local connections
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
@@ -41,7 +41,6 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok", mode: duckdbModule ? "native_duckdb_server" : "wasm_duckdb_server" });
 });
 
-// Global duckdb connection for the server
 let db: any = null;
 let currentDbPath: string | null = null;
 
@@ -173,7 +172,19 @@ app.post("/api/duckdb/query", (req, res) => {
   }
 
   try {
-    const stmt = db.prepare(query);
+    let stmt = db.prepare(query);
+    // одноимённые столбцы (JOIN, SELECT *) в объектах строк перезаписали бы друг друга: переименовываем до выполнения
+    try {
+      const preCols = stmt.columns();
+      const dedupSql = Array.isArray(preCols) ? dedupeColumnsSql(query, preCols.map((c: any) => c.name)) : null;
+      if (dedupSql) {
+        const dedupStmt = db.prepare(dedupSql);
+        try { stmt.finalize(); } catch { /* ignore */ }
+        stmt = dedupStmt;
+      }
+    } catch {
+      // columns() до выполнения доступен не везде: тогда запрос идёт как раньше
+    }
     stmt.all((err, resData) => {
       try {
         if (err) {
@@ -200,7 +211,6 @@ app.post("/api/duckdb/query", (req, res) => {
           meta: meta
         };
         
-        // Handle BigInt serialization
         const jsonStr = JSON.stringify(responsePayload, (key, value) => 
           typeof value === 'bigint' ? value.toString() : value
         );
@@ -226,7 +236,6 @@ app.post("/api/duckdb/query", (req, res) => {
   }
 });
 
-// ClickHouse proxy endpoints
 app.post("/api/clickhouse/test", async (req, res) => {
   const { protocol, host, user, key, database } = req.body;
   if (!host) {
@@ -398,7 +407,6 @@ app.post("/api/clickhouse/copy-from", async (req, res) => {
   }
 });
 
-// VFS File Upload endpoint for syncing uploaded files with server DuckDB
 app.post("/api/vfs/upload", express.json({ limit: "500mb" }), (req, res) => {
   try {
     const { fileName, contentBase64 } = req.body;

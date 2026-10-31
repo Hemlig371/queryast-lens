@@ -89,3 +89,23 @@ describe('selectTopN', () => {
     expect(selectTopN([], 5, 'alphabet')).toEqual([]);
   });
 });
+
+describe('E-05/E-06: группировка и точки графика', () => {
+  it('E-05: категории constructor, __proto__, toString — обычные ключи', async () => {
+    const { groupRowsByCategory } = await import('../src/utils/statFormat');
+    const rows = [{ c: 'constructor' }, { c: '__proto__' }, { c: 'toString' }, { c: 'constructor' }, { c: null }];
+    const g = groupRowsByCategory(rows, 'c');
+    expect(g.get('constructor')).toHaveLength(2);
+    expect(g.get('__proto__')).toHaveLength(1);
+    expect(g.get('toString')).toHaveLength(1);
+    expect(g.get('null')).toHaveLength(1);
+    expect(Array.from(g.keys())).toEqual(['constructor', '__proto__', 'toString', 'null']);
+  });
+  it('E-06: столбцы name и value не перетирают подпись и значение точки', async () => {
+    const { chartPoint } = await import('../src/utils/statFormat');
+    const p = chartPoint({ name: 'x', value: 'text', k: 1 }, 'A', 5);
+    expect(p.name).toBe('A');
+    expect(p.value).toBe(5);
+    expect((p as any).k).toBe(1);
+  });
+});

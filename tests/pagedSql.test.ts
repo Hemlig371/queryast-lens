@@ -420,3 +420,30 @@ describe('согласованность с признаком FORMAT из click
   });
 });
 
+
+describe('B-01: pagingRun (возврат на страницу 1 кнопкой «<»)', () => {
+  const script = 'INSERT INTO t VALUES (1); SELECT * FROM big';
+  it('без pagingRun страница 1 выполняет весь скрипт (INSERT остаётся)', () => {
+    expect(mainOf(script, 1)).toContain('INSERT INTO t');
+  });
+  it('с pagingRun страница 1 — только последний оператор, без INSERT', () => {
+    const r = buildPagedSql(script, { ...P(1), pagingRun: true });
+    expect(r.skip).toBe(false);
+    expect(r.main).toBe('SELECT * FROM big\nLIMIT 50');
+    expect(r.main).not.toContain('INSERT');
+  });
+  it('sequential + pagingRun: setup пуст', () => {
+    const r = buildPagedSql(script, { ...P(1, { mode: 'sequential' }), pagingRun: true });
+    expect(r.setup).toEqual([]);
+    expect(r.main).toBe('SELECT * FROM big\nLIMIT 50');
+  });
+  it('sequential без pagingRun: setup содержит INSERT', () => {
+    expect(buildPagedSql(script, P(1, { mode: 'sequential' })).setup).toEqual(['INSERT INTO t VALUES (1)']);
+  });
+  it('pagingRun у нелистаемого последнего оператора — skip', () => {
+    expect(buildPagedSql('SELECT 1; INSERT INTO t VALUES (1)', { ...P(1), pagingRun: true }).skip).toBe(true);
+  });
+  it('собственный LIMIT на странице 1 сохраняется', () => {
+    expect(buildPagedSql('INSERT INTO t VALUES (1); SELECT * FROM big LIMIT 5', { ...P(1), pagingRun: true }).main).toBe('SELECT * FROM big LIMIT 5');
+  });
+});

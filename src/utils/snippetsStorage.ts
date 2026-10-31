@@ -93,7 +93,6 @@ export async function saveSnippetsToDB(snippets: Snippet[]): Promise<void> {
     const tx = db.transaction(STORE_NAME, 'readwrite');
     const store = tx.objectStore(STORE_NAME);
     
-    // Clear old snippets to maintain the exact list
     const clearReq = store.clear();
     clearReq.onsuccess = () => {
       if (snippets.length === 0) {
@@ -309,7 +308,6 @@ export async function migrateLegacySnippets(
  */
 export function getSnippetExportFilename(title: string, fallbackId: string = ''): { baseName: string; extension: string; fileName: string } {
   const trimmed = title.trim();
-  // Check if title has an explicit extension (1 to 10 alphanumeric chars after last dot)
   const extMatch = trimmed.match(/\.([a-z0-9]{1,10})$/i);
   
   let rawBase = trimmed;

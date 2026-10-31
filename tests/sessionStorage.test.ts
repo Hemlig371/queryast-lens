@@ -4,7 +4,6 @@ import { getSessionTabs } from '../src/utils/sessionStorage';
 
 describe('sessionStorage', () => {
   beforeEach(() => {
-    // Reset localStorage before each test
     localStorage.clear();
     // Mock console.error to avoid noise in test output
     vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -16,7 +15,6 @@ describe('sessionStorage', () => {
   });
 
   it('should return null and not crash if JSON is corrupted', async () => {
-    // Write invalid JSON to localStorage
     localStorage.setItem('sql_visualizer_tabs_session', '{ invalid json ');
     
     const tabs = await getSessionTabs();

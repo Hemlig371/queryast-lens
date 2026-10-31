@@ -99,7 +99,7 @@ function formatDate(value: unknown): unknown {
 function formatTimestamp(value: unknown, info: ArrowTypeInfo): unknown {
   const p = epochParts(value, info.unit);
   if (!p) return value;
-  const iso = new Date(p.ms).toISOString(); // YYYY-MM-DDTHH:MM:SS.mmmZ
+  const iso = new Date(p.ms).toISOString();
   const msPart = BigInt(p.ms % 1000 < 0 ? (p.ms % 1000) + 1000 : p.ms % 1000);
   const nanos = msPart * 1_000_000n + p.subMsNanos;
   return `${iso.slice(0, 10)} ${iso.slice(11, 19)}${fraction(nanos)}${info.tz ? ' UTC' : ''}`;

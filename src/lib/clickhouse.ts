@@ -15,9 +15,6 @@ export interface ClickhouseCopyCommand {
   filePath: string;
 }
 
-/**
- * Checks if the application is running in Tauri environment.
- */
 export function isTauriEnvironment(): boolean {
   return typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_IPC__' in window);
 }
@@ -37,7 +34,6 @@ export function parseClickhouseCopy(sql: string): ClickhouseCopyCommand | null {
   // Хвостовые `;` и комментарии (`COPY … TO 'x.csv'; -- готово`) не мешают разбору
   const cleanSql = stripTrailingNoise(sql.replace(/^(\s*(--[^\n]*\n|\/\*[\s\S]*?\*\/))*/g, '').trim());
 
-  // Match COPY (...) TO 'file_path' or COPY select_query TO 'file_path'
   const copyToRegex = /^\s*COPY\s+(?:\(([\s\S]+)\)|([\s\S]+?))\s+TO\s+['"]([^'"]+)['"]\s*;?$/i;
   const matchTo = cleanSql.match(copyToRegex);
   if (matchTo) {
@@ -50,7 +46,6 @@ export function parseClickhouseCopy(sql: string): ClickhouseCopyCommand | null {
     };
   }
 
-  // Match COPY (...) FROM 'file_path' or COPY table_name FROM 'file_path'
   const copyFromRegex = /^\s*COPY\s+(?:\(([\s\S]+)\)|([\s\S]+?))\s+FROM\s+['"]([^'"]+)['"]\s*;?$/i;
   const matchFrom = cleanSql.match(copyFromRegex);
   if (matchFrom) {
@@ -66,9 +61,6 @@ export function parseClickhouseCopy(sql: string): ClickhouseCopyCommand | null {
   return null;
 }
 
-/**
- * Builds the Clickhouse HTTP URL for a given config.
- */
 export function getClickhouseUrl(config: ClickhouseConfig, queryParams?: Record<string, string>): string {
   const cleanHost = config.host.replace(/^https?:\/\//i, '');
   const params = new URLSearchParams();
@@ -89,9 +81,6 @@ export function getClickhouseUrl(config: ClickhouseConfig, queryParams?: Record<
   return `${config.protocol || 'http'}://${cleanHost}/${queryString ? '?' + queryString : ''}`;
 }
 
-/**
- * Common headers for Clickhouse HTTP requests.
- */
 export function getClickhouseHeaders(config: ClickhouseConfig, contentType: string = 'text/plain;charset=utf-8'): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': contentType,
@@ -105,7 +94,7 @@ export function getClickhouseHeaders(config: ClickhouseConfig, contentType: stri
   return headers;
 }
 
-class RowLimitError extends Error {}
+export class RowLimitError extends Error {}
 
 /**
  * Разбирает ответ ClickHouse. Если запрос должен был вернуть JSON (SELECT … FORMAT JSON), а пришло другое

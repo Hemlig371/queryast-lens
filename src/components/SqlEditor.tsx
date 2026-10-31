@@ -50,7 +50,6 @@ export interface SqlEditorRef {
   replaceSelection: (newText: string) => void;
   setSelectionRange: (start: number, end: number) => void;
   replaceRange: (newText: string, start: number, end: number, selectionMode?: 'select' | 'start' | 'end' | 'preserve') => void;
-  /** Перевести фокус в редактор. */
   focus: () => void;
   /** Открыть панель поиска (или поиска и замены). */
   openSearch: (withReplace?: boolean) => void;
@@ -525,7 +524,6 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
     viewRef.current?.focus();
   };
 
-  // Пересчёт совпадений при изменении запроса / текста / опций
   useEffect(() => {
     if (!showSearch) return;
     if (!searchQuery) {
@@ -551,7 +549,6 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
     }
   }, [showSearch, searchQuery, value, matchCase, useRegex]);
 
-  // Подсветка совпадений в редакторе
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
@@ -650,7 +647,6 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
         }
       }
     } catch {
-      // некорректный regex
     }
   };
 
@@ -821,7 +817,6 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Внешнее изменение value / смена документа (вкладки)
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
@@ -860,7 +855,6 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [propValue, docId]);
 
-  // Динамические настройки
   useEffect(() => {
     viewRef.current?.dispatch({ effects: compartments.theme.reconfigure(buildEditorTheme(theme)) });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -876,7 +870,6 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [!!onChange]);
 
-  // Программный API для App
   useEffect(() => {
     if (!editorRef) return;
     const api: SqlEditorRef = {
@@ -924,7 +917,6 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
     };
   }, [editorRef]);
 
-  // Пользовательские шаблоны автокомплита
   useEffect(() => {
     const refreshTemplates = () => setCustomTemplates(getCustomAutocompleteTemplates());
     window.addEventListener('storage', refreshTemplates);
@@ -949,7 +941,6 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
     };
   }, []);
 
-  // Прокрутка выбранного пункта автокомплита
   useEffect(() => {
     if (showAutocomplete && autocompleteContainerRef.current) {
       const activeItem = autocompleteContainerRef.current.children[selectedIndex] as HTMLElement;
@@ -1032,14 +1023,12 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
         theme === 'dark' ? 'border-slate-600 bg-slate-850' : 'border-slate-300 bg-slate-100 shadow-sm'
       }`}
     >
-      {/* INTEGRATED SEARCH & REPLACE BANNER AT TOP OF EDITOR */}
       {showSearch && (
         <div
           // Значки поиска/замены стоят в колонке номеров строк (слот шириной с неё), поля ввода начинаются там же, где текст запроса.
           className={`p-2 pl-0 border-b shrink-0 flex flex-col gap-1.5 font-mono text-xs z-30 transition-colors animate-in slide-in-from-top-1 duration-150 ${
           theme === 'dark' ? 'bg-slate-800/95 border-slate-700 text-slate-100 shadow-md' : 'bg-slate-200/90 border-slate-300 text-slate-900 shadow-sm'
         }`}>
-          {/* SEARCH ROW */}
           <div className="flex flex-wrap items-center justify-between gap-1.5">
             <div className="flex items-center gap-1.5 flex-1 min-w-[180px]">
               <span className="flex items-center justify-center shrink-0" style={{ width: gutterW || 28 }}>
@@ -1137,7 +1126,6 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
             </div>
           </div>
 
-          {/* REPLACE ROW */}
           {showReplace && (
             <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-slate-700/40 animate-in fade-in duration-100">
               <span className="flex items-center justify-center shrink-0" style={{ width: gutterW || 28 }}>
@@ -1183,13 +1171,10 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
         </div>
       )}
 
-      {/* CODE EDITOR BODY AREA */}
       <div className="flex-1 flex flex-row min-h-0 relative overflow-hidden">
-        {/* EDITOR (CodeMirror 6) + POPUPS */}
         <div ref={bodyRef} onContextMenu={openContextMenu} className="flex-1 h-full relative overflow-hidden">
           <div ref={hostRef} className="absolute inset-0" />
 
-          {/* КОНТЕКСТНОЕ МЕНЮ РЕДАКТОРА (ПКМ) */}
           {ctxMenu && (() => {
             const scale = (getSavedUiVisibilitySettings().uiScale ?? 100) / 100;
             const editable = !!onChange;
@@ -1251,7 +1236,6 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
             );
           })()}
 
-                    {/* AUTOCOMPLETE POPUP DROPDOWN UNDER CURSOR */}
           {showAutocomplete && suggestions.length > 0 && (
             <div 
               style={{ top: `${caretPos.top}px`, left: `${caretPos.left}px` }}
@@ -1304,7 +1288,6 @@ export const SqlEditor = React.memo(function SqlEditor(props: SqlEditorProps) {
               </div>
             </div>
           )}
-          {/* QUICK ACTIONS POPUP DROPDOWN (Ctrl+Q) */}
           {showQuickActionsPopup && isQuickActionsEnabled && (
             <>
               <div 

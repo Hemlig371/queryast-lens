@@ -13,3 +13,13 @@ export function isWorkspaceBundle(value: unknown): value is { app: string; versi
   if (typeof v.version !== 'number' || !Number.isFinite(v.version)) return false;
   return typeof v.data === 'object' && v.data !== null && !Array.isArray(v.data);
 }
+
+/**
+ * Нужно ли при запуске импортировать файл синхронизации. Только если его записал кто-то другой после нашего последнего экспорта/импорта
+ * (строго новее): собственный файл с той же меткой не затирает свежие локальные правки. Пустая или нечитаемая метка (первый запуск) — импортировать.
+ */
+export function shouldImportSyncFile(fileExportedAt: string, lastSync: string | null | undefined): boolean {
+  const last = lastSync ? Date.parse(lastSync) : NaN;
+  if (!lastSync || isNaN(last)) return true;
+  return Date.parse(fileExportedAt) > last;
+}

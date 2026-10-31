@@ -19,7 +19,6 @@ export function generateFilteredSortedSql(
   let cleanSql = statements.length > 0 ? statements[statements.length - 1] : '';
   if (!cleanSql) return '';
 
-  // --- LAZY UNBOXING ---
   // If the query was already wrapped by a previous filter action, unwrap it to prevent nesting (matryoshka)
   const prefix = 'SELECT * FROM (\n';
   const suffixMarker = '\n) AS _filtered_query';
@@ -31,7 +30,6 @@ export function generateFilteredSortedSql(
       cleanSql = cleanSql.substring(prefix.length, suffixIndex);
     }
   }
-  // ----------------------
 
   if (filters.length === 0 && sorts.length === 0) return cleanSql;
 

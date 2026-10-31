@@ -129,3 +129,22 @@ describe('setOwnKey', () => {
     expect(rows[0]['__proto__']).toBe('p');
   });
 });
+
+describe('I-12: dedupeColumnsSql (Express, одноимённые столбцы)', () => {
+  it('уникальные имена — null', async () => {
+    const { dedupeColumnsSql } = await import('../src/utils/resultRows');
+    expect(dedupeColumnsSql('SELECT a, b FROM t', ['a', 'b'])).toBeNull();
+    expect(dedupeColumnsSql('SELECT 1', [])).toBeNull();
+  });
+  it('SELECT a.id, b.id FROM a JOIN b → псевдонимы id, id_1', async () => {
+    const { dedupeColumnsSql } = await import('../src/utils/resultRows');
+    const sql = dedupeColumnsSql('SELECT a.id, b.id FROM a JOIN b ON a.id = b.id;', ['id', 'id']);
+    expect(sql).toBe('SELECT * FROM (\nSELECT a.id, b.id FROM a JOIN b ON a.id = b.id\n) AS _dedup_cols("id", "id_1")');
+  });
+  it('SELECT * по двум таблицам с общим именем, кавычки в имени', async () => {
+    const { dedupeColumnsSql } = await import('../src/utils/resultRows');
+    const sql = dedupeColumnsSql('SELECT * FROM a, b -- x', ['id', 'n"m', 'id']);
+    expect(sql).toContain('("id", "n""m", "id_1")');
+    expect(sql).toContain('-- x\n)');
+  });
+});

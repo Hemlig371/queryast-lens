@@ -549,7 +549,6 @@ export async function applyWorkspaceBundleSilently(
     dataObj[UI_VISIBILITY_STORAGE_KEY] = dataObj['sql_visualizer_ui_visibility'];
   }
 
-  // Determine host settings to preserve (explicitly passed or read from current localStorage)
   const existingPreservedSettings: Partial<UiVisibilitySettings> = preservedOverrides ? { ...preservedOverrides } : {};
   if (!preservedOverrides) {
     try {
@@ -585,7 +584,6 @@ export async function applyWorkspaceBundleSilently(
     }
   }
 
-  // Merge preserved host settings into imported ui_visibility
   if (Object.keys(existingPreservedSettings).length > 0) {
     const importedVisKey = dataObj[UI_VISIBILITY_STORAGE_KEY] ? UI_VISIBILITY_STORAGE_KEY : (dataObj['sql_visualizer_ui_visibility'] ? 'sql_visualizer_ui_visibility' : UI_VISIBILITY_STORAGE_KEY);
     let importedVisObj: Partial<UiVisibilitySettings> = {};
@@ -899,7 +897,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       e.preventDefault();
       e.stopPropagation();
 
-      // Ignore standalone modifier keys
       if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) {
         return;
       }
@@ -1030,7 +1027,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             : 'bg-white border-slate-300 text-slate-800'
         }`}
       >
-        {/* HEADER */}
         <div
           className={`flex items-center justify-between px-5 py-3 border-b shrink-0 ${
             theme === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'
@@ -1115,11 +1111,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </button>
         </div>
 
-        {/* BODY */}
         <div className="flex-1 p-5 overflow-y-auto space-y-6">
           {activeTab === 'ui' ? (
             <div className="space-y-6">
-              {/* EDITOR PANEL UI TOGGLES */}
               <div className="space-y-3">
                 <div className={`flex items-center justify-between border-b pb-1 ${
                   theme === 'dark' ? 'border-slate-700/50' : 'border-slate-300'
@@ -1192,7 +1186,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             {item.key === 'showDuckDbConfig' && isChecked && (
                               <div className="mt-2.5 pt-2 border-t border-slate-700/40 space-y-2 text-[11px]" onClick={e => e.stopPropagation()}>
                                 <div className="flex items-center gap-2">
-                                  <span className="opacity-80 shrink-0">Max rows:</span>
+                                  <span className="opacity-80 shrink-0">{t('Макс. строк:')}</span>
                                   <input 
                                     type="number" 
                                     min="1" 
@@ -1219,7 +1213,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                                 <div className="grid grid-cols-1 gap-1.5 pt-1">
                                   <div className="flex items-center justify-between gap-2">
-                                    <span className="opacity-80 shrink-0">Memory Limit:</span>
+                                    <span className="opacity-80 shrink-0">{t('Лимит памяти:')}</span>
                                     <input 
                                       type="text" 
                                       placeholder="8GB"
@@ -1230,7 +1224,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                   </div>
 
                                   <div className="flex items-center justify-between gap-2">
-                                    <span className="opacity-80 shrink-0">Temp Directory:</span>
+                                    <span className="opacity-80 shrink-0">{t('Каталог временных файлов:')}</span>
                                     <input 
                                       type="text" 
                                       placeholder="./tmp"
@@ -1241,7 +1235,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                   </div>
 
                                   <div className="flex items-center justify-between gap-2">
-                                    <span className="opacity-80 shrink-0">Extensions Dir:</span>
+                                    <span className="opacity-80 shrink-0">{t('Каталог расширений:')}</span>
                                     <input 
                                       type="text" 
                                       placeholder="./extensions"
@@ -1252,7 +1246,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                   </div>
 
                                   <div className="flex items-center justify-between gap-2">
-                                    <span className="opacity-80 shrink-0">Threads (0 = auto):</span>
+                                    <span className="opacity-80 shrink-0">{t('Потоки (0 = авто):')}</span>
                                     <input 
                                       type="number" 
                                       min="0"
@@ -1264,12 +1258,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                   </div>
 
                                   <div className="flex items-center justify-between gap-2">
-                                    <span className="opacity-80 shrink-0">Init SQL Script:</span>
+                                    <span className="opacity-80 shrink-0">{t('Скрипт Init SQL:')}</span>
                                     <input
                                       type="text"
                                       value={uiVisibility.duckDbInitSql ?? ''}
                                       onChange={e => updateDuckDbSettings({ duckDbInitSql: e.target.value })}
-                                      placeholder="e.g. LOAD 'spatial';"
+                                      placeholder={t("напр. LOAD 'spatial';")}
                                       className={`w-28 px-1.5 py-0.5 text-xs rounded border outline-none ${theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'}`}
                                     />
                                   </div>
@@ -1278,7 +1272,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             )}
                             {item.key === 'showClickhouseConfig' && isChecked && (
                               <div className="mt-2 flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                                <span className="text-[10px]">Max rows:</span>
+                                <span className="text-[10px]">{t('Макс. строк:')}</span>
                                 <input 
                                   type="number" 
                                   min="1" 
@@ -1301,7 +1295,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               </div>
 
-              {/* GRAPH CANVAS UI TOGGLES */}
               <div className="space-y-3">
                 <h3 className={`text-xs uppercase font-bold tracking-wider border-b pb-1 ${
                   theme === 'dark' ? 'text-slate-400 border-slate-700/50' : 'text-slate-900 border-slate-300'
@@ -1347,7 +1340,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               </div>
 
-              {/* SNIPPETS LIBRARY UI TOGGLES */}
               <div className="space-y-3">
                 <h3 className={`text-xs uppercase font-bold tracking-wider border-b pb-1 ${
                   theme === 'dark' ? 'text-slate-400 border-slate-700/50' : 'text-slate-900 border-slate-300'
@@ -1391,7 +1383,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               </div>
 
-              {/* HISTORY MODAL UI TOGGLES */}
               <div className="space-y-3">
                 <h3 className={`text-xs uppercase font-bold tracking-wider border-b pb-1 ${
                   theme === 'dark' ? 'text-slate-400 border-slate-700/50' : 'text-slate-900 border-slate-300'
@@ -1435,7 +1426,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               </div>
 
-              {/* EXPORT MENU UI TOGGLES */}
               <div className="space-y-3">
                 <h3 className={`text-xs uppercase font-bold tracking-wider border-b pb-1 ${
                   theme === 'dark' ? 'text-slate-400 border-slate-700/50' : 'text-slate-900 border-slate-300'
@@ -1484,9 +1474,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               </div>
 
-              {/* UI SCALE / ZOOM AND LANGUAGE SETTING */}
               <div className="flex flex-col md:grid md:grid-cols-[1fr_auto] gap-4 items-start md:items-stretch pt-1">
-                {/* UI SCALE / ZOOM SETTING */}
                 <div className="flex flex-col gap-3 w-full">
                   <h3 className={`text-xs uppercase font-bold tracking-wider border-b pb-1 ${
                     theme === 'dark' ? 'text-slate-400 border-slate-700/50' : 'text-slate-900 border-slate-300'
@@ -1530,7 +1518,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 </div>
 
-                {/* LANGUAGE SETTING */}
                 <div className="flex flex-col gap-3 w-full md:min-w-[140px]">
                   <h3 className={`text-xs uppercase font-bold tracking-wider border-b pb-1 ${
                     theme === 'dark' ? 'text-slate-400 border-slate-700/50' : 'text-slate-900 border-slate-300'
@@ -1541,7 +1528,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     theme === 'dark' ? 'bg-slate-800/60 border-slate-700' : 'bg-slate-50 border-slate-200'
                   }`}>
                     <div className="flex bg-slate-900/10 dark:bg-slate-900/40 p-0.5 rounded-lg border border-slate-300 dark:border-slate-700/50 w-full relative">
-                      {/* Animated indicator */}
                       <div 
                         className="absolute inset-y-1 bg-white dark:bg-blue-600 rounded shadow transition-all duration-300 ease-out z-0"
                         style={{
@@ -1576,11 +1562,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               </div>
 
-              {/* SECRETS VAULT SECTION */}
               <VaultSettingsSection theme={theme} />
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
-              {/* WORKSPACE SYNCHRONIZATION SETTING */}
               <div
                 className={`p-4 rounded-xl border space-y-3.5 ${
                   theme === 'dark' ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'
@@ -1606,7 +1590,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               </div>
 
-              {/* FILE TREE ROOT SETTING */}
               <div
                 className={`p-4 rounded-xl border space-y-3.5 ${
                   theme === 'dark' ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'
@@ -1631,7 +1614,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           ) : activeTab === 'formatter' ? (
             <div className="space-y-5">
-              {/* EXPRESSION WIDTH / COLUMNS ON ONE LINE */}
               <div className={`p-4 rounded-xl border space-y-3 ${
                 theme === 'dark' ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'
               }`}>
@@ -1703,7 +1685,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               </div>
 
-              {/* KEYWORD CASE */}
               <div className={`p-4 rounded-xl border space-y-3 ${
                 theme === 'dark' ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'
               }`}>
@@ -1746,7 +1727,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               </div>
 
-              {/* INDENTATION & OPERATORS */}
               <div className={`p-4 rounded-xl border grid grid-cols-1 sm:grid-cols-2 gap-4 ${
                 theme === 'dark' ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'
               }`}>
@@ -1808,7 +1788,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               </div>
 
-              {/* AUTOCOMPLETE TEMPLATES MANAGER */}
               <div className={`p-4 rounded-xl border space-y-4 ${
                 theme === 'dark' ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'
               }`}>
@@ -1836,7 +1815,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </button>
                 </div>
 
-                {/* ADD NEW TEMPLATE FORM */}
                 <div className={`p-3 rounded-lg border space-y-2.5 ${
                   theme === 'dark' ? 'bg-slate-900/60 border-slate-700/60' : 'bg-white border-slate-200'
                 }`}>
@@ -1884,7 +1862,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 </div>
 
-                {/* TEMPLATES LIST */}
                 <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
                   {templates.map((tpl) => (
                     <div
@@ -1982,7 +1959,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               </div>
 
-              {/* QUICK ACTIONS MANAGER */}
               <div className={`p-4 rounded-xl border space-y-4 ${
                 theme === 'dark' ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'
               }`}>
@@ -2010,7 +1986,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </button>
                 </div>
 
-                {/* ADD QUICK ACTION FORM */}
                 <div className={`p-3 rounded-lg border space-y-2.5 ${
                   theme === 'dark' ? 'bg-slate-900/60 border-slate-700/60' : 'bg-white border-slate-200'
                 }`}>
@@ -2049,7 +2024,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 </div>
 
-                {/* QUICK ACTIONS LIST */}
                 <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
                   {quickActions.map((qa) => (
                     <div
@@ -2247,7 +2221,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           )}
         </div>
 
-        {/* FOOTER */}
         <div
           className={`p-3.5 px-5 border-t flex items-center justify-between shrink-0 gap-3 text-sm truncate ${
             theme === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'

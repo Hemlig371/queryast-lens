@@ -90,7 +90,6 @@ export const FileTreePanel: React.FC<Props> = ({
     }
   }, [loadFolders, root]);
 
-  // Смена корня или поставщика — чистое дерево.
   useEffect(() => {
     setChildren({});
     setExpanded({});
@@ -366,7 +365,7 @@ export const FileTreePanel: React.FC<Props> = ({
                 // Папка в редактор ничего не вставляет: text/plain не задаём.
                 e.dataTransfer.effectAllowed = 'move';
               } else {
-                e.dataTransfer.setData('text/plain', quotePathForSql(entry.path)); // вставка пути в редактор
+                e.dataTransfer.setData('text/plain', quotePathForSql(entry.path));
                 e.dataTransfer.effectAllowed = 'copyMove';
               }
             }}
@@ -433,7 +432,6 @@ export const FileTreePanel: React.FC<Props> = ({
       {searchRow}
       <div
         className={`flex-1 min-h-0 overflow-y-auto py-1 px-1 transition-colors ${dropTarget === root ? (dark ? 'bg-slate-800' : 'bg-slate-200') : ''} ${flashTarget === root ? (dark ? 'bg-red-500/25' : 'bg-red-300/60') : ''}`}
-        // Пустое место списка — корневая папка дерева.
         onDragOver={e => onTargetDragOver(e, root)}
         onDrop={e => onTargetDrop(e, root)}
         onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropTarget(null); }}

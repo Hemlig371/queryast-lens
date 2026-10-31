@@ -194,7 +194,6 @@ export async function attachDuckDbWasmFile(file: File): Promise<string> {
   await db.registerFileBuffer(fileName, u8ArrayAttach);
   registeredVfsFiles.set(fileName, { size: u8ArrayAttach.byteLength, loadedAt: new Date() });
 
-  // Determine database alias without extension (e.g. "my_data" from "my_data.duckdb")
   const rawAlias = fileName.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_]/g, '_') || 'attached_db';
 
   const escapedFileName = fileName.replace(/'/g, "''");
@@ -204,7 +203,6 @@ export async function attachDuckDbWasmFile(file: File): Promise<string> {
   return rawAlias;
 }
 
-// Write binary data directly to physical disk via Tauri FS API
 async function writeTauriFileBinary(filePath: string, data: Uint8Array): Promise<boolean> {
   try {
     if (typeof window !== 'undefined' && (window as any).__TAURI__?.fs) {
@@ -215,7 +213,7 @@ async function writeTauriFileBinary(filePath: string, data: Uint8Array): Promise
       }
     }
     const tauriFs = await import('@tauri-apps/api/fs');
-    if (tauriFs && tauriFs.readBinaryFile) {
+    if (tauriFs && tauriFs.writeBinaryFile) {
       await tauriFs.writeBinaryFile(filePath, data);
       return true;
     }
@@ -225,7 +223,6 @@ async function writeTauriFileBinary(filePath: string, data: Uint8Array): Promise
   return false;
 }
 
-// Download exported file buffer in web browser
 export async function downloadFileInBrowser(fileName: string, buffer: Uint8Array) {
   if (typeof window === 'undefined') return;
   const blob = new Blob([buffer], { type: 'application/octet-stream' });
@@ -297,7 +294,6 @@ export async function queryDuckDbWasm(sqlQuery: string) {
 
   const result = await connInstance.query(sqlQuery);
 
-  // Handle COPY TO output file extraction from WASM VFS
   let copyNotice: string | null = null;
   if (copyTargetFile) {
     try {
@@ -369,18 +365,15 @@ export async function getRegisteredWasmFiles(): Promise<Array<{ name: string; si
 
   const isSystemFile = isSystemVfsFile;
 
-  // 1. First add files from registeredVfsFiles Map
   for (const [name, meta] of registeredVfsFiles.entries()) {
     result.push({ name, size: meta.size, loadedAt: meta.loadedAt });
     seen.add(name);
   }
 
-  // 2. Try fetching from WASM worker (if active)
   try {
     const fetchWasmFiles = async () => {
       const db = await getDuckDbWasm();
 
-      // Try querying glob directly from the connection for files generated via COPY TO
       if (connInstance) {
         try {
           const res = await connInstance.query("SELECT * FROM glob('*')");
@@ -538,7 +531,6 @@ export async function registerWasmFile(fileName: string, buffer: Uint8Array): Pr
   registeredVfsFiles.set(cleanFileName, { buffer, size: buffer.byteLength, loadedAt: new Date() });
   wasmRegisteredSet.delete(cleanFileName);
 
-  // Sync file with Server VFS so Server DuckDB instance can query it.
   // Только в веб-dev режиме: в Tauri/Capacitor сервера нет, а base64 всего файла впустую съедает память.
   if (hasDevVfsServer()) {
     try {

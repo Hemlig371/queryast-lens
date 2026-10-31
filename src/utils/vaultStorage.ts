@@ -26,9 +26,8 @@ const DB_NAME = 'app_secure_vault_db';
 const STORE_NAME = 'vault_meta';
 const DB_VERSION = 1;
 const RECORD_ID = 'root_vault';
-const UNLOCK_DURATION_MS = 12 * 60 * 60 * 1000; // 12 hours
+const UNLOCK_DURATION_MS = 12 * 60 * 60 * 1000;
 
-// In-memory state for unlocked vault
 interface MemoryVaultState {
   secrets: VaultSecret[];
   pin: string;
@@ -37,7 +36,6 @@ interface MemoryVaultState {
 
 let memoryVault: MemoryVaultState | null = null;
 
-// IndexedDB Helper
 function getVaultDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     if (typeof window === 'undefined' || !window.indexedDB) {
@@ -83,7 +81,6 @@ async function saveVaultRecord(record: VaultStorageRecord): Promise<void> {
   });
 }
 
-// Crypto Helpers
 function bufferToBase64(buffer: ArrayBuffer | Uint8Array): string {
   const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
   let binary = '';
@@ -167,9 +164,6 @@ async function decryptData(record: VaultStorageRecord, pin: string): Promise<Vau
   return [];
 }
 
-/**
- * Check if a vault PIN has already been configured
- */
 export async function isVaultConfigured(): Promise<boolean> {
   const record = await getVaultRecord();
   return Boolean(record && record.isSet);
@@ -226,9 +220,6 @@ export async function setupVaultPin(pin: string): Promise<void> {
   window.dispatchEvent(new CustomEvent('sql_vault_status_changed'));
 }
 
-/**
- * Unlock the vault with a PIN code
- */
 export async function unlockVault(pin: string): Promise<boolean> {
   const cleanPin = pin.trim();
   const record = await getVaultRecord();
@@ -251,9 +242,6 @@ export async function unlockVault(pin: string): Promise<boolean> {
   }
 }
 
-/**
- * Manually lock the vault
- */
 export function lockVault(): void {
   memoryVault = null;
   window.dispatchEvent(new CustomEvent('sql_vault_status_changed'));
@@ -297,9 +285,6 @@ export function getClickhouseVaultSecrets(): VaultSecret[] {
   return secrets.filter(s => s.name.startsWith('ch_'));
 }
 
-/**
- * Add or update a secret
- */
 export async function addOrUpdateVaultSecret(name: string, value: string): Promise<void> {
   if (!isVaultUnlocked() || !memoryVault) {
     throw new Error('Хранилище заблокировано. Введите ПИН-код.');
@@ -336,9 +321,6 @@ export async function addOrUpdateVaultSecret(name: string, value: string): Promi
   window.dispatchEvent(new CustomEvent('sql_vault_secrets_updated'));
 }
 
-/**
- * Delete a single secret
- */
 export async function deleteVaultSecret(name: string): Promise<void> {
   if (!isVaultUnlocked() || !memoryVault) {
     throw new Error('Хранилище заблокировано');
@@ -358,9 +340,6 @@ export async function deleteVaultSecret(name: string): Promise<void> {
   window.dispatchEvent(new CustomEvent('sql_vault_secrets_updated'));
 }
 
-/**
- * Change PIN code
- */
 export async function changeVaultPin(oldPin: string, newPin: string): Promise<void> {
   const cleanOld = oldPin.trim();
   const cleanNew = newPin.trim();
@@ -468,7 +447,6 @@ export function parseClickhouseUri(rawUri: string): ParsedClickhouseUri | null {
   let hostPart = masked;
   let database = 'default';
 
-  // Check if credentials are present (contains @)
   const atIndex = masked.lastIndexOf('@');
   if (atIndex !== -1) {
     const credPart = masked.slice(0, atIndex);
@@ -483,7 +461,6 @@ export function parseClickhouseUri(rawUri: string): ParsedClickhouseUri | null {
     }
   }
 
-  // Check if database path is present (contains /)
   const slashIndex = hostPart.indexOf('/');
   if (slashIndex !== -1) {
     const dbPart = hostPart.slice(slashIndex + 1).trim();

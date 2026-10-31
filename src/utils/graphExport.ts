@@ -92,10 +92,8 @@ export async function exportGraphImage(
     options.backgroundColor = bgColor;
   }
 
-  // Inline styles & attributes for SVG element export rendering
   const cleanupTasks: Array<() => void> = [];
 
-  // 1. Hide scrollbars and arrows in nodes during capture
   const styleEl = document.createElement('style');
   styleEl.id = 'export-hide-scrollbars-style';
   // только внутри графа: полосы прокрутки редактора и таблицы на время экспорта не пропадают
@@ -104,7 +102,6 @@ export async function exportGraphImage(
   document.head.appendChild(styleEl);
   cleanupTasks.push(() => styleEl.remove());
 
-  // 2. Prepare edge paths (<path class="react-flow__edge-path">)
   const edgePaths = viewportElement.querySelectorAll('.react-flow__edges path, .react-flow__edge-path, .react-flow__edge path');
   edgePaths.forEach((path) => {
     const pathEl = path as HTMLElement;
@@ -186,7 +183,6 @@ export async function exportGraphImage(
     });
   });
 
-  // 2.5 Prepare marker colors (arrow heads)
   if (transparent && theme === 'dark') {
     const flowContainer = viewportElement.closest('.react-flow');
     if (flowContainer) {
@@ -231,7 +227,6 @@ export async function exportGraphImage(
     }
   }
 
-  // 3. Prepare edge label background rects (<rect class="react-flow__edge-textbg">)
   const edgeRects = viewportElement.querySelectorAll('.react-flow__edge-textbg, .react-flow__edge rect');
   edgeRects.forEach((rect) => {
     const origFill = rect.getAttribute('fill');
@@ -258,7 +253,6 @@ export async function exportGraphImage(
     });
   });
 
-  // 4. Prepare edge label text (<text class="react-flow__edge-text">)
   const edgeTexts = viewportElement.querySelectorAll('.react-flow__edge-text, .react-flow__edge text');
   edgeTexts.forEach((text) => {
     const origFill = text.getAttribute('fill');
@@ -279,7 +273,6 @@ export async function exportGraphImage(
     });
   });
 
-  // 5. HTML edge labels if present
   const htmlEdgeLabels = viewportElement.querySelectorAll('.react-flow__edge-label, .react-flow__edge-text-wrapper');
   htmlEdgeLabels.forEach((el) => {
     const htmlEl = el as HTMLElement;

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useDeferredValue, useMemo } from 'react';
 import { downloadFileWithFallback, copyToClipboard } from '../utils/exportUtils';
+import { normalizeCategoryInput } from '../utils/snippetCategory';
 import { TRASH_CATEGORY, trashSnippet, isTrashed, withoutTrash } from '../utils/snippetTrash';
 import { 
   Code, 
@@ -1568,12 +1569,10 @@ export function SqlSnippetsManager({
   const [isCreating, setIsCreating] = useState<boolean>(false);
   const [editingSnippetId, setEditingSnippetId] = useState<string | null>(null);
 
-  // Reset current page when category or search changes
   useEffect(() => {
     setCurrentPage(1);
   }, [selectedCategory, searchQuery]);
 
-  // Update selectedCategory when modal opens with initialCategory
   useEffect(() => {
     if (isOpen && initialCategory) {
       setSelectedCategory(initialCategory);
@@ -1581,7 +1580,6 @@ export function SqlSnippetsManager({
     }
   }, [isOpen, initialCategory]);
 
-  // Reset search and editing states when modal is closed
   useEffect(() => {
     if (!isOpen) {
       setSearchQuery('');
@@ -1616,7 +1614,6 @@ export function SqlSnippetsManager({
   const hasInitializedEditRef = useRef<boolean>(false);
   const hasInitializedDraftRef = useRef<boolean>(false);
 
-  // Load custom snippets, favorites and deleted IDs
   useEffect(() => {
     const loadSnippets = async () => {
       try {
@@ -1641,7 +1638,6 @@ export function SqlSnippetsManager({
       const savedDeleted = localStorage.getItem(LOCAL_STORAGE_DELETED_KEY);
       if (savedDeleted) {
         const parsed: string[] = JSON.parse(savedDeleted);
-        // Only keep IDs that correspond to built-in popular snippets
         const popularIdsSet = new Set(POPULAR_SNIPPETS.map(s => s.id));
         const cleaned = parsed.filter(id => popularIdsSet.has(id));
         setDeletedIds(cleaned);
@@ -1678,7 +1674,6 @@ export function SqlSnippetsManager({
     }
   };
 
-  // Deduplicate and filter out deleted snippets
   const rawSnippets = useMemo(() => {
     const customIds = new Set(customSnippets.map(s => s.id));
     const popularFiltered = POPULAR_SNIPPETS.filter(s => !customIds.has(s.id));
@@ -1727,7 +1722,6 @@ export function SqlSnippetsManager({
     }
   }, [draft, isOpen]);
 
-  // Scroll to top when entering create/edit mode
   useEffect(() => {
     if (isCreating && rightPanelRef.current) {
       setTimeout(() => {
@@ -1742,7 +1736,7 @@ export function SqlSnippetsManager({
     if (!isOpen) {
       return { 
         categories: ['Все'], 
-        categorySuggestions: [ACTION_MENU_CATEGORY, JOBS_CATEGORY, 'Запросы', 'Схемы', 'Агрегаты'], 
+        categorySuggestions: [ACTION_MENU_CATEGORY, 'Запросы', 'Схемы', 'Агрегаты'], 
         dialectSuggestions: ['General', 'PostgreSQL', 'MySQL', 'SQLite', 'Clickhouse', 'DuckDB'], 
         knownDialectSet: new Set<string>() 
       };
@@ -1754,7 +1748,6 @@ export function SqlSnippetsManager({
       new Set(liveSnippets.map(s => s.dialect).filter((d): d is string => Boolean(d)))
     );
     
-    // Set of dialects to separate them into bottom group
     const knownDialectSet = new Set([
       'General', 'PostgreSQL', 'Oracle', 'Clickhouse', 'DuckDB', 'MySQL', 'SQLite', 'MS SQL', 'Snowflake',
       ...rawDialects
@@ -1767,7 +1760,6 @@ export function SqlSnippetsManager({
     const sortedCategories = [...regularCategories].sort(naturalStringCompare);
     const sortedDialects = [...activeDialects].sort(naturalStringCompare);
 
-    // Move General to the bottom of the list
     const filteredDialects = sortedDialects.filter(d => d !== 'General');
     const hasGeneral = sortedDialects.includes('General') || liveSnippets.some(s => s.dialect === 'General');
 
@@ -1782,9 +1774,8 @@ export function SqlSnippetsManager({
       TRASH_CATEGORY // «Корзина» всегда последняя
     ]));
 
-    const categorySuggestions = Array.from(new Set([ACTION_MENU_CATEGORY, JOBS_CATEGORY, 'Запросы', 'Схемы', 'Агрегаты', 'Соединения (JOIN)', 'Транзакции', ...regularCategories]));
+    const categorySuggestions = Array.from(new Set([ACTION_MENU_CATEGORY, 'Запросы', 'Схемы', 'Агрегаты', 'Соединения (JOIN)', 'Транзакции', ...regularCategories]));
     
-    // Move General to the bottom of suggestions too
     const activeDialectSuggestions = uniqueDialects(['PostgreSQL', 'MySQL', 'SQLite', 'Oracle', 'Clickhouse', 'DuckDB', 'MS SQL', ...activeDialects]);
     const dialectSuggestions = [
       ...activeDialectSuggestions.filter(d => d !== 'General'),
@@ -1866,10 +1857,14 @@ export function SqlSnippetsManager({
     e.preventDefault();
     if (!formTitle.trim() || !formSql.trim()) return;
 
-    const finalCategory = formCategory.trim() || 'Общие';
+    const prevCategory = editingSnippetId ? customSnippets.find(sn => sn.id === editingSnippetId)?.category : undefined;
+    const { category: finalCategory, blocked: categoryBlocked } = normalizeCategoryInput(formCategory, categories, prevCategory);
+    if (categoryBlocked) {
+      setFormCategory('Запросы');
+      return;
+    }
     const finalDialect = canonicalDialect(formDialect) || 'General';
 
-    // If this snippet was in deleted list previously, remove it from deleted
     if (editingSnippetId && deletedIds.includes(editingSnippetId)) {
       const updatedDeleted = deletedIds.filter(dId => dId !== editingSnippetId);
       setDeletedIds(updatedDeleted);
@@ -1935,7 +1930,6 @@ export function SqlSnippetsManager({
       }
       window.dispatchEvent(new Event('sql_snippets_updated'));
     } else {
-      // 1. Remove from customSnippets array (for both custom created and custom overrides)
       setCustomSnippets(prev => prev.filter(s => s.id !== id));
       deleteSnippetFromDB(id).catch(e => console.error(e));
       window.dispatchEvent(new Event('sql_snippets_updated'));
@@ -1961,7 +1955,6 @@ export function SqlSnippetsManager({
       }
     }
 
-    // 3. Remove from favorites if present
     if (favoriteIds.includes(id)) {
       const updatedFavs = favoriteIds.filter(fId => fId !== id);
       setFavoriteIds(updatedFavs);
@@ -2024,7 +2017,6 @@ export function SqlSnippetsManager({
   };
   
   const handleExportZip = async () => {
-    // Export all snippets that the user currently sees (custom + popular, minus deleted)
     const listToExport = allSnippets.length > 0 ? withoutTrash(allSnippets) : POPULAR_SNIPPETS;
     if (listToExport.length === 0) return;
 
@@ -2077,15 +2069,12 @@ export function SqlSnippetsManager({
           zip.file(finalPath, fileContent);
         };
 
-        // 1. Regular category
         addFileToFolder(s.category || 'Без_категории');
 
-        // 2. Favorites pseudo-category
         if (s.id && favoriteIds.includes(s.id)) {
           addFileToFolder('Избранное');
         }
 
-        // 3. Jobs pseudo-category
         if (snippetSql.trim().startsWith('-- @job')) {
           addFileToFolder(JOBS_CATEGORY);
         }
@@ -2112,7 +2101,6 @@ export function SqlSnippetsManager({
         }`}
       >
         
-        {/* HEADER */}
         <div className={`flex flex-wrap max-md:flex-nowrap items-center justify-between gap-3 px-4 py-2 border-b shrink-0 ${
           theme === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-slate-200/80 border-slate-300'
         }`}>
@@ -2129,7 +2117,6 @@ export function SqlSnippetsManager({
           </div>
 
           <div className="flex items-center gap-2">
-            {/* EXPORT ZIP */}
             <button
               onClick={handleExportZip}
               className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all ${
@@ -2143,7 +2130,6 @@ export function SqlSnippetsManager({
               <span className="hidden sm:inline">{t('Экспорт ZIP')}</span>
             </button>
 
-            {/* EXPORT JSON */}
             <button
               onClick={handleExportJson}
               className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all ${
@@ -2161,7 +2147,6 @@ export function SqlSnippetsManager({
             <>
               <div className="h-5 w-px bg-slate-300 dark:bg-slate-700 my-auto" />
 
-              {/* CREATE CUSTOM SNIPPET */}
               <button
                 onClick={() => {
                   resetForm();
@@ -2191,16 +2176,13 @@ export function SqlSnippetsManager({
           </div>
         </div>
 
-        {/* MAIN BODY */}
         <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
           
-          {/* LEFT SIDEBAR: CATEGORIES & SEARCH */}
           {(uiVisibility?.showSnippetSearch !== false || uiVisibility?.showSnippetCategories !== false) && (
           <div className={`w-full md:w-56 max-h-[35vh] md:max-h-none border-b md:border-b-0 md:border-r flex flex-col p-3 space-y-3 shrink-0 ${
             theme === 'dark' ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-200/50 border-slate-300'
           }`}>
             
-            {/* SEARCH BAR */}
             {uiVisibility?.showSnippetSearch !== false && (
             <div className="relative">
               <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400 pointer-events-none" />
@@ -2218,7 +2200,6 @@ export function SqlSnippetsManager({
             </div>
             )}
 
-            {/* CATEGORY LIST */}
             {uiVisibility?.showSnippetCategories !== false && (
             <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 max-md:flex-none max-md:flex max-md:items-center max-md:gap-1.5 max-md:space-y-0 max-md:pr-0 max-md:overflow-y-hidden narrow-scroll-x">
               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-2 pt-1 pb-1 max-md:hidden">
@@ -2273,10 +2254,8 @@ export function SqlSnippetsManager({
           </div>
           )}
 
-          {/* RIGHT PANEL: SNIPPETS LIST OR FORM */}
           <div ref={rightPanelRef} className="flex-1 flex flex-col p-4 overflow-y-auto min-h-[120px] relative">
             
-            {/* CREATE / EDIT FORM */}
             {isInitializingEdit ? (
               <div className="flex-1 flex items-center justify-center opacity-0 pointer-events-none"></div>
             ) : isCreating ? (
@@ -2327,7 +2306,7 @@ export function SqlSnippetsManager({
                     />
                     <datalist id="category-suggestions">
                       {categorySuggestions.map(cat => (
-                        <option key={cat} value={cat} />
+                        <option key={cat} value={cat} label={t(cat)} />
                       ))}
                     </datalist>
                   </div>
@@ -2396,7 +2375,6 @@ export function SqlSnippetsManager({
               </form>
             ) : null}
 
-            {/* SNIPPETS GRID */}
             <div className="space-y-3">
               {filteredSnippets.length === 0 ? (
                 <div className="text-center py-12 text-slate-400">
@@ -2426,7 +2404,6 @@ export function SqlSnippetsManager({
                         theme === 'dark' ? 'bg-slate-800/80 border-slate-700/80' : 'bg-white border-slate-300 shadow-xs'
                       }`}
                     >
-                      {/* TOP TITLE & ACTIONS */}
                       <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
@@ -2452,9 +2429,7 @@ export function SqlSnippetsManager({
                           )}
                         </div>
 
-                        {/* BUTTONS: FAVORITE, INSERT, REPLACE, COPY, EDIT, DELETE */}
                         <div className="flex items-center gap-1.5 shrink-0">
-                          {/* FAVORITE STAR BUTTON */}
                           {uiVisibility?.showSnippetFavorites !== false && (
                           <button
                             onClick={(e) => toggleFavorite(snippet.id, e)}
@@ -2471,7 +2446,6 @@ export function SqlSnippetsManager({
                           </button>
                           )}
 
-                          {/* INSERT BUTTON */}
                           <button
                             onClick={() => {
                               onInsertSnippet(snippet.sql, false);
@@ -2484,7 +2458,6 @@ export function SqlSnippetsManager({
                             <span>{t('Вставить')}</span>
                           </button>
 
-                          {/* REPLACE BUTTON */}
                           <button
                             onClick={() => {
                               onInsertSnippet(snippet.sql, true);
@@ -2501,7 +2474,6 @@ export function SqlSnippetsManager({
                             <span>{t('Заменить')}</span>
                           </button>
 
-                          {/* COPY BUTTON */}
                           <button
                             onClick={(e) => handleCopyCode(snippet.id, snippet.sql, e)}
                             className={`p-1.5 rounded-md border transition-all ${
@@ -2539,7 +2511,6 @@ export function SqlSnippetsManager({
                         </div>
                       </div>
 
-                      {/* CODE PREVIEW BLOCK WITH SYNTAX HIGHLIGHTING */}
                     <div className={`p-2.5 rounded-lg font-mono text-[11px] leading-relaxed overflow-x-auto max-h-40 ${
                       theme === 'dark' ? 'bg-slate-900/90 border border-slate-800' : 'bg-slate-100/90 border border-slate-200'
                     }`}>
@@ -2552,7 +2523,6 @@ export function SqlSnippetsManager({
                 );
               })}
 
-              {/* PAGINATION FOOTER */}
               {filteredSnippets.length > 0 && (
                 <div className={`p-2.5 flex items-center justify-between text-[11px] min-h-[44px] ${
                   theme === 'dark' 

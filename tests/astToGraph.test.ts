@@ -30,7 +30,6 @@ describe('astToGraph utils', () => {
     it('should parse a simple SELECT query', () => {
       const ast = parseSqlToAst('SELECT id, name FROM users');
       expect(ast).toBeDefined();
-      // Usually it returns an AST object or array of objects
       expect(ast.type || (Array.isArray(ast) && ast[0]?.type)).toBeDefined();
     });
 
