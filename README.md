@@ -41,7 +41,7 @@ Cross-platform SQL Query Workbench and analytical database client (DuckDB, Click
 
 #### 📊 Data Profiling & Visualization
 * **Result Inspector (DataStatsViewer)**: Table pagination, transposition (row ↔ column swap), and Cell Zoom detailed viewing.
-* **Automated Column Statistics**: Offloaded metric calculations (Null %, distinct count, min/max, mean, stddev) run directly on the database side.
+* **Automated Column Statistics**: The analytics panel calculates metrics from the loaded result; “Refresh from DB” requests row count, null/empty count and percentage, distinct count and sum from the database, then derives the mean in the client.
 * **Interactive Filtering**: Filter application (`WHERE IS NULL` / `IS NOT NULL`) directly from data grid column headers.
 * **Built-in Charts**: Bar (vertical / horizontal), line, and pie charts powered by Recharts, plus a column / category statistics list.
 * **Copy Table as Image**: Copy query results to the clipboard as a PNG image.
@@ -65,7 +65,7 @@ Cross-platform SQL Query Workbench and analytical database client (DuckDB, Click
 #### 🛠️ Productivity, i18n & Security Vault
 * **Snippets & Quick Actions**: Manage reusable SQL snippets with natural string sorting and clipboard copying. ZIP exports group snippets into virtual folders. Multi-statement pipeline execution via `-- @job` directive.
 * **Encrypted Vault (AES-256 GCM)**: Client-side connection secret encryption using Web Crypto API with PIN-code protection; the vault stays unlocked for 12 hours after the PIN is entered. Supports dynamic macro substitution (`{{SECRET_NAME}}`) directly inside queries.
-* **WASM VFS File Manager**: Visual GUI modal for DuckDB WebAssembly to drag-and-drop, inspect, delete, and upload `.parquet`, `.csv`, `.json`, and `.duckdb` files.
+* **WASM VFS File Manager**: Visual GUI modal for DuckDB WebAssembly to upload files with a file picker, inspect and delete `.parquet`, `.csv`, `.json`, and `.duckdb` files. Drag-and-drop upload is not supported in this modal.
 * **File Tree (Desktop)**: the files panel under the schema shows folders on disk with search, sorting by name, date or size, a context menu (open with, show in file manager, rename, move to trash) and moving files and folders between folders by drag and drop. Dragging a file into the editor inserts its path.
 * **Workspace Synchronization**: Automatic background import/export of workspace sessions and tabs via a shared directory or cloud storage path (Dropbox, local NAS) in Desktop mode.
 * **Version History & Schema Cache**: Automatic query snapshot tracking (old snapshots are trimmed by limits) and IndexedDB schema caching.
@@ -75,7 +75,7 @@ Cross-platform SQL Query Workbench and analytical database client (DuckDB, Click
 
 ### Architecture & Tech Stack
 
-* **Frontend**: React 19, TypeScript 5.8, Vite 6, Tailwind CSS v4, Lucide React, Motion, Recharts.
+* **Frontend**: React 19, TypeScript 5.8, Vite 6, Tailwind CSS v4, Lucide React, Recharts.
 * **AST & Graph Engine**: `@xyflow/react` (React Flow), `dagre`, `node-sql-parser`.
 * **Desktop Native Layer (Tauri / Rust)**: Direct C++/Rust IPC for DuckDB and async HTTP client (`tokio` / `reqwest`) for ClickHouse.
 * **Storage & Encryption**: Web Crypto API (AES-256 GCM), IndexedDB, JSZip.
@@ -133,7 +133,7 @@ rm -f squashfs-root/usr/lib/libwayland-*.so*
 
 #### 📊 Профилирование и анализ данных (Data Visualizer)
 * **Инспекция результатов (DataStatsViewer)**: Просмотр таблиц с поддержкой пагинации, транспонирования (строки ↔ колонки) и режима детального просмотра ячеек (Cell Zoom).
-* **Автоматический расчёт статистики**: Вычисление метрик колонок (Null %, уникальные значения, min/max, среднее, стандартное отклонение) с переносом вычислений на сторону базы данных.
+* **Автоматический расчёт статистики**: Панель аналитики считает метрики по загруженному результату; «Обновить по БД» запрашивает у базы число строк, количество и долю NULL/пустых значений, число уникальных значений и сумму, затем вычисляет среднее в клиенте.
 * **Быстрые интерактивные фильтры**: Применение условных фильтров (`WHERE IS NULL` / `IS NOT NULL`) прямо из заголовков таблицы результатов.
 * **Визуализация результатов**: Столбчатые (вертикальные / горизонтальные), линейные и круговые диаграммы на основе результатов запроса, а также список статистики по колонкам и категориям.
 * **Копирование таблицы как изображения**: Копирование данных в буфер обмена в виде готового PNG-изображения высокого разрешения (Retina 2x).
@@ -153,7 +153,7 @@ rm -f squashfs-root/usr/lib/libwayland-*.so*
 #### 🛠️ Инструменты продуктивности и хранилище
 * **Библиотека сниппетов и действий (No-code Action Menu)**: Сохранение часто используемых запросов с поддержкой естественной алфавитной сортировки. Экспорт в ZIP распределяет сниппеты по папкам ("Избранное", "Jobs"). Поддержка многокомандных пайплайнов выполнения через директиву `-- @job`.
 * **Защищённый Vault (AES-256 GCM)**: Шифрование параметров подключения и секретов в браузере с защитой пин-кодом; после ввода PIN хранилище остаётся разблокированным 12 часов. Подстановка секретов в SQL-запросы в формате `{{SECRET_NAME}}`.
-* **Файловый менеджер WASM VFS**: Графический интерфейс для управления виртуальной файловой системой DuckDB WASM (Drag & Drop загрузка, инспекция и удаление `.parquet`, `.csv`, `.json`, `.duckdb`).
+* **Файловый менеджер WASM VFS**: Графический интерфейс для управления виртуальной файловой системой DuckDB WASM (загрузка через выбор файла, инспекция и удаление `.parquet`, `.csv`, `.json`, `.duckdb`). Загрузка перетаскиванием в этом окне не поддерживается.
 * **Дерево файлов (десктоп)**: панель файлов под схемой показывает папки на диске с поиском, сортировкой по имени, дате или размеру, контекстным меню (открыть с помощью, показать в проводнике, переименовать, в корзину) и переносом файлов и папок между папками перетаскиванием. Перетаскивание файла в редактор вставляет его путь.
 * **Синхронизация рабочего пространства**: Фоновый автоматический обмен сессиями, вкладками и настройками через общий файл/папку (Dropbox, сетевой диск) в десктоп-версии (Tauri).
 * **История версий и кэш**: Автоматическое сохранение снимков запросов (старые снимки удаляются по лимитам) и кэширование схем в IndexedDB.
@@ -163,7 +163,7 @@ rm -f squashfs-root/usr/lib/libwayland-*.so*
 
 ### Архитектура и стек технологий
 
-* **Frontend**: React 19, TypeScript 5.8, Vite 6, Tailwind CSS v4, Lucide React, Motion, Recharts.
+* **Frontend**: React 19, TypeScript 5.8, Vite 6, Tailwind CSS v4, Lucide React, Recharts.
 * **AST & Graph Engine**: `@xyflow/react` (React Flow), `dagre` (авто-лейаут графов), `node-sql-parser`.
 * **Desktop Native Layer (Tauri / Rust)**: Direct C++/Rust IPC для DuckDB и асинхронный HTTP-клиент (tokio/reqwest) для ClickHouse.
 * **Storage & Encryption**: Web Crypto API (AES-256 GCM), IndexedDB, JSZip.
