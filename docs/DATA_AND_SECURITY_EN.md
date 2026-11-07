@@ -48,28 +48,36 @@ Not included: Vault contents (stored in IndexedDB, not localStorage), the ClickH
 
 Consequences:
 * **Init SQL and snippets are exported as plain text.** Do not put passwords, access keys or tokens in them (for example `CREATE SECRET … KEY_ID/SECRET`). Vault `{{NAME}}` substitution is not applied to Init SQL.
-* On import to another computer, local values of DuckDB parameters (memory, directories, threads, Init SQL), the sync path and the UI scale are preserved if they are set.
+* Import preserves nondefault local DuckDB parameters: memory (other than `8GB`), temporary directory (other than `./tmp`), extension directory (other than `./extensions`), threads (other than `0`) and nonempty Init SQL. Nonempty sync and file-tree root paths are preserved too, as is the UI scale when set. Default DuckDB values can be replaced by imported values.
 * The newer file wins; see the [User Guide](./USER_GUIDE_EN.md#workspace-auto-synchronization-workspace-sync-path) for details.
 * The sync file lives in the folder you choose (for example a cloud-synced one). Protecting that folder is up to you.
 
+### Import and save order
+
+* Manual import checks the bundle envelope (`app`, numeric `version`, object `data`), clears localStorage and applies the data sequentially. The `app` check looks for the text `workspace bundle`, and the version is checked for a finite number; supported versions and all field contents are not strictly validated.
+* Startup auto-import checks for `data` and `exportedAt`, compares the file timestamp with the last sync and applies data without first clearing localStorage. Both paths use `applyWorkspaceBundleSilently`.
+* Import is not one transaction across localStorage and the IndexedDB databases; there is no automatic rollback on error. The temporary file protects sync-file writes, not the application of an import.
+* The session is saved when the page becomes hidden, Android enters the background, the window closes and every 10 minutes. Tauri waits up to 2 seconds for asynchronous saving on close. `saveSessionTabs` errors are logged to the console and do not reject its returned Promise.
+
 ## 3. Vault (secret storage)
 
-* Algorithms: PBKDF2-SHA256 (100,000 iterations) derives the key from the PIN; encryption is AES-256-GCM (Web Crypto API). A random salt (16 bytes) and initialization vector (12 bytes) are generated for each entry. The key is not exportable.
+* Algorithms: PBKDF2-SHA256 (100,000 iterations) derives the key from the PIN; encryption is AES-256-GCM (Web Crypto API). All secrets are encrypted as one array in the `root_vault` record; a new random salt (16 bytes) and initialization vector (12 bytes) are generated on each encryption. The key is not exportable.
 * PIN: digits only, at least 4. Without the PIN the data cannot be decrypted and **the PIN cannot be recovered** (you can only reset the Vault together with its secrets).
-* Unlocking: after the PIN is entered, decrypted secrets are kept in memory for 12 hours, then the Vault locks. There is no setting for the duration and no inactivity timer. Closing the application also locks the Vault. You can lock it manually with the button in the Vault section.
+* Unlocking lasts for 12 hours after the PIN is entered. Expiry is checked on the next access to the Vault state (`isVaultUnlocked`); that check clears the in-memory state and blocks access. There is no separate cleanup timer, configurable duration or inactivity timer. Closing the application also locks the Vault. You can lock it manually with the button in the Vault section.
 * Usage: `{{NAME}}` in SQL is replaced with the value right before execution; the tab, version history and snippets keep the `{{NAME}}` text. Allowed name characters: Latin letters, digits, `_`, `-`. Secrets with the `ch_` prefix are ClickHouse connection strings; they are offered as a list in the connection form.
 * If the SQL contains `{{` while the Vault is locked (or not set up), the query is not executed — even if the query contains no secrets.
 
 **What the Vault does not protect:**
 * A 4–6 digit PIN can be brute-forced if an attacker obtains the IndexedDB database file, because the number of possible values is small. Use a long PIN.
-* While the Vault is unlocked, secrets are held in application memory.
+* While the Vault is unlocked, secrets and the entered PIN are held in application memory. Expiry alone does not trigger cleanup; cleanup occurs on the next Vault-state check.
 * After substitution the secret value becomes part of the query text sent to the database: it may appear in server logs (for example ClickHouse `system.query_log`), and a database error message may contain a fragment of the query.
 * Init SQL, snippets, version history and query results are not encrypted.
 
 ## 4. Network
 
-* The application contacts only the servers you configure: ClickHouse (over `http://` or `https://`; the password is sent in the `X-ClickHouse-Key` header, in plain text over `http://`) and the data sources your SQL queries access (`read_parquet('https://…')`, `httpfs`). The application's own code contains no analytics or telemetry calls.
-* In development mode requests go to a local Express server (`server.ts`, port 3000, CORS open to all). It is intended for local development only and must not be exposed to a network (there is no authentication).
+* The main network requests are to ClickHouse (over `http://` or `https://`; the password is sent in the `X-ClickHouse-Key` header, in plain text over `http://`) and the data sources your SQL queries access (`read_parquet('https://…')`, `httpfs`). The application's own code contains no analytics or telemetry calls.
+* In development mode requests go to a local Express server (`server.ts`, binds to `0.0.0.0:3000`, CORS open to all). It is intended for local development only and must not be exposed to a network (there is no authentication).
+* DuckDB-WASM normally loads local files from `public/duckdb`, copied during development startup and the build. If local bundle selection fails, the code tries a jsDelivr CDN bundle. DuckDB extension installation and autoloading can also contact extension repositories.
 * Android: `cleartext: true` in `capacitor.config.json` allows HTTP connections (needed for ClickHouse without TLS).
 
 ## 5. Desktop permissions (Tauri)

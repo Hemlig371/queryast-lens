@@ -166,7 +166,7 @@ When exporting query results to `.xlsx` (via the **Export to Excel** button), yo
 | `@template: path` | *(Desktop)* Fills a ready `.xlsx` template that has a `[[table]]` or `[[rows]]` marker with the result: the formatting of the leading row is applied to all rows, the content below is shifted down |
 | `@template_values: path` | *(Desktop)* Writes values into the template starting at the marker cell; formatting and the position of everything else stay unchanged |
 
-* **`@excel_save` (desktop)**: the file is created automatically when the result arrives and contains exactly the rows the query returned, i.e. one page (100 rows by default) or as many as your own `LIMIT` allows. Moving to another page or changing sorting or filters overwrites the file with the new data. To export everything, use an explicit large `LIMIT`.
+* **`@excel_save` (desktop)**: The file is created automatically when a first-page result arrives in the active tab; paging, including returning to page one, does not repeat the auto-export. Running the query again, sorting or filtering can trigger a new first-page export. The file contains all rows returned by that query execution, not just visible table rows: usually one page (100 rows by default), or up to an explicit `LIMIT`. Page size ranges from 1 to 50,000; `0` resets it to 100 rather than removing the limit. For a larger export, use an explicit `LIMIT`, subject to the 500,000-row result cap and the Excel limit of 1,500,000 cells.
 
 Full reference (parsing rules, limits, `@excel_save`, `@template`, example): [`EXCEL_DIRECTIVES_EN.md`](./EXCEL_DIRECTIVES_EN.md).
 
@@ -228,7 +228,7 @@ Graphs can be saved in the following formats:
 
 ## 5. Secure Vault & Secret Substitution
 
-The application includes an encrypted secrets vault (**Encrypted Vault**) using the hardware standard **AES-256 GCM** via the Web Crypto API:
+The application includes an encrypted secrets vault (**Encrypted Vault**) using **AES-256-GCM** encryption via the Web Crypto API:
 1. Open **Settings -> "UI Elements"**, the **"Keys & Secrets (PIN code)"** block (at the bottom of the tab), and set a master PIN code.
 2. Add secrets, such as `CLICKHOUSE_PASS` or `PROD_TOKEN`.
 3. In your SQL queries, you can reference saved keys:
@@ -237,7 +237,7 @@ The application includes an encrypted secrets vault (**Encrypted Vault**) using 
    FROM read_parquet('https://my-bucket.s3.amazonaws.com/data.parquet?token={{PROD_TOKEN}}');
    ```
 4. Upon execution, `{{NAME}}` is replaced with the secret value right before the query is sent; the tab text, version history and snippets keep `{{NAME}}`.
-5. After the PIN is entered, the vault stays unlocked for 12 hours and then locks automatically (an inactivity timer and a configurable period are not provided). You can lock it earlier with the "Lock" button in the Vault section. Unlocking only lasts for the current run of the application.
+5. After the PIN is entered, unlocking lasts for 12 hours. Expiry is checked on the next access to the Vault state; that check blocks access and clears its in-memory state. There is no separate locking timer, inactivity timer or configurable duration. You can lock it earlier with the "Lock" button in the Vault section. Unlocking only lasts for the current run of the application.
 6. If the query text contains `{{` (including an unresolved `{{$variable}}`) while the vault is locked, the query is not executed and a message about the locked vault appears.
 
 ---
@@ -291,7 +291,7 @@ The results table (**DataStatsViewer**) is designed for datasets of any size:
   * Interactive switching between the statistics list, bar chart, line graph, and pie chart.
   * **Bar Chart Layouts**: Vertical and horizontal column orientations (clicking Bar toggles orientation).
   * **Copy Chart as Image**: Click the copy icon above the chart container to copy the chart to your clipboard as a PNG (2x pixel ratio).
-  * **Deep Column Statistics (Columns Stats / Aggregation)**: Computes essential metrics across the entire dataset without page limits (the row limit for the calculation is chosen in the panel: 1M by default, 10M, 50M, 100M or ALL): `total_count`, `null_count`, `null_percent`, `unique_count`, `min`, `max`, `avg`, `sum`.
+  * **Deep Column Statistics (Columns Stats / Aggregation)**: “Refresh from DB” requests `total_count`, `null_count`, `null_percent`, `unique_count` and `sum`; the client derives the mean as sum / nonempty count. The query is not limited to the current page; the source row limit is chosen in the panel: 1M by default, 10M, 50M, 100M or ALL. Min/max and other metrics of the loaded result belong to local analysis; the separate `SUMMARIZE` mode displays statistics returned by DuckDB.
 * **Clipboard Exports**:
   * **Copy as Image**: Copy visible table cells as a clean Retina PNG image for messengers or documentation.
   * `Ctrl + Shift + E` — Copy the active result page formatted as Tab-Separated Values (TSV) for pasting into Google Sheets or Excel.

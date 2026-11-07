@@ -8,7 +8,7 @@
 
 | Оболочка | Как запускается | DuckDB | ClickHouse |
 | :--- | :--- | :--- | :--- |
-| **Десктоп** (Tauri 1, Rust) | `npm run tauri dev/build` | Нативный DuckDB в Rust (`src-tauri/src/main.rs`), доступ к файлам на диске; также доступен DuckDB-WASM | HTTP-клиент на Rust (`reqwest`) |
+| **Десктоп** (Tauri 1, Rust) | `npm run tauri dev` / `npm run tauri build` | Нативный DuckDB в Rust (`src-tauri/src/main.rs`), доступ к файлам на диске; также доступен DuckDB-WASM | HTTP-клиент на Rust (`reqwest`) |
 | **Android** (Capacitor 6) | `npx cap …` (папку `android/` создаёт CI) | DuckDB-WASM в WebView | `CapacitorHttp` (обходит CORS); `COPY FROM` недоступен. Узкая раскладка, системная кнопка «Назад» (`@capacitor/app`) |
 | **Веб, режим разработки** | `npm run dev` (`server.ts`, Express + Vite) | Пакет `duckdb` на сервере (`/api/duckdb/*`) или DuckDB-WASM | Прокси сервера (`/api/clickhouse/*`) |
 
@@ -54,7 +54,7 @@ flowchart TD
 1. `replaceVariablesInSql` (`src/lib/sqlUtils.ts`): `{{$имя=значение}}` и `{{$имя}}`; определения ищутся в выполняемом тексте и во всём тексте вкладки.
 2. `replaceSecretsInSql` (`src/utils/vaultStorage.ts`): `{{ИМЯ}}` из разблокированного Vault. Если в тексте есть `{{`, а хранилище заблокировано, выполнение прекращается с сообщением.
 3. Для режимов `sequential`/`parallel` текст делится на команды (`splitBySemicolonIgnoringQuotes`).
-4. Постраничный `LIMIT`/`OFFSET` (размер страницы — настройка `duckDbMaxRows` / `clickhouseMaxRows`, по умолчанию 100, от 1 до 50 000). Если в тексте найден `LIMIT <число>`, лимит не добавляется на первой странице; на следующих страницах добавляется `OFFSET` (при собственном `LIMIT` или `UNION` — через подзапрос). ClickHouse дополнительно получает `FORMAT JSON` для `SELECT`/`SHOW`/`DESCRIBE`/`EXPLAIN`, если формат не указан.
+4. Постраничный `LIMIT`/`OFFSET` (размер страницы — настройка `duckDbMaxRows` / `clickhouseMaxRows`, по умолчанию 100, от 1 до 50 000). Если в последнем операторе найден `LIMIT <число>` верхнего уровня (вне CTE, подзапросов, строк и комментариев), лимит не добавляется на первой странице; на следующих страницах добавляется `OFFSET` (при собственном `LIMIT` или `UNION` — через подзапрос). ClickHouse дополнительно получает `FORMAT JSON` для `SELECT`/`SHOW`/`DESCRIBE`/`EXPLAIN`, если формат не указан.
 5. `COPY … TO/FROM` для ClickHouse распознаётся до отправки (`parseClickhouseCopy`) и выполняется потоково на десктопе (Rust) либо через `CapacitorHttp` (только `TO`).
 6. Для DuckDB после `CREATE/DROP/ATTACH/DETACH/RENAME` схема обновляется автоматически (настройка `autoUpdateSchema`).
 
@@ -62,7 +62,7 @@ flowchart TD
 
 Три бэкенда (Tauri / WASM / Express) реализованы ветвлением внутри `executeDuckDbQueryWithPagination` и `executeClickhouseQueryWithPagination`: правки вносите во все ветки.
 
-Потолок результата — 500 000 строк на запрос (Rust, WASM и ClickHouse); если строк больше, запрос заканчивается ошибкой, а не усечённым результатом.
+Потолок результата — 500 000 строк на запрос (Rust, WASM и ClickHouse); если строк больше, запрос заканчивается ошибкой, а не усечённым результатом. Это предел выдачи в интерфейс, а не памяти движка: в WASM проверка выполняется после получения Arrow-таблицы, в Express/DuckDB — после `stmt.all()`.
 
 ## 4. Результаты и вкладки
 
@@ -89,7 +89,7 @@ SQL (выделение или весь текст)
   → React Flow               (CustomNodes.tsx; подсветка lineage в App.tsx)
 ```
 
-* Разбор: грамматика PostgreSQL из `node-sql-parser` используется для всех диалектов; процедуры, `COPY`, `CREATE … AS`, `UNION`, DML и сложные `WITH` обрабатываются собственными эвристиками. Если разбор не удался, делается запасной разбор SELECT; запросы, не поддавшиеся разбору в многозапросном файле, пропускаются.
+* Разбор: для DuckDB, ClickHouse, Oracle/PL и PostgreSQL используется грамматика PostgreSQL из `node-sql-parser`; названия остальных диалектов передаются парсеру в нижнем регистре; процедуры, `COPY`, `CREATE … AS`, `UNION`, DML и сложные `WITH` обрабатываются собственными эвристиками. Если разбор не удался, делается запасной разбор SELECT; запросы, не поддавшиеся разбору в многозапросном файле, пропускаются.
 * Несколько запросов (`;`): блок каждого запроса раскладывается отдельно; при `LR` блоки идут друг под другом, при `TB` — вправо; над блоком стоит компактный заголовок «Query N» со сворачиванием. Рёбер между запросами нет.
 * Экспорт графа: изображения (`graphExport.ts`, `html-to-image`; на время экспорта отключается отрисовка только видимых узлов), JSON, XML, Mermaid, Draw.io (`exportGraphText`).
 
@@ -114,6 +114,7 @@ SQL (выделение или весь текст)
 
 ## 11. Тесты и сборка
 
-* Тесты: `tests/*.test.ts`, API Vitest (`npm test` или `bun test`). Покрыты чистые утилиты, хранилища (на `fake-indexeddb`), разбор и раскладка графов, Markdown, Mermaid, Excel (поверхностно). Не покрыты `App.tsx`, компоненты, DuckDB-WASM и Rust.
+* Тесты: `tests/*.test.ts`, Vitest (`npm test`). Покрыты чистые утилиты, хранилища (на `fake-indexeddb`), разбор и раскладка графов, Markdown, Mermaid, Excel и заполнение шаблонов (в том числе с реальным `exceljs`). Нормализация WASM проверяется на заглушках Arrow; движок WASM и сквозные сценарии интерфейса не запускаются. Часть проверок анализирует текст исходников, а не поведение приложения.
+* В `src-tauri/src/` есть модульные тесты Rust: `cargo test --manifest-path src-tauri/Cargo.toml`. Текущий CI запускает только проверку типов и Vitest; тесты Rust в него не входят. `tests/vaultStorage.test.ts` проверяет разбор URI, а не шифрование или жизненный цикл Vault.
 * Сборка и релиз: [CONTRIBUTING](./CONTRIBUTING.md#release-build-ci).
 * Проверка типов: `npm run lint` (`tsc --noEmit`) охватывает только `src/**`; `server.ts` и `tests/` не проверяются.

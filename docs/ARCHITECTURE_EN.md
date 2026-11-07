@@ -8,7 +8,7 @@ The same React interface runs in three shells:
 
 | Shell | How it runs | DuckDB | ClickHouse |
 | :--- | :--- | :--- | :--- |
-| **Desktop** (Tauri 1, Rust) | `npm run tauri dev/build` | Native DuckDB in Rust (`src-tauri/src/main.rs`) with access to files on disk; DuckDB-WASM is also available | Rust HTTP client (`reqwest`) |
+| **Desktop** (Tauri 1, Rust) | `npm run tauri dev` / `npm run tauri build` | Native DuckDB in Rust (`src-tauri/src/main.rs`) with access to files on disk; DuckDB-WASM is also available | Rust HTTP client (`reqwest`) |
 | **Android** (Capacitor 6) | `npx cap …` (the `android/` folder is created by CI) | DuckDB-WASM in the WebView | `CapacitorHttp` (bypasses CORS); `COPY FROM` is unavailable. Narrow layout, system Back button (`@capacitor/app`) |
 | **Web, development mode** | `npm run dev` (`server.ts`, Express + Vite) | The `duckdb` package on the server (`/api/duckdb/*`) or DuckDB-WASM | Server proxy (`/api/clickhouse/*`) |
 
@@ -54,7 +54,7 @@ Query text processing order:
 1. `replaceVariablesInSql` (`src/lib/sqlUtils.ts`): `{{$name=value}}` and `{{$name}}`; definitions are searched in the executed text and in the whole tab text.
 2. `replaceSecretsInSql` (`src/utils/vaultStorage.ts`): `{{NAME}}` from the unlocked Vault. If the text contains `{{` and the Vault is locked, execution stops with a message.
 3. For `sequential`/`parallel` modes the text is split into commands (`splitBySemicolonIgnoringQuotes`).
-4. Paged `LIMIT`/`OFFSET` (page size is the `duckDbMaxRows` / `clickhouseMaxRows` setting, default 100, from 1 to 50,000). If the text contains `LIMIT <number>`, no limit is added on the first page; on following pages `OFFSET` is added (through a subquery when the query has its own `LIMIT` or a `UNION`). ClickHouse additionally gets `FORMAT JSON` for `SELECT`/`SHOW`/`DESCRIBE`/`EXPLAIN` when no format is specified.
+4. Paged `LIMIT`/`OFFSET` (page size is the `duckDbMaxRows` / `clickhouseMaxRows` setting, default 100, from 1 to 50,000). If the last statement contains a top-level `LIMIT <number>` (outside CTEs, subqueries, strings and comments), no limit is added on the first page; on following pages `OFFSET` is added (through a subquery when the query has its own `LIMIT` or a `UNION`). ClickHouse additionally gets `FORMAT JSON` for `SELECT`/`SHOW`/`DESCRIBE`/`EXPLAIN` when no format is specified.
 5. ClickHouse `COPY … TO/FROM` is recognized before sending (`parseClickhouseCopy`) and executed as a stream on desktop (Rust) or through `CapacitorHttp` (`TO` only).
 6. For DuckDB, after `CREATE/DROP/ATTACH/DETACH/RENAME` the schema is refreshed automatically (the `autoUpdateSchema` setting).
 
@@ -62,7 +62,7 @@ Cancellation: an `AbortController` in the interface plus the native commands `ca
 
 The three backends (Tauri / WASM / Express) are implemented as branching inside `executeDuckDbQueryWithPagination` and `executeClickhouseQueryWithPagination`: change all branches.
 
-The result cap is 500,000 rows per query (Rust, WASM and ClickHouse); above that the query ends with an error instead of a truncated result.
+The result cap is 500,000 rows per query (Rust, WASM and ClickHouse); above that the query ends with an error instead of a truncated result. This caps delivery to the interface, not engine memory: WASM checks after receiving the Arrow table, and Express/DuckDB checks after `stmt.all()`.
 
 ## 4. Results and tabs
 
@@ -89,7 +89,7 @@ SQL (selection or whole text)
   → React Flow               (CustomNodes.tsx; lineage highlighting in App.tsx)
 ```
 
-* Parsing: the PostgreSQL grammar from `node-sql-parser` is used for all dialects; procedures, `COPY`, `CREATE … AS`, `UNION`, DML and complex `WITH` are handled by custom heuristics. If parsing fails, a fallback SELECT parse is attempted; queries that cannot be parsed in a multi-query file are skipped.
+* Parsing: DuckDB, ClickHouse, Oracle/PL and PostgreSQL use the PostgreSQL grammar from `node-sql-parser`; other dialect names are passed to the parser in lowercase; procedures, `COPY`, `CREATE … AS`, `UNION`, DML and complex `WITH` are handled by custom heuristics. If parsing fails, a fallback SELECT parse is attempted; queries that cannot be parsed in a multi-query file are skipped.
 * Multiple queries (`;`): each query's block is laid out separately; with `LR` blocks are stacked vertically, with `TB` they go to the right; a compact "Query N" header with collapse sits above each block. There are no edges between queries.
 * Graph export: images (`graphExport.ts`, `html-to-image`; viewport-only node rendering is disabled during export), JSON, XML, Mermaid, Draw.io (`exportGraphText`).
 
@@ -114,6 +114,7 @@ Three layers: `localStorage` (settings, session), IndexedDB (results, versions, 
 
 ## 11. Tests and build
 
-* Tests: `tests/*.test.ts`, Vitest API (`npm test` or `bun test`). They cover pure utilities, storages (on `fake-indexeddb`), graph parsing and layout, Markdown, Mermaid and Excel (superficially). Not covered: `App.tsx`, components, DuckDB-WASM and Rust.
+* Tests: `tests/*.test.ts`, Vitest (`npm test`). They cover pure utilities, storage (with `fake-indexeddb`), graph parsing and layout, Markdown, Mermaid, Excel and template filling (including real `exceljs`). WASM normalization uses Arrow stubs; the WASM engine and end-to-end UI workflows are not run. Some checks inspect source text rather than application behavior.
+* Rust unit tests live in `src-tauri/src/`: `cargo test --manifest-path src-tauri/Cargo.toml`. Current CI runs only the type check and Vitest; Rust tests are not included. `tests/vaultStorage.test.ts` checks URI parsing, not encryption or the Vault lifecycle.
 * Build and release: [CONTRIBUTING](./CONTRIBUTING.md#release-build-ci).
 * Type checking: `npm run lint` (`tsc --noEmit`) covers only `src/**`; `server.ts` and `tests/` are not checked.

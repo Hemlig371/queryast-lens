@@ -44,7 +44,7 @@ Column numbers in `@split`, `@skip`, `@hide` and `@group` refer to the original 
 
 * Works only in the desktop version (Tauri). In other versions the directive is ignored and the file is downloaded normally.
 * The path can be a file name (`/reports/out.xlsx`, `D:\reports\out.xlsx`) or a folder ending with `/` or `\` (`/reports/`); in the latter case the file name is built as usual (`name_YYYY-MM-DD.xlsx`).
-* The file is created automatically **every time a query result arrives in the active tab**, including when you change the page, sorting or filter. The file contains exactly the rows the query returned: one page (100 rows by default) or as many as your `LIMIT` allows. To export everything, set the page size to `0` in settings or use an explicit `LIMIT`.
+* The file is created automatically when a first-page result arrives in the active tab; paging, including returning to page one, does not repeat the auto-export. Running the query again, sorting or filtering can trigger a new first-page export. The file contains all rows returned by that query execution, not just visible table rows: usually one page (100 rows by default), or up to an explicit `LIMIT`. Page size ranges from 1 to 50,000; `0` resets it to 100 rather than removing the limit. For a larger export, use an explicit `LIMIT`, subject to the 500,000-row result cap and the Excel limit of 1,500,000 cells.
 * Queries running in background tabs do not trigger an export.
 * If writing to the given path fails, the application falls back to a regular browser-style download.
 
