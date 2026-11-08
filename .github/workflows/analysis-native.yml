@@ -32,8 +32,9 @@ jobs:
     timeout-minutes: 60
     env:
       CARGO_BUILD_JOBS: 2
-      LENS_ARROW_FIXTURE_DIR: ${{ runner.temp }}/lens-arrow
     steps:
+      - name: Configure native fixture directory
+        run: echo "LENS_ARROW_FIXTURE_DIR=$RUNNER_TEMP/lens-arrow" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
@@ -58,3 +59,4 @@ jobs:
         run: cargo test --manifest-path src-tauri/Cargo.toml --no-default-features analysis::tests -- --nocapture
       - name: Decode Rust IPC with Lens JavaScript Arrow and compare replay results
         run: node tests/analysisNativeArrow.mjs
+

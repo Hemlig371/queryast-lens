@@ -16,25 +16,48 @@ jobs:
         with:
           node-version: 22
 
-      - name: Install dependencies
-        shell: bash
-        run: |
-          rm -rf package-lock.json bun.lock bun.lockb node_modules
-          npm install
+      - name: Install dependencies from lock file
+        run: npm ci --include=dev --include=optional
 
       - name: Lint (type check)
         run: npm run lint
 
-      - name: Unit tests
+      - name: Unit tests (Vitest)
         run: npx vitest run --reporter=default --reporter=github-actions --reporter=junit --outputFile.junit=test-results.xml
+
+      - name: Analysis unit tests (node:test)
+        run: |
+          npm run build:analysis-export
+          node --import tsx --test --test-reporter=spec --test-reporter=junit --test-reporter-destination=stdout --test-reporter-destination=test-results-analysis.xml tests/analysis/*.check.ts
+
+      - name: Analysis SQL replay integration
+        id: analysis_sql
+        run: npm run test:analysis-sql
 
       - name: Test summary
         if: always()
+        env:
+          ANALYSIS_SQL_OUTCOME: ${{ steps.analysis_sql.outcome }}
         run: |
-          node -e "
-          const x=require('fs').readFileSync('test-results.xml','utf8');
-          const m=x.match(/<testsuites[^>]*>/)[0];
-          const g=k=>+((m.match(new RegExp(k+'=\"(\\\\d+)\"'))||[0,0])[1]);
-          const t=g('tests'),f=g('failures'),e=g('errors');
-          console.log(\`### Тесты\n\n✅: \${t-f-e}\n❌: \${f+e}\n\nAll: \${t}\`);
-          " >> "$GITHUB_STEP_SUMMARY"
+          python3 - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+          lines = ['### Тесты', '', '| Набор | Успешно | Ошибки | Пропущено |', '| --- | ---: | ---: | ---: |']
+          totals = [0, 0, 0]
+          for name, filename in [('Vitest', 'test-results.xml'), ('Analysis node:test', 'test-results-analysis.xml')]:
+              path = Path(filename)
+              if not path.exists():
+                  lines.append(f'| {name} | Отчёт не создан | — | — |')
+                  continue
+              cases = list(ET.parse(path).getroot().iter('testcase'))
+              failures = sum(c.find('failure') is not None or c.find('error') is not None for c in cases)
+              skipped = sum(c.find('skipped') is not None for c in cases)
+              passed = len(cases) - failures - skipped
+              lines.append(f'| {name} | {passed} | {failures} | {skipped} |')
+              totals = [x + y for x, y in zip(totals, [passed, failures, skipped])]
+          lines.append(f'| **Всего unit** | **{totals[0]}** | **{totals[1]}** | **{totals[2]}** |')
+          lines.extend(['', 'SQL replay: ' + os.environ.get('ANALYSIS_SQL_OUTCOME', 'unknown')])
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as report:
+              report.write('\n'.join(lines) + '\n')
+          PY

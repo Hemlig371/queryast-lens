@@ -11,11 +11,12 @@ jobs:
   export:
     runs-on: ubuntu-22.04
     timeout-minutes: 20
-    env:
-      LENS_COMPRESSION_FIXTURES_DIR: ${{ runner.temp }}/lens-compression
-      ANALYSIS_EXPORT_RESULTS: ${{ runner.temp }}/lens-dashboard
-      PLAYWRIGHT_MODULE: ${{ runner.temp }}/lens-browser/node_modules/playwright/index.mjs
     steps:
+      - name: Configure export test directories
+        run: |
+          echo "LENS_COMPRESSION_FIXTURES_DIR=$RUNNER_TEMP/lens-compression" >> "$GITHUB_ENV"
+          echo "ANALYSIS_EXPORT_RESULTS=$RUNNER_TEMP/lens-dashboard" >> "$GITHUB_ENV"
+          echo "PLAYWRIGHT_MODULE=$RUNNER_TEMP/lens-browser/node_modules/playwright/index.mjs" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: {node-version: 22, cache: npm}
@@ -41,3 +42,4 @@ jobs:
             sleep 1
           done
           node tests/browser/analysis-export.mjs
+
