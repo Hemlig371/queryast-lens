@@ -1,0 +1,43 @@
+name: Analysis export compatibility
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ['src/analysis/**', 'scripts/build-analysis-export.mjs', 'tests/analysis/**', 'tests/browser/analysis-export*', 'tests/verifyArrowCompression.py', 'package*.json', '.github/workflows/analysis-export.yml']
+  push:
+    paths: ['src/analysis/**', 'scripts/build-analysis-export.mjs', 'tests/analysis/**', 'tests/browser/analysis-export*', 'tests/verifyArrowCompression.py', 'package*.json', '.github/workflows/analysis-export.yml']
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    env:
+      LENS_COMPRESSION_FIXTURES_DIR: ${{ runner.temp }}/lens-compression
+      ANALYSIS_EXPORT_RESULTS: ${{ runner.temp }}/lens-dashboard
+      PLAYWRIGHT_MODULE: ${{ runner.temp }}/lens-browser/node_modules/playwright/index.mjs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run test:analysis
+      - run: python -m pip install pyarrow==26.0.1
+      - run: python tests/verifyArrowCompression.py
+      - run: npm run build
+      - name: Install browser test tools outside project dependencies
+        run: |
+          npm install --prefix "$RUNNER_TEMP/lens-browser" playwright@1.62.0
+          node "$RUNNER_TEMP/lens-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Verify offline dashboard using a fresh browser context
+        run: |
+          npm run dev > "$RUNNER_TEMP/lens-vite.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          for attempt in $(seq 1 45); do
+            if curl -fsS http://127.0.0.1:3000/ > /dev/null; then break; fi
+            sleep 1
+          done
+          node tests/browser/analysis-export.mjs

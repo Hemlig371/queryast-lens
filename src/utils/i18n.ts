@@ -30,6 +30,10 @@ export function linesSuffix(n: number, lang: string = currentLang): string {
 }
 
 export const EN_DICT: Record<string, string> = {
+  "Исследовать": "Explore",
+  "Продолжить исследование": "Resume exploration",
+  "Закрыть исследование": "Close exploration",
+  "Закрытие исследования…": "Closing exploration…",
   "Соединение без условия — каждая строка с каждой (декартово произведение)": "Join without a condition — every row with every row (Cartesian product)",
   "LEFT JOIN работает как INNER: условие WHERE по этой таблице отбрасывает строки без пары": "LEFT JOIN acts as INNER: the WHERE condition on this table drops rows with no match",
   "SELECT * — состав колонок результата зависит от таблицы": "SELECT * — the result columns depend on the table definition",

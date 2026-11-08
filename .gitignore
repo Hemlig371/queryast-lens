@@ -12,3 +12,6 @@ public/duckdb/duckdb-browser-eh.worker.js
 public/duckdb/duckdb-browser-mvp.worker.js
 public/duckdb/duckdb-eh.wasm
 public/duckdb/duckdb-mvp.wasm
+
+public/analysis-export-runtime.js.gz
+public/analysis-zstd.wasm

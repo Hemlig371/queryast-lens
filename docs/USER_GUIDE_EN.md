@@ -1,5 +1,7 @@
 # User Guide
 
+Experimental: [Perspective data exploration and test zone](ANALYSIS_EXPERIMENTAL_EN.md).
+
 QueryAST Lens is a cross-platform SQL Workbench for local and cloud analytics (DuckDB, ClickHouse) with an AST graph, dependency highlighting (Data Lineage) and an Excel report generator.
 
 ---
