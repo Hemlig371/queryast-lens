@@ -1,4 +1,5 @@
 import {pagedJsonBlob,sourceArrowIpc} from './exportPaged';
+import {bindHtmlReplay} from './htmlReplay';
 export async function csvExportBlob(view: any, pageRows = 50_000, selection: any = {}) {
   const rows = await view.num_rows();
   const chunks: string[] = [];
@@ -35,7 +36,9 @@ export async function exportNativeMenuChoice(viewer: any, method: string, filena
   if(method==='html') {
     // Keep the SDK HTML document; its download() hard-codes "untitled".
     const data=await viewer.export({method,...options});
-    const blob=data instanceof Blob?data:new Blob([data],{type:'text/html;charset=utf-8'});
+    const html=data instanceof Blob?await data.text():data;
+    if(typeof html!=='string')throw new Error('Perspective HTML export returned an unsupported value');
+    const blob=new Blob([bindHtmlReplay(html)],{type:'text/html;charset=utf-8'});
     downloadExportBlob(viewer,blob,filename);
     return;
   }

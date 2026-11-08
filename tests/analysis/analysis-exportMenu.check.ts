@@ -58,10 +58,10 @@ test('HTML keeps the SDK document and saves under the selected filename',async()
  globalThis.setTimeout=((callback:any)=>{callback();return 0;}) as any;
  dom.window.HTMLAnchorElement.prototype.click=function(){saved.push(this.download);};
  try{
-  const viewer={ownerDocument:dom.window.document,getActivePanel:()=> 'chart',export:async(options:any)=>{calls.push(options);return '<html>stock SDK</html>';}};
+  const viewer={ownerDocument:dom.window.document,getActivePanel:()=> 'chart',export:async(options:any)=>{calls.push(options);return '<html>stock SDK</html>\nwindow.viewer.load(worker.table(bytes.buffer));\nwindow.viewer.restore(JSON.parse(window.layout.textContent));';}};
   await exportNativeMenuChoice(viewer,'html','Regional report.html');
   assert.deepEqual(calls,[{method:'html',panel:'chart'}]);
-  assert.equal(saved[1],'Regional report.html');assert.equal(await saved[0].text(),'<html>stock SDK</html>');
+  assert.equal(saved[1],'Regional report.html');assert.match(await saved[0].text(),/stock SDK/);assert.match(await saved[0].text(),/await worker.table/);
   viewer.export=async()=>{throw Error('HTML export failed');};
   await assert.rejects(()=>exportNativeMenuChoice(viewer,'html','demo.html'),/HTML export failed/);
  }finally{URL.createObjectURL=oldCreate;URL.revokeObjectURL=oldRevoke;globalThis.setTimeout=oldTimer;dom.window.close();}

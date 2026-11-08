@@ -1,5 +1,6 @@
 // Run against a local Vite server. Stock HTML uses CDN assets in a fresh online context.
 import assert from 'node:assert/strict';
+import {checkDatagridScroll} from './datagrid-scroll.mjs';
 import {pathToFileURL, fileURLToPath} from 'node:url';
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import {resolve,dirname} from 'node:path';
@@ -66,6 +67,7 @@ try{
  assert.deepEqual(errors,[]);assert.deepEqual(replayErrors,[]);
  await writeFile(resolve(out,'checks.json'),JSON.stringify({rows:12000,stockHTML:true,internetRequired:true,metricsMatch:true},null,2));
  console.log('Stock HTML file:// replay matched active panel grouping, filter and metrics.');
+ await checkDatagridScroll(page,out);
  await context.close();await online.close();
 }finally{await browser.close();}
 

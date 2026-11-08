@@ -111,3 +111,22 @@ observers do not watch grid cell changes during scrolling. A blank New Column
 draft validates inline without executing empty SQL. `countif` is offered only
 for BOOLEAN; use `count` for text values. DuckDB expressions require separate
 compatibility checks when replayed by the stock HTML's built-in Perspective engine.
+
+## HTML replay and wide group headers
+
+HTML still comes from the stock SDK with full source data and active panel config.
+Lens repairs only the pinned 5.8 bootstrap: register the embedded table under its
+configured name, then await client loading and panel restoration in order. This
+preserves pivots/filters/metrics rather than falling back to a flat table. Unknown
+SDK templates fail explicitly. CDN internet remains required; no DuckDB runtime
+is embedded. Cross-engine expression compatibility still needs validation.
+
+A scoped regular-table 0.9.2 workaround retains one existing data column when an
+oversized group header would otherwise produce an empty horizontal window. Values
+and configuration stay unchanged, horizontal virtualization remains enabled, and
+the instance override is removed when its Datagrid is removed. This internal API
+requires revalidation on SDK upgrades.
+
+Export CI also compares wide-label scrolling in plain and Lens containers and
+writes grid-scroll.json. The actual installed planning algorithm is tested locally;
+full browser and platform acceptance remains required.

@@ -1,5 +1,6 @@
 import {installDefaultColumns} from './defaultColumns';
 import {installMenuBounds} from './menuBounds';
+import {installDatagridViewport} from './datagridViewport';
 import {installViewerBackground} from './viewerBackground';
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import {Check, Copy, Loader2} from 'lucide-react';
@@ -56,6 +57,7 @@ const Explore = forwardRef<ExploreHandle, {
     let handler: any;
     let removeExportBridge: (() => void) | undefined;
     let removeMenuBounds: (() => void) | undefined;
+    let removeDatagridViewport: (() => void) | undefined;
     let removeBackground: (() => void) | undefined;
     let restoreColumnPaths: (() => void) | undefined;
     let cleanup: Promise<void> | undefined;
@@ -99,6 +101,7 @@ const Explore = forwardRef<ExploreHandle, {
       viewer.style.visibility = 'hidden';
       container.current!.appendChild(viewer);
       removeMenuBounds = installMenuBounds(viewer);
+      removeDatagridViewport = installDatagridViewport(viewer);
       removeBackground = installViewerBackground(viewer, container.current!.parentElement!);
       await viewer.load(table);
       await viewer.resetThemes();
@@ -127,6 +130,7 @@ const Explore = forwardRef<ExploreHandle, {
       cleanup = opening.then(async () => {
         removeExportBridge?.();
         removeMenuBounds?.();
+        removeDatagridViewport?.();
         removeBackground?.();
         const release = async (action: () => unknown) => {
           try { await action(); } catch (e) { console.warn('Analysis cleanup', e); }
