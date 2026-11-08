@@ -130,3 +130,19 @@ requires revalidation on SDK upgrades.
 Export CI also compares wide-label scrolling in plain and Lens containers and
 writes grid-scroll.json. The actual installed planning algorithm is tested locally;
 full browser and platform acceptance remains required.
+
+## Charts and HTML diagnostics
+
+Exported HTML waits for Viewer/WASM and plugin registration before creating the
+client, then flushes/resizes the restored panel. Restore failures are displayed
+inside the file rather than leaving a silently empty page. This does not translate
+DuckDB SQL expressions into ExprTK: formulas and some aggregates differ between
+engines. Removing a field from an axis can leave its expression in the config and
+still prevent replay. No formulas or metrics are silently removed or substituted.
+For a plain-chart check, start a fresh exploration using only source columns.
+
+PNG/TXT keep the stock plugin export payload and selected filename. Browser CI
+checks Datagrid, X Bar and Y Line in independent file:// contexts: configuration,
+metrics, PNG filenames and colored pixels in the chart canvas. Diagnostic files
+are retained as a CI artifact. The scroll probe is loaded as a Vite module so its
+bare package imports are transformed before page.evaluate calls it.

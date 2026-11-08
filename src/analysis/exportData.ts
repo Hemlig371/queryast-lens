@@ -42,6 +42,13 @@ export async function exportNativeMenuChoice(viewer: any, method: string, filena
     downloadExportBlob(viewer,blob,filename);
     return;
   }
+  if(method==='plugin') {
+    const data=await viewer.export({method,...options});
+    const blob=data instanceof Blob?data:typeof data==='string'&&filename.endsWith('.txt')?new Blob([data],{type:'text/plain;charset=utf-8'}):undefined;
+    if(!blob)throw new Error('Perspective plugin export returned an unsupported value');
+    downloadExportBlob(viewer,blob,filename);
+    return;
+  }
   if(!match)return viewer.download({method,...options});
   const [,format,codec,scope]=match;
   const selection=scope==='selected'?viewer.getSelection(options):undefined;

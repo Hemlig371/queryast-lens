@@ -58,11 +58,23 @@ test('HTML keeps the SDK document and saves under the selected filename',async()
  globalThis.setTimeout=((callback:any)=>{callback();return 0;}) as any;
  dom.window.HTMLAnchorElement.prototype.click=function(){saved.push(this.download);};
  try{
-  const viewer={ownerDocument:dom.window.document,getActivePanel:()=> 'chart',export:async(options:any)=>{calls.push(options);return '<html>stock SDK</html>\nwindow.viewer.load(worker.table(bytes.buffer));\nwindow.viewer.restore(JSON.parse(window.layout.textContent));';}};
+  const viewer={ownerDocument:dom.window.document,getActivePanel:()=> 'chart',export:async(options:any)=>{calls.push(options);return '<html>stock SDK</html>\nconst worker = await perspective.worker();\nwindow.viewer.load(worker.table(bytes.buffer));\nwindow.viewer.restore(JSON.parse(window.layout.textContent));';}};
   await exportNativeMenuChoice(viewer,'html','Regional report.html');
   assert.deepEqual(calls,[{method:'html',panel:'chart'}]);
   assert.equal(saved[1],'Regional report.html');assert.match(await saved[0].text(),/stock SDK/);assert.match(await saved[0].text(),/await worker.table/);
   viewer.export=async()=>{throw Error('HTML export failed');};
   await assert.rejects(()=>exportNativeMenuChoice(viewer,'html','demo.html'),/HTML export failed/);
  }finally{URL.createObjectURL=oldCreate;URL.revokeObjectURL=oldRevoke;globalThis.setTimeout=oldTimer;dom.window.close();}
+});
+
+test('PNG preserves SDK pixels and the selected panel filename',async()=>{
+ const {exportNativeMenuChoice}=await import('../../src/analysis/exportData');
+ const dom=new JSDOM('<body></body>');const saved:any[]=[];const blob=new Blob([new Uint8Array([137,80,78,71])],{type:'image/png'});
+ const oldCreate=URL.createObjectURL,oldRevoke=URL.revokeObjectURL,oldTimer=globalThis.setTimeout;
+ URL.createObjectURL=value=>{saved.push(value);return 'blob:png';};URL.revokeObjectURL=()=>{};
+ globalThis.setTimeout=((callback:any)=>{callback();return 0;}) as any;
+ dom.window.HTMLAnchorElement.prototype.click=function(){saved.push(this.download);};
+ const viewer={ownerDocument:dom.window.document,getActivePanel:()=> 'chart',export:async(options:any)=>{assert.deepEqual(options,{method:'plugin',panel:'chart'});return blob;}};
+ try{await exportNativeMenuChoice(viewer,'plugin','Report.png');assert.equal(saved[0],blob);assert.equal(saved[1],'Report.png');}
+ finally{URL.createObjectURL=oldCreate;URL.revokeObjectURL=oldRevoke;globalThis.setTimeout=oldTimer;dom.window.close();}
 });
