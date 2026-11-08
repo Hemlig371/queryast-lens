@@ -1,7 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import {Check, Copy, Loader2} from 'lucide-react';
 import type { HTMLPerspectiveViewerElement } from '@perspective-dev/viewer';
 import { loadPerspective } from './sdk';
-import {rawSourceArrow} from './rawSourceArrow';
 import { ViewSqlCapture } from './viewSql';
 import { copyToClipboard } from '../utils/exportUtils';
 import { installDateSplitPathCompatibility } from './dateSplitPaths';
@@ -15,12 +15,12 @@ const text = (ru: string, en: string) => currentLang === 'en' ? en : ru;
 let pendingCleanup: Promise<void> = Promise.resolve();
 export interface ExploreHandle { close: () => Promise<void> }
 const Explore = forwardRef<ExploreHandle, {
-  source: AnalysisSource; mode?: AnalysisMode; visible?: boolean; onBack?: () => void; onClose?: () => void;
-}>(function Explore({ source, mode = 'wasm', visible = true, onBack, onClose }, ref) {
+  source: AnalysisSource; mode?: AnalysisMode; theme?: 'light' | 'dark'; visible?: boolean; onBack?: () => void; onClose?: () => void;
+}>(function Explore({ source, mode = 'wasm', theme = 'light', visible = true, onBack, onClose }, ref) {
   const selected = source;
   const [revision, setRevision] = useState(0);
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState(text('Подключение Perspective…', 'Connecting Perspective…'));
+  const [status, setStatus] = useState('');
   const [error, setError] = useState('');
   const [sqlSnapshot, setSqlSnapshot] = useState<{source:string; rows:number; columns:number; sql:string} | null>(null);
   const [sqlBusy, setSqlBusy] = useState(false);
@@ -28,9 +28,12 @@ const Explore = forwardRef<ExploreHandle, {
   const sqlCapture = useRef<{capture:ViewSqlCapture; handler:any} | null>(null);
   const savedConfig = useRef<{key: string; config: any} | undefined>(undefined);
   const disposeRef = useRef<() => Promise<void>>(() => Promise.resolve());
-  const [viewRows, setViewRows] = useState<number>();
+  const themeRef = useRef(theme);
+  themeRef.current = theme;
+  const [copied, setCopied] = useState(false);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => { if (copyTimer.current) clearTimeout(copyTimer.current); }, []);
   useImperativeHandle(ref, () => ({close: () => disposeRef.current()}), []);
-  const [rowCount, setRowCount] = useState<number>();
   const container = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<HTMLPerspectiveViewerElement | null>(null);
   const key = selected ? `lens.analysis.v1:${JSON.stringify([mode, selected.connection, selected.database, selected.schema, selected.table])}` : '';
@@ -48,11 +51,10 @@ const Explore = forwardRef<ExploreHandle, {
     let client: any;
     let server: any;
     let handler: any;
-    let removeSave: (() => void) | undefined;
     let removeExportBridge: (() => void) | undefined;
     let restoreColumnPaths: (() => void) | undefined;
     let cleanup: Promise<void> | undefined;
-    setBusy(true); setError(''); setRowCount(undefined); setViewRows(undefined); setSqlSnapshot(null);
+    setBusy(true); setError(''); setSqlSnapshot(null); setCopied(false);
     setStatus(text('Подключение Perspective…', 'Connecting Perspective…'));
     const capture = new ViewSqlCapture();
     const opening = pendingCleanup.then(async () => {
@@ -83,56 +85,38 @@ const Explore = forwardRef<ExploreHandle, {
       const name = model.tablePath(selected.schema === 'main' ? [selected.database, selected.table] : [selected.database, selected.schema, selected.table]);
       model.free();
       table = await client.open_table(name);
-      const count = await table.size();
       if (cancelled) return;
       restoreColumnPaths = installDateSplitPathCompatibility(runtime.View, await table.schema());
-      setRowCount(count);
       viewer = document.createElement('perspective-viewer') as HTMLPerspectiveViewerElement;
-      viewer.setAttribute('theme', 'Pro Light');
+      const defaultTheme = themeRef.current === 'dark' ? 'Pro Dark' : 'Pro Light';
+      viewer.setAttribute('theme', defaultTheme);
+      viewer.style.visibility = 'hidden';
       container.current!.appendChild(viewer);
       await viewer.load(table);
       await viewer.resetThemes();
       const saved = savedConfig.current;
       if (saved?.key === key) await viewer.restoreWorkspace(saved.config);
-      else await viewer.restore({ plugin: 'Datagrid', settings: true });
+      else await viewer.restore({ plugin: 'Datagrid', settings: true, theme: defaultTheme });
       if (cancelled) return;
       viewerRef.current = viewer;
       sqlCapture.current = {capture,handler};
       removeExportBridge = installExportMenuBridge(viewer, {
         start: () => { setError(''); setStatus(text('Подготовка экспорта…', 'Preparing export…')); },
-        success: () => setStatus(text('Файл передан браузеру для скачивания', 'File handed to browser for download')),
+        success: () => setStatus(''),
         error: e => { setError(`${text('Экспорт', 'Export')}: ${String(e)}`); setStatus(text('Ошибка экспорта', 'Export failed')); },
-      },(name,rows)=>rawSourceArrow(conn,name,rows));
-      let countVersion = 0;
-      const updateCount = async () => {
-        const version = ++countVersion;
-        try {
-          const panel = viewer!.getActivePanel();
-          const view = await viewer!.getView(panel ? {panel} : undefined);
-          const count = await view.num_rows();
-          if (!cancelled && version === countVersion) setViewRows(count);
-        } catch { if (!cancelled) setViewRows(undefined); }
-      };
-      viewer.addEventListener('perspective-config-update', updateCount);
-      viewer.addEventListener('perspective-active-panel-update', updateCount);
-      removeSave = () => {
-        viewer?.removeEventListener('perspective-config-update', updateCount);
-        viewer?.removeEventListener('perspective-active-panel-update', updateCount);
-      };
-      await updateCount();
+      });
       await viewer.flush();
-      setStatus(mode === 'wasm' ? text('Готово · данные в браузере', 'Ready · browser data') : text('Tauri · экспериментальный адаптер', 'Tauri · experimental adapter'));
+      if (!cancelled) viewer.style.visibility = 'visible';
+      setStatus('');
     }).catch(e => { if (!cancelled) { setError(String(e)); setStatus(text('Ошибка подключения', 'Connection failed')); } })
       .finally(() => { if (!cancelled) setBusy(false); });
     const dispose = () => {
       if (cleanup) return cleanup;
       cancelled = true;
       sqlDialog.current?.close();
-      if (viewer) viewer.style.visibility = 'hidden';
       viewerRef.current = null;
       sqlCapture.current = null;
       cleanup = opening.then(async () => {
-        removeSave?.();
         removeExportBridge?.();
         const release = async (action: () => unknown) => {
           try { await action(); } catch (e) { console.warn('Analysis cleanup', e); }
@@ -187,13 +171,23 @@ const Explore = forwardRef<ExploreHandle, {
       if (active.__unsafe_get_name() !== viewId || viewer.getActivePanel() !== panel) {
         throw new Error(text('Представление изменилось. Нажмите SQL ещё раз.', 'The View changed. Click SQL again.'));
       }
+      setCopied(false);
       setSqlSnapshot(snapshot);
       sqlDialog.current?.showModal();
     } catch (e) { setError(`${text('SQL представления', 'View SQL')}: ${String(e)}`); }
     finally { setSqlBusy(false); }
   }
 
-  return <section style={visible ? undefined : {display: 'none'}} aria-hidden={!visible} className="lens-explore" aria-label={text('Исследование данных', 'Explore data')}>
+  async function copySql() {
+    if (!sqlSnapshot) return;
+    const ok = await copyToClipboard(sqlSnapshot.sql);
+    if (!ok) { setError(text('Не удалось скопировать SQL', 'Could not copy SQL')); return; }
+    setCopied(true);
+    if (copyTimer.current) clearTimeout(copyTimer.current);
+    copyTimer.current = setTimeout(() => setCopied(false), 1600);
+  }
+
+  return <section style={visible ? undefined : {display: 'none'}} aria-hidden={!visible} className="lens-explore" data-theme={theme} aria-label={text('Исследование данных', 'Explore data')}>
     <header className="explore-toolbar">
       {onBack ? <button disabled={busy || sqlBusy} onClick={() => void returnToEditor()}>← {text('В редактор', 'Back to editor')}</button> : <strong>QueryAST Lens</strong>}
       {onClose && <button disabled={sqlBusy} onClick={onClose} title={text('Завершить исследование и освободить его ресурсы', 'Discard the exploration and release its resources')}>{text('Закрыть исследование', 'Close exploration')}</button>}
@@ -201,16 +195,16 @@ const Explore = forwardRef<ExploreHandle, {
       {selected && <button title={text('Перечитать таблицу с сохранением настроек Viewer', 'Reload the source and keep Viewer settings')} disabled={busy} onClick={() => setRevision(n => n + 1)}>{text('Обновить', 'Refresh')}</button>}
       {selected && <button disabled={busy || sqlBusy} onClick={() => void showViewSql()} title={text('SQL данных активной вкладки Viewer', 'SQL for the active Viewer tab')}>{sqlBusy ? '…' : text('SQL представления', 'View SQL')}</button>}
       <span className="explore-status" role={error ? 'alert' : 'status'} title={error || status}>
-        {error || `${busy ? '⏳ ' : ''}${status}${rowCount !== undefined ? ` · ${text('Источник', 'Source')}: ${rowCount.toLocaleString()}${viewRows === undefined ? '' : ` · ${text('Представление', 'View')}: ${viewRows.toLocaleString()}`}` : ''}`}
+        {error || (busy ? <Loader2 className="explore-spinner" aria-label={text('Загрузка', 'Loading')} /> : status)}
       </span>
     </header>
     <dialog className="explore-sql-dialog" ref={sqlDialog}>
       <header><strong>{text('SQL выбранного представления', 'Selected View SQL')}</strong><button onClick={() => sqlDialog.current?.close()}>{text('Закрыть', 'Close')}</button></header>
       {sqlSnapshot && <>
-        <p>{text('Источник', 'Source')}: <code>{sqlSnapshot.source}</code> · {sqlSnapshot.rows.toLocaleString()} × {sqlSnapshot.columns.toLocaleString()}</p>
-        <p>{text('Создание временных объектов и чтение полного результата текущего представления. Запросы построения выполнены адаптером; итоговый SELECT сформирован тем же SDK без выгрузки данных. Скопируйте и выполните целиком в редакторе Lens на той же базе. Служебные имена отделены от открытого исследования. После результата оставлены временные таблицы; команды их удаления приведены в конце как комментарии.', 'Temporary object creation and the full current View result. Construction queries were executed by the adapter; the final SELECT uses the same SDK without exporting data. Copy and run the entire script in the Lens editor on the same database. Its temporary names are isolated from the open exploration. Temporary tables remain after replay; commented cleanup statements follow the result.')}</p>
         <textarea aria-label={text('SQL выбранного представления', 'Selected View SQL')} readOnly value={sqlSnapshot.sql} spellCheck={false} />
-        <footer><button onClick={() => void copyToClipboard(sqlSnapshot.sql).then(ok=>{if(!ok)setError(text('Не удалось скопировать SQL', 'Could not copy SQL'));})}>{text('Копировать SQL', 'Copy SQL')}</button><small>{text('SQL воспроизводит данные; оформление и тип графика хранятся в настройках Viewer.', 'SQL reproduces data; chart type and styling belong to the Viewer configuration.')}</small></footer>
+        <footer><button type="button" className={copied ? 'is-copied' : ''} onClick={() => void copySql()}>
+          {copied ? <Check size={14} /> : <Copy size={14} />}{copied ? text('Скопировано', 'Copied') : text('Копировать SQL', 'Copy SQL')}
+        </button></footer>
       </>}
     </dialog>
     <div className="explore-body">

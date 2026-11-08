@@ -48,3 +48,14 @@ test('export rejection reaches error callback and does not report success',async
  item.dispatchEvent(new dom.window.MouseEvent('mousedown',{button:0,bubbles:true,composed:true,cancelable:true}));
  await tick();assert.equal(success,0);assert.match(String(errors[0]),/32 MiB/);dispose();dom.window.close();
 });
+
+
+test('HTML delegates to the stock SDK for the active panel',async()=>{
+ const {exportNativeMenuChoice}=await import('../../src/analysis/exportData');
+ const calls:any[]=[];
+ const viewer={getActivePanel:()=> 'chart',download:async(options:any)=>{calls.push(options);}};
+ await exportNativeMenuChoice(viewer,'html','demo.html');
+ assert.deepEqual(calls,[{method:'html',panel:'chart'}]);
+ viewer.download=async()=>{throw Error('HTML export failed');};
+ await assert.rejects(()=>exportNativeMenuChoice(viewer,'html','demo.html'),/HTML export failed/);
+});

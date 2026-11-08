@@ -1,4 +1,3 @@
-import type {SourceArrowReader} from './rawSourceArrow';
 import {pagedJsonBlob,sourceArrowIpc} from './exportPaged';
 export async function csvExportBlob(view: any, pageRows = 50_000, selection: any = {}) {
   const rows = await view.num_rows();
@@ -29,12 +28,7 @@ export function csvHeaderEnd(csv: string) {
   return csv.length;
 }
 
-export async function exportNativeMenuChoice(viewer: any, method: string, filename: string, readSource?:SourceArrowReader) {
-  if (method === 'html') {
-    const {htmlExportBlob} = await import('./exportHtml');
-    downloadExportBlob(viewer,await htmlExportBlob(viewer,undefined,readSource),filename);
-    return;
-  }
+export async function exportNativeMenuChoice(viewer: any, method: string, filename: string) {
   const panel=viewer.getActivePanel?.();
   const options=panel?{panel}:undefined;
   const match=/^(csv|json|ndjson|arrow)(?:-(lz4|zstd))?(?:-(all|selected))?$/.exec(method);

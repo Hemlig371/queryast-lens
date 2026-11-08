@@ -1,62 +1,29 @@
 .lens-explore {
-  --lab-bg: #f8fafc; --lab-panel: #fff; --lab-fg: #172033;
-  --lab-muted: #475569; --lab-border: #cbd5e1;
-  position: fixed; inset: 0; z-index: 100;
-  display: grid; grid-template-rows: 44px minmax(0, 1fr);
-  background: var(--lab-bg); color: var(--lab-fg);
-  font: 13px system-ui, sans-serif;
-  /* Menus/popovers owned by Perspective must not be clipped by Lens. */
-  overflow: visible;
+  --explore-bg:#e2e8f0; --explore-panel:#f1f5f9; --explore-fg:#1e293b;
+  --explore-muted:#64748b; --explore-border:#cbd5e1; --explore-hover:#e2e8f0;
+  position:fixed; inset:0; z-index:100; display:grid; grid-template-rows:38px minmax(0,1fr);
+  background:var(--explore-bg); color:var(--explore-fg); font-family:inherit; font-size:inherit;
 }
-.explore-toolbar {
-  display: flex; flex-wrap: nowrap; align-items: center; gap: 10px;
-  min-width: 0; padding: 0 12px;
-  background: var(--lab-panel); border-bottom: 1px solid var(--lab-border);
-}
-.explore-toolbar strong { flex-shrink: 0; white-space: nowrap; }
-.explore-toolbar button, .explore-toolbar select {
-  box-sizing: border-box; max-width: 32vw; min-width: 0;
-  border: 1px solid var(--lab-border); border-radius: 5px;
-  padding: 4px 8px; background: var(--lab-panel); color: var(--lab-fg);
-  font: inherit; cursor: pointer;
-}
-.explore-toolbar button { flex-shrink: 0; max-width: none; }
-.explore-toolbar button:disabled { opacity: .5; cursor: wait; }
-.explore-status {
-  margin-left: auto; min-width: 0; color: var(--lab-muted);
-  font-size: 12px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden;
-}
-.explore-status[role=alert] { color: #e55b5b; }
-.explore-body, .explore-viewer {
-  position: relative; min-width: 0; min-height: 0;
-  width: 100%; height: 100%; overflow: visible;
-}
-.explore-viewer perspective-viewer {
-  position: absolute; inset: 0; display: block;
-  box-sizing: border-box; width: 100%; height: 100%;
-  /* Use Perspective's native typography and layout. */
-}
-@media (max-width: 600px) {
-  .explore-toolbar { gap: 6px; padding-inline: 8px; }
-  .explore-toolbar strong { font-size: 12px; }
-  .explore-status { font-size: 11px; }
-}
-
-/* Native menus must fit below the Viewer toolbar in short embedded windows. */
-perspective-viewer perspective-export-menu,
-perspective-viewer perspective-copy-menu {
-  box-sizing: border-box;
-  max-height: max(120px, calc(100dvh - 112px));
-  overflow-y: auto;
-}
-.explore-sql-dialog { box-sizing: border-box; width: min(1100px, 94vw); height: min(820px, 88dvh); padding: 18px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; color: #172033; font: 13px/1.5 system-ui,sans-serif; }
-.explore-sql-dialog[open] { display: flex; flex-direction: column; gap: 10px; }
-.explore-sql-dialog::backdrop { background: #0006; }
-.explore-sql-dialog header, .explore-sql-dialog footer { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
-.explore-sql-dialog header button { margin-left: auto; }
-.explore-sql-dialog button { padding: 5px 10px; border: 1px solid #cbd5e1; border-radius: 5px; background: #fff; color: #172033; cursor: pointer; }
-.explore-sql-dialog p { margin: 0; }
-.explore-sql-dialog textarea { box-sizing: border-box; width: 100%; flex: 1; min-height: 100px; resize: none; padding: 12px; border: 1px solid #cbd5e1; border-radius: 4px; font: 12px/1.5 ui-monospace,Consolas,monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
-
-.explore-source { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-@media (max-width: 760px) { .explore-toolbar { overflow-x: auto; } .explore-status { flex-shrink: 0; } }
+.lens-explore[data-theme=dark] {--explore-bg:#172033; --explore-panel:#263345; --explore-fg:#e2e8f0; --explore-muted:#94a3b8; --explore-border:#475569; --explore-hover:#334155; color-scheme:dark;}
+.explore-toolbar {display:flex; align-items:center; gap:8px; min-width:0; padding:0 10px; background:var(--explore-panel); border-bottom:1px solid var(--explore-border); overflow-x:auto;}
+.explore-toolbar button,.explore-sql-dialog button {display:inline-flex; align-items:center; justify-content:center; gap:6px; flex-shrink:0; border:1px solid transparent; border-radius:4px; padding:4px 8px; background:transparent; color:inherit; font:inherit; cursor:pointer; transition:background-color .15s;}
+.explore-toolbar button:hover,.explore-sql-dialog button:hover {background:var(--explore-hover);}
+.explore-toolbar button:focus-visible,.explore-sql-dialog button:focus-visible {outline:2px solid #38bdf8; outline-offset:1px;}
+.explore-toolbar button:disabled {opacity:.5; cursor:wait;}
+.explore-source {color:var(--explore-muted); min-width:40px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis;}
+.explore-status {margin-left:auto; min-width:0; color:var(--explore-muted); white-space:nowrap; text-overflow:ellipsis; overflow:hidden;}
+.explore-status[role=alert] {color:#ef4444;}
+.explore-body,.explore-viewer {position:relative; width:100%; height:100%; min-width:0; min-height:0; background:var(--explore-bg);}
+.explore-viewer perspective-viewer {position:absolute; inset:0; display:block; width:100%; height:100%; box-sizing:border-box; background:var(--explore-bg); font-family:inherit; font-size:inherit;}
+.explore-spinner {width:16px; height:16px; animation:explore-spin 1s linear infinite;}
+@keyframes explore-spin {to{transform:rotate(360deg);}}
+.explore-sql-dialog {box-sizing:border-box; position:fixed; inset:0; margin:auto; width:min(1000px,94vw); height:min(740px,86dvh); padding:14px; border:1px solid var(--explore-border); border-radius:8px; background:var(--explore-panel); color:var(--explore-fg); font:inherit; box-shadow:0 16px 60px #0005;}
+.explore-sql-dialog[open] {display:flex; flex-direction:column; gap:12px;}
+.explore-sql-dialog::backdrop {background:#0008;}
+.explore-sql-dialog header,.explore-sql-dialog footer {display:flex; align-items:center; gap:10px; flex-shrink:0;}
+.explore-sql-dialog header strong {font-size:0.875rem;}
+.explore-sql-dialog header button {margin-left:auto;}
+.explore-sql-dialog textarea {box-sizing:border-box; width:100%; flex:1; min-height:100px; padding:12px; border:1px solid var(--explore-border); border-radius:4px; background:var(--explore-bg); color:var(--explore-fg); resize:none; font:12px/1.5 var(--font-mono,ui-monospace,Consolas,monospace); white-space:pre-wrap; overflow-wrap:anywhere;}
+.explore-sql-dialog footer button {border-color:var(--explore-border);}
+.explore-sql-dialog button.is-copied {color:#34d399;}
+perspective-viewer perspective-export-menu,perspective-viewer perspective-copy-menu {box-sizing:border-box; max-height:max(120px,calc(100dvh - 112px)); overflow-y:auto;}

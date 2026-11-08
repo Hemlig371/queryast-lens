@@ -21,6 +21,7 @@ const normalized = rows => JSON.stringify(rows, (_key, value) => typeof value ==
 for (const {name} of cases) {
   const expected = tableFromIPC(await readFile(join(folder, `${name}.expected.arrow`)));
   const actual = tableFromIPC(await readFile(join(folder, `${name}.native.arrow`)));
+  assert.ok(expected.schema.fields.length>0,`${name}: invalid empty WASM reference schema`);
   assert.deepEqual(actual.schema.fields.map(f => f.name), expected.schema.fields.map(f => f.name));
   assert.equal(normalized(actual.toArray().map(r => r.toJSON())), normalized(expected.toArray().map(r => r.toJSON())), name);
   console.log(`Native SQL replay matches WASM: ${name} (${actual.numRows} rows)`);

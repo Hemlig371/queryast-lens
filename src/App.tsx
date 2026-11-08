@@ -461,17 +461,23 @@ export default function App() {
   const [analysisSource, setAnalysisSource] = useState<AnalysisSource | null>(null);
   const [analysisVisible, setAnalysisVisible] = useState(false);
   const [analysisClosing, setAnalysisClosing] = useState(false);
+  const [analysisClosingIndicator, setAnalysisClosingIndicator] = useState(false);
   const analysisRef = useRef<ExploreHandle>(null);
   const analysisVisibleRef = useRef(false);
   analysisVisibleRef.current = analysisVisible || analysisClosing;
   const closeAnalysis = async () => {
     if (!analysisSource && !analysisRef.current) return;
     setAnalysisClosing(true);
+    const indicator = window.setTimeout(() => setAnalysisClosingIndicator(true), 180);
     try {
       await analysisRef.current?.close();
       setAnalysisVisible(false);
       setAnalysisSource(null);
-    } finally { setAnalysisClosing(false); }
+    } finally {
+      window.clearTimeout(indicator);
+      setAnalysisClosingIndicator(false);
+      setAnalysisClosing(false);
+    }
   };
   const [schemaContextMenu, setSchemaContextMenu] = useState<{
     x: number;
@@ -4782,13 +4788,9 @@ export default function App() {
       }}
       className={`flex flex-col min-h-0 overflow-hidden ${theme === 'dark' ? 'dark bg-slate-850 text-slate-200' : 'bg-slate-200 text-slate-800'} font-sans select-none overflow-hidden`}
     >
-      {analysisClosing && <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/80 text-white" role="status">{t('Закрытие исследования…')}</div>}
-      {analysisSource && !analysisVisible && <div className="flex items-center gap-3 px-3 py-1 text-xs border-b border-slate-400/40">
-        <button type="button" disabled={isDuckDbRunning || analysisClosing} onClick={() => setAnalysisVisible(true)}>{t('Продолжить исследование')} · {analysisSource.schema}.{analysisSource.table}</button>
-        <button type="button" disabled={analysisClosing} onClick={() => void closeAnalysis()}>{t('Закрыть исследование')}</button>
-      </div>}
-      {analysisSource && <Suspense fallback={<div className="fixed inset-0 z-50 bg-white p-8">Perspective…</div>}>
-        <Explore ref={analysisRef} source={analysisSource} visible={analysisVisible} mode={isWasmMode ? 'wasm' : 'native'} onBack={() => setAnalysisVisible(false)} onClose={() => void closeAnalysis()} />
+      {analysisClosingIndicator && <div className={`fixed inset-0 z-[120] flex items-center justify-center ${theme === 'dark' ? 'bg-slate-850/90 text-slate-300' : 'bg-slate-200/90 text-slate-600'}`} role="status" aria-label={t('Закрытие исследования…')}><Loader2 className="w-6 h-6 animate-spin" /></div>}
+      {analysisSource && <Suspense fallback={<div className={`fixed inset-0 z-50 flex items-center justify-center ${theme === 'dark' ? 'bg-slate-850 text-slate-300' : 'bg-slate-200 text-slate-600'}`} role="status"><Loader2 className="w-6 h-6 animate-spin" /></div>}>
+        <Explore ref={analysisRef} theme={theme} source={analysisSource} visible={analysisVisible} mode={isWasmMode ? 'wasm' : 'native'} onBack={() => setAnalysisVisible(false)} onClose={() => void closeAnalysis()} />
       </Suspense>}
       
       <main inert={analysisVisible || analysisClosing ? true : undefined} className="flex flex-1 overflow-hidden relative">
@@ -6626,19 +6628,6 @@ export default function App() {
                   })()}
                   onClick={(e) => e.stopPropagation()}
                 >
-                  {schemaEngine === 'duckdb' && (isWasmMode || isTauriEnvironment()) && ['Tables', 'BASE TABLE'].includes(schemaContextMenu.tableType) && (
-                    <button type="button" className="w-full text-left px-3 py-1.5 flex items-center gap-2 hover:bg-sky-100"
-                      disabled={isDuckDbRunning}
-                      onClick={() => {
-                        const next = { database: schemaContextMenu.dbName, schema: schemaContextMenu.schemaName,
-                          table: schemaContextMenu.tableName, connection: duckDbConnectedPath || ':memory:' };
-                        if (!analysisSource || JSON.stringify(next) !== JSON.stringify(analysisSource)) setAnalysisSource(next);
-                        setAnalysisVisible(true);
-                        setSchemaContextMenu(null);
-                      }}>
-                      <BarChart3 className="w-3.5 h-3.5" /><span>{t('Исследовать')}</span>
-                    </button>
-                  )}
                   <button
                     type="button"
                     onClick={() => handleSchemaContextAction('select')}
@@ -6649,6 +6638,19 @@ export default function App() {
                     <Table className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                     <span>{t('Показать')}</span>
                   </button>
+                  {schemaEngine === 'duckdb' && (isWasmMode || isTauriEnvironment()) && ['Tables', 'BASE TABLE'].includes(schemaContextMenu.tableType) && (
+                    <button type="button" className={`w-full text-left px-3 py-1.5 flex items-center gap-2 transition-colors ${theme === 'dark' ? 'hover:bg-slate-700' : 'hover:bg-slate-100'}`}
+                      disabled={isDuckDbRunning}
+                      onClick={() => {
+                        const next = { database: schemaContextMenu.dbName, schema: schemaContextMenu.schemaName,
+                          table: schemaContextMenu.tableName, connection: duckDbConnectedPath || ':memory:' };
+                        if (!analysisSource || JSON.stringify(next) !== JSON.stringify(analysisSource)) setAnalysisSource(next);
+                        setAnalysisVisible(true);
+                        setSchemaContextMenu(null);
+                      }}>
+                      <BarChart3 className="w-3.5 h-3.5 text-sky-400 shrink-0" /><span>{t('Исследовать')}</span>
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => handleSchemaContextAction('copySelect')}

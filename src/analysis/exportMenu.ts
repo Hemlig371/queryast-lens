@@ -1,4 +1,3 @@
-import type {SourceArrowReader} from './rawSourceArrow';
 import { exportNativeMenuChoice } from './exportData';
 import type { HTMLPerspectiveViewerElement, ExportMethod } from '@perspective-dev/viewer';
 
@@ -19,7 +18,7 @@ export const isResizeObserverNotice = (message: string) => /^(?:ResizeObserver l
  */
 export function installExportMenuBridge(viewer: HTMLPerspectiveViewerElement, callbacks: {
   start: () => void; success: () => void; error: (error: unknown) => void;
-}, readSource?:SourceArrowReader) {
+}) {
   const document = viewer.ownerDocument;
   let pending = false;
   let disposed = false;
@@ -40,7 +39,7 @@ export function installExportMenuBridge(viewer: HTMLPerspectiveViewerElement, ca
     callbacks.start();
     void (async () => {
       try {
-        await exportNativeMenuChoice(viewer, method, filename,readSource);
+        await exportNativeMenuChoice(viewer, method, filename);
         if (!disposed) {
           callbacks.success();
           // Let Perspective dismiss and dispose its own portal.

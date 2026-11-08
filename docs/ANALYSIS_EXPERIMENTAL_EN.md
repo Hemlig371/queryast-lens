@@ -9,8 +9,7 @@ table in the editor first; arbitrary SQL, VIEW and TEMP sources are out of scope
 ## Navigation and state
 
 **Back to editor** hides the live Viewer and preserves its in-memory state.
-The editor shows **Resume exploration** and **Close exploration**. Exploring the
-same table resumes it; choosing another table replaces it. **Close exploration**
+Exploring the same table resumes it; choosing another table replaces it. **Close exploration**
 releases its Viewer/client resources through Perspective APIs, keeping the source
 and shared connection. Reconnecting, including to the same file, closes exploration
 before replacing the connection. Android Back returns to the editor.
@@ -20,10 +19,10 @@ panels. Refresh after editing source data. If a changed schema invalidates the
 configuration, close exploration and reopen it. No persistent autosave is used:
 restarting starts a clean sandbox; use Viewer exports to save work.
 
-The Lens toolbar shows the source, source rows and active View rows (including
-visible totals/groups), refresh, SQL and status. Perspective code/WASM loads lazily
-on first use. Closing releases exploration resources; loaded modules remain cached
-and the shared DuckDB remains available to the editor.
+The Lens toolbar provides back, close, refresh and SQL actions. New Viewers default
+to Pro Light/Pro Dark according to Lens; refresh retains manual Viewer settings.
+The host inherits the Lens font. Closing shows a themed spinner only after a short
+delay. Perspective code/WASM loads lazily on first use; modules remain cached.
 
 ## Replaying SQL
 
@@ -52,15 +51,11 @@ options; existing connection Arrow compatibility settings remain in place.
 - Perspective may lose BIGINT/DECIMAL precision even when IPC preserves it.
 - Perspective controls are English; Lens controls support RU/EN.
 - CSV/JSON/NDJSON/Arrow fetch pages but assemble the export in JS memory.
-  HTML embeds **all physical root sources**, the full workspace, panels, layout,
-  global filters, master roles and derived-table definitions. Perspective/styles,
-  DuckDB-WASM and workers are embedded; opening needs neither Lens nor a network.
-  Physical sources use raw Arrow before Perspective numeric coercions. The same
-  DuckDBHandler evaluates SQL expressions inside the file. Re-export is supported.
-  A modern browser with WASM, Workers and DecompressionStream is required. Runtime
-  overhead is about 21 MB plus data; full snapshots consume browser memory.
-  Native-only DuckDB extensions/functions unavailable in the embedded WASM engine
-  are not automatically transferred.
+  HTML delegates to the stock Perspective SDK and exports the active panel with its
+  data and configuration. It loads its runtime from a CDN and requires internet
+  when opened. No DuckDB-WASM runtime is embedded by Lens. This is intended for small
+  demonstrations; SQL expressions and engine-specific features require manual
+  compatibility testing. It is not a full multi-panel workspace archive.
 - LZ4/ZSTD compress actual Arrow IPC buffers for the View, full source or selected
   region, without recomputing data or schema. Independent PyArrow verifies output.
   Full support for every Viewer feature has not been established; capabilities
@@ -77,10 +72,8 @@ client/server/viewer/datagrid/charts are pinned to 5.8.0; JS Arrow is 17.0.0.
 Rust `arrow-ipc` 58 shares the Arrow family of pinned duckdb-rs 1.10505.0.
 lz4js 0.2.0 and @bokuweb/zstd-wasm 0.0.27 provide lazy IPC codecs; flatbuffers
 24.12.23 is now explicit, retaining its existing locked version. Existing dependency
-versions are unchanged. predev/prestart/prebuild/pretest:analysis generate the
-packed offline runtime from installed packages. Generated public/analysis-* assets
-are ignored; the browser loads this runtime only for HTML export, ZSTD WASM only
-for ZSTD export.
+versions are unchanged. predev/prestart/prebuild/pretest:analysis copy the ZSTD
+WASM asset only; it loads lazily when ZSTD export is requested.
 
 Run `npm run lint`, `npm run test:analysis`, `npm run test:analysis-sql` and
 `npm run build` (Web only). Existing `npm test` remains separate. SQL tests compare
@@ -94,8 +87,6 @@ Arrow 17, comparing results with WASM. Passing CI still requires manual Tauri an
 Android testing for UI/platform acceptance.
 
 The **Analysis export compatibility** workflow verifies compressed IPC via PyArrow,
-then opens HTML with file:// in a fresh network-disabled browser context, comparing
-two panels, SQL expressions, layout, filters and metrics. This workflow must pass
-before accepting offline export; adding it does not imply it has already run.
-The npm component sources are unchanged. Export interception is scoped to its
-Viewer; PNG and configuration exports delegate to the SDK.
+then opens stock HTML as file:// in a fresh online browser context, comparing the
+active panel grouping, filters and metrics. CDN availability is required. The npm
+component sources are unchanged. HTML, PNG and configuration delegate to the SDK.

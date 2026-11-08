@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
-import {tableToIPC} from 'apache-arrow';
+import {tableFromIPC} from 'apache-arrow';
 import {createRequire} from 'node:module';
 import * as perspective from '@perspective-dev/client/dist/esm/perspective.js';
 import {client_runtime} from '@perspective-dev/client/registry';
@@ -29,6 +29,7 @@ let client;
 client=await perspective.make_client(async bytes=>client.handle_response((await server.handleRequest(bytes)).slice()),()=>{});
 const table=await client.open_table((await handler.getHostedTables()).find(x=>x.endsWith('.demo')));
 const views=[];
+const derivedTables=[];
 const fixtureDir=process.env.LENS_ARROW_FIXTURE_DIR;
 const cases=[];
 if(fixtureDir)await mkdir(fixtureDir,{recursive:true});
@@ -47,7 +48,14 @@ async function check(view,label){
  if(fixtureDir){
   const name=`case-${cases.length}`;cases.push({name,rows});
   await writeFile(join(fixtureDir,`${name}.sql`),snapshot.sql);
-  await writeFile(join(fixtureDir,`${name}.expected.arrow`),tableToIPC(expectedTable,'stream'));
+  // The blocking DuckDB bundle can return a different Arrow class instance.
+  // Export its actual IPC bytes, rather than passing that Table across CJS/ESM.
+  const expectedIpc=conn.useUnsafe((bindings,handle)=>bindings.runQuery(handle,originalSql)).slice();
+  const decoded=tableFromIPC(expectedIpc);
+  assert.equal(decoded.numRows,rows,'WASM fixture row count');
+  assert.deepEqual(decoded.schema.fields.map(f=>f.name),expectedTable.schema.fields.map(f=>f.name),'WASM fixture schema');
+  assert.equal(stable(decoded.toArray()),expected,'WASM fixture values');
+  await writeFile(join(fixtureDir,`${name}.expected.arrow`),expectedIpc);
  }
  // Execute twice in the same connection used by the live View, like the Lens editor.
  for (let attempt=0;attempt<2;attempt++) {
@@ -72,8 +80,13 @@ try{
  await a.expand(1);await check(a,'expanded groups');
  const c=await table.view({group_by:['region','category'],split_by:['day'],columns:['revenue','quantity'],aggregates:{revenue:'sum',quantity:'sum'}});views.push(c);
  await check(c,'day moved to 730 columns');
+ const derived=await client.table(a,{name:'analysis_derived'});derivedTables.push(derived);
+ const derivedView=await derived.view({columns:['region','revenue','quantity']});views.push(derivedView);
+ const derivedSnapshot=await check(derivedView,'derived table');
+ assert.doesNotMatch(derivedSnapshot.sql,/^\s*(?:DESCRIBE|DESC)\b/im);
+
  if(fixtureDir)await writeFile(join(fixtureDir,'cases.json'),JSON.stringify(cases));
  console.log('SQL replay verified twice in the shared editor connection; live Views intact and unrelated Views excluded.');
 }finally{
- for(const view of views)await view.delete();table.free();await client.terminate();client.free();server.free();handler.sqlBuilder.free();conn.close();
+ for(const view of views.reverse())await view.delete();for(const derived of derivedTables)await derived.delete();table.free();await client.terminate();client.free();server.free();handler.sqlBuilder.free();conn.close();
 }
