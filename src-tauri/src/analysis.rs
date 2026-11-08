@@ -94,15 +94,15 @@ mod tests {
     #[test]
     fn ddl_multi_statement_empty_results_and_errors() {
         let conn = connection();
-        query_arrow_ipc(&conn, "CREATE TEMP TABLE pivot AS SELECT 2 AS value").unwrap();
-        let bytes = query_arrow_ipc(&conn, "UPDATE pivot SET value=3; SELECT * FROM pivot WHERE false").unwrap();
+        query_arrow_ipc(&conn, "CREATE TEMP TABLE analysis_test_result AS SELECT 2 AS value").unwrap();
+        let bytes = query_arrow_ipc(&conn, "UPDATE analysis_test_result SET value=3; SELECT * FROM analysis_test_result WHERE false").unwrap();
         let mut reader = StreamReader::try_new(Cursor::new(bytes), None).unwrap();
         assert_eq!(reader.schema().fields().len(), 1);
         assert_eq!(reader.by_ref().map(|batch| batch.unwrap().num_rows()).sum::<usize>(), 0);
-        assert_eq!(conn.query_row("SELECT value FROM pivot", [], |r| r.get::<_, i32>(0)).unwrap(), 3);
+        assert_eq!(conn.query_row("SELECT value FROM analysis_test_result", [], |r| r.get::<_, i32>(0)).unwrap(), 3);
         assert!(query_arrow_ipc(&conn, "SELECT * FROM missing_source").is_err());
         assert!(query_arrow_ipc(&conn, "-- no query").is_err());
-        query_arrow_ipc(&conn, "DROP TABLE pivot").unwrap();
+        query_arrow_ipc(&conn, "DROP TABLE analysis_test_result").unwrap();
     }
 
     #[test]
@@ -144,3 +144,4 @@ mod tests {
     }
 
 }
+

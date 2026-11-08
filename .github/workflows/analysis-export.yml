@@ -36,10 +36,24 @@ jobs:
         run: |
           npm run dev > "$RUNNER_TEMP/lens-vite.log" 2>&1 &
           server_pid=$!
-          trap 'kill "$server_pid"' EXIT
+          cleanup() {
+            status=$?
+            if [ "$status" -ne 0 ]; then
+              echo "Dev server log:"
+              tail -n 120 "$RUNNER_TEMP/lens-vite.log" || true
+            fi
+            kill "$server_pid" 2>/dev/null || true
+            exit "$status"
+          }
+          trap cleanup EXIT
           for attempt in $(seq 1 45); do
-            if curl -fsS http://127.0.0.1:3000/ > /dev/null; then break; fi
+            if curl -fsS http://127.0.0.1:3000/tests/browser/analysis-export.html > /dev/null 2>&1; then break; fi
             sleep 1
           done
+          if ! curl -fsS http://127.0.0.1:3000/tests/browser/analysis-export.html > /dev/null; then
+            echo "Browser fixture is not available"
+            exit 1
+          fi
           node tests/browser/analysis-export.mjs
+
 

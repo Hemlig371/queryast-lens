@@ -44,6 +44,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          cache-on-failure: true
       - name: Install Tauri 1 Linux development libraries
         run: |
           sudo apt-get update
@@ -59,4 +60,5 @@ jobs:
         run: cargo test --manifest-path src-tauri/Cargo.toml --no-default-features analysis::tests -- --nocapture
       - name: Decode Rust IPC with Lens JavaScript Arrow and compare replay results
         run: node tests/analysisNativeArrow.mjs
+
 
