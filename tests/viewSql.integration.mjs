@@ -1,3 +1,4 @@
+import {installDefaultColumns} from '../src/analysis/defaultColumns.ts';
 import assert from 'node:assert/strict';
 import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
@@ -24,6 +25,7 @@ conn.query(`CREATE TABLE demo AS SELECT i::INTEGER AS id,
 const capture=new ViewSqlCapture();
 const connection={query:async sql=>{try{const result=conn.query(sql);capture.record({sql});return result;}catch(e){capture.record({sql,error:String(e)});throw e;}},useUnsafe:async callback=>conn.useUnsafe((bindings,handle)=>callback({runQuery:(_h,sql)=>{const bytes=bindings.runQuery(handle,sql);capture.record({sql});return bytes;}},handle))};
 const handler=new DuckDBHandler(connection);
+installDefaultColumns(handler);
 const server=new (client_runtime().glue.VirtualServer)(capture.instrument(handler));
 let client;
 client=await perspective.make_client(async bytes=>client.handle_response((await server.handleRequest(bytes)).slice()),()=>{});
@@ -67,6 +69,13 @@ async function check(view,label){
  return snapshot;
 }
 try{
+ // Native HTML export uses the public default table.view() path.
+ const defaultView=await table.view();views.push(defaultView);
+ const exported=tableFromIPC(await defaultView.to_arrow());
+ const source=conn.query('SELECT * FROM demo ORDER BY rowid');
+ assert.deepEqual(exported.schema.fields.map(f=>f.name),source.schema.fields.map(f=>f.name));
+ assert.equal(stable(exported.toArray()),stable(source.toArray()));
+ console.log('Default view for stock HTML exports all source rows and columns.');
  const a=await table.view({group_by:['region','category'],columns:['revenue','quantity'],filter:[['category','==','Software']],sort:[['revenue','desc']],aggregates:{revenue:'avg',quantity:'count'}});views.push(a);
  const b=await table.view({group_by:['day'],split_by:['region','category'],columns:['revenue','quantity'],aggregates:{revenue:'sum',quantity:'sum'}});views.push(b);
  const total=(await a.to_json()).find(row=>row.__ROW_PATH__?.length===0);

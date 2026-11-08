@@ -1,3 +1,5 @@
+import {installDefaultColumns} from './defaultColumns';
+import {installMenuBounds} from './menuBounds';
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import {Check, Copy, Loader2} from 'lucide-react';
 import type { HTMLPerspectiveViewerElement } from '@perspective-dev/viewer';
@@ -52,6 +54,7 @@ const Explore = forwardRef<ExploreHandle, {
     let server: any;
     let handler: any;
     let removeExportBridge: (() => void) | undefined;
+    let removeMenuBounds: (() => void) | undefined;
     let restoreColumnPaths: (() => void) | undefined;
     let cleanup: Promise<void> | undefined;
     setBusy(true); setError(''); setSqlSnapshot(null); setCopied(false);
@@ -73,6 +76,7 @@ const Explore = forwardRef<ExploreHandle, {
       const { DuckDBHandler } = await import('@perspective-dev/client/virtual_servers/duckdb');
       const { client_runtime } = await import('@perspective-dev/client/registry');
       handler = new DuckDBHandler(conn);
+      installDefaultColumns(handler);
       const trackedHandler = capture.instrument(handler);
       // Viewer may own the client WASM runtime: use its initialized constructor.
       const runtime = client_runtime()!.glue;
@@ -92,6 +96,7 @@ const Explore = forwardRef<ExploreHandle, {
       viewer.setAttribute('theme', defaultTheme);
       viewer.style.visibility = 'hidden';
       container.current!.appendChild(viewer);
+      removeMenuBounds = installMenuBounds(viewer);
       await viewer.load(table);
       await viewer.resetThemes();
       const saved = savedConfig.current;
@@ -118,6 +123,7 @@ const Explore = forwardRef<ExploreHandle, {
       sqlCapture.current = null;
       cleanup = opening.then(async () => {
         removeExportBridge?.();
+        removeMenuBounds?.();
         const release = async (action: () => unknown) => {
           try { await action(); } catch (e) { console.warn('Analysis cleanup', e); }
         };

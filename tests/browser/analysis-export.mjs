@@ -26,12 +26,11 @@ try{
   await viewer.flush();
   return (await viewer.getView()).to_json();
  });
- const download=page.waitForEvent('download');
- await page.evaluate(async()=>{
+ const [download]=await Promise.all([page.waitForEvent('download'),page.evaluate(async()=>{
   const {exportNativeMenuChoice}=await import('/src/analysis/exportData.ts');
   await exportNativeMenuChoice(document.querySelector('perspective-viewer'),'html','dashboard.html');
- });
- const path=resolve(out,'dashboard.html');await (await download).saveAs(path);
+ })]);
+ const path=resolve(out,'dashboard.html');await download.saveAs(path);
  const html=await readFile(path,'utf8');
  assert.match(html,/https:\/\//,'stock HTML should reference its CDN runtime');
  const online=await browser.newContext();const restored=await online.newPage();

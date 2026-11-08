@@ -90,3 +90,15 @@ The **Analysis export compatibility** workflow verifies compressed IPC via PyArr
 then opens stock HTML as file:// in a fresh online browser context, comparing the
 active panel grouping, filters and metrics. CDN availability is required. The npm
 component sources are unchanged. HTML, PNG and configuration delegate to the SDK.
+
+## Interface and HTML follow-up
+
+Perspective defaults to 14 px. The Lens toolbar and SQL dialog use the Lens UI
+size and scale; the Viewer has an outer gutter. Export/copy menus are constrained
+to the visible area and scroll, including with Lens UI zoom. Stock HTML requests
+a default source view; the scoped adapter supplies source columns for ungrouped
+views without a projection. SDK sources and the shared connection are unchanged.
+
+WASM disconnect closes the connection but retains the database instance in the
+current page. Reload the browser page to start with a clean memory database.
+Restarting the dev server alone does not destroy WASM in an already open page.
