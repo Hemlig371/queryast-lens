@@ -102,3 +102,12 @@ views without a projection. SDK sources and the shared connection are unchanged.
 WASM disconnect closes the connection but retains the database instance in the
 current page. Reload the browser page to start with a clean memory database.
 Restarting the dev server alone does not destroy WASM in an already open page.
+
+The first panel of a new exploration uses the table name; refresh preserves a
+manual rename. HTML keeps the stock SDK document and the filename selected in
+the menu. Back/source/SQL sit on the left; messages/refresh/close sit on the right.
+The Viewer border is removed; its gutter follows the active panel theme. Menu
+observers do not watch grid cell changes during scrolling. A blank New Column
+draft validates inline without executing empty SQL. `countif` is offered only
+for BOOLEAN; use `count` for text values. DuckDB expressions require separate
+compatibility checks when replayed by the stock HTML's built-in Perspective engine.

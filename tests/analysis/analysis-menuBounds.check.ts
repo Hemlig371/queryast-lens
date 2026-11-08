@@ -29,3 +29,22 @@ for (const scale of [1,1.5]) test(`export menu stays below toolbar and scrolls a
  assert.equal(menu.style.overflow,'auto');
  stop();assert.equal(pending,undefined);dom.window.close();
 });
+
+test('grid cell changes do not schedule menu layout, and close disconnects observers',async()=>{
+ const dom=new JSDOM('<perspective-viewer><regular-table><table><tbody></tbody></table></regular-table></perspective-viewer>');
+ const win=dom.window;let frames=0,recordsSeen=0;let pending:FrameRequestCallback|undefined;
+ const NativeObserver=win.MutationObserver;
+ win.MutationObserver=class extends NativeObserver {
+  constructor(callback:MutationCallback){super((records,observer)=>{recordsSeen+=records.length;callback(records,observer);});}
+ };
+ win.requestAnimationFrame=callback=>{frames++;pending=callback;return frames;};win.cancelAnimationFrame=()=>{pending=undefined;};
+ const viewer=win.document.querySelector('perspective-viewer')! as HTMLElement;
+ const stop=installMenuBounds(viewer);pending?.(0);pending=undefined;const before=frames;
+ const body=viewer.querySelector('tbody')!;
+ for(let i=0;i<100;i++){
+  const row=win.document.createElement('tr');row.style.height='20px';body.append(row);row.style.height='24px';
+ }
+ await Promise.resolve();assert.equal(frames,before);assert.equal(recordsSeen,0);
+ stop();viewer.append(win.document.createElement('perspective-export-menu'));
+ await Promise.resolve();assert.equal(frames,before);assert.equal(recordsSeen,0);dom.window.close();
+});

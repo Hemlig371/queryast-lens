@@ -20,16 +20,18 @@ try{
   const refresh=document.querySelector('.explore-toolbar button[title]');
   return document.querySelector('perspective-viewer')&&refresh&&!refresh.disabled;
  },null,{timeout:60000});
+ assert.equal(await page.evaluate(async()=> (await document.querySelector('perspective-viewer').save()).title),'dashboard_source');
  const expected=await page.evaluate(async()=>{
   const viewer=document.querySelector('perspective-viewer');
-  await viewer.restore({plugin:'Datagrid',columns:['quantity'],group_by:['region'],split_by:[],filter:[['quantity','>',2]],aggregates:{quantity:'sum'}});
+  await viewer.restore({title:'Regional report',plugin:'Datagrid',columns:['quantity'],group_by:['region'],split_by:[],filter:[['quantity','>',2]],aggregates:{quantity:'sum'}});
   await viewer.flush();
   return (await viewer.getView()).to_json();
  });
  const [download]=await Promise.all([page.waitForEvent('download'),page.evaluate(async()=>{
   const {exportNativeMenuChoice}=await import('/src/analysis/exportData.ts');
-  await exportNativeMenuChoice(document.querySelector('perspective-viewer'),'html','dashboard.html');
+  await exportNativeMenuChoice(document.querySelector('perspective-viewer'),'html','regional-report.html');
  })]);
+ assert.equal(download.suggestedFilename(),'regional-report.html');
  const path=resolve(out,'dashboard.html');await download.saveAs(path);
  const html=await readFile(path,'utf8');
  assert.match(html,/https:\/\//,'stock HTML should reference its CDN runtime');
@@ -38,15 +40,28 @@ try{
  restored.on('pageerror',e=>{replayErrors.push(String(e));console.error('[HTML pageerror]',e.stack??String(e));});
  restored.on('requestfailed',r=>console.error('[HTML requestfailed]',r.url(),r.failure()?.errorText));
  await restored.goto(pathToFileURL(path).href);
- await restored.waitForFunction(async()=>{
-  const viewer=document.querySelector('perspective-viewer');
-  if(!viewer)return false;
-  try {await viewer.flush();return (await (await viewer.getView()).num_rows())>0;}catch{return false;}
- },null,{timeout:90000});
- const actual=await restored.evaluate(async()=>{
-  const viewer=document.querySelector('perspective-viewer');await viewer.flush();
-  return (await viewer.getView()).to_json();
- });
+ // waitForFunction must use a synchronous predicate: an async false result can
+ // finish polling before the CDN custom element has been upgraded.
+ await restored.waitForFunction(()=>typeof document.querySelector('perspective-viewer')?.flush==='function',null,{timeout:90000});
+ const deadline=Date.now()+90000;
+ let actual,lastReason='HTML viewer is not ready';
+ while(Date.now()<deadline){
+  if(replayErrors.length)throw Error(replayErrors.join('\n'));
+  const result=await restored.evaluate(async()=>{
+   try{
+    const viewer=document.querySelector('perspective-viewer');await viewer.flush();
+    const config=await viewer.save();
+    if(config.title!=='Regional report'||JSON.stringify(config.group_by)!==JSON.stringify(['region']))return {ready:false,reason:'Waiting for restored panel configuration'};
+    const view=await viewer.getView();
+    if(!(await view.num_rows()))return {ready:false,reason:'Waiting for rows'};
+    return {ready:true,values:await view.to_json()};
+   }catch(error){return {ready:false,reason:String(error)};}
+  });
+  if(result.ready){actual=result.values;break;}
+  lastReason=result.reason;
+  await restored.waitForTimeout(100);
+ }
+ assert.ok(actual,`Stock HTML did not become ready: ${lastReason}`);
  assert.deepEqual(actual,expected);
  assert.deepEqual(errors,[]);assert.deepEqual(replayErrors,[]);
  await writeFile(resolve(out,'checks.json'),JSON.stringify({rows:12000,stockHTML:true,internetRequired:true,metricsMatch:true},null,2));

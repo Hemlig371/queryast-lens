@@ -1,5 +1,6 @@
 import {installDefaultColumns} from './defaultColumns';
 import {installMenuBounds} from './menuBounds';
+import {installViewerBackground} from './viewerBackground';
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import {Check, Copy, Loader2} from 'lucide-react';
 import type { HTMLPerspectiveViewerElement } from '@perspective-dev/viewer';
@@ -55,6 +56,7 @@ const Explore = forwardRef<ExploreHandle, {
     let handler: any;
     let removeExportBridge: (() => void) | undefined;
     let removeMenuBounds: (() => void) | undefined;
+    let removeBackground: (() => void) | undefined;
     let restoreColumnPaths: (() => void) | undefined;
     let cleanup: Promise<void> | undefined;
     setBusy(true); setError(''); setSqlSnapshot(null); setCopied(false);
@@ -65,7 +67,7 @@ const Explore = forwardRef<ExploreHandle, {
       if (cancelled) return;
       const conn = await analysisConnection(mode, entry => {
         capture.record(entry);
-        if (!cancelled && entry.error) setError(entry.error);
+        if (!cancelled && entry.error && !capture.validating) setError(entry.error);
       });
       // Refuse VIEW/TEMP or a missing source; do not silently show cached data.
       const found = await conn.query(`SELECT database_name, schema_name, table_name FROM duckdb_tables() WHERE NOT temporary AND NOT internal`);
@@ -97,11 +99,12 @@ const Explore = forwardRef<ExploreHandle, {
       viewer.style.visibility = 'hidden';
       container.current!.appendChild(viewer);
       removeMenuBounds = installMenuBounds(viewer);
+      removeBackground = installViewerBackground(viewer, container.current!.parentElement!);
       await viewer.load(table);
       await viewer.resetThemes();
       const saved = savedConfig.current;
       if (saved?.key === key) await viewer.restoreWorkspace(saved.config);
-      else await viewer.restore({ plugin: 'Datagrid', settings: true, theme: defaultTheme });
+      else await viewer.restore({ plugin: 'Datagrid', settings: true, theme: defaultTheme, title: selected.table });
       if (cancelled) return;
       viewerRef.current = viewer;
       sqlCapture.current = {capture,handler};
@@ -124,6 +127,7 @@ const Explore = forwardRef<ExploreHandle, {
       cleanup = opening.then(async () => {
         removeExportBridge?.();
         removeMenuBounds?.();
+        removeBackground?.();
         const release = async (action: () => unknown) => {
           try { await action(); } catch (e) { console.warn('Analysis cleanup', e); }
         };
@@ -196,13 +200,13 @@ const Explore = forwardRef<ExploreHandle, {
   return <section style={visible ? undefined : {display: 'none'}} aria-hidden={!visible} className="lens-explore" data-theme={theme} aria-label={text('Исследование данных', 'Explore data')}>
     <header className="explore-toolbar">
       {onBack ? <button disabled={busy || sqlBusy} onClick={() => void returnToEditor()}>← {text('В редактор', 'Back to editor')}</button> : <strong>QueryAST Lens</strong>}
-      {onClose && <button disabled={sqlBusy} onClick={onClose} title={text('Завершить исследование и освободить его ресурсы', 'Discard the exploration and release its resources')}>{text('Закрыть исследование', 'Close exploration')}</button>}
       {source && <span className="explore-source" title={tablePath([source.database, source.schema, source.table])}>{source.schema}.{source.table}</span>}
-      {selected && <button title={text('Перечитать таблицу с сохранением настроек Viewer', 'Reload the source and keep Viewer settings')} disabled={busy} onClick={() => setRevision(n => n + 1)}>{text('Обновить', 'Refresh')}</button>}
       {selected && <button disabled={busy || sqlBusy} onClick={() => void showViewSql()} title={text('SQL данных активной вкладки Viewer', 'SQL for the active Viewer tab')}>{sqlBusy ? '…' : text('SQL представления', 'View SQL')}</button>}
       <span className="explore-status" role={error ? 'alert' : 'status'} title={error || status}>
         {error || (busy ? <Loader2 className="explore-spinner" aria-label={text('Загрузка', 'Loading')} /> : status)}
       </span>
+      {selected && <button title={text('Перечитать таблицу с сохранением настроек Viewer', 'Reload the source and keep Viewer settings')} disabled={busy} onClick={() => setRevision(n => n + 1)}>{text('Обновить', 'Refresh')}</button>}
+      {onClose && <button disabled={sqlBusy} onClick={onClose} title={text('Завершить исследование и освободить его ресурсы', 'Discard the exploration and release its resources')}>{text('Закрыть исследование', 'Close exploration')}</button>}
     </header>
     <dialog className="explore-sql-dialog" ref={sqlDialog}>
       <header><strong>{text('SQL выбранного представления', 'Selected View SQL')}</strong><button onClick={() => sqlDialog.current?.close()}>{text('Закрыть', 'Close')}</button></header>

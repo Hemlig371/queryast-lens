@@ -14,6 +14,8 @@ export class ViewSqlCapture {
   private views = new Map<string, ViewRecipe>();
   private tables = new Map<string, Recipe>();
 
+  get validating() { return this.operation?.method === 'tableDescribe'; }
+
   record(entry: QueryTrace) {
     if (!entry.error && this.operation) this.operation.statements.push(entry.sql);
   }

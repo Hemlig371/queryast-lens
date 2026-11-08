@@ -69,6 +69,13 @@ async function check(view,label){
  return snapshot;
 }
 try{
+ const draft=await handler.tableDescribe('memory.demo',{columns:[],expressions:{draft:''}});
+ assert.ok(draft.expression_errors.draft);assert.ok(!draft.config_error);
+ const valid=await handler.tableDescribe('memory.demo',{columns:[],expressions:{double_quantity:'"quantity" * 2'}});
+ assert.equal(valid.expression_schema.double_quantity,'integer');
+ const features=handler.getFeatures();
+ assert.ok(!features.aggregates.string.includes('countif'));
+ assert.ok(features.aggregates.boolean.includes('countif'));
  // Native HTML export uses the public default table.view() path.
  const defaultView=await table.view();views.push(defaultView);
  const exported=tableFromIPC(await defaultView.to_arrow());
@@ -94,6 +101,8 @@ try{
  const derivedSnapshot=await check(derivedView,'derived table');
  assert.doesNotMatch(derivedSnapshot.sql,/^\s*(?:DESCRIBE|DESC)\b/im);
 
+ const expressionView=await table.view({expressions:{double_quantity:'"quantity" * 2'},columns:['double_quantity'],group_by:['region'],aggregates:{double_quantity:'sum'}});views.push(expressionView);
+ await check(expressionView,'computed column');
  if(fixtureDir)await writeFile(join(fixtureDir,'cases.json'),JSON.stringify(cases));
  console.log('SQL replay verified twice in the shared editor connection; live Views intact and unrelated Views excluded.');
 }finally{

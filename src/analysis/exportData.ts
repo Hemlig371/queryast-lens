@@ -32,6 +32,13 @@ export async function exportNativeMenuChoice(viewer: any, method: string, filena
   const panel=viewer.getActivePanel?.();
   const options=panel?{panel}:undefined;
   const match=/^(csv|json|ndjson|arrow)(?:-(lz4|zstd))?(?:-(all|selected))?$/.exec(method);
+  if(method==='html') {
+    // Keep the SDK HTML document; its download() hard-codes "untitled".
+    const data=await viewer.export({method,...options});
+    const blob=data instanceof Blob?data:new Blob([data],{type:'text/html;charset=utf-8'});
+    downloadExportBlob(viewer,blob,filename);
+    return;
+  }
   if(!match)return viewer.download({method,...options});
   const [,format,codec,scope]=match;
   const selection=scope==='selected'?viewer.getSelection(options):undefined;
