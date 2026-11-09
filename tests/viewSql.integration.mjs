@@ -1,3 +1,4 @@
+import {wideTableSql,wideMetrics,wideRows} from './fixtures/analysis-wide.mjs';
 import {csvExportBlob} from '../src/analysis/exportData.ts';
 import {pagedJsonBlob,sourceArrowIpc} from '../src/analysis/exportPaged.ts';
 import {installDefaultColumns} from '../src/analysis/defaultColumns.ts';
@@ -209,6 +210,25 @@ try{
  const freshView=await refreshTable.view({columns:['id']});
  assert.equal(await freshView.num_rows(),3);await freshView.delete();refreshTable.free();conn.query('DROP TABLE refresh_source');
  console.log('Reopening a View after a source update rereads all rows.');
+ // The same wide synthetic source is used by the browser stress scenario.
+ conn.query(wideTableSql);
+ assert.equal(conn.query('SELECT * FROM dashboard_wide LIMIT 0').schema.fields.length,36);
+ const wideTable=await client.open_table('memory.dashboard_wide');
+ assert.equal(await wideTable.size(),wideRows);
+ const wideIds=await Promise.all([32,24,16,8,4,1].map(async count=>{
+   const view=await wideTable.view({columns:wideMetrics.slice(0,count),group_by:['region','day'],split_by:['category'],aggregates:Object.fromEntries(wideMetrics.slice(0,count).map(name=>[name,'sum']))});
+   const id=view.__unsafe_get_name();
+   try {
+     const total=(await view.to_json({start_row:0,end_row:1}))[0];
+     const reference=conn.query('SELECT category,SUM(metric_00) AS value FROM dashboard_wide GROUP BY category').toArray().map(row=>row.toJSON());
+     for(const row of reference)assert.equal(Number(total[row.category+'|metric_00']),Number(row.value));
+   }finally{await view.delete();}
+   return id;
+ }));
+ const wideRemaining=new Set(conn.query('SELECT table_name FROM duckdb_tables() WHERE temporary').toArray().map(row=>row.toJSON().table_name));
+ assert.ok(wideIds.every(id=>!wideRemaining.has(id)));
+ wideTable.free();conn.query('DROP TABLE dashboard_wide');
+ console.log('Wide source: 50000 rows, 36 columns, 6 concurrent pivot projections match SQL and release temporary Views.');
  // Rapid requests must drain and release every temporary View.
  const burst=await Promise.all(Array.from({length:16},async(_,i)=>{
    const columns=i%2?['quantity']:['revenue','quantity'];

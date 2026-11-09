@@ -4,6 +4,7 @@ import {pathToFileURL} from 'node:url';
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import sharp from 'sharp';
+import {checkWideTableStress} from './analysis-wide.mjs';
 import {checkAnalysisInteractions} from './analysis-interactions.mjs';
 import {checkColumnSettings} from './analysis-column-settings.mjs';
 import {checkSqlDialog} from './analysis-sql.mjs';
@@ -32,6 +33,7 @@ try{
  assert.equal(await page.evaluate(async()=> (await document.querySelector('perspective-viewer').save()).title),'dashboard_source');
  const reports=[];
  reports.push(await checkAnalysisInteractions(page));
+ reports.push(await checkWideTableStress(page,out));
  reports.push(await checkColumnSettings(page));
  reports.push(await checkSqlDialog(page));
  await checkDatagridScroll(page,out);
