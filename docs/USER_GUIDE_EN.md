@@ -25,6 +25,7 @@ QueryAST Lens is a cross-platform SQL Workbench for local and cloud analytics (D
 5. [Secure Vault & Secret Substitution](#5-secure-vault--secret-substitution)
 6. [Action Menu, Snippets & Background Pipelines (@job)](#6-action-menu-snippets--background-pipelines-job)
 7. [Data Inspection, Analytics & Export](#7-data-inspection-analytics--export)
+   * [Table Exploration (Perspective)](#table-exploration-perspective)
 8. [Settings, UI Customization & Synchronization](#8-settings-ui-customization--synchronization)
    * [DuckDB Engine Settings (Memory, Threads, Init SQL)](#duckdb-engine-settings-memory-threads-init-sql-extensions)
    * [Custom Autocomplete & Quick Actions](#custom-autocomplete--quick-actions)
@@ -295,6 +296,19 @@ The results table (**DataStatsViewer**) is designed for datasets of any size:
 * **Clipboard Exports**:
   * **Copy as Image**: Copy visible table cells as a clean Retina PNG image for messengers or documentation.
   * `Ctrl + Shift + E` — Copy the active result page formatted as Tab-Separated Values (TSV) for pasting into Google Sheets or Excel.
+
+### Table Exploration (Perspective)
+
+Choose **Explore** in a physical DuckDB table's context menu to open a separate workspace with a Perspective pivot table and charts:
+* **View Configuration**: Choose columns, `Group By`, `Split By`, `Where` filters, sorting and aggregates. Multiple panels and computed columns with DuckDB expressions are supported. Editing source cells is not supported.
+* **Data Source**: Exploration uses the whole table in the current connection, independently of the SQL editor's result page and row limit. Tauri/DuckDB and DuckDB-WASM (Web/Android) are supported; server-side Express/DuckDB, ClickHouse, VIEW and temporary tables are unavailable. Materialize an arbitrary SQL result into a physical table with `CREATE TABLE … AS SELECT …` first.
+* **Returning and Closing**: **Back to editor** retains the exploration in memory; choosing **Explore** for the same table resumes it. Another table replaces it. **Close exploration** and reconnecting release its resources without deleting the source table. **Refresh** rereads data while retaining settings; schema changes may require reopening the exploration. The workspace is not automatically saved to persistent storage.
+* **Appearance**: Exploration tables default to Segoe UI 13 px and Pro Light/Pro Dark according to the Lens theme. Columns can be resized manually. In RU, the synthetic `TOTAL` row is labelled «Итого»; source values remain unchanged. Common axis/legend labels and number formatting follow the Lens language: RU — `1 234,56`, EN — `1,234.56`; chart names, SQL terms and technical messages may remain in English.
+* **View SQL**: Copy the active panel's technical script and execute it in full in DuckDB on the same unchanged source database. It reproduces View data, including group expansion, rather than styling or chart renderer transformations. Nondeterministic calculations and source changes can change the result. The Lens formatter is used; formatter errors or token changes retain the original script. Script temporary tables are isolated from the live exploration; commented `DROP` statements provide cleanup after using the result. ClickHouse replay is not supported.
+* **Export**: CSV, JSON, NDJSON, Arrow (including LZ4/ZSTD), JSON configuration, HTML pivot table and PNG for supporting charts are available. Saving uses the platform's normal route: browser download, Tauri save dialog, or Android save/share.
+
+The grid requests visible data windows. Charts and exports may require more memory; the final export file is assembled in the device's memory.
+
 
 ---
 

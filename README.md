@@ -44,6 +44,7 @@ Cross-platform SQL Query Workbench and analytical database client (DuckDB, Click
 * **Automated Column Statistics**: The analytics panel calculates metrics from the loaded result; “Refresh from DB” requests row count, null/empty count and percentage, distinct count and sum from the database, then derives the mean in the client.
 * **Interactive Filtering**: Filter application (`WHERE IS NULL` / `IS NOT NULL`) directly from data grid column headers.
 * **Built-in Charts**: Bar (vertical / horizontal), line, and pie charts powered by Recharts, plus a column / category statistics list.
+* **Table Exploration (Perspective)**: Pivot tables, filters, aggregates, charts, View SQL and data export for physical DuckDB tables; loaded on demand. See the [User Guide](docs/USER_GUIDE_EN.md#table-exploration-perspective).
 * **Copy Table as Image**: Copy query results to the clipboard as a PNG image.
 
 <p align="center">
@@ -136,6 +137,7 @@ rm -f squashfs-root/usr/lib/libwayland-*.so*
 * **Автоматический расчёт статистики**: Панель аналитики считает метрики по загруженному результату; «Обновить по БД» запрашивает у базы число строк, количество и долю NULL/пустых значений, число уникальных значений и сумму, затем вычисляет среднее в клиенте.
 * **Быстрые интерактивные фильтры**: Применение условных фильтров (`WHERE IS NULL` / `IS NOT NULL`) прямо из заголовков таблицы результатов.
 * **Визуализация результатов**: Столбчатые (вертикальные / горизонтальные), линейные и круговые диаграммы на основе результатов запроса, а также список статистики по колонкам и категориям.
+* **Исследование таблиц (Perspective)**: Сводные таблицы, фильтры, агрегаты, графики, SQL представления и экспорт данных физических таблиц DuckDB; загрузка по требованию. Подробнее — в [руководстве пользователя](docs/USER_GUIDE.md#исследование-таблиц-perspective).
 * **Копирование таблицы как изображения**: Копирование данных в буфер обмена в виде готового PNG-изображения высокого разрешения (Retina 2x).
 
 #### 📑 Движок отчётов Excel & Экспорт

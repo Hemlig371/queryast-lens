@@ -71,6 +71,16 @@ The result cap is 500,000 rows per query (Rust, WASM and ClickHouse); above that
 * Sorting and filters in the table build an SQL wrapper `SELECT * FROM (<original query>) AS _filtered_query WHERE … ORDER BY …` (`filteredSql.ts`); when applied again, the previous wrapper is removed so queries do not nest.
 * The automatic Excel export for `@excel_save` is triggered from `updateEngineState` (see [EXCEL_DIRECTIVES_EN](./EXCEL_DIRECTIVES_EN.md)).
 
+### Data exploration
+
+`src/analysis/Explore.tsx` opens a separate Perspective 5.8.0 Viewer for a physical DuckDB table. The React component, SDK, plugins and WASM load on demand. The Virtual Server uses the existing connection: `transport.ts` sends native queries to `src-tauri/src/analysis.rs` and decodes Arrow IPC; Web/Android use DuckDB-WASM through `src/lib/duckdbWasm.ts`. Server-side Express/DuckDB and ClickHouse are not served by this path.
+
+* Datagrid requests data windows; the SQL editor's result limit does not apply. There is no separate analysis row/byte cap. Charts and exports may read large responses; paged export assembles the final file in memory.
+* Views and temporary tables share the connection. Returning to the editor retains the exploration; closing it, changing the source or reconnecting releases the Viewer, client, Virtual Server and local handlers. Shared modules/WASM remain cached. No new persistent exploration settings store is introduced.
+* `viewSql.ts` records executed SDK operations by View ID; `replaySql.ts` isolates temporary objects, and the SDK builds the final SELECT for the active panel's complete result. `formatReplaySql.ts` retains the original script on formatter errors or token changes. Replay requires unchanged sources and deterministic calculations; it represents View data, not chart styling.
+* `exportMenu.ts` / `exportData.ts` route the stock menu through Lens saving. CSV/JSON/NDJSON/Arrow are read in pages; LZ4/ZSTD compress Arrow IPC without changing schema or values. ZSTD-WASM loads only for that export; native IPC does not use this compression.
+* Common RU/EN labels and number locale belong to the exploration screen. Locale is set before formatter caches are created; chart workers receive the locale value at creation. Global `Intl` and `navigator.languages` are untouched. Scoped SDK patches and checks are documented in [CONTRIBUTING](./CONTRIBUTING.md#quality-assurance--testing).
+
 ## 5. Database schema
 
 `fetchDuckDbSchema` and its ClickHouse counterpart read the database catalogs (`system.*` for ClickHouse) and build the schema tree for the panel and autocomplete. The result is cached in IndexedDB (`schemaDbCache`); entries older than 7 days are purged.
@@ -114,7 +124,7 @@ Three layers: `localStorage` (settings, session), IndexedDB (results, versions, 
 
 ## 11. Tests and build
 
-* Tests: `tests/*.test.ts`, Vitest (`npm test`). They cover pure utilities, storage (with `fake-indexeddb`), graph parsing and layout, Markdown, Mermaid, Excel and template filling (including real `exceljs`). WASM normalization uses Arrow stubs; the WASM engine and end-to-end UI workflows are not run. Some checks inspect source text rather than application behavior.
-* Rust unit tests live in `src-tauri/src/`: `cargo test --manifest-path src-tauri/Cargo.toml`. Current CI runs only the type check and Vitest; Rust tests are not included. `tests/vaultStorage.test.ts` checks URI parsing, not encryption or the Vault lifecycle.
+* Tests: `tests/*.test.ts`, Vitest (`npm test`). They cover pure utilities, storage (with `fake-indexeddb`), graph parsing and layout, Markdown, Mermaid, Excel and template filling (including real `exceljs`). Ordinary WASM result normalization uses Arrow stubs; exploration integration tests run DuckDB-WASM. Some checks inspect source text rather than application behavior.
+* Rust unit tests live in `src-tauri/src/`: `cargo test --manifest-path src-tauri/Cargo.toml`. The `Tests` workflow runs type checking, Vitest, `tests/analysis/*.check.ts` and SQL replay on DuckDB-WASM. `Analysis native Arrow` runs Rust `analysis::tests` and compares IPC with WASM fixtures; `Analysis export compatibility` checks files, HTML and PNG in a browser. The full Rust test suite is not run separately. `tests/vaultStorage.test.ts` checks URI parsing, not encryption or the Vault lifecycle.
 * Build and release: [CONTRIBUTING](./CONTRIBUTING.md#release-build-ci).
 * Type checking: `npm run lint` (`tsc --noEmit`) covers only `src/**`; `server.ts` and `tests/` are not checked.

@@ -9,6 +9,7 @@ mod fstree;
 mod sqlscript;
 mod timefmt;
 mod valjson;
+mod analysis;
 
 use std::sync::Mutex;
 use std::sync::Arc;
@@ -644,6 +645,7 @@ fn main() {
       configure_db,
       disconnect_db,
       execute_query,
+      analysis::analysis_query_arrow,
       write_text_file,
       read_text_file,
       cancel_duckdb_query,

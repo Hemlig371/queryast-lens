@@ -88,6 +88,8 @@ import {
 } from 'lucide-react';
 
 import { DataStatsViewer } from './components/DataStatsViewer';
+import type { ExploreHandle, AnalysisSource } from './analysis/Explore';
+const Explore = lazy(() => import('./analysis/Explore'));
 
 import { parseSqlToAst, astToGraph, getLayoutedElements } from './utils/astToGraph';
 import { parseMermaidToGraph } from './utils/mermaidToGraph';
@@ -456,6 +458,27 @@ export default function App() {
     }
   };
 
+  const [analysisSource, setAnalysisSource] = useState<AnalysisSource | null>(null);
+  const [analysisVisible, setAnalysisVisible] = useState(false);
+  const [analysisClosing, setAnalysisClosing] = useState(false);
+  const [analysisClosingIndicator, setAnalysisClosingIndicator] = useState(false);
+  const analysisRef = useRef<ExploreHandle>(null);
+  const analysisVisibleRef = useRef(false);
+  analysisVisibleRef.current = analysisVisible || analysisClosing;
+  const closeAnalysis = async () => {
+    if (!analysisSource && !analysisRef.current) return;
+    setAnalysisClosing(true);
+    const indicator = window.setTimeout(() => setAnalysisClosingIndicator(true), 180);
+    try {
+      await analysisRef.current?.close();
+      setAnalysisVisible(false);
+      setAnalysisSource(null);
+    } finally {
+      window.clearTimeout(indicator);
+      setAnalysisClosingIndicator(false);
+      setAnalysisClosing(false);
+    }
+  };
   const [schemaContextMenu, setSchemaContextMenu] = useState<{
     x: number;
     y: number;
@@ -1012,6 +1035,7 @@ export default function App() {
 
   useEffect(() => {
     const handleCopyKeyDown = (e: KeyboardEvent) => {
+      if (analysisVisibleRef.current) return;
       if ((e.ctrlKey || e.metaKey) && e.code === 'KeyC') {
         const selection = window.getSelection();
         if (shouldLeaveCopyToBrowser({
@@ -1664,6 +1688,7 @@ export default function App() {
 
   /** Закрывает подключение DuckDB в бэкенде, не меняя состояние интерфейса. Возвращает true, если это был WASM. */
   const closeDuckDbBackend = async (): Promise<boolean> => {
+    await closeAnalysis();
     if (isTauriEnv && !isWasmMode) {
       try {
         await tauriInvoke('disconnect_db');
@@ -1752,6 +1777,7 @@ export default function App() {
     };
     setIsDuckDbRunning(true);
     try {
+      await closeAnalysis();
       const result = await switchConnection<DuckDbConn>({
         previous,
         // в десктопе Rust заменяет старое соединение только при успехе; для того же файла старое нужно закрыть заранее (блокировка файла)
@@ -3918,6 +3944,7 @@ export default function App() {
   const backPressRef = useRef<() => boolean>(() => false);
   useEffect(() => {
     backPressRef.current = () => {
+      if (analysisVisible) { setAnalysisVisible(false); return true; }
       if (executeContextMenu) { setExecuteContextMenu(null); return true; }
       if (tabContextMenu) { setTabContextMenu(null); return true; }
       if (resultTableContextMenu) { setResultTableContextMenu(null); return true; }
@@ -3978,6 +4005,7 @@ export default function App() {
 
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (analysisVisibleRef.current) return;
       if (!hotkeysStateRef.current) return;
       const {
         hotkeys: currentHotkeys,
@@ -4760,8 +4788,12 @@ export default function App() {
       }}
       className={`flex flex-col min-h-0 overflow-hidden ${theme === 'dark' ? 'dark bg-slate-850 text-slate-200' : 'bg-slate-200 text-slate-800'} font-sans select-none overflow-hidden`}
     >
+      {analysisClosingIndicator && <div className={`fixed inset-0 z-[120] flex items-center justify-center ${theme === 'dark' ? 'bg-slate-850/90 text-slate-300' : 'bg-slate-200/90 text-slate-600'}`} role="status" aria-label={t('Закрытие исследования…')}><Loader2 className="w-6 h-6 animate-spin" /></div>}
+      {analysisSource && <Suspense fallback={<div className={`fixed inset-0 z-50 flex items-center justify-center ${theme === 'dark' ? 'bg-slate-850 text-slate-300' : 'bg-slate-200 text-slate-600'}`} role="status"><Loader2 className="w-6 h-6 animate-spin" /></div>}>
+        <Explore ref={analysisRef} theme={theme} source={analysisSource} visible={analysisVisible} mode={isWasmMode ? 'wasm' : 'native'} onBack={() => setAnalysisVisible(false)} onClose={() => void closeAnalysis()} formatSql={sql => formatSqlText(sql, formatterSettingsRef.current || formatterSettings)} />
+      </Suspense>}
       
-      <main className="flex flex-1 overflow-hidden relative">
+      <main inert={analysisVisible || analysisClosing ? true : undefined} className="flex flex-1 overflow-hidden relative">
         
         {showLeftPanel && (
         <aside id="control-panel" className={`w-[40%] min-w-[380px] max-w-[580px] max-md:w-full max-md:min-w-0 max-md:max-w-none border-r flex flex-col shrink-0 transition-colors ${
@@ -6606,6 +6638,19 @@ export default function App() {
                     <Table className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                     <span>{t('Показать')}</span>
                   </button>
+                  {schemaEngine === 'duckdb' && (isWasmMode || isTauriEnvironment()) && ['Tables', 'BASE TABLE'].includes(schemaContextMenu.tableType) && (
+                    <button type="button" className={`w-full text-left px-3 py-1.5 flex items-center gap-2 transition-colors ${theme === 'dark' ? 'hover:bg-slate-700' : 'hover:bg-slate-100'}`}
+                      disabled={isDuckDbRunning}
+                      onClick={() => {
+                        const next = { database: schemaContextMenu.dbName, schema: schemaContextMenu.schemaName,
+                          table: schemaContextMenu.tableName, connection: duckDbConnectedPath || ':memory:' };
+                        if (!analysisSource || JSON.stringify(next) !== JSON.stringify(analysisSource)) setAnalysisSource(next);
+                        setAnalysisVisible(true);
+                        setSchemaContextMenu(null);
+                      }}>
+                      <BarChart3 className="w-3.5 h-3.5 text-sky-400 shrink-0" /><span>{t('Исследовать')}</span>
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => handleSchemaContextAction('copySelect')}

@@ -338,6 +338,14 @@ export async function queryDuckDbWasm(sqlQuery: string) {
   return resultRows;
 }
 
+/** Shared connection for the Virtual Server. Does not normalize or copy the source table. */
+export async function getAnalysisWasmConnection() {
+  const db = await getDuckDbWasm();
+  if (!connInstance) connInstance = await db.connect();
+  await ensureWasmFilesRegistered(db);
+  return connInstance;
+}
+
 const registeredVfsFiles = new Map<string, { buffer?: Uint8Array; size?: number; loadedAt: Date }>();
 const wasmRegisteredSet = new Set<string>();
 
