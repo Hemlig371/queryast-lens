@@ -5,29 +5,41 @@ export function installInitialColumnWidths(grid: any) {
   if (typeof grid.addStyleListener !== 'function') return () => {};
   const win = grid.ownerDocument.defaultView;
   let frame = 0, disposed = false;
+  const pending = new Map<number,number>();
   const unsubscribe = grid.addStyleListener(() => {
+    if (!grid.clientWidth) return;
     const sizes = grid.saveColumnSizes();
     const maximum = Math.min(320, Math.max(80, grid.clientWidth * 0.45));
-    let changed = false;
     for (const cell of grid.querySelectorAll('th,td')) {
-      const key = grid.getMeta(cell)?.size_key;
+      const meta = grid.getMeta(cell);
+      const key = meta?.size_key;
       if (key === undefined || cell.colSpan > 1 || sizes[key] !== undefined) continue;
-      if (cell.offsetWidth > maximum) {
-        sizes[key] = maximum;
+      // Tree labels may have max-width:0 while their content sizes the column.
+      if (Math.max(cell.offsetWidth, cell.scrollWidth) > maximum) pending.set(key, maximum);
+    }
+    if (!pending.size || frame) return;
+    frame = win.requestAnimationFrame(async () => {
+      // The SDK reconciles persisted widths during draw. Apply defaults only
+      // AFTER that draw, so it cannot discard them as stale projection widths.
+      await grid.flush();
+      if (disposed) return;
+      const current = grid.saveColumnSizes();
+      let changed = false;
+      for (const [key, width] of pending) if (current[key] === undefined) {
+        current[key] = width;
         changed = true;
       }
-    }
-    if (!changed) return;
-    grid.restoreColumnSizes(sizes);
-    if (!frame) frame = win.requestAnimationFrame(async () => {
+      pending.clear();
+      if (changed) {
+        grid.restoreColumnSizes(current);
+        await grid.draw({invalid_viewport:true});
+        // Replan horizontal virtualization with the newly measured widths.
+        if (!disposed) await grid.draw({invalid_viewport:true});
+      }
       frame = 0;
-      if (disposed) return;
-      // First apply widths, then replan the data window using measured widths.
-      await grid.draw({invalid_viewport:true});
-      if (!disposed) await grid.draw({invalid_viewport:true});
     });
   });
-  return () => { disposed = true; win.cancelAnimationFrame(frame); unsubscribe(); };
+  return () => { disposed = true; pending.clear(); win.cancelAnimationFrame(frame); unsubscribe(); };
 }
 
 export function installDatagridViewport(viewer: HTMLElement) {

@@ -25,13 +25,19 @@ export async function runDatagridProbe({lens,patched}) {
     const plugin=Array.from(viewer.children).find(child=>child.tagName==='PERSPECTIVE-VIEWER-DATAGRID');
     const grid=plugin?.regular_table;if(!grid)throw Error('Datagrid regular-table was not mounted');
     const view=await viewer.getView();const expected=JSON.stringify(await view.to_json());
-    await new Promise(requestAnimationFrame);await grid.flush();await new Promise(requestAnimationFrame);await grid.flush();
+    for(let frame=0;frame<6;frame++){await new Promise(requestAnimationFrame);await grid.flush();}
     const naturalCells=grid.querySelectorAll('tbody td').length;
-    // Deterministically exercise the same boundary as an auto-sized long label.
-    const label=grid.querySelector('tbody th.psp-tree-label');
+    // Check real geometry, then verify that manual resizing remains available.
+    const initialSizes=grid.saveColumnSizes();
+    // A TOTAL cell can span several header columns; test a leaf column and
+    // actual metric visibility instead of treating the merged cell as one width.
+    const label=Array.from(grid.querySelectorAll('tbody th')).filter(cell=>cell.colSpan===1 && initialSizes[grid.getMeta(cell)?.size_key]!==undefined).sort((a,b)=>b.offsetWidth-a.offsetWidth)[0];
     const headerKey=label?grid.getMeta(label)?.size_key??1:1;
-    const initialWidth=grid.saveColumnSizes()[headerKey];
-    if(patched && !(initialWidth>0 && initialWidth<=320 && label?.offsetWidth<=321 && naturalCells>0))throw Error('Long automatic header width was not bounded');
+    const initialWidth=initialSizes[headerKey];
+    const metric=grid.querySelector('tbody td')?.getBoundingClientRect();
+    const bounds=grid.getBoundingClientRect();
+    const metricsVisible=metric && metric.left<bounds.right && metric.right>bounds.left;
+    if(patched && !(initialWidth>0 && initialWidth<=320 && naturalCells>0 && metricsVisible))throw Error('Long automatic header hides metrics: '+JSON.stringify({initialWidth,labelWidth:label?.offsetWidth,naturalCells,metricsVisible,sizes:initialSizes}));
     grid.restoreColumnSizes({...grid.saveColumnSizes(),[headerKey]:patched?Math.max(400,grid.clientWidth*0.6):Math.max(5000,grid.clientWidth*3)});
     const manualWidth=grid.saveColumnSizes()[headerKey];
     if(patched && !(manualWidth>320))throw Error('Manual column width was restricted');

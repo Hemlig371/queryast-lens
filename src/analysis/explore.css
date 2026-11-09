@@ -14,7 +14,7 @@
 .explore-status {margin-left:auto; min-width:0; flex:1; text-align:right; color:var(--explore-muted); white-space:nowrap; text-overflow:ellipsis; overflow:hidden;}
 .explore-status[role=alert] {color:#ef4444;}
 .explore-body,.explore-viewer {position:relative; width:100%; height:100%; min-width:0; min-height:0; background:var(--explore-viewer-bg);}
-.explore-viewer perspective-viewer {position:absolute; inset:0; display:block; width:100%; height:100%; box-sizing:border-box; background:var(--psp--background-color,var(--explore-viewer-bg)); font-family:"Segoe UI",Arial,sans-serif; font-size:13px; --psp-button--font-size:13px; --psp-column-selector--font-size:13px; border:0; border-radius:0;}
+.lens-explore .explore-viewer perspective-viewer {position:absolute; inset:0; display:block; width:100%; height:100%; box-sizing:border-box; background:var(--psp--background-color,var(--explore-viewer-bg)); font-family:"Segoe UI",Arial,sans-serif; font-size:13px; --psp-button--font-size:13px; --psp-column-selector--font-size:13px; border:0; border-radius:0;}
 .explore-spinner {width:16px; height:16px; animation:explore-spin 1s linear infinite;}
 @keyframes explore-spin {to{transform:rotate(360deg);}}
 .explore-sql-dialog {box-sizing:border-box; position:fixed; inset:0; margin:auto; width:min(1000px,calc(94vw / var(--zoom-scale,1))); height:min(740px,calc(86dvh / var(--zoom-scale,1))); padding:14px; border:1px solid var(--explore-border); border-radius:8px; background:var(--explore-panel); color:var(--explore-fg); font:inherit; box-shadow:0 16px 60px #0005;}

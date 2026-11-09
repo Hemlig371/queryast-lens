@@ -4,9 +4,11 @@ import {JSDOM} from 'jsdom';
 import {installUiPolish,translateMenu,translateControls} from '../../src/analysis/uiPolish';
 import {installInitialColumnWidths} from '../../src/analysis/datagridViewport';
 
-test('public sizing API caps initial measurements but preserves manual widths and disposes',()=>{
+test('public sizing API waits for SDK reconciliation, preserves manual widths and disposes',async()=>{
   const dom=new JSDOM('<div><table><tr><th></th><td></td></tr></table></div>',{pretendToBeVisual:true});
   const grid:any=dom.window.document.querySelector('div');let listener:any,removed=false;
+  const frames:any[]=[];dom.window.requestAnimationFrame=(fn:any)=>{frames.push(fn);return frames.length;};dom.window.cancelAnimationFrame=()=>{};
+  grid.flush=async()=>{};grid.draw=async()=>listener();
   let sizes:any={1:900};
   Object.defineProperty(grid,'clientWidth',{value:800});
   const cells=grid.querySelectorAll('th,td');
@@ -15,6 +17,8 @@ test('public sizing API caps initial measurements but preserves manual widths an
   grid.saveColumnSizes=()=>({...sizes});grid.restoreColumnSizes=(next:any)=>{sizes=next;};
   grid.addStyleListener=(fn:any)=>{listener=fn;return ()=>{removed=true;};};
   const dispose=installInitialColumnWidths(grid);listener();
+  assert.equal(sizes[0],undefined,'Width is not injected during SDK style reconciliation');
+  await frames.shift()();
   assert.equal(sizes[0],320);assert.equal(sizes[1],900);
   sizes[0]=720;listener();assert.equal(sizes[0],720);
   dispose();assert.equal(removed,true);dom.window.close();

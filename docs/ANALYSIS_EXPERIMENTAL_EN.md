@@ -202,3 +202,9 @@ exceed this default. Themes and settings panel dimensions remain unchanged.
 
 The exploration uses Segoe UI 13 px with Arial/sans-serif fallback. JSON buttons
 retain their full labels and occupy additional rows when needed.
+
+Initial widths are applied after the SDK draw completes, followed by horizontal
+viewport replanning. The browser check allows merged total headers and verifies
+metric visibility. Technical SQL formatting retains the original SDK script if
+the sequence of lexical tokens changes beyond whitespace, comments or unquoted
+name case. Literals and quoted names must match exactly. Live queries are unchanged.

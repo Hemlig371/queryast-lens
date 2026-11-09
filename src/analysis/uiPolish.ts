@@ -46,19 +46,19 @@ export function installUiPolish(viewer: HTMLElement, language: string) {
     if(installed.has(root))return;
     const style=viewer.ownerDocument.createElement('style');
     style.textContent=menu ? `
-      :host { box-sizing:border-box; font:13px "Segoe UI",Arial,sans-serif; padding:8px 12px!important; }
-      .dropdown-group-label,.dropdown-group-sublabel,.dropdown-group-container>span,.no-results { margin-inline:0!important; }
+      :host { box-sizing:border-box; font:13px "Segoe UI",Arial,sans-serif; }
+      .dropdown-group-label,.dropdown-group-sublabel,.dropdown-group-container>span,.no-results { margin-inline:-4px!important; }
       code,input { font:inherit; }
-      input { box-sizing:border-box; padding:4px 8px!important; }
+      input { box-sizing:border-box; padding:0 4px!important; }
     ` : `
-      #status_bar .hover-target .button>span:not(.icon) { width:max-content!important; min-width:41px; max-width:calc(100vw - 16px); overflow:visible!important; left:50%!important; right:auto!important; translate:-50% 0!important; box-sizing:border-box; padding:6px 8px!important; line-height:18px!important; font:13px "Segoe UI",Arial,sans-serif!important; }
-      :host([part~="tab"]) { padding-inline:12px!important; font:13px "Segoe UI",Arial,sans-serif; }
-      .psp-tab-title { height:auto!important; line-height:18px!important; }
+      #status_bar .hover-target .button>span:not(.icon) { width:max-content!important; min-width:31px; max-width:100px; white-space:pre-wrap!important; overflow:visible!important; left:50%!important; right:auto!important; translate:-50% 0!important; box-sizing:border-box; padding:5px!important; line-height:1!important; font:9px "Segoe UI",Arial,sans-serif!important; }
+      :host([part~="tab"]) { padding-inline:4px!important; font:13px "Segoe UI",Arial,sans-serif; }
+      .psp-tab-title { height:auto!important; line-height:16px!important; }
       #editor,#textarea_editable,#line_numbers { font-family:ui-monospace,Consolas,monospace; }
-      #theme_selector { padding-inline:8px!important; box-sizing:border-box; }
-      #theme_selector option { padding:6px 8px; }
-      #debug-panel #debug-panel-controls { flex-wrap:wrap; gap:6px; }
-      #debug-panel #debug-panel-controls button { flex:1 0 auto; width:auto; padding:2px 8px; font-size:13px; text-transform:none; overflow:visible; text-overflow:clip; }
+      #theme_selector { padding-inline:4px!important; box-sizing:border-box; }
+      #theme_selector option { padding:2px 4px; }
+      #debug-panel #debug-panel-controls { flex-wrap:wrap; gap:4px; }
+      #debug-panel #debug-panel-controls button { flex:0 0 auto; width:auto; padding:2px 6px; font-size:11px; text-transform:none; overflow:visible; text-overflow:clip; }
     `;
     root.appendChild(style);
     let observer:MutationObserver|undefined;

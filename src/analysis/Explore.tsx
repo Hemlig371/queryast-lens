@@ -1,5 +1,6 @@
 import {installDefaultColumns} from './defaultColumns';
 import {installPivotMinMax} from './pivotMinMax';
+import {formatReplaySql} from './formatReplaySql';
 import {installUiPolish} from './uiPolish';
 import {installMenuBounds} from './menuBounds';
 import {installDatagridViewport} from './datagridViewport';
@@ -195,7 +196,7 @@ const Explore = forwardRef<ExploreHandle, {
       setCopied(false);
       let sql = snapshot.sql;
       if (formatSql) {
-        try { sql = await formatSql(sql); } catch { /* Keep the executable SDK script. */ }
+        sql = await formatReplaySql(sql,formatSql);
       }
       if (sqlCapture.current !== tracking || viewerRef.current !== viewer) return;
       setSqlSnapshot({sql});

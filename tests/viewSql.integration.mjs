@@ -9,6 +9,7 @@ import * as perspective from '@perspective-dev/client/dist/esm/perspective.js';
 import {client_runtime} from '@perspective-dev/client/registry';
 import {DuckDBHandler} from '@perspective-dev/client/virtual_servers/duckdb';
 import {ViewSqlCapture} from '../src/analysis/viewSql.ts';
+import {formatReplaySql} from '../src/analysis/formatReplaySql.ts';
 import {formatSqlText} from '../src/utils/sqlFormat.ts';
 import {isolateReplaySql} from '../src/analysis/replaySql.ts';
 
@@ -54,10 +55,7 @@ async function check(view,label){
  const originalSql = originalQuery;
  const expectedTable=conn.query(originalSql);
  const expected=stable(expectedTable.toArray());
- let replaySql=snapshot.sql;
- try {
-  replaySql=await formatSqlText(snapshot.sql,{keywordCase:'upper',tabWidth:2,useTabs:false,expressionWidth:80,denseOperators:false,leadingCommas:false});
- }catch(error){if(!String(error).includes('Не удалось отформатировать'))throw error;}
+ const replaySql=await formatReplaySql(snapshot.sql,sql=>formatSqlText(sql,{keywordCase:'upper',tabWidth:2,useTabs:false,expressionWidth:80,denseOperators:false,leadingCommas:false}));
  assert.equal(stable(conn.query(replaySql).toArray()),expected,'Formatting must preserve replay values');
  if(fixtureDir){
   const name=`case-${cases.length}`;cases.push({name,rows});
