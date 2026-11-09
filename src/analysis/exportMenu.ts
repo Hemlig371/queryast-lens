@@ -10,7 +10,6 @@ const methods: [string, ExportMethod][] = [
   ['.arrow','arrow'], ['.ndjson','ndjson'], ['.json','json'], ['.csv','csv'], ['.html','html'], ['.png','plugin'], ['.txt','plugin'],
 ];
 export const exportMethodForFilename = (name: string) => methods.find(([suffix]) => name.endsWith(suffix))?.[1];
-export const isResizeObserverNotice = (message: string) => /^(?:ResizeObserver loop completed with undelivered notifications\.?|ResizeObserver loop limit exceeded\.?)$/.test(message.trim());
 
 /** Keep the native 5.8.0 menu; route its choices through the public, rejecting
  * export APIs instead of the menu's unchecked Rust unwrap() task.

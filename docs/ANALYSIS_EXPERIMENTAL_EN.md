@@ -44,8 +44,11 @@ these separately after using the result. They do not belong to the live explorat
 
 Editor and Virtual Server share one DuckDB instance and connection. The source is
 not preloaded into JavaScript; DuckDBHandler requests computed windows/results.
-Native IPC uses the existing Tauri connection/mutex with a per-response limit of
-500,000 rows and 32 MiB, not a source-size limit. The transport changes no SET
+Native IPC uses the existing Tauri connection/mutex. The analysis transport has no
+separate Lens row or byte cap. The normal editor result limit remains 500,000 rows.
+Datagrid requests data windows; charts and exports can request large responses
+and need sufficient resources. This does not guarantee protection against
+out-of-memory failures. The transport changes no SET
 options; existing connection Arrow compatibility settings remain in place.
 
 - Perspective may lose BIGINT/DECIMAL precision even when IPC preserves it.
@@ -89,7 +92,8 @@ Android testing for UI/platform acceptance.
 The **Analysis export compatibility** workflow verifies compressed IPC via PyArrow,
 then opens stock HTML as file:// in a fresh online browser context, comparing the
 active panel grouping, filters and metrics. CDN availability is required. The npm
-component sources are unchanged. HTML, PNG and configuration delegate to the SDK.
+Viewer sources are unchanged; the DuckDBHandler patch is documented below.
+HTML, PNG and configuration delegate to the SDK.
 
 ## Interface and HTML follow-up
 
@@ -97,7 +101,7 @@ Perspective defaults to 14 px. The Lens toolbar and SQL dialog use the Lens UI
 size and scale; the Viewer has an outer gutter. Export/copy menus are constrained
 to the visible area and scroll, including with Lens UI zoom. Stock HTML requests
 a default source view; the scoped adapter supplies source columns for ungrouped
-views without a projection. SDK sources and the shared connection are unchanged.
+views without a projection. The Viewer and shared connection are unchanged; see the DuckDBHandler patch below.
 
 WASM disconnect closes the connection but retains the database instance in the
 current page. Reload the browser page to start with a clean memory database.
@@ -157,4 +161,18 @@ validation and has no general compatibility guarantee.
 
 Exports from the stock menu use the existing Lens file-saving path: the save dialog
 and filesystem in Tauri, Filesystem/Share on Android, and downloads on Web.
-The 32 MiB response limit remains independent of the 500,000-row native limit.
+
+## Exact SQL and unused code cleanup
+
+One whole-SQL whitespace normalization operation is removed from DuckDBHandler
+5.8.0: it changed string literals and quoted identifiers. The preparation script
+`scripts/patch-perspective-duckdb.mjs` reproducibly patches the installed ESM
+module before dev/start/build and analysis unit/SQL tests. It checks version
+5.8.0 and a single expected template; unknown versions/templates fail explicitly.
+The menu, Viewer, SQL model and dependency versions are unchanged.
+
+SQL integration compares filters against reference SQL for repeated spaces,
+tabs, newlines and apostrophes, and checks quoted column names and expressions
+with significant spaces. The same fixtures feed native Arrow CI.
+The unused ZSTD URL override and unused ResizeObserver notice filter/test are
+removed. The ZSTD codec and lazy WASM loading remain available.

@@ -4,9 +4,6 @@ use arrow_ipc::writer::StreamWriter;
 use duckdb::Connection;
 use tauri::State;
 
-const MAX_IPC_BYTES: usize = 32 * 1024 * 1024;
-const MAX_ARROW_ROWS: usize = 500_000;
-
 // The same function is exercised by native CI, including DDL and typed IPC.
 fn query_arrow_ipc(conn: &Connection, sql: &str) -> Result<Vec<u8>, String> {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -21,20 +18,10 @@ fn query_arrow_ipc(conn: &Connection, sql: &str) -> Result<Vec<u8>, String> {
         let mut bytes = Vec::new();
         {
             let mut writer = StreamWriter::try_new(&mut bytes, &schema).map_err(|e| e.to_string())?;
-            let mut rows = 0;
-            let mut estimated_bytes = 0;
             for batch in &mut batches {
-                rows += batch.num_rows();
-                estimated_bytes += batch.get_array_memory_size();
-                if rows > MAX_ARROW_ROWS || estimated_bytes > MAX_IPC_BYTES {
-                    return Err("Analysis response exceeds 500,000 rows or 32 MiB. Filter or group the view before exporting.".to_string());
-                }
                 writer.write(&batch).map_err(|e| e.to_string())?;
             }
             writer.finish().map_err(|e| e.to_string())?;
-        }
-        if bytes.len() > MAX_IPC_BYTES {
-            return Err("Analysis Arrow response exceeds 32 MiB".to_string());
         }
         Ok(bytes)
     }))
@@ -106,13 +93,15 @@ mod tests {
     }
 
     #[test]
-    fn response_limits_do_not_truncate_or_break_the_connection() {
+    fn large_responses_are_not_truncated_or_rejected_by_lens() {
         let conn = connection();
-        let bytes = query_arrow_ipc(&conn, "SELECT i FROM range(500000) t(i)").unwrap();
+        let bytes = query_arrow_ipc(&conn, "SELECT i FROM range(500001) t(i)").unwrap();
         let reader = StreamReader::try_new(Cursor::new(bytes), None).unwrap();
-        assert_eq!(reader.map(|batch| batch.unwrap().num_rows()).sum::<usize>(), 500_000);
-        assert!(query_arrow_ipc(&conn, "SELECT i FROM range(500001) t(i)").unwrap_err().contains("500,000"));
-        assert!(query_arrow_ipc(&conn, "SELECT repeat('x', 34000000) AS large").unwrap_err().contains("32 MiB"));
+        assert_eq!(reader.map(|batch| batch.unwrap().num_rows()).sum::<usize>(), 500_001);
+        let bytes = query_arrow_ipc(&conn, "SELECT repeat('x', 34000000) AS large").unwrap();
+        assert!(bytes.len() > 32 * 1024 * 1024);
+        let reader = StreamReader::try_new(Cursor::new(bytes), None).unwrap();
+        assert_eq!(reader.map(|batch| batch.unwrap().num_rows()).sum::<usize>(), 1);
         assert!(query_arrow_ipc(&conn, "SELECT 1 AS still_usable").is_ok());
     }
     #[test]
@@ -123,7 +112,8 @@ mod tests {
             ['Москва','Казань','Санкт-Петербург','Новосибирск'][1+i%4] AS region, \
             ['Hardware','Software','Services'][1+i%3] AS category, \
             DATE '2025-01-01'+(i%365)::INTEGER AS day, \
-            ((i%10000)/100.0)::DOUBLE AS revenue, (1+i%8)::INTEGER AS quantity \
+            ((i%10000)/100.0)::DOUBLE AS revenue, (1+i%8)::INTEGER AS quantity, \
+            ['a  b','a b','a'||chr(9)||'b','a'||chr(10)||'b','a''  b'][1+i%5] AS \"label  value\" \
             FROM range(12000) t(i)").unwrap();
         let path = std::path::Path::new(&folder);
         let cases: serde_json::Value = serde_json::from_slice(&std::fs::read(path.join("cases.json")).unwrap()).unwrap();

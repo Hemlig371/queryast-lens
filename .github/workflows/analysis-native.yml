@@ -4,6 +4,8 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
+      - 'scripts/build-analysis-export.mjs'
+      - 'scripts/patch-perspective-duckdb.mjs'
       - 'src/analysis/**'
       - 'src-tauri/**'
       - 'tests/analysis/**'
@@ -14,6 +16,8 @@ on:
       - '.github/workflows/analysis-native.yml'
   push:
     paths:
+      - 'scripts/build-analysis-export.mjs'
+      - 'scripts/patch-perspective-duckdb.mjs'
       - 'src/analysis/**'
       - 'src-tauri/**'
       - 'tests/analysis/**'

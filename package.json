@@ -20,6 +20,7 @@
     "predev": "npm run build:analysis-export",
     "prebuild": "npm run build:analysis-export",
     "pretest:analysis": "npm run build:analysis-export",
+    "pretest:analysis-sql": "npm run build:analysis-export",
     "prestart": "npm run build:analysis-export"
   },
   "dependencies": {

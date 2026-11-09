@@ -1,7 +1,7 @@
 import {test,afterEach} from 'node:test';
 import assert from 'node:assert/strict';
 import {JSDOM} from 'jsdom';
-import {exportMethodForFilename, installExportMenuBridge, isResizeObserverNotice} from '../../src/analysis/exportMenu';
+import {exportMethodForFilename, installExportMenuBridge} from '../../src/analysis/exportMenu';
 
 const browserGlobals = ['window','document'].map(name => [name,Object.getOwnPropertyDescriptor(globalThis,name)] as const);
 afterEach(() => {
@@ -16,13 +16,6 @@ test('native export filenames distinguish current view, all data, codecs and con
     assert.equal(exportMethodForFilename(name),method);
   }
   assert.equal(exportMethodForFilename('unknown.file'),undefined);
-});
-
-test('only ResizeObserver scheduling notices are excluded',()=>{
- assert.ok(isResizeObserverNotice('ResizeObserver loop completed with undelivered notifications.'));
- assert.ok(isResizeObserverNotice('ResizeObserver loop limit exceeded'));
- assert.ok(!isResizeObserverNotice('Binder Error: column not found'));
- assert.ok(!isResizeObserverNotice('RuntimeError: unreachable'));
 });
 
 function fixture(){
@@ -53,10 +46,10 @@ test('click in shadow menu calls public export once and closes after success',as
 
 test('export rejection reaches error callback and does not report success',async()=>{
  const {dom,viewer,item}=fixture();const errors:unknown[]=[];let success=0;
- viewer.export=async()=>{throw Error('Arrow response exceeds 32 MiB');};
+ viewer.export=async()=>{throw Error('Export failed: source is unavailable');};
  const dispose=installExportMenuBridge(viewer,{start:()=>{},success:()=>success++,error:e=>errors.push(e)});
  item.dispatchEvent(new dom.window.MouseEvent('mousedown',{button:0,bubbles:true,composed:true,cancelable:true}));
- await tick();assert.equal(success,0);assert.match(String(errors[0]),/32 MiB/);dispose();dom.window.close();
+ await tick();assert.equal(success,0);assert.match(String(errors[0]),/source is unavailable/);dispose();dom.window.close();
 });
 
 

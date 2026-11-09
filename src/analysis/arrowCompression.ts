@@ -13,8 +13,6 @@ import {KeyValue} from 'apache-arrow/fb/key-value';
 export type ArrowCodec = 'lz4' | 'zstd';
 const align = (length:number) => Math.ceil(length/8)*8;
 const safe = (value:bigint) => {const n=Number(value);if(!Number.isSafeInteger(n)||n<0)throw Error('Invalid Arrow IPC size');return n;};
-let zstdUrl: (()=>string) | undefined;
-export function configureZstdWasm(source:()=>string){zstdUrl=source;}
 let zstdReady: Promise<typeof import('@bokuweb/zstd-wasm')> | undefined;
 
 async function compressor(codec:ArrowCodec) {
@@ -26,8 +24,8 @@ async function compressor(codec:ArrowCodec) {
     const zstd=await import('@bokuweb/zstd-wasm');
     if(typeof window==='undefined') await zstd.init();
     else {
-      const url=zstdUrl?.()??new URL('analysis-zstd.wasm',document.baseURI).href;
-      try{await (zstd.init as (url?:string)=>Promise<void>)(url);}finally{if(url.startsWith('blob:'))URL.revokeObjectURL(url);}
+      const url=new URL('analysis-zstd.wasm',document.baseURI).href;
+      await (zstd.init as (url?:string)=>Promise<void>)(url);
     }
     return zstd;
   })().catch(error=>{zstdReady=undefined;throw error;});

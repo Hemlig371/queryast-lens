@@ -21,7 +21,9 @@ conn.query(`CREATE TABLE demo AS SELECT i::INTEGER AS id,
  ['Москва','Казань','Санкт-Петербург','Новосибирск'][1+i%4] AS region,
  ['Hardware','Software','Services'][1+i%3] AS category,
  DATE '2025-01-01'+(i%365)::INTEGER AS day,
- ((i%10000)/100.0)::DOUBLE AS revenue, (1+i%8)::INTEGER AS quantity FROM range(12000) t(i)`);
+ ((i%10000)/100.0)::DOUBLE AS revenue, (1+i%8)::INTEGER AS quantity,
+ ['a  b','a b','a'||chr(9)||'b','a'||chr(10)||'b','a''  b'][1+i%5] AS "label  value"
+ FROM range(12000) t(i)`);
 const capture=new ViewSqlCapture();
 const connection={query:async sql=>{try{const result=conn.query(sql);capture.record({sql});return result;}catch(e){capture.record({sql,error:String(e)});throw e;}},useUnsafe:async callback=>conn.useUnsafe((bindings,handle)=>callback({runQuery:(_h,sql)=>{const bytes=bindings.runQuery(handle,sql);capture.record({sql});return bytes;}},handle))};
 const handler=new DuckDBHandler(connection);
@@ -103,6 +105,17 @@ try{
 
  const expressionView=await table.view({expressions:{double_quantity:'"quantity" * 2'},columns:['double_quantity'],group_by:['region'],aggregates:{double_quantity:'sum'}});views.push(expressionView);
  await check(expressionView,'computed column');
+ for (const value of ['a  b','a b','a\tb','a\nb',"a'  b"]) {
+  const view=await table.view({columns:['id','label  value'],filter:[['label  value','==',value]]});views.push(view);
+  const actual=await view.to_json();
+  const expected=conn.query(`SELECT id, "label  value" FROM demo WHERE "label  value"='${value.replaceAll("'","''")}' ORDER BY id`).toArray();
+  assert.equal(actual.length,2400);
+  assert.equal(stable(actual.map(row=>({toJSON:()=>row}))),stable(expected),'Filter must preserve '+JSON.stringify(value));
+  await check(view,'exact whitespace filter '+JSON.stringify(value));
+ }
+ const literal=await table.view({columns:['literal'],expressions:{literal:"'a  b'"}});views.push(literal);
+ assert.deepEqual((await literal.to_json({start_row:0,end_row:3})).map(row=>row.literal),['a  b','a  b','a  b']);
+ await check(literal,'expression preserves repeated spaces');
  if(fixtureDir)await writeFile(join(fixtureDir,'cases.json'),JSON.stringify(cases));
  console.log('SQL replay verified twice in the shared editor connection; live Views intact and unrelated Views excluded.');
 }finally{

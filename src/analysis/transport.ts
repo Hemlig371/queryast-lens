@@ -3,7 +3,6 @@ import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm';
 
 export type AnalysisMode = 'wasm' | 'native';
 export interface QueryTrace { sql: string; rows?: number; bytes?: number; error?: string }
-const MAX_BYTES = 32 * 1024 * 1024;
 
 /** Supplies only the two connection methods used by the official DuckDBHandler. */
 export async function analysisConnection(mode: AnalysisMode, trace: (entry: QueryTrace) => void) {
@@ -11,7 +10,6 @@ export async function analysisConnection(mode: AnalysisMode, trace: (entry: Quer
   const nativeIpc = async (sql: string) => {
     const { invoke } = await import('@tauri-apps/api/tauri');
     const bytes = new Uint8Array(await invoke<number[]>('analysis_query_arrow', { sql }));
-    if (bytes.byteLength > MAX_BYTES) throw new Error('Arrow response exceeds 32 MiB');
     return bytes;
   };
   const run = async (sql: string, ipcOnly: boolean) => {
@@ -30,7 +28,6 @@ export async function analysisConnection(mode: AnalysisMode, trace: (entry: Quer
       if (ipcOnly) {
         const bytes: Uint8Array = await wasm.useUnsafe((bindings, conn) => bindings.runQuery(conn, sql));
         entry.bytes = bytes.byteLength;
-        if (bytes.byteLength > MAX_BYTES) throw new Error('Arrow response exceeds 32 MiB');
         return bytes;
       }
       const result = await wasm.query(sql);
