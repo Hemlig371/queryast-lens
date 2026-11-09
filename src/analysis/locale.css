@@ -65,4 +65,31 @@
   --psp-label--pin-button--content: "Сохранить";
   --psp-label--derive-table--content: "Плоская таблица";
   --psp-label--derive-table-title--content: "Создать таблицу из текущего представления";
+  /* Common chart labels; plugin names, SQL and technical modes stay unchanged. */
+  --psp-label--column-x-axis--content: "Ось X";
+  --psp-label--column-y-axis--content: "Ось Y";
+  --psp-label--column-size--content: "Размер";
+  --psp-label--column-label--content: "Подпись";
+  --psp-label--column-tooltip--content: "Подсказка";
+  --psp-label--role--x-axis--content: "Ось X";
+  --psp-label--role--y-axis--content: "Ось Y";
+  --psp-label--role--series--content: "Ряды";
+  --psp-label--series--content: "Ряды";
+  --psp-label--color-range--content: "Диапазон цветов";
+  --psp-label--group-axes--content: "Оси";
+  --psp-label--group-legend--content: "Легенда";
+  --psp-label--group-tooltip--content: "Подсказки";
+  --psp-label--line-width-px--content: "Толщина линии";
+  --psp-label--point-size-px--content: "Размер точки";
+  --psp-label--include-zero--content: "Включать ноль";
+  --psp-label--legend-mode--content: "Расположение";
+  --psp-label--legend-size-mode--content: "Размер";
+  --psp-label--legend-width-px--content: "Ширина";
+  --psp-label--legend-height-px--content: "Высота";
+  --psp-label--legend-anchor--content: "Привязка";
+  --psp-label--legend-x--content: "Смещение X";
+  --psp-label--legend-y--content: "Смещение Y";
+  --psp-label--legend-opacity--content: "Непрозрачность";
+  --psp-label--tooltip-opacity--content: "Непрозрачность";
+  --psp-label--tooltip-max-column-px--content: "Ширина столбца";
 }

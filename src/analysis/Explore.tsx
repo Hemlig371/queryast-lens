@@ -108,7 +108,7 @@ const Explore = forwardRef<ExploreHandle, {
       container.current!.appendChild(viewer);
       removeMenuBounds = installMenuBounds(viewer);
       removeUiPolish = installUiPolish(viewer,currentLang);
-      removeDatagridViewport = installDatagridViewport(viewer);
+      removeDatagridViewport = installDatagridViewport(viewer,currentLang);
       removeBackground = installViewerBackground(viewer, container.current!.parentElement!);
       await viewer.load(table);
       await viewer.resetThemes();

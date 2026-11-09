@@ -1,3 +1,5 @@
+import {installDatagridLabels} from './datagridLabels';
+
 /** Seed normal resizable widths using regular-table's public sizing API.
  * Never replace an existing override, including a user's wider column.
  */
@@ -42,7 +44,7 @@ export function installInitialColumnWidths(grid: any) {
   return () => { disposed = true; pending.clear(); win.cancelAnimationFrame(frame); unsubscribe(); };
 }
 
-export function installDatagridViewport(viewer: HTMLElement) {
+export function installDatagridViewport(viewer: HTMLElement, language = 'en') {
   const installed = new Map<any, () => void>();
   const refresh = () => {
     const current = new Set<any>();
@@ -51,7 +53,11 @@ export function installDatagridViewport(viewer: HTMLElement) {
       const grid = (child as any).regular_table;
       if (!grid) continue;
       current.add(grid);
-      if (!installed.has(grid)) installed.set(grid, installInitialColumnWidths(grid));
+      if (!installed.has(grid)) {
+        const widths = installInitialColumnWidths(grid);
+        const labels = installDatagridLabels(grid, language);
+        installed.set(grid, () => { labels(); widths(); });
+      }
     }
     for (const [grid, dispose] of installed) if (!current.has(grid)) { dispose(); installed.delete(grid); }
   };
