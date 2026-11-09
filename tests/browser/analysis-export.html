@@ -3,6 +3,8 @@ import React from 'react';
 import {createRoot} from 'react-dom/client';
 import Explore from '/src/analysis/Explore.tsx';
 import {createNumberFormatter} from '@perspective-dev/viewer/column-format';
+import {PerspectiveSelectDetail} from '@perspective-dev/viewer/select-detail';
+window.__analysisSelectDetail=PerspectiveSelectDetail;
 window.__analysisFormatNumber=value=>createNumberFormatter('float').format(value);
 import {getAnalysisWasmConnection} from '/src/lib/duckdbWasm.ts';
 // Match the application root: the shared loader resolves /duckdb assets

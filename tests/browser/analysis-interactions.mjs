@@ -17,7 +17,7 @@ export async function checkAnalysisInteractions(page) {
    const before=await data(detail);
    const masterBefore=await data(master);
    // Dispatch the plugin's real selection contract, attributed to the master panel.
-   const {PerspectiveSelectDetail}=await import('@perspective-dev/viewer/select-detail');
+   const PerspectiveSelectDetail=window.__analysisSelectDetail;
    const plugin=Array.from(viewer.children).find(child=>child.getAttribute('slot')===master);
    if(!plugin)throw Error('Master plugin is not mounted');
    const config={filter:[['region','==','Москва']]};
