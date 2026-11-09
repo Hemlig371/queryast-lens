@@ -30,7 +30,7 @@ export async function checkAnalysisInteractions(page) {
    const config={filter:[['region','==','Москва']]};
    const select=async detail=>{
     const applied=new Promise(resolve=>viewer.addEventListener('perspective-global-filter-update',resolve,{once:true}));
-    plugin.dispatchEvent(new CustomEvent('perspective-select',{bubbles:true,composed:true,detail}));
+    plugin.dispatchEvent(new CustomEvent('perspective-global-filter',{bubbles:true,composed:true,detail}));
     mark('await global filter event');
     await applied;mark('flush after filter event');await viewer.flush();
    };
