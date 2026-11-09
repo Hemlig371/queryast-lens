@@ -218,3 +218,24 @@ New explorations explicitly set Datagrid `font_family: "Segoe UI"` and
 `font_size: 13`. Restored workspace settings keep the user selection. Initial
 auto widths are capped at 480 px or 67.5% of the grid on narrow screens; manual
 widths remain unrestricted. The main Lens interface is unchanged.
+
+## Number locale
+
+Within exploration, Lens selects the shared Perspective number formatter locale:
+RU → `ru-RU` (`1 234,56`), EN → `en-US` (`1,234.56`). Configuration precedes plugin
+imports and formatter caches. Values remain numeric; SQL, computation and machine
+export formats are unchanged. Dates are unaffected. Changing the Lens language
+reloads the application and recreates formatters. A version-scoped, idempotent
+patch adds a locale setter to Perspective 5.8.0's shared `column-format` module.
+Unknown versions/templates fail preparation for review. Global `Intl` and
+`navigator.languages` are untouched. Standalone HTML exports load the external
+stock SDK runtime and continue using the opening browser/WebView locale.
+
+The charts bundle contains an embedded copy of the number helper; only that
+function delegates to the same shared `column-format` module. Preparation checks
+both package versions and templates before writing either change.
+
+Number locale preparation also runs on Vite startup/restart, including direct
+invocations without npm predev. `column-format` is excluded from dependency
+prebundling to prevent a stale export list. Restart the development process
+after replacing sources in an already running application.

@@ -4,6 +4,8 @@ export async function checkSqlDialog(page) {
   const counts=await page.evaluate(async()=>{
     const viewer=document.querySelector('perspective-viewer');
     const original=await viewer.save();
+    const locale=document.querySelector('.lens-explore').dataset.language==='en'?'en-US':'ru-RU';
+    if(window.__analysisFormatNumber(1234.56)!==new Intl.NumberFormat(locale,{minimumFractionDigits:2,maximumFractionDigits:2}).format(1234.56))throw Error('Perspective number locale does not follow Lens');
     if(original.plugin_config?.font_family!=='Segoe UI' || original.plugin_config?.font_size!==13)throw Error('Explicit default Datagrid font is missing');
     await viewer.restore({plugin:'Datagrid',columns:['quantity'],group_by:['region','day'],split_by:[],aggregates:{quantity:'sum'},settings:true});
     await viewer.flush();

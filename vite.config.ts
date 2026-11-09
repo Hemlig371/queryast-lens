@@ -1,15 +1,27 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
+import {fileURLToPath} from 'node:url';
 import { defineConfig } from 'vite';
+import {rm} from 'node:fs/promises';
+import {patchPerspectiveNumberLocale} from './scripts/patch-perspective-number-locale.mjs';
 
-export default defineConfig(() => {
+const projectRoot=path.dirname(fileURLToPath(import.meta.url));
+
+export default defineConfig(async () => {
+  // Also prepare on Vite startup/restart: replacing sources in a running dev
+  // session does not rerun npm predev. Config changes do restart Vite.
+  if (await patchPerspectiveNumberLocale()) {
+    await rm(path.resolve(projectRoot,'node_modules/.vite'),{recursive:true,force:true});
+  }
   return {
     base: './',
+    // Keep the added runtime export out of stale dependency prebundles.
+    optimizeDeps: {exclude:['@perspective-dev/viewer/column-format']},
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(projectRoot, '.'),
       },
     },
     build: {

@@ -2,6 +2,8 @@
 import React from 'react';
 import {createRoot} from 'react-dom/client';
 import Explore from '/src/analysis/Explore.tsx';
+import {createNumberFormatter} from '@perspective-dev/viewer/column-format';
+window.__analysisFormatNumber=value=>createNumberFormatter('float').format(value);
 import {getAnalysisWasmConnection} from '/src/lib/duckdbWasm.ts';
 // Match the application root: the shared loader resolves /duckdb assets
 // from window.location. Keeping this fixture in /tests must not move assets.

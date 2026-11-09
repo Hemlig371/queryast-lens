@@ -1,7 +1,12 @@
+import {currentLocale} from '../utils/i18n';
 let pending: Promise<typeof import('@perspective-dev/client')> | undefined;
 
 export function loadPerspective() {
   return pending ??= (async () => {
+    // Configure before importing plugins, which cache number formatters.
+    const formatters = await import('@perspective-dev/viewer/column-format') as
+      typeof import('@perspective-dev/viewer/column-format') & {setLensNumberLocale(locale:string):void};
+    formatters.setLensNumberLocale(currentLocale);
     const [perspective, viewer, wasm] = await Promise.all([
       import('@perspective-dev/client'),
       import('@perspective-dev/viewer'),

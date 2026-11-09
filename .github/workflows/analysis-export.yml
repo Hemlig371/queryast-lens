@@ -2,9 +2,9 @@ name: Analysis export compatibility
 on:
   workflow_dispatch:
   pull_request:
-    paths: ['src/analysis/**', 'scripts/build-analysis-export.mjs', 'scripts/patch-perspective-duckdb.mjs', 'tests/analysis/**', 'tests/browser/analysis-export*', 'tests/browser/analysis-column-settings.mjs', 'tests/browser/analysis-sql.mjs', 'tests/browser/datagrid-scroll.mjs', 'tests/browser/datagrid-probe.js', 'tests/verifyArrowCompression.py', 'package*.json', '.github/workflows/analysis-export.yml']
+    paths: ['src/analysis/**', 'scripts/build-analysis-export.mjs', 'scripts/patch-perspective-duckdb.mjs', 'scripts/patch-perspective-number-locale.mjs', 'tests/analysis/**', 'tests/browser/analysis-export*', 'tests/browser/analysis-column-settings.mjs', 'tests/browser/analysis-sql.mjs', 'tests/browser/datagrid-scroll.mjs', 'tests/browser/datagrid-probe.js', 'tests/verifyArrowCompression.py', 'package*.json', '.github/workflows/analysis-export.yml']
   push:
-    paths: ['src/analysis/**', 'scripts/build-analysis-export.mjs', 'scripts/patch-perspective-duckdb.mjs', 'tests/analysis/**', 'tests/browser/analysis-export*', 'tests/browser/analysis-column-settings.mjs', 'tests/browser/analysis-sql.mjs', 'tests/browser/datagrid-scroll.mjs', 'tests/browser/datagrid-probe.js', 'tests/verifyArrowCompression.py', 'package*.json', '.github/workflows/analysis-export.yml']
+    paths: ['src/analysis/**', 'scripts/build-analysis-export.mjs', 'scripts/patch-perspective-duckdb.mjs', 'scripts/patch-perspective-number-locale.mjs', 'tests/analysis/**', 'tests/browser/analysis-export*', 'tests/browser/analysis-column-settings.mjs', 'tests/browser/analysis-sql.mjs', 'tests/browser/datagrid-scroll.mjs', 'tests/browser/datagrid-probe.js', 'tests/verifyArrowCompression.py', 'package*.json', '.github/workflows/analysis-export.yml']
 permissions:
   contents: read
 jobs:
