@@ -26,10 +26,11 @@ test('public sizing API waits for SDK reconciliation, preserves manual widths an
 
 test('menu translation preserves command listeners, submenu source names and filenames',()=>{
   const dom=new JSDOM('<div></div>');const root=dom.window.document.querySelector('div')!.attachShadow({mode:'open'});
-  root.innerHTML='<div class="context-menu"><span class="context-menu-item">Export</span><span class="context-menu-item has-submenu">New<div><span class="dropdown-menu-item">Export</span></div></span></div><span class="dropdown-group-label">Current View</span><code>Export.csv</code>';
+  root.innerHTML='<div class="context-menu"><span class="context-menu-item">Export</span><span class="context-menu-item">Master</span><span class="context-menu-item">Detail</span><span class="context-menu-item has-submenu">New<div><span class="dropdown-menu-item">Export</span></div></span></div><span class="dropdown-group-label">Current View</span><code>Export.csv</code>';
   const item=root.querySelector('.context-menu-item')!;let clicks=0;item.addEventListener('click',()=>clicks++);
   translateMenu(root);translateMenu(root);item.dispatchEvent(new dom.window.MouseEvent('click'));
   assert.equal(item.textContent,'Экспорт');assert.equal(clicks,1);
+  assert.deepEqual(Array.from(root.querySelectorAll('.context-menu>.context-menu-item')).slice(1,3).map(node=>node.textContent),['Основная','Зависимая']);
   assert.equal(root.querySelector('.dropdown-menu-item')!.textContent,'Export');
   assert.equal(root.querySelector('code')!.textContent,'Export.csv');
   assert.equal(root.querySelector('.dropdown-group-label')!.textContent,'Текущее представление');dom.window.close();

@@ -19,8 +19,12 @@ export async function checkSqlDialog(page) {
   assert.match(sql,/CREATE OR REPLACE TEMPORARY TABLE/i);
   assert.equal(await dialog.getByRole('button',{name:/^(SQL данных|Data SQL)$/}).count(),0);
   await dialog.getByRole('button',{name:/^(Закрыть|Close)$/}).click();
+  await page.locator('perspective-viewer').locator('#debug_tabbar_tab').click();
   await page.evaluate(async()=>{
     const viewer=document.querySelector('perspective-viewer');
+    const copy=viewer.shadowRoot.querySelector('#debug-panel-copy');
+    if(!copy || getComputedStyle(copy).fontSize!=='11px' || getComputedStyle(copy).textTransform!=='none')throw Error('JSON controls lost compact styles');
+    if(!getComputedStyle(viewer).fontFamily.includes('Segoe UI'))throw Error('Viewer base font was overridden by its theme');
     const localized=getComputedStyle(viewer).getPropertyValue('--psp-label--export-button--content');
     if(document.querySelector('.lens-explore').dataset.language==='ru'&&!localized.includes('Экспорт'))throw Error('Russian export label is missing');
     await viewer.restore(window.__sqlTestOriginal);delete window.__sqlTestOriginal;await viewer.flush();

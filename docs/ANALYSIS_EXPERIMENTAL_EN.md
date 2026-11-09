@@ -208,3 +208,8 @@ viewport replanning. The browser check allows merged total headers and verifies
 metric visibility. Technical SQL formatting retains the original SDK script if
 the sequence of lexical tokens changes beyond whitespace, comments or unquoted
 name case. Literals and quoted names must match exactly. Live queries are unchanged.
+
+The font-family setting `inherit` inherits the base font rather than naming one.
+RU labels for Master/Detail are «Основная»/«Зависимая». SQL replays active DuckDB
+View data on the unchanged source database; styling and chart renderer transforms
+are excluded. Nondeterministic expressions or changed sources can change results.

@@ -1,7 +1,7 @@
 const commands: Record<string,string> = {
   New:'Создать',Duplicate:'Дублировать','Derive Table':'Плоская таблица',
   Reset:'Сбросить',Export:'Экспорт',Copy:'Копировать',Maximize:'Развернуть',
-  Restore:'Восстановить',Close:'Закрыть',
+  Restore:'Восстановить',Close:'Закрыть',Master:'Основная',Detail:'Зависимая',
 };
 const headings: Record<string,string> = {
   'Save as':'Сохранить как','Current View':'Текущее представление',All:'Все данные',
@@ -57,8 +57,8 @@ export function installUiPolish(viewer: HTMLElement, language: string) {
       #editor,#textarea_editable,#line_numbers { font-family:ui-monospace,Consolas,monospace; }
       #theme_selector { padding-inline:4px!important; box-sizing:border-box; }
       #theme_selector option { padding:2px 4px; }
-      #debug-panel #debug-panel-controls { flex-wrap:wrap; gap:4px; }
-      #debug-panel #debug-panel-controls button { flex:0 0 auto; width:auto; padding:2px 6px; font-size:11px; text-transform:none; overflow:visible; text-overflow:clip; }
+      :host #debug-panel #debug-panel-controls { flex-wrap:wrap; gap:4px; }
+      :host #debug-panel #debug-panel-controls button[id] { flex:0 0 auto; width:auto; padding:2px 6px; font-size:11px; text-transform:none; overflow:visible; text-overflow:clip; }
     `;
     root.appendChild(style);
     let observer:MutationObserver|undefined;
