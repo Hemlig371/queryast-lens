@@ -5,7 +5,7 @@ use duckdb::Connection;
 use tauri::State;
 
 const MAX_IPC_BYTES: usize = 32 * 1024 * 1024;
-const MAX_ARROW_ROWS: usize = 100_000;
+const MAX_ARROW_ROWS: usize = 500_000;
 
 // The same function is exercised by native CI, including DDL and typed IPC.
 fn query_arrow_ipc(conn: &Connection, sql: &str) -> Result<Vec<u8>, String> {
@@ -27,7 +27,7 @@ fn query_arrow_ipc(conn: &Connection, sql: &str) -> Result<Vec<u8>, String> {
                 rows += batch.num_rows();
                 estimated_bytes += batch.get_array_memory_size();
                 if rows > MAX_ARROW_ROWS || estimated_bytes > MAX_IPC_BYTES {
-                    return Err("Analysis response exceeds 100,000 rows or 32 MiB. Filter or group the view before exporting.".to_string());
+                    return Err("Analysis response exceeds 500,000 rows or 32 MiB. Filter or group the view before exporting.".to_string());
                 }
                 writer.write(&batch).map_err(|e| e.to_string())?;
             }
@@ -108,7 +108,10 @@ mod tests {
     #[test]
     fn response_limits_do_not_truncate_or_break_the_connection() {
         let conn = connection();
-        assert!(query_arrow_ipc(&conn, "SELECT i FROM range(100001) t(i)").unwrap_err().contains("100,000"));
+        let bytes = query_arrow_ipc(&conn, "SELECT i FROM range(500000) t(i)").unwrap();
+        let reader = StreamReader::try_new(Cursor::new(bytes), None).unwrap();
+        assert_eq!(reader.map(|batch| batch.unwrap().num_rows()).sum::<usize>(), 500_000);
+        assert!(query_arrow_ipc(&conn, "SELECT i FROM range(500001) t(i)").unwrap_err().contains("500,000"));
         assert!(query_arrow_ipc(&conn, "SELECT repeat('x', 34000000) AS large").unwrap_err().contains("32 MiB"));
         assert!(query_arrow_ipc(&conn, "SELECT 1 AS still_usable").is_ok());
     }

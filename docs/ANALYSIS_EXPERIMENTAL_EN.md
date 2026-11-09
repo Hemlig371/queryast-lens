@@ -45,7 +45,7 @@ these separately after using the result. They do not belong to the live explorat
 Editor and Virtual Server share one DuckDB instance and connection. The source is
 not preloaded into JavaScript; DuckDBHandler requests computed windows/results.
 Native IPC uses the existing Tauri connection/mutex with a per-response limit of
-100,000 rows and 32 MiB, not a source-size limit. The transport changes no SET
+500,000 rows and 32 MiB, not a source-size limit. The transport changes no SET
 options; existing connection Arrow compatibility settings remain in place.
 
 - Perspective may lose BIGINT/DECIMAL precision even when IPC preserves it.
@@ -154,3 +154,7 @@ DuckDB expressions and some aggregates differ from the built-in HTML engine.
 A field removed from an axis may still exist in expressions. Formulas/metrics are
 not silently removed or substituted; SQL-expression/window HTML needs separate
 validation and has no general compatibility guarantee.
+
+Exports from the stock menu use the existing Lens file-saving path: the save dialog
+and filesystem in Tauri, Filesystem/Share on Android, and downloads on Web.
+The 32 MiB response limit remains independent of the 500,000-row native limit.

@@ -1,5 +1,6 @@
 import {pagedJsonBlob,sourceArrowIpc} from './exportPaged';
 import {bindHtmlReplay} from './htmlReplay';
+import {downloadFileWithFallback} from '../utils/exportUtils';
 export async function csvExportBlob(view: any, pageRows = 50_000, selection: any = {}) {
   const rows = await view.num_rows();
   const chunks: string[] = [];
@@ -39,14 +40,20 @@ export async function exportNativeMenuChoice(viewer: any, method: string, filena
     const html=data instanceof Blob?await data.text():data;
     if(typeof html!=='string')throw new Error('Perspective HTML export returned an unsupported value');
     const blob=new Blob([bindHtmlReplay(html)],{type:'text/html;charset=utf-8'});
-    downloadExportBlob(viewer,blob,filename);
+    await downloadFileWithFallback(blob,filename);
     return;
   }
   if(method==='plugin') {
     const data=await viewer.export({method,...options});
     const blob=data instanceof Blob?data:typeof data==='string'&&filename.endsWith('.txt')?new Blob([data],{type:'text/plain;charset=utf-8'}):undefined;
     if(!blob)throw new Error('Perspective plugin export returned an unsupported value');
-    downloadExportBlob(viewer,blob,filename);
+    await downloadFileWithFallback(blob,filename);
+    return;
+  }
+  if(method==='json-config') {
+    const data=await viewer.export({method,...options});
+    const blob=data instanceof Blob?data:new Blob([typeof data==='string'?data:JSON.stringify(data)],{type:'application/json'});
+    await downloadFileWithFallback(blob,filename);
     return;
   }
   if(!match)return viewer.download({method,...options});
@@ -67,15 +74,6 @@ export async function exportNativeMenuChoice(viewer: any, method: string, filena
       if(codec){const {compressArrowIpc}=await import('./arrowCompression');bytes=await compressArrowIpc(bytes,codec as 'lz4'|'zstd');}
       blob=new Blob([bytes],{type:'application/vnd.apache.arrow.stream'});
     }
-    downloadExportBlob(viewer,blob,filename);
+    await downloadFileWithFallback(blob,filename);
   } finally {if(scope==='all')await view?.delete();}
-}
-
-function downloadExportBlob(viewer: any, blob: Blob, filename: string) {
-  const document = viewer.ownerDocument;
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.download = filename; link.href = url; link.style.display = 'none';
-  document.body.appendChild(link); link.click(); link.remove();
-  setTimeout(()=>URL.revokeObjectURL(url),60_000);
 }

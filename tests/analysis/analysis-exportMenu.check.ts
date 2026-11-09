@@ -1,7 +1,15 @@
-import {test} from 'node:test';
+import {test,afterEach} from 'node:test';
 import assert from 'node:assert/strict';
 import {JSDOM} from 'jsdom';
 import {exportMethodForFilename, installExportMenuBridge, isResizeObserverNotice} from '../../src/analysis/exportMenu';
+
+const browserGlobals = ['window','document'].map(name => [name,Object.getOwnPropertyDescriptor(globalThis,name)] as const);
+afterEach(() => {
+ for (const [name,descriptor] of browserGlobals) {
+  if (descriptor) Object.defineProperty(globalThis,name,descriptor);
+  else delete (globalThis as any)[name];
+ }
+});
 
 test('native export filenames distinguish current view, all data, codecs and config',()=>{
   for (const [name,method] of [['demo.csv','csv'],['demo.all.csv','csv-all'],['demo.config.json','json-config'],['demo.all.zstd.arrow','arrow-zstd-all'],['demo.lz4.arrow','arrow-lz4'],['demo.png','plugin']]) {
@@ -27,9 +35,11 @@ function fixture(){
 }
 const tick=()=>new Promise(resolve=>setTimeout(resolve,0));
 
-test('click in shadow menu calls public download once and closes after success',async()=>{
+test('click in shadow menu calls public export once and closes after success',async()=>{
  const {dom,viewer,item}=fixture();const calls:any[]=[];let sdkCalls=0,closed=0;
- viewer.download=async(options:any)=>calls.push(options);
+ viewer.export=async(options:any)=>{calls.push(options);return '{}';};
+ (dom.window as any).__TAURI__={dialog:{save:async()=>null}};
+ Object.assign(globalThis,{window:dom.window,document:dom.window.document});
  const dispose=installExportMenuBridge(viewer,{start:()=>calls.push('start'),success:()=>calls.push('success'),error:e=>calls.push(e)});
  item.addEventListener('mousedown',()=>sdkCalls++);
  dom.window.document.addEventListener('keydown',e=>{if(e.key==='Escape')closed++;});
@@ -43,7 +53,7 @@ test('click in shadow menu calls public download once and closes after success',
 
 test('export rejection reaches error callback and does not report success',async()=>{
  const {dom,viewer,item}=fixture();const errors:unknown[]=[];let success=0;
- viewer.download=async()=>{throw Error('Arrow response exceeds 32 MiB');};
+ viewer.export=async()=>{throw Error('Arrow response exceeds 32 MiB');};
  const dispose=installExportMenuBridge(viewer,{start:()=>{},success:()=>success++,error:e=>errors.push(e)});
  item.dispatchEvent(new dom.window.MouseEvent('mousedown',{button:0,bubbles:true,composed:true,cancelable:true}));
  await tick();assert.equal(success,0);assert.match(String(errors[0]),/32 MiB/);dispose();dom.window.close();
@@ -52,7 +62,8 @@ test('export rejection reaches error callback and does not report success',async
 
 test('HTML keeps the SDK document and saves under the selected filename',async()=>{
  const {exportNativeMenuChoice}=await import('../../src/analysis/exportData');
- const dom=new JSDOM('<body></body>');const calls:any[]=[];const saved:any[]=[];
+ const dom=new JSDOM('<body></body>');
+ Object.assign(globalThis,{window:dom.window,document:dom.window.document});const calls:any[]=[];const saved:any[]=[];
  const oldCreate=URL.createObjectURL,oldRevoke=URL.revokeObjectURL,oldTimer=globalThis.setTimeout;
  URL.createObjectURL=blob=>{saved.push(blob);return 'blob:test';};URL.revokeObjectURL=()=>{};
  globalThis.setTimeout=((callback:any)=>{callback();return 0;}) as any;
@@ -69,7 +80,8 @@ test('HTML keeps the SDK document and saves under the selected filename',async()
 
 test('PNG preserves SDK pixels and the selected panel filename',async()=>{
  const {exportNativeMenuChoice}=await import('../../src/analysis/exportData');
- const dom=new JSDOM('<body></body>');const saved:any[]=[];const blob=new Blob([new Uint8Array([137,80,78,71])],{type:'image/png'});
+ const dom=new JSDOM('<body></body>');
+ Object.assign(globalThis,{window:dom.window,document:dom.window.document});const saved:any[]=[];const blob=new Blob([new Uint8Array([137,80,78,71])],{type:'image/png'});
  const oldCreate=URL.createObjectURL,oldRevoke=URL.revokeObjectURL,oldTimer=globalThis.setTimeout;
  URL.createObjectURL=value=>{saved.push(value);return 'blob:png';};URL.revokeObjectURL=()=>{};
  globalThis.setTimeout=((callback:any)=>{callback();return 0;}) as any;
