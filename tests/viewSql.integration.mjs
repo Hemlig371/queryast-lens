@@ -1,4 +1,5 @@
 import {installDefaultColumns} from '../src/analysis/defaultColumns.ts';
+import {installPivotMinMax} from '../src/analysis/pivotMinMax.ts';
 import assert from 'node:assert/strict';
 import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
@@ -8,6 +9,7 @@ import * as perspective from '@perspective-dev/client/dist/esm/perspective.js';
 import {client_runtime} from '@perspective-dev/client/registry';
 import {DuckDBHandler} from '@perspective-dev/client/virtual_servers/duckdb';
 import {ViewSqlCapture} from '../src/analysis/viewSql.ts';
+import {isolateReplaySql} from '../src/analysis/replaySql.ts';
 
 const require=createRequire(import.meta.url);
 await perspective.init({client:()=>readFile(require.resolve('@perspective-dev/client/dist/wasm/perspective-js.wasm'))});
@@ -25,9 +27,11 @@ conn.query(`CREATE TABLE demo AS SELECT i::INTEGER AS id,
  ['a  b','a b','a'||chr(9)||'b','a'||chr(10)||'b','a''  b'][1+i%5] AS "label  value"
  FROM range(12000) t(i)`);
 const capture=new ViewSqlCapture();
-const connection={query:async sql=>{try{const result=conn.query(sql);capture.record({sql});return result;}catch(e){capture.record({sql,error:String(e)});throw e;}},useUnsafe:async callback=>conn.useUnsafe((bindings,handle)=>callback({runQuery:(_h,sql)=>{const bytes=bindings.runQuery(handle,sql);capture.record({sql});return bytes;}},handle))};
+const executedSql=[];
+const connection={query:async sql=>{try{const result=conn.query(sql);executedSql.push(sql);capture.record({sql});return result;}catch(e){capture.record({sql,error:String(e)});throw e;}},useUnsafe:async callback=>conn.useUnsafe((bindings,handle)=>callback({runQuery:(_h,sql)=>{const bytes=bindings.runQuery(handle,sql);capture.record({sql});return bytes;}},handle))};
 const handler=new DuckDBHandler(connection);
 installDefaultColumns(handler);
+installPivotMinMax(handler,connection);
 const server=new (client_runtime().glue.VirtualServer)(capture.instrument(handler));
 let client;
 client=await perspective.make_client(async bytes=>client.handle_response((await server.handleRequest(bytes)).slice()),()=>{});
@@ -69,6 +73,25 @@ async function check(view,label){
  }
  console.log(label,JSON.stringify({rows,columns,sqlBytes:snapshot.sql.length}));
  return snapshot;
+}
+async function checkRange(config,referenceSql,label) {
+ const view=await table.view(config);views.push(view);
+ const start=executedSql.length;
+ const actual=await view.get_min_max('New Column 1');
+ const rangeSql=executedSql.slice(start).findLast(sql=>/^\s*SELECT\b/i.test(sql));
+ const row=conn.query(referenceSql).toArray()[0].toJSON();
+ assert.deepEqual(actual,[row.min,row.max],label);
+ if(fixtureDir&&rangeSql) {
+  const name=`case-${cases.length}`;cases.push({name,rows:1});
+  const definition=handler.sqlBuilder.tableMakeView('memory.demo',view.__unsafe_get_name(),await view.get_config());
+  const sql=isolateReplaySql([definition,rangeSql]).sql;
+  assert.equal(stable(conn.query(sql).toArray()),stable(conn.query(referenceSql).toArray()),label+' replay');
+  await writeFile(join(fixtureDir,`${name}.sql`),sql);
+  const bytes=conn.useUnsafe((bindings,handle)=>bindings.runQuery(handle,referenceSql)).slice();
+  await writeFile(join(fixtureDir,`${name}.expected.arrow`),bytes);
+ }
+ console.log(label,actual);
+ return view;
 }
 try{
  const draft=await handler.tableDescribe('memory.demo',{columns:[],expressions:{draft:''}});
@@ -116,6 +139,19 @@ try{
  const literal=await table.view({columns:['literal'],expressions:{literal:"'a  b'"}});views.push(literal);
  assert.deepEqual((await literal.to_json({start_row:0,end_row:3})).map(row=>row.literal),['a  b','a  b','a  b']);
  await check(literal,'expression preserves repeated spaces');
+ const metric={columns:['New Column 1'],expressions:{'New Column 1':'"quantity" * 2'},aggregates:{'New Column 1':'sum'}};
+ const rangeReference=(group,where='')=>`SELECT CAST(MIN(value) AS DOUBLE) AS min, CAST(MAX(value) AS DOUBLE) AS max FROM (SELECT SUM(quantity * 2) AS value FROM demo ${where} GROUP BY ${group})`;
+ const rangeView=await checkRange({...metric,group_by:['region'],split_by:['category']},rangeReference('region,category'),'computed split metric range excludes rollup totals');
+ await checkRange({...metric,group_by:['region'],split_by:['quantity'],group_rollup_mode:'flat'},rangeReference('region,quantity'),'flat numeric split range');
+ await checkRange({...metric,group_by:['region'],split_by:['category'],filter:[['category','==','Software']]},rangeReference('region,category',"WHERE category='Software'"),'single split range');
+ await checkRange({...metric,group_by:[],split_by:['category']},'SELECT 2::DOUBLE AS min,16::DOUBLE AS max','split-only range');
+ await checkRange({...metric,expressions:{'New Column 1':'NULL::INTEGER'},group_by:['region'],split_by:['category']},'SELECT NULL::DOUBLE AS min,NULL::DOUBLE AS max','all-null split range');
+ await checkRange({...metric,group_by:['region'],split_by:['category'],filter:[['quantity','>',999]]},'SELECT NULL::DOUBLE AS min,NULL::DOUBLE AS max','empty split range');
+ const liveId=rangeView.__unsafe_get_name();
+ assert.equal(Number(conn.query(`SELECT count(*) AS n FROM duckdb_tables() WHERE temporary AND table_name='${liveId}'`).toArray()[0].toJSON().n),1);
+ await rangeView.delete();views.splice(views.indexOf(rangeView),1);
+ assert.equal(Number(conn.query(`SELECT count(*) AS n FROM duckdb_tables() WHERE temporary AND table_name='${liveId}'`).toArray()[0].toJSON().n),0);
+ console.log('Live temporary View exists in DuckDB and is removed on View.delete().');
  if(fixtureDir)await writeFile(join(fixtureDir,'cases.json'),JSON.stringify(cases));
  console.log('SQL replay verified twice in the shared editor connection; live Views intact and unrelated Views excluded.');
 }finally{

@@ -1,4 +1,5 @@
 import {installDefaultColumns} from './defaultColumns';
+import {installPivotMinMax} from './pivotMinMax';
 import {installMenuBounds} from './menuBounds';
 import {installDatagridViewport} from './datagridViewport';
 import {installViewerBackground} from './viewerBackground';
@@ -81,6 +82,7 @@ const Explore = forwardRef<ExploreHandle, {
       const { client_runtime } = await import('@perspective-dev/client/registry');
       handler = new DuckDBHandler(conn);
       installDefaultColumns(handler);
+      installPivotMinMax(handler, conn);
       const trackedHandler = capture.instrument(handler);
       // Viewer may own the client WASM runtime: use its initialized constructor.
       const runtime = client_runtime()!.glue;

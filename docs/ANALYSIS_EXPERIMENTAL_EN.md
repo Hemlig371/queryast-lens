@@ -176,3 +176,17 @@ tabs, newlines and apostrophes, and checks quoted column names and expressions
 with significant spaces. The same fixtures feed native Arrow CI.
 The unused ZSTD URL override and unused ResizeObserver notice filter/test are
 removed. The ZSTD codec and lazy WASM loading remain available.
+
+## Split By column ranges
+
+Opening a split metric's settings computes MIN/MAX over its physical
+`split-value|metric` columns in DuckDB. ROLLUP subtotal rows are excluded using
+the SDK's grouping semantics; empty/all-NULL data produces an empty range.
+Table values and Viewer settings are unchanged. Unsplit metrics keep the stock
+handler. SQL integration fixtures also cover these ranges for native Arrow CI.
+
+Internal temporary tables live in the shared DuckDB connection while their
+View is alive. Returning to the editor retains the exploration; closing it
+releases its Views. Returning does not automatically refresh the schema tree.
+Refresh the tree or query
+`SELECT database_name, schema_name, table_name FROM duckdb_tables() WHERE temporary AND NOT internal;`.
