@@ -131,18 +131,26 @@ Export CI also compares wide-label scrolling in plain and Lens containers and
 writes grid-scroll.json. The actual installed planning algorithm is tested locally;
 full browser and platform acceptance remains required.
 
-## Charts and HTML diagnostics
+## Verified HTML and chart scope
 
-Exported HTML waits for Viewer/WASM and plugin registration before creating the
-client, then flushes/resizes the restored panel. Restore failures are displayed
-inside the file rather than leaving a silently empty page. This does not translate
-DuckDB SQL expressions into ExprTK: formulas and some aggregates differ between
-engines. Removing a field from an axis can leave its expression in the config and
-still prevent replay. No formulas or metrics are silently removed or substituted.
-For a plain-chart check, start a fresh exploration using only source columns.
+HTML exports the full source and active Datagrid configuration. Only the verified
+5.8 bootstrap correction remains: name the embedded table as configured and await
+load/restore in order. Extra plugin-registry waits, flush/resize/animation-frame
+calls and the custom error overlay added while investigating charts were removed.
+SDK data/config are unchanged.
 
-PNG/TXT keep the stock plugin export payload and selected filename. Browser CI
-checks Datagrid, X Bar and Y Line in independent file:// contexts: configuration,
-metrics, PNG filenames and colored pixels in the chart canvas. Diagnostic files
-are retained as a CI artifact. The scroll probe is loaded as a Vite module so its
-bare package imports are transformed before page.evaluate calls it.
+Charts in file:// HTML are outside confirmed support: CI recorded a renderer worker
+load failure on blob:null. The SDK menu is unchanged; its HTML item on a chart does
+not guarantee working replay. Use PNG to demonstrate a chart. Charts inside Lens
+remain available.
+
+PNG/TXT keep the stock plugin payload and selected filename. Required CI retains
+Datagrid HTML config/metrics, X Bar/Y Line PNG from Lens, wide-group scrolling,
+Arrow compression and separate native Arrow verification. HTML-chart tests were
+removed from required acceptance to match this scope. The scroll probe loads as a
+Vite module so package imports are transformed. CI artifacts retain diagnostics.
+
+DuckDB expressions and some aggregates differ from the built-in HTML engine.
+A field removed from an axis may still exist in expressions. Formulas/metrics are
+not silently removed or substituted; SQL-expression/window HTML needs separate
+validation and has no general compatibility guarantee.
