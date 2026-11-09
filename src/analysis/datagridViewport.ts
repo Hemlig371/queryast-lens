@@ -21,24 +21,31 @@ export function installInitialColumnWidths(grid: any) {
     }
     if (!pending.size || frame) return;
     frame = win.requestAnimationFrame(async () => {
-      // The SDK reconciles persisted widths during draw. Apply defaults only
-      // AFTER that draw, so it cannot discard them as stale projection widths.
-      await grid.flush();
-      if (disposed) return;
-      const current = grid.saveColumnSizes();
-      let changed = false;
-      for (const [key, width] of pending) if (current[key] === undefined) {
-        current[key] = width;
-        changed = true;
+      try {
+        // The SDK reconciles persisted widths during draw. Apply defaults only
+        // AFTER that draw, so it cannot discard them as stale projection widths.
+        await grid.flush();
+        if (disposed) return;
+        const current = grid.saveColumnSizes();
+        let changed = false;
+        for (const [key, width] of pending) if (current[key] === undefined) {
+          current[key] = width;
+          changed = true;
+        }
+        pending.clear();
+        if (changed) {
+          grid.restoreColumnSizes(current);
+          await grid.draw({invalid_viewport:true});
+          // Replan horizontal virtualization with the newly measured widths.
+          if (!disposed) await grid.draw({invalid_viewport:true});
+        }
+      } catch (error) {
+        pending.clear();
+        if (!disposed) console.warn('Analysis column sizing', error);
+      } finally {
+        // A failed/replaced View must not lock all future sizing passes.
+        frame = 0;
       }
-      pending.clear();
-      if (changed) {
-        grid.restoreColumnSizes(current);
-        await grid.draw({invalid_viewport:true});
-        // Replan horizontal virtualization with the newly measured widths.
-        if (!disposed) await grid.draw({invalid_viewport:true});
-      }
-      frame = 0;
     });
   });
   return () => { disposed = true; pending.clear(); win.cancelAnimationFrame(frame); unsubscribe(); };

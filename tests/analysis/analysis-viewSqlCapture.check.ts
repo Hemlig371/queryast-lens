@@ -9,3 +9,23 @@ test('expression validation errors remain local to the expression editor',async(
  assert.equal(capture.validating,false);await handler.tableSize();
  assert.deepEqual(seen,[true,false]);
 });
+
+
+test('a failed queued operation does not block later View operations',async()=>{
+ const capture=new ViewSqlCapture();const order:string[]=[];
+ let release!:()=>void;
+ const blocked=new Promise<void>(resolve=>{release=resolve;});
+ const handler=capture.instrument({
+  tableMakeView:async(_table:string,view:string)=>{
+   order.push(view);
+   if(view==='bad'){await blocked;throw Error('invalid projection');}
+   return view;
+  },
+ });
+ const bad=handler.tableMakeView('source','bad');
+ const rejected=assert.rejects(bad,/invalid projection/);
+ const good=handler.tableMakeView('source','good');
+ await Promise.resolve();assert.deepEqual(order,['bad']);
+ release();await rejected;assert.equal(await good,'good');
+ assert.deepEqual(order,['bad','good']);assert.equal(capture.validating,false);
+});

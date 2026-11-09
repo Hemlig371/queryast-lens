@@ -13,6 +13,7 @@ await conn.query(`CREATE TABLE dashboard_source AS SELECT i::INTEGER AS id,
  ['Москва','Казань','Пермь'][1+i%3] AS region,
  DATE '2025-01-01'+(i%30)::INTEGER AS day,
  (i%100)/10.0 AS amount, (1+i%8)::INTEGER AS quantity FROM range(12000) t(i)`);
+await conn.query('CREATE TABLE dashboard_filter_source AS SELECT DISTINCT region FROM dashboard_source');
 createRoot(document.getElementById('root')).render(React.createElement(Explore,{source:{database:'memory',schema:'main',table:'dashboard_source',connection:':memory:'}}));
 </script></body></html>
 
