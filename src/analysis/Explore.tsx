@@ -114,7 +114,7 @@ const Explore = forwardRef<ExploreHandle, {
       await viewer.resetThemes();
       const saved = savedConfig.current;
       if (saved?.key === key) await viewer.restoreWorkspace(saved.config);
-      else await viewer.restore({ plugin: 'Datagrid', settings: true, theme: defaultTheme, title: selected.table });
+      else await viewer.restore({ plugin: 'Datagrid', plugin_config: {font_family:'Segoe UI',font_size:13}, settings: true, theme: defaultTheme, title: selected.table });
       if (cancelled) return;
       viewerRef.current = viewer;
       sqlCapture.current = {capture,handler};

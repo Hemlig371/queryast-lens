@@ -4,6 +4,7 @@ export async function checkSqlDialog(page) {
   const counts=await page.evaluate(async()=>{
     const viewer=document.querySelector('perspective-viewer');
     const original=await viewer.save();
+    if(original.plugin_config?.font_family!=='Segoe UI' || original.plugin_config?.font_size!==13)throw Error('Explicit default Datagrid font is missing');
     await viewer.restore({plugin:'Datagrid',columns:['quantity'],group_by:['region','day'],split_by:[],aggregates:{quantity:'sum'},settings:true});
     await viewer.flush();
     const view=await viewer.getView();const full=await view.num_rows();

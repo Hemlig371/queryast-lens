@@ -197,7 +197,7 @@ formatter syntax retains the original script. Common RU labels use CSS variables
 context menu commands use a scoped content observer disposed on exploration close.
 User names, SQL terms and long messages remain unchanged. Button captions fit their
 text and export menu labels retain their left edge. Initial automatic column widths
-are capped at 320 px (less on narrow screens). Manual widths take priority and may
+are capped at 480 px (less on narrow screens). Manual widths take priority and may
 exceed this default. Themes and settings panel dimensions remain unchanged.
 
 The exploration uses Segoe UI 13 px with Arial/sans-serif fallback. JSON buttons
@@ -213,3 +213,8 @@ The font-family setting `inherit` inherits the base font rather than naming one.
 RU labels for Master/Detail are «Основная»/«Зависимая». SQL replays active DuckDB
 View data on the unchanged source database; styling and chart renderer transforms
 are excluded. Nondeterministic expressions or changed sources can change results.
+
+New explorations explicitly set Datagrid `font_family: "Segoe UI"` and
+`font_size: 13`. Restored workspace settings keep the user selection. Initial
+auto widths are capped at 480 px or 67.5% of the grid on narrow screens; manual
+widths remain unrestricted. The main Lens interface is unchanged.

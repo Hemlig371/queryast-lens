@@ -37,10 +37,10 @@ export async function runDatagridProbe({lens,patched}) {
     const metric=grid.querySelector('tbody td')?.getBoundingClientRect();
     const bounds=grid.getBoundingClientRect();
     const metricsVisible=metric && metric.left<bounds.right && metric.right>bounds.left;
-    if(patched && !(initialWidth>0 && initialWidth<=320 && naturalCells>0 && metricsVisible))throw Error('Long automatic header hides metrics: '+JSON.stringify({initialWidth,labelWidth:label?.offsetWidth,naturalCells,metricsVisible,sizes:initialSizes}));
-    grid.restoreColumnSizes({...grid.saveColumnSizes(),[headerKey]:patched?Math.max(400,grid.clientWidth*0.6):Math.max(5000,grid.clientWidth*3)});
+    if(patched && !(initialWidth>0 && initialWidth<=480 && naturalCells>0 && metricsVisible))throw Error('Long automatic header hides metrics: '+JSON.stringify({initialWidth,labelWidth:label?.offsetWidth,naturalCells,metricsVisible,sizes:initialSizes}));
+    grid.restoreColumnSizes({...grid.saveColumnSizes(),[headerKey]:patched?Math.max(600,grid.clientWidth*0.6):Math.max(5000,grid.clientWidth*3)});
     const manualWidth=grid.saveColumnSizes()[headerKey];
-    if(patched && !(manualWidth>320))throw Error('Manual column width was restricted');
+    if(patched && !(manualWidth>480))throw Error('Manual column width was restricted');
     const samples=[];
     for(const ratio of [0,0.5,1,0]){
      grid.scrollLeft=(grid.scrollWidth-grid.clientWidth)*ratio;

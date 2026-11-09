@@ -9,7 +9,7 @@ export function installInitialColumnWidths(grid: any) {
   const unsubscribe = grid.addStyleListener(() => {
     if (!grid.clientWidth) return;
     const sizes = grid.saveColumnSizes();
-    const maximum = Math.min(320, Math.max(80, grid.clientWidth * 0.45));
+    const maximum = Math.min(480, Math.max(80, grid.clientWidth * 0.675));
     for (const cell of grid.querySelectorAll('th,td')) {
       const meta = grid.getMeta(cell);
       const key = meta?.size_key;

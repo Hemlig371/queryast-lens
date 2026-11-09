@@ -19,7 +19,7 @@ test('public sizing API waits for SDK reconciliation, preserves manual widths an
   const dispose=installInitialColumnWidths(grid);listener();
   assert.equal(sizes[0],undefined,'Width is not injected during SDK style reconciliation');
   await frames.shift()();
-  assert.equal(sizes[0],320);assert.equal(sizes[1],900);
+  assert.equal(sizes[0],480);assert.equal(sizes[1],900);
   sizes[0]=720;listener();assert.equal(sizes[0],720);
   dispose();assert.equal(removed,true);dom.window.close();
 });
