@@ -1,3 +1,6 @@
+import {wideTableSql,wideMetrics,wideRows} from './fixtures/analysis-wide.mjs';
+import {csvExportBlob} from '../src/analysis/exportData.ts';
+import {pagedJsonBlob,sourceArrowIpc} from '../src/analysis/exportPaged.ts';
 import {installDefaultColumns} from '../src/analysis/defaultColumns.ts';
 import {installPivotMinMax} from '../src/analysis/pivotMinMax.ts';
 import assert from 'node:assert/strict';
@@ -151,6 +154,93 @@ try{
  await checkRange({...metric,group_by:[],split_by:['category']},'SELECT 2::DOUBLE AS min,16::DOUBLE AS max','split-only range');
  await checkRange({...metric,expressions:{'New Column 1':'NULL::INTEGER'},group_by:['region'],split_by:['category']},'SELECT NULL::DOUBLE AS min,NULL::DOUBLE AS max','all-null split range');
  await checkRange({...metric,group_by:['region'],split_by:['category'],filter:[['quantity','>',999]]},'SELECT NULL::DOUBLE AS min,NULL::DOUBLE AS max','empty split range');
+ // Separate source tables can share a filter key without copying rows into JS.
+ conn.query('CREATE TABLE filter_source AS SELECT DISTINCT region FROM demo');
+ const filterTable=await client.open_table('memory.filter_source');
+ const master=await filterTable.view({columns:['region']});
+ try {
+   const allMaster=await master.to_json();
+   assert.equal(allMaster.length,4);
+   for(const region of allMaster.map(row=>row.region)) {
+     const detail=await table.view({columns:['quantity'],group_by:['region'],filter:[['region','==',region]],aggregates:{quantity:'sum'}});
+     try {
+       const result=await detail.to_json();
+       const expected=conn.query(`SELECT SUM(quantity) AS n FROM demo WHERE region='${region.replaceAll("'","''")}'`).toArray()[0].toJSON().n;
+       assert.equal(Number(result.find(row=>!row.__ROW_PATH__.length).quantity),Number(expected));
+       assert.ok(result.every(row=>!row.__ROW_PATH__.length||row.__ROW_PATH__[0]===region));
+     } finally { await detail.delete(); }
+   }
+   assert.deepEqual(await master.to_json(),allMaster,'Filtering detail must leave master data intact');
+ } finally { await master.delete();filterTable.free();conn.query('DROP TABLE filter_source'); }
+ console.log('Cross-table filter keys: 4 detail aggregates match SQL; master source unchanged.');
+ // Export the filtered View in small pages and compare every format with SQL.
+ const filteredExport=await table.view({columns:['id','region','quantity'],filter:[['region','==','Москва']],sort:[['id','asc']]});
+ try {
+   const expected=conn.query("SELECT id,region,quantity FROM demo WHERE region='Москва' ORDER BY id");
+   const json=JSON.parse(await (await pagedJsonBlob(filteredExport,false,137)).text());
+   assert.deepEqual(json.id,expected.toArray().map(row=>row.toJSON().id));
+   const ndjson=(await (await pagedJsonBlob(filteredExport,true,137)).text()).trim().split('\n').map(JSON.parse);
+   assert.equal(stable(ndjson.map(row=>({toJSON:()=>row}))),stable(expected.toArray()));
+   const arrow=tableFromIPC(await sourceArrowIpc(filteredExport,137));
+   assert.equal(stable(arrow.toArray()),stable(expected.toArray()));
+   const selected=tableFromIPC(await sourceArrowIpc(filteredExport,3,{start_row:2,end_row:8,start_col:0,end_col:2}));
+   assert.equal(selected.numRows,6);assert.equal(selected.numCols,2);
+   assert.deepEqual(selected.toArray().map(row=>row.toJSON().id),expected.toArray().slice(2,8).map(row=>row.toJSON().id));
+   const csv=await (await csvExportBlob(filteredExport,137)).text();
+   assert.equal(csv.trim().split('\n').length,expected.numRows+1);
+   const header=csv.slice(0,csv.indexOf('\n')+1);
+   assert.equal(csv.split(header).length,2,'CSV header must occur once');
+ } finally {await filteredExport.delete();}
+ console.log('Filtered paged CSV/JSON/NDJSON/Arrow exports match SQL (3000 rows, pages of 137).');
+ const emptyExport=await table.view({columns:['id','quantity'],filter:[['quantity','>',999]]});
+ try {
+   assert.equal(tableFromIPC(await sourceArrowIpc(emptyExport,3)).numRows,0);
+   const json=JSON.parse(await (await pagedJsonBlob(emptyExport,false,3)).text());
+   assert.deepEqual(json,{id:[],quantity:[]});
+   assert.equal(await (await pagedJsonBlob(emptyExport,true,3)).text(),'');
+   assert.equal((await (await csvExportBlob(emptyExport,3)).text()).trim().split('\n').length,1);
+ }finally{await emptyExport.delete();}
+ console.log('Selected-window Arrow and empty CSV/JSON/NDJSON/Arrow exports verified.');
+ // Recreate a View after changing the source: no reuse of old materialized data.
+ conn.query('CREATE TABLE refresh_source AS SELECT 1::INTEGER AS id');
+ const refreshTable=await client.open_table('memory.refresh_source');
+ const oldView=await refreshTable.view({columns:['id']});
+ assert.equal(await oldView.num_rows(),1);await oldView.delete();
+ conn.query('INSERT INTO refresh_source VALUES (2),(3)');
+ const freshView=await refreshTable.view({columns:['id']});
+ assert.equal(await freshView.num_rows(),3);await freshView.delete();refreshTable.free();conn.query('DROP TABLE refresh_source');
+ console.log('Reopening a View after a source update rereads all rows.');
+ // The same wide synthetic source is used by the browser stress scenario.
+ conn.query(wideTableSql);
+ assert.equal(conn.query('SELECT * FROM dashboard_wide LIMIT 0').schema.fields.length,36);
+ const wideTable=await client.open_table('memory.dashboard_wide');
+ assert.equal(await wideTable.size(),wideRows);
+ const wideIds=await Promise.all([32,24,16,8,4,1].map(async count=>{
+   const view=await wideTable.view({columns:wideMetrics.slice(0,count),group_by:['region','day'],split_by:['category'],aggregates:Object.fromEntries(wideMetrics.slice(0,count).map(name=>[name,'sum']))});
+   const id=view.__unsafe_get_name();
+   try {
+     const total=(await view.to_json({start_row:0,end_row:1}))[0];
+     const reference=conn.query('SELECT category,SUM(metric_00) AS value FROM dashboard_wide GROUP BY category').toArray().map(row=>row.toJSON());
+     for(const row of reference)assert.equal(Number(total[row.category+'|metric_00']),Number(row.value));
+   }finally{await view.delete();}
+   return id;
+ }));
+ const wideRemaining=new Set(conn.query('SELECT table_name FROM duckdb_tables() WHERE temporary').toArray().map(row=>row.toJSON().table_name));
+ assert.ok(wideIds.every(id=>!wideRemaining.has(id)));
+ wideTable.free();conn.query('DROP TABLE dashboard_wide');
+ console.log('Wide source: 50000 rows, 36 columns, 6 concurrent pivot projections match SQL and release temporary Views.');
+ // Rapid requests must drain and release every temporary View.
+ const burst=await Promise.all(Array.from({length:16},async(_,i)=>{
+   const columns=i%2?['quantity']:['revenue','quantity'];
+   const view=await table.view({columns,group_by:['region'],split_by:i%3?[]:['category']});
+   const id=view.__unsafe_get_name();
+   try { assert.ok((await view.to_json()).length>0); }
+   finally { await view.delete(); }
+   return id;
+ }));
+ const remaining=new Set(conn.query('SELECT table_name FROM duckdb_tables() WHERE temporary').toArray().map(row=>row.toJSON().table_name));
+ assert.ok(burst.every(id=>!remaining.has(id)),'Deleted burst Views must release their temporary tables');
+ console.log('16 concurrent View create/read/delete operations drained; temporary tables released.');
  const liveId=rangeView.__unsafe_get_name();
  assert.equal(Number(conn.query(`SELECT count(*) AS n FROM duckdb_tables() WHERE temporary AND table_name='${liveId}'`).toArray()[0].toJSON().n),1);
  await rangeView.delete();views.splice(views.indexOf(rangeView),1);

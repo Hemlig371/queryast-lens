@@ -26,6 +26,8 @@ const Explore = forwardRef<ExploreHandle, {
   source: AnalysisSource; mode?: AnalysisMode; theme?: 'light' | 'dark'; visible?: boolean; onBack?: () => void; onClose?: () => void; formatSql?: (sql: string) => Promise<string>;
 }>(function Explore({ source, mode = 'wasm', theme = 'light', visible = true, onBack, onClose, formatSql }, ref) {
   const selected = source;
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
   const [revision, setRevision] = useState(0);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
@@ -163,15 +165,6 @@ const Explore = forwardRef<ExploreHandle, {
     return () => { void dispose(); };
   }, [key, revision]);
 
-  async function returnToEditor() {
-    setBusy(true);
-    try {
-      await viewerRef.current?.flush();
-      onBack?.();
-    } catch (e) { setError(String(e)); }
-    finally { setBusy(false); }
-  }
-
   async function showViewSql() {
     const viewer = viewerRef.current;
     const tracking = sqlCapture.current;
@@ -200,7 +193,7 @@ const Explore = forwardRef<ExploreHandle, {
       }
       if (sqlCapture.current !== tracking || viewerRef.current !== viewer) return;
       setSqlSnapshot({sql});
-      sqlDialog.current?.showModal();
+      if (visibleRef.current) sqlDialog.current?.showModal();
     } catch (e) { setError(`${text('SQL представления', 'View SQL')}: ${String(e)}`); }
     finally { setSqlBusy(false); }
   }
@@ -217,7 +210,8 @@ const Explore = forwardRef<ExploreHandle, {
 
   return <section style={visible ? undefined : {display: 'none'}} aria-hidden={!visible} className="lens-explore" data-theme={theme} data-language={currentLang} aria-label={text('Исследование данных', 'Explore data')}>
     <header className="explore-toolbar">
-      {onBack ? <button disabled={busy || sqlBusy} onClick={() => void returnToEditor()}>← {text('В редактор', 'Back to editor')}</button> : <strong>QueryAST Lens</strong>}
+      {/* Hiding retains the Viewer; navigation must not wait for rendering or SQL. */}
+      {onBack ? <button onClick={onBack}>← {text('В редактор', 'Back to editor')}</button> : <strong>QueryAST Lens</strong>}
       {source && <span className="explore-source" title={tablePath([source.database, source.schema, source.table])}>{source.schema}.{source.table}</span>}
       {selected && <button disabled={busy || sqlBusy} onClick={() => void showViewSql()} title={text('SQL данных активной вкладки Viewer', 'SQL for the active Viewer tab')}>{sqlBusy ? '…' : text('SQL представления', 'View SQL')}</button>}
       <span className="explore-status" role={error ? 'alert' : 'status'} title={error || status}>
