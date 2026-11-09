@@ -2,7 +2,7 @@
   --explore-bg:#e2e8f0; --explore-panel:#f1f5f9; --explore-fg:#1e293b;
   --explore-viewer-bg:#fff; --explore-muted:#64748b; --explore-border:#cbd5e1; --explore-hover:#e2e8f0;
   position:fixed; inset:0 auto auto 0; width:calc(100vw / var(--zoom-scale,1)); height:calc(100dvh / var(--zoom-scale,1)); z-index:100; display:grid; grid-template-rows:38px minmax(0,1fr);
-  background:var(--explore-bg); color:var(--explore-fg); font-family:inherit; font-size:var(--text-xs,0.75rem);
+  background:var(--explore-bg); color:var(--explore-fg); font-family:"Segoe UI",Arial,sans-serif; font-size:13px;
 }
 .lens-explore[data-theme=dark] {--explore-viewer-bg:#242526; --explore-bg:#172033; --explore-panel:#263345; --explore-fg:#e2e8f0; --explore-muted:#94a3b8; --explore-border:#475569; --explore-hover:#334155; color-scheme:dark;}
 .explore-toolbar {display:flex; align-items:center; gap:8px; min-width:0; padding:0 10px; background:var(--explore-panel); border-bottom:1px solid var(--explore-border); overflow-x:auto;}
@@ -14,7 +14,7 @@
 .explore-status {margin-left:auto; min-width:0; flex:1; text-align:right; color:var(--explore-muted); white-space:nowrap; text-overflow:ellipsis; overflow:hidden;}
 .explore-status[role=alert] {color:#ef4444;}
 .explore-body,.explore-viewer {position:relative; width:100%; height:100%; min-width:0; min-height:0; background:var(--explore-viewer-bg);}
-.explore-viewer perspective-viewer {position:absolute; inset:0; display:block; width:100%; height:100%; box-sizing:border-box; background:var(--psp--background-color,var(--explore-viewer-bg)); font-family:inherit; font-size:14px; --psp-button--font-size:14px; --psp-column-selector--font-size:14px; border:0; border-radius:0;}
+.explore-viewer perspective-viewer {position:absolute; inset:0; display:block; width:100%; height:100%; box-sizing:border-box; background:var(--psp--background-color,var(--explore-viewer-bg)); font-family:"Segoe UI",Arial,sans-serif; font-size:13px; --psp-button--font-size:13px; --psp-column-selector--font-size:13px; border:0; border-radius:0;}
 .explore-spinner {width:16px; height:16px; animation:explore-spin 1s linear infinite;}
 @keyframes explore-spin {to{transform:rotate(360deg);}}
 .explore-sql-dialog {box-sizing:border-box; position:fixed; inset:0; margin:auto; width:min(1000px,calc(94vw / var(--zoom-scale,1))); height:min(740px,calc(86dvh / var(--zoom-scale,1))); padding:14px; border:1px solid var(--explore-border); border-radius:8px; background:var(--explore-panel); color:var(--explore-fg); font:inherit; box-shadow:0 16px 60px #0005;}
@@ -26,6 +26,8 @@
 .explore-sql-dialog textarea {box-sizing:border-box; width:100%; flex:1; min-height:100px; padding:12px; border:1px solid var(--explore-border); border-radius:4px; background:var(--explore-bg); color:var(--explore-fg); resize:none; font:inherit; font-family:var(--font-mono,ui-monospace,Consolas,monospace); line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere;}
 .explore-sql-dialog footer button {border-color:var(--explore-border);}
 .explore-sql-dialog button.is-copied {color:#34d399;}
-.lens-explore perspective-export-menu,.lens-explore perspective-copy-menu {box-sizing:border-box; font-size:14px;}
+.lens-explore perspective-export-menu,.lens-explore perspective-copy-menu {box-sizing:border-box; font-size:13px;}
 
 .explore-body {padding:8px; box-sizing:border-box;}
+
+.lens-explore perspective-viewer { --psp-interface-monospace--font-family:"Segoe UI",Arial,sans-serif; }

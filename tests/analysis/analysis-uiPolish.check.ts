@@ -1,19 +1,23 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {JSDOM} from 'jsdom';
-import {installUiPolish,translateMenu} from '../../src/analysis/uiPolish';
+import {installUiPolish,translateMenu,translateControls} from '../../src/analysis/uiPolish';
 import {installInitialColumnWidths} from '../../src/analysis/datagridViewport';
 
-test('initial auto widths are bounded, manual widths remain unrestricted, and recreated models are covered',()=>{
-  const sizes={auto:{0:1200,1:90,2:1500},override:{2:900},indices:{}};
-  const grid:any={clientWidth:800,_column_sizes:sizes,_create_table_model(){this.table_model={autosize_cells(){return 42;}};}};
-  grid._create_table_model();const original=grid.table_model.autosize_cells;
-  const dispose=installInitialColumnWidths(grid);
-  assert.equal(grid.table_model.autosize_cells(),42);
-  assert.equal(sizes.override[0],320);assert.equal(sizes.override[1],undefined);assert.equal(sizes.override[2],900);
-  sizes.override[0]=720;grid.table_model.autosize_cells();assert.equal(sizes.override[0],720);
-  grid._create_table_model();delete sizes.override[0];grid.table_model.autosize_cells();assert.equal(sizes.override[0],320);
-  dispose();assert.equal(grid.table_model.autosize_cells.toString(),original.toString());
+test('public sizing API caps initial measurements but preserves manual widths and disposes',()=>{
+  const dom=new JSDOM('<div><table><tr><th></th><td></td></tr></table></div>',{pretendToBeVisual:true});
+  const grid:any=dom.window.document.querySelector('div');let listener:any,removed=false;
+  let sizes:any={1:900};
+  Object.defineProperty(grid,'clientWidth',{value:800});
+  const cells=grid.querySelectorAll('th,td');
+  for(const cell of cells)Object.defineProperty(cell,'offsetWidth',{value:1500});
+  grid.getMeta=(cell:any)=>({size_key:cell===cells[0]?0:1});
+  grid.saveColumnSizes=()=>({...sizes});grid.restoreColumnSizes=(next:any)=>{sizes=next;};
+  grid.addStyleListener=(fn:any)=>{listener=fn;return ()=>{removed=true;};};
+  const dispose=installInitialColumnWidths(grid);listener();
+  assert.equal(sizes[0],320);assert.equal(sizes[1],900);
+  sizes[0]=720;listener();assert.equal(sizes[0],720);
+  dispose();assert.equal(removed,true);dom.window.close();
 });
 
 test('menu translation preserves command listeners, submenu source names and filenames',()=>{
@@ -28,11 +32,22 @@ test('menu translation preserves command listeners, submenu source names and fil
 });
 
 test('polish follows portal lifetime and cleanup removes its observers/styles',async()=>{
-  const dom=new JSDOM('<perspective-viewer></perspective-viewer>');const viewer=dom.window.document.querySelector('perspective-viewer')! as HTMLElement;
+  const dom=new JSDOM('<perspective-viewer></perspective-viewer>',{pretendToBeVisual:true});const viewer=dom.window.document.querySelector('perspective-viewer')! as HTMLElement;
   const root=viewer.attachShadow({mode:'open'});const dispose=installUiPolish(viewer,'ru');
   assert.match(root.querySelector('style')!.textContent!,/width:max-content/);
   const menu=dom.window.document.createElement('perspective-export-menu');const shadow=menu.attachShadow({mode:'open'});
   shadow.innerHTML='<span class="dropdown-group-label">Save as</span>';viewer.appendChild(menu);
   await new Promise(r=>setTimeout(r,0));assert.equal(shadow.querySelector('span')!.textContent,'Сохранить как');
   dispose();assert.equal(root.querySelector('style'),null);assert.equal(shadow.querySelector('style'),null);dom.window.close();
+});
+
+test('fixed expression controls translate without touching field names, source or errors',()=>{
+ const dom=new JSDOM('<div></div>');const root=dom.window.document.querySelector('div')!.attachShadow({mode:'open'});
+ root.innerHTML='<div id="expression-editor"><label class="item_title">Expression</label><textarea>Create</textarea><div class="error">Missing Column</div></div><button id="psp-expression-editor-button-save">Create</button><input value="New Column 1">';
+ translateControls(root);
+ assert.equal(root.querySelector('label')!.textContent,'Выражение');
+ assert.equal(root.querySelector('button')!.textContent,'Создать');
+ assert.equal(root.querySelector('textarea')!.value,'Create');
+ assert.equal(root.querySelector('.error')!.textContent,'Missing Column');
+ assert.equal(root.querySelector('input')!.value,'New Column 1');dom.window.close();
 });

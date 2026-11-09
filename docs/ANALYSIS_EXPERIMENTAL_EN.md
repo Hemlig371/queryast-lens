@@ -125,11 +125,10 @@ preserves pivots/filters/metrics rather than falling back to a flat table. Unkno
 SDK templates fail explicitly. CDN internet remains required; no DuckDB runtime
 is embedded. Cross-engine expression compatibility still needs validation.
 
-A scoped regular-table 0.9.2 workaround retains one existing data column when an
-oversized group header would otherwise produce an empty horizontal window. Values
-and configuration stay unchanged, horizontal virtualization remains enabled, and
-the instance override is removed when its Datagrid is removed. This internal API
-requires revalidation on SDK upgrades.
+Initial measured widths use regular-table's public `addStyleListener`, `getMeta`,
+`saveColumnSizes` and `restoreColumnSizes` APIs. No internal fields/methods are
+patched. Manual widths remain unrestricted. The subscription is released on
+plugin removal and exploration close.
 
 Export CI also compares wide-label scrolling in plain and Lens containers and
 writes grid-scroll.json. The actual installed planning algorithm is tested locally;
@@ -200,3 +199,6 @@ User names, SQL terms and long messages remain unchanged. Button captions fit th
 text and export menu labels retain their left edge. Initial automatic column widths
 are capped at 320 px (less on narrow screens). Manual widths take priority and may
 exceed this default. Themes and settings panel dimensions remain unchanged.
+
+The exploration uses Segoe UI 13 px with Arial/sans-serif fallback. JSON buttons
+retain their full labels and occupy additional rows when needed.

@@ -46,4 +46,23 @@
   --psp-label--scroll-lock--content: "Фиксация прокрутки";
   --psp-label--column-menus--content: "Меню столбцов";
   --psp-label--zebra-rows--content: "Чередование строк";
+  --psp-label--fg-mode--content: "Текст";
+  --psp-label--attributes-tab--content: "Выражение";
+  --psp-label--window-tab--content: "Окно";
+  --psp-label--group-format--content: "Формат";
+  --psp-label--minimum-integer-digits--content: "Минимум целых разрядов";
+  --psp-label--fractional-digits--content: "Дробные разряды";
+  --psp-label--significant-digits--content: "Значащие цифры";
+  --psp-label--rounding-increment--content: "Шаг округления";
+  --psp-label--rounding-priority--content: "Приоритет округления";
+  --psp-label--rounding-mode--content: "Режим округления";
+  --psp-label--trailing-zero-display--content: "Концевые нули";
+  --psp-label--notation--content: "Запись числа";
+  --psp-label--use-grouping--content: "Разделители разрядов";
+  --psp-label--sign-display--content: "Отображение знака";
+  --psp-label--link--content: "Ссылка";
+  --psp-label--aggregate-depth--content: "Глубина агрегации";
+  --psp-label--pin-button--content: "Сохранить";
+  --psp-label--derive-table--content: "Плоская таблица";
+  --psp-label--derive-table-title--content: "Создать таблицу из текущего представления";
 }

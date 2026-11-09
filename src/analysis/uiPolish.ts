@@ -1,5 +1,5 @@
 const commands: Record<string,string> = {
-  New:'Создать',Duplicate:'Дублировать','Derive Table':'Производная таблица',
+  New:'Создать',Duplicate:'Дублировать','Derive Table':'Плоская таблица',
   Reset:'Сбросить',Export:'Экспорт',Copy:'Копировать',Maximize:'Развернуть',
   Restore:'Восстановить',Close:'Закрыть',
 };
@@ -28,7 +28,17 @@ export function translateMenu(root: ShadowRoot) {
   }
 }
 
-/** Scoped styles and small portal-only observers; no grid subtree scanning. */
+/** Fixed controls only; never editor text, errors or user field names. */
+export function translateControls(root: ShadowRoot) {
+  const labels: Record<string,string> = {Expression:'Выражение',Create:'Создать',Save:'Сохранить',Reset:'Сбросить','Delete Column':'Удалить столбец'};
+  for (const element of root.querySelectorAll('#expression-editor .item_title,#psp-expression-editor-button-save,#psp-expression-editor-button-reset,#psp-expression-editor-button-delete')) {
+    const node=element.firstChild;
+    const value=node?.textContent?.trim()??'';
+    if(node?.nodeType===3 && labels[value])node.textContent=labels[value];
+  }
+}
+
+/** Scoped UI styles/labels; grid cells live outside these shadow roots. */
 export function installUiPolish(viewer: HTMLElement, language: string) {
   const win=viewer.ownerDocument.defaultView!;
   const installed=new Map<ShadowRoot,{style:HTMLStyleElement;observer?:MutationObserver}>();
@@ -36,27 +46,40 @@ export function installUiPolish(viewer: HTMLElement, language: string) {
     if(installed.has(root))return;
     const style=viewer.ownerDocument.createElement('style');
     style.textContent=menu ? `
-      :host { box-sizing:border-box; }
+      :host { box-sizing:border-box; font:13px "Segoe UI",Arial,sans-serif; padding:8px 12px!important; }
       .dropdown-group-label,.dropdown-group-sublabel,.dropdown-group-container>span,.no-results { margin-inline:0!important; }
-      code,input { font-size:inherit; }
+      code,input { font:inherit; }
+      input { box-sizing:border-box; padding:4px 8px!important; }
     ` : `
-      .hover-target .button>span:not(.icon) { width:max-content!important; min-width:41px; max-width:calc(100vw - 16px); overflow:visible!important; left:auto!important; right:0; translate:none!important; }
+      #status_bar .hover-target .button>span:not(.icon) { width:max-content!important; min-width:41px; max-width:calc(100vw - 16px); overflow:visible!important; left:50%!important; right:auto!important; translate:-50% 0!important; box-sizing:border-box; padding:6px 8px!important; line-height:18px!important; font:13px "Segoe UI",Arial,sans-serif!important; }
+      :host([part~="tab"]) { padding-inline:12px!important; font:13px "Segoe UI",Arial,sans-serif; }
+      .psp-tab-title { height:auto!important; line-height:18px!important; }
+      #editor,#textarea_editable,#line_numbers { font-family:ui-monospace,Consolas,monospace; }
+      #theme_selector { padding-inline:8px!important; box-sizing:border-box; }
+      #theme_selector option { padding:6px 8px; }
+      #debug-panel #debug-panel-controls { flex-wrap:wrap; gap:6px; }
+      #debug-panel #debug-panel-controls button { flex:1 0 auto; width:auto; padding:2px 8px; font-size:13px; text-transform:none; overflow:visible; text-overflow:clip; }
     `;
     root.appendChild(style);
     let observer:MutationObserver|undefined;
-    if(menu&&language==='ru') {
-      observer=new win.MutationObserver(()=>translateMenu(root));
+    if(!menu || language==='ru') {
+      const translate=()=>{
+        if(language==='ru')menu?translateMenu(root):translateControls(root);
+        if(root.host===viewer)refresh();
+      };
+      observer=new win.MutationObserver(translate);
       observer.observe(root,{childList:true,subtree:true,characterData:true});
-      translateMenu(root);
+      if(language==='ru')menu?translateMenu(root):translateControls(root);
     }
     installed.set(root,{style,observer});
   };
   const refresh=()=>{
     if(viewer.shadowRoot)attach(viewer.shadowRoot,false);
+    for(const scope of [viewer,viewer.shadowRoot])for(const tab of scope?.querySelectorAll('perspective-viewer-tab')??[])if(tab.shadowRoot)attach(tab.shadowRoot,false);
     for(const menu of viewer.querySelectorAll('perspective-context-menu,perspective-export-menu,perspective-copy-menu')) {
       if(menu.shadowRoot)attach(menu.shadowRoot,true);
     }
-    for(const [root,state] of installed)if(root.host!==viewer&&!viewer.contains(root.host)) {
+    for(const [root,state] of installed)if(root.host!==viewer&&!viewer.contains(root.host)&&!viewer.shadowRoot?.contains(root.host)) {
       state.observer?.disconnect();state.style.remove();installed.delete(root);
     }
   };
