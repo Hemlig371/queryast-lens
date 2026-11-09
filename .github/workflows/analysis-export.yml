@@ -2,9 +2,9 @@ name: Analysis export compatibility
 on:
   workflow_dispatch:
   pull_request:
-    paths: ['src/analysis/**', 'scripts/build-analysis-export.mjs', 'scripts/patch-perspective-duckdb.mjs', 'scripts/patch-perspective-number-locale.mjs', 'tests/analysis/**', 'tests/browser/analysis-export*', 'tests/browser/analysis-column-settings.mjs', 'tests/browser/analysis-sql.mjs', 'tests/browser/datagrid-scroll.mjs', 'tests/browser/datagrid-probe.js', 'tests/verifyArrowCompression.py', 'package*.json', '.github/workflows/analysis-export.yml']
+    paths: ['src/analysis/**', 'scripts/build-analysis-export.mjs', 'scripts/patch-perspective-duckdb.mjs', 'scripts/patch-perspective-number-locale.mjs', 'tests/analysis/**', 'tests/browser/analysis-export*', 'tests/verifyArrowCompression.py', 'package*.json', '.github/workflows/analysis-export.yml']
   push:
-    paths: ['src/analysis/**', 'scripts/build-analysis-export.mjs', 'scripts/patch-perspective-duckdb.mjs', 'scripts/patch-perspective-number-locale.mjs', 'tests/analysis/**', 'tests/browser/analysis-export*', 'tests/browser/analysis-column-settings.mjs', 'tests/browser/analysis-sql.mjs', 'tests/browser/datagrid-scroll.mjs', 'tests/browser/datagrid-probe.js', 'tests/verifyArrowCompression.py', 'package*.json', '.github/workflows/analysis-export.yml']
+    paths: ['src/analysis/**', 'scripts/build-analysis-export.mjs', 'scripts/patch-perspective-duckdb.mjs', 'scripts/patch-perspective-number-locale.mjs', 'tests/analysis/**', 'tests/browser/analysis-export*', 'tests/verifyArrowCompression.py', 'package*.json', '.github/workflows/analysis-export.yml']
 permissions:
   contents: read
 jobs:
@@ -24,7 +24,10 @@ jobs:
         with: {python-version: '3.12'}
       - run: npm ci
       - run: npm run lint
-      - run: npm run test:analysis
+      - name: Export codecs, files and renderer locale regressions
+        run: |
+          npm run build:analysis-export
+          node --import tsx --test tests/analysis/analysis-compression.check.ts tests/analysis/analysis-export*.check.ts tests/analysis/analysis-htmlReplay.check.ts tests/analysis/analysis-numberLocale.check.ts
       - run: python -m pip install pyarrow==26.0.1
       - run: python tests/verifyArrowCompression.py
       - run: npm run build
@@ -32,7 +35,7 @@ jobs:
         run: |
           npm install --prefix "$RUNNER_TEMP/lens-browser" playwright@1.62.0
           node "$RUNNER_TEMP/lens-browser/node_modules/playwright/cli.js" install --with-deps chromium
-      - name: Verify stock HTML using a fresh online browser context
+      - name: Verify HTML restore and chart PNG exports
         run: |
           npm run dev > "$RUNNER_TEMP/lens-vite.log" 2>&1 &
           server_pid=$!

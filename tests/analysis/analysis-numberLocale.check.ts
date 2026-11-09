@@ -1,3 +1,5 @@
+import vm from 'node:vm';
+import ts from 'typescript';
 import {pathToFileURL} from 'node:url';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
@@ -30,18 +32,33 @@ test('pinned locale patch is idempotent and rejects unknown SDK versions/templat
  assert.equal((source.match(/new Intl.DateTimeFormat\(navigator.languages/g)||[]).length,(patched.match(/new Intl.DateTimeFormat\(navigator.languages/g)||[]).length);
 });
 
-test('bundled charts number helper delegates to the same configured formatter',async()=>{
+test('actual chart worker Blob formats RU/EN in an isolated realm without main-thread imports',async()=>{
  const source=await readFile(require.resolve('@perspective-dev/viewer-charts'),'utf8');
  const patched=withLensChartNumberLocale(source,'5.8.0');
  assert.equal(withLensChartNumberLocale(patched,'5.8.0'),patched);
  assert.throws(()=>withLensChartNumberLocale(source,'5.9.0'),/Revalidate/);
  assert.throws(()=>withLensChartNumberLocale('unknown','5.8.0'),/Unsupported/);
- const helper=patched.match(/function Wr\(e,t,n\)\{return __lensSharedNumberFormatter\(e,t,n\)\}/)![0];
- const create=new Function('__lensSharedNumberFormatter',helper+';return Wr;')(formatter.createNumberFormatter);
+ const ast=ts.createSourceFile('charts.js',patched,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
+ let worker:string|undefined,blob:string|undefined;
+ const visit=(node:ts.Node)=>{
+  if(ts.isVariableDeclaration(node)&&node.name.getText(ast)==='Te'&&node.initializer&&ts.isStringLiteral(node.initializer))worker=node.initializer.text;
+  if(ts.isNewExpression(node)&&node.expression.getText(ast)==='Blob')blob=node.getText(ast);
+  ts.forEachChild(node,visit);
+ };
+ visit(ast);assert.ok(worker);assert.ok(blob);
+ assert.ok(!worker.includes('__lensSharedNumberFormatter'),'Worker cannot access main-thread imports');
+ const createBlob=new Function('Te','__lensGetNumberLocale','return '+blob);
  for(const locale of ['ru-RU','en-US']) {
-  formatter.setLensNumberLocale(locale);
-  for(const [type,options] of [['integer',undefined],['float',{maximumFractionDigits:1}],['float',{style:'percent'}]] as const) {
-   assert.equal(create(type,options).format(1234.56),formatter.createNumberFormatter(type,options).format(1234.56));
+  const code=await (createBlob(worker,()=>locale) as Blob).text();
+  const host:any={Intl,navigator:{languages:['en-US']},performance,setTimeout,clearTimeout,postMessage:()=>{},addEventListener:()=>{}};
+  host.self=host;
+  // Run the full shipped worker bootstrap, then its number helper in that realm.
+  vm.runInNewContext(code.replace(/export\{Js as WorkerRenderer\};/,'')+';cl();',host);
+  for(const [type,options,value] of [['float',undefined,1234.56],['integer',undefined,9007199254740993n],['float',{style:'percent'},0.125]] as const) {
+   host.type=type;host.options=options;host.value=value;
+   vm.runInNewContext('globalThis.result=Wr(type,options).format(value)',host);
+   formatter.setLensNumberLocale(locale);
+   assert.equal(host.result,formatter.createNumberFormatter(type,options).format(value));
   }
  }
 });
@@ -49,7 +66,7 @@ test('bundled charts number helper delegates to the same configured formatter',a
 test('direct Vite startup repairs an unprepared SDK before serving runtime imports',async()=>{
  const target=require.resolve('@perspective-dev/viewer/column-format');
  const saved=await readFile(target,'utf8');
- const clean=saved.replace(/^\/\* Lens number locale \(Perspective 5\.8\.0\)\. \*\/let __lensNumberLocale;export function setLensNumberLocale\(locale\)\{__lensNumberLocale=locale;\}/,'').replace('new Intl.NumberFormat(__lensNumberLocale??navigator.languages,i)','new Intl.NumberFormat(navigator.languages,i)');
+ const clean=saved.replace(/^\/\* Lens number locale \(Perspective 5\.8\.0; worker-safe\)\. \*\/let __lensNumberLocale;export function setLensNumberLocale\(locale\)\{__lensNumberLocale=locale;\}export function getLensNumberLocale\(\)\{return __lensNumberLocale;\}/,'').replace('new Intl.NumberFormat(__lensNumberLocale??navigator.languages,i)','new Intl.NumberFormat(navigator.languages,i)');
  assert.ok(!clean.includes('export function setLensNumberLocale'));
  try {
   await writeFile(target,clean);

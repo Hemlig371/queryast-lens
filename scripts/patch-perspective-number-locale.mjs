@@ -3,11 +3,14 @@ import {createRequire} from 'node:module';
 const require=createRequire(import.meta.url);
 const original='new Intl.NumberFormat(navigator.languages,i)';
 const replacement='new Intl.NumberFormat(__lensNumberLocale??navigator.languages,i)';
-const marker='/* Lens number locale (Perspective 5.8.0). */';
-const prelude=marker+'let __lensNumberLocale;export function setLensNumberLocale(locale){__lensNumberLocale=locale;}';
+const oldPrelude='/* Lens number locale (Perspective 5.8.0). */let __lensNumberLocale;export function setLensNumberLocale(locale){__lensNumberLocale=locale;}';
+const marker='/* Lens number locale (Perspective 5.8.0; worker-safe). */';
+const prelude=marker+'let __lensNumberLocale;export function setLensNumberLocale(locale){__lensNumberLocale=locale;}export function getLensNumberLocale(){return __lensNumberLocale;}';
 
 export function withLensNumberLocale(source,version) {
   if(version!=='5.8.0')throw Error('Revalidate the Perspective number locale patch for '+version);
+  // Upgrade an installed copy prepared by the previous script.
+  if(source.startsWith(oldPrelude))source=source.slice(oldPrelude.length).replace(replacement,original);
   const count=text=>source.split(text).length-1;
   if(count(marker)===1 && count(replacement)===1 && count(original)===0)return source;
   if(count(marker)!==0 || count(replacement)!==0 || count(original)!==1)throw Error('Unsupported Perspective number formatter template');
@@ -15,16 +18,21 @@ export function withLensNumberLocale(source,version) {
 }
 
 const chartOriginal='function Wr(e,t,n){let i=n??uf[e]??{},o=t?cf(i,t):i;return new Intl.NumberFormat(navigator.languages,o)}';
-const chartReplacement='function Wr(e,t,n){return __lensSharedNumberFormatter(e,t,n)}';
-const chartImport='/* Lens charts number locale (Perspective 5.8.0). */import{createNumberFormatter as __lensSharedNumberFormatter}from"@perspective-dev/viewer/column-format";';
+const oldChartReplacement='function Wr(e,t,n){return __lensSharedNumberFormatter(e,t,n)}';
+const oldChartImport='/* Lens charts number locale (Perspective 5.8.0). */import{createNumberFormatter as __lensSharedNumberFormatter}from"@perspective-dev/viewer/column-format";';
+const chartReplacement='function Wr(e,t,n){let i=n??uf[e]??{},o=t?cf(i,t):i;return new Intl.NumberFormat(globalThis.__lensNumberLocale??navigator.languages,o)}';
+const chartImport='/* Lens charts number locale (Perspective 5.8.0; worker-safe). */import{getLensNumberLocale as __lensGetNumberLocale}from"@perspective-dev/viewer/column-format";';
+const blobOriginal='new Blob([Te], {';
+const blobReplacement='new Blob(["globalThis.__lensNumberLocale="+JSON.stringify(__lensGetNumberLocale())+";\\n",Te], {';
 
-/** Charts bundle their own copy; delegate only that copy's number helper. */
+/** Pass a locale value into the worker; never refer to main-thread functions. */
 export function withLensChartNumberLocale(source,version) {
   if(version!=='5.8.0')throw Error('Revalidate the Perspective charts number locale patch for '+version);
+  if(source.startsWith(oldChartImport))source=source.slice(oldChartImport.length).replace(oldChartReplacement,chartOriginal);
   const count=text=>source.split(text).length-1;
-  if(count(chartImport)===1 && count(chartReplacement)===1 && count(chartOriginal)===0)return source;
-  if(count(chartImport)!==0 || count(chartReplacement)!==0 || count(chartOriginal)!==1)throw Error('Unsupported Perspective charts number formatter template');
-  return chartImport+source.replace(chartOriginal,chartReplacement);
+  if(count(chartImport)===1 && count(chartReplacement)===1 && count(blobReplacement)===1 && count(chartOriginal)===0 && count(blobOriginal)===0)return source;
+  if(count(chartImport)!==0 || count(chartOriginal)!==1 || count(blobOriginal)!==1)throw Error('Unsupported Perspective charts number formatter template');
+  return chartImport+source.replace(chartOriginal,chartReplacement).replace(blobOriginal,blobReplacement);
 }
 
 export async function patchPerspectiveNumberLocale() {

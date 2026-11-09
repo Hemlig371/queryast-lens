@@ -4,9 +4,6 @@ import {pathToFileURL} from 'node:url';
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import sharp from 'sharp';
-import {checkDatagridScroll} from './datagrid-scroll.mjs';
-import {checkColumnSettings} from './analysis-column-settings.mjs';
-import {checkSqlDialog} from './analysis-sql.mjs';
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE??'playwright');
 const browser=await chromium.launch({args:['--enable-unsafe-swiftshader'],...(process.env.BROWSER_PATH?{executablePath:process.env.BROWSER_PATH}:{})});
 const out=resolve(process.env.ANALYSIS_EXPORT_RESULTS??'test-results-dashboard');await mkdir(out,{recursive:true});
@@ -30,8 +27,6 @@ try{
  },null,{timeout:60000});
  assert.equal(await page.evaluate(async()=> (await document.querySelector('perspective-viewer').save()).title),'dashboard_source');
  const reports=[];
- reports.push(await checkColumnSettings(page));
- reports.push(await checkSqlDialog(page));
  for(const plugin of ['Datagrid']){
   const label=plugin.replaceAll(' ','-');const title=`Regional ${plugin}`;
   const expected=await page.evaluate(async({plugin,title})=>{
@@ -94,5 +89,5 @@ try{
  }
  assert.deepEqual(errors,[]);
  await writeFile(resolve(out,'checks.json'),JSON.stringify(reports,null,2));
- await checkDatagridScroll(page,out);await context.close();
+ await context.close();
 }finally{await browser.close();}

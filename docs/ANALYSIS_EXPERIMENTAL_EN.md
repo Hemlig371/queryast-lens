@@ -231,11 +231,18 @@ Unknown versions/templates fail preparation for review. Global `Intl` and
 `navigator.languages` are untouched. Standalone HTML exports load the external
 stock SDK runtime and continue using the opening browser/WebView locale.
 
-The charts bundle contains an embedded copy of the number helper; only that
-function delegates to the same shared `column-format` module. Preparation checks
-both package versions and templates before writing either change.
+Charts render in a separate worker with an embedded formatter. Only the locale
+value is passed into its script at worker creation, and its Intl.NumberFormat
+uses that value. No main-thread function references enter the worker. Preparation
+checks both package versions and templates before writing either change.
 
 Number locale preparation also runs on Vite startup/restart, including direct
 invocations without npm predev. `column-format` is excluded from dependency
 prebundling to prevent a stale export list. Restart the development process
 after replacing sources in an already running application.
+
+The export workflow checks codecs/files, HTML restoration and chart PNGs. SQL
+dialog, style, translation, column-settings and scrolling checks are excluded
+from its browser run. The general Tests workflow still runs all unit tests and
+SQL replay integration. Locale regression executes the full shipped worker Blob
+in an isolated JS realm without GPU; rendering and PNGs remain browser CI checks.
