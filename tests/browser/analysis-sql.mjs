@@ -6,7 +6,14 @@ export async function checkSqlDialog(page) {
     const original=await viewer.save();
     const locale=document.querySelector('.lens-explore').dataset.language==='en'?'en-US':'ru-RU';
     if(window.__analysisFormatNumber(1234.56)!==new Intl.NumberFormat(locale,{minimumFractionDigits:2,maximumFractionDigits:2}).format(1234.56))throw Error('Perspective number locale does not follow Lens');
-    if(original.plugin_config?.font_family!=='Segoe UI' || original.plugin_config?.font_size!==13)throw Error('Explicit default Datagrid font is missing');
+    // Perspective omits values equal to schema defaults from save().
+    // Check the effective table font, not the presence of optional JSON keys.
+    const plugin=Array.from(viewer.children).find(child=>child.tagName==='PERSPECTIVE-VIEWER-DATAGRID');
+    const grid=plugin?.regular_table;
+    const font=grid?getComputedStyle(grid):undefined;
+    if(!font || !font.fontFamily.includes('Segoe UI') || font.fontSize!=='13px') {
+      throw Error('Default Datagrid font is incorrect: '+JSON.stringify({saved:original.plugin_config,family:font?.fontFamily,size:font?.fontSize}));
+    }
     await viewer.restore({plugin:'Datagrid',columns:['quantity'],group_by:['region','day'],split_by:[],aggregates:{quantity:'sum'},settings:true});
     await viewer.flush();
     const view=await viewer.getView();const full=await view.num_rows();
