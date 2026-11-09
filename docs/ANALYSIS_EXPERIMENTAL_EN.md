@@ -26,8 +26,8 @@ delay. Perspective code/WASM loads lazily on first use; modules remain cached.
 
 ## Replaying SQL
 
-Select a panel/chart and choose **View SQL → Copy SQL**. Paste and execute the entire
-script in the Lens editor on the same database. Lens does not edit the editor for
+Select a panel/chart and choose **View SQL** to see its technical script.
+**Copy SQL** copies that script. Execute it in the Lens editor on the same database. Lens does not edit the editor for
 you. SQL captures the active View's construction/dependencies, expansion operations
 and final SELECT for its entire result. Showing SQL does not export all data.
 Temporary object names are isolated from the live Viewer; rerunning the same script
@@ -190,3 +190,13 @@ View is alive. Returning to the editor retains the exploration; closing it
 releases its Views. Returning does not automatically refresh the schema tree.
 Refresh the tree or query
 `SELECT database_name, schema_name, table_name FROM duckdb_tables() WHERE temporary AND NOT internal;`.
+
+## SQL formatting and common labels
+
+The technical script uses the Lens formatter and user preferences. Unsupported
+formatter syntax retains the original script. Common RU labels use CSS variables;
+context menu commands use a scoped content observer disposed on exploration close.
+User names, SQL terms and long messages remain unchanged. Button captions fit their
+text and export menu labels retain their left edge. Initial automatic column widths
+are capped at 320 px (less on narrow screens). Manual widths take priority and may
+exceed this default. Themes and settings panel dimensions remain unchanged.

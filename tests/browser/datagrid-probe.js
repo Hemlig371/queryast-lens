@@ -29,7 +29,11 @@ export async function runDatagridProbe({lens,patched}) {
     // Deterministically exercise the same boundary as an auto-sized long label.
     const label=grid.querySelector('tbody th.psp-tree-label');
     const headerKey=label?grid.getMeta(label)?.size_key??1:1;
+    const initialWidth=grid._column_sizes.override[headerKey];
+    if(patched && !(initialWidth>0 && initialWidth<=320))throw Error('Long automatic header width was not bounded');
     grid.restoreColumnSizes({...grid.saveColumnSizes(),[headerKey]:Math.max(5000,grid.clientWidth*3)});
+    const manualWidth=grid._column_sizes.override[headerKey];
+    if(patched && !(manualWidth>320))throw Error('Manual column width was restricted');
     const samples=[];
     for(const ratio of [0,0.5,1,0]){
      grid.scrollLeft=(grid.scrollWidth-grid.clientWidth)*ratio;
@@ -38,7 +42,7 @@ export async function runDatagridProbe({lens,patched}) {
      await new Promise(requestAnimationFrame);
      samples.push({ratio,cells:grid.querySelectorAll('tbody td').length});
     }
-    return {lens,patched,naturalCells,samples,valuesUnchanged:expected===JSON.stringify(await view.to_json())};
+    return {lens,patched,naturalCells,initialWidth,manualWidth,samples,valuesUnchanged:expected===JSON.stringify(await view.to_json())};
    }finally{
     dispose();await viewer.delete();frame.remove();await client.terminate();client.free();server.free();handler.sqlBuilder.free();
    }

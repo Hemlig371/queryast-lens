@@ -4790,7 +4790,7 @@ export default function App() {
     >
       {analysisClosingIndicator && <div className={`fixed inset-0 z-[120] flex items-center justify-center ${theme === 'dark' ? 'bg-slate-850/90 text-slate-300' : 'bg-slate-200/90 text-slate-600'}`} role="status" aria-label={t('Закрытие исследования…')}><Loader2 className="w-6 h-6 animate-spin" /></div>}
       {analysisSource && <Suspense fallback={<div className={`fixed inset-0 z-50 flex items-center justify-center ${theme === 'dark' ? 'bg-slate-850 text-slate-300' : 'bg-slate-200 text-slate-600'}`} role="status"><Loader2 className="w-6 h-6 animate-spin" /></div>}>
-        <Explore ref={analysisRef} theme={theme} source={analysisSource} visible={analysisVisible} mode={isWasmMode ? 'wasm' : 'native'} onBack={() => setAnalysisVisible(false)} onClose={() => void closeAnalysis()} />
+        <Explore ref={analysisRef} theme={theme} source={analysisSource} visible={analysisVisible} mode={isWasmMode ? 'wasm' : 'native'} onBack={() => setAnalysisVisible(false)} onClose={() => void closeAnalysis()} formatSql={sql => formatSqlText(sql, formatterSettingsRef.current || formatterSettings)} />
       </Suspense>}
       
       <main inert={analysisVisible || analysisClosing ? true : undefined} className="flex flex-1 overflow-hidden relative">

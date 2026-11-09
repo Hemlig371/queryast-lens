@@ -1,5 +1,6 @@
 import {installDefaultColumns} from './defaultColumns';
 import {installPivotMinMax} from './pivotMinMax';
+import {installUiPolish} from './uiPolish';
 import {installMenuBounds} from './menuBounds';
 import {installDatagridViewport} from './datagridViewport';
 import {installViewerBackground} from './viewerBackground';
@@ -14,20 +15,21 @@ import { installExportMenuBridge } from './exportMenu';
 import { analysisConnection, tablePath, type AnalysisMode } from './transport';
 import { currentLang } from '../utils/i18n';
 import './explore.css';
+import './locale.css';
 
 export interface AnalysisSource { database: string; schema: string; table: string; connection: string }
 const text = (ru: string, en: string) => currentLang === 'en' ? en : ru;
 let pendingCleanup: Promise<void> = Promise.resolve();
 export interface ExploreHandle { close: () => Promise<void> }
 const Explore = forwardRef<ExploreHandle, {
-  source: AnalysisSource; mode?: AnalysisMode; theme?: 'light' | 'dark'; visible?: boolean; onBack?: () => void; onClose?: () => void;
-}>(function Explore({ source, mode = 'wasm', theme = 'light', visible = true, onBack, onClose }, ref) {
+  source: AnalysisSource; mode?: AnalysisMode; theme?: 'light' | 'dark'; visible?: boolean; onBack?: () => void; onClose?: () => void; formatSql?: (sql: string) => Promise<string>;
+}>(function Explore({ source, mode = 'wasm', theme = 'light', visible = true, onBack, onClose, formatSql }, ref) {
   const selected = source;
   const [revision, setRevision] = useState(0);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
-  const [sqlSnapshot, setSqlSnapshot] = useState<{source:string; rows:number; columns:number; sql:string} | null>(null);
+  const [sqlSnapshot, setSqlSnapshot] = useState<{sql:string} | null>(null);
   const [sqlBusy, setSqlBusy] = useState(false);
   const sqlDialog = useRef<HTMLDialogElement>(null);
   const sqlCapture = useRef<{capture:ViewSqlCapture; handler:any} | null>(null);
@@ -60,6 +62,7 @@ const Explore = forwardRef<ExploreHandle, {
     let removeMenuBounds: (() => void) | undefined;
     let removeDatagridViewport: (() => void) | undefined;
     let removeBackground: (() => void) | undefined;
+    let removeUiPolish: (() => void) | undefined;
     let restoreColumnPaths: (() => void) | undefined;
     let cleanup: Promise<void> | undefined;
     setBusy(true); setError(''); setSqlSnapshot(null); setCopied(false);
@@ -103,6 +106,7 @@ const Explore = forwardRef<ExploreHandle, {
       viewer.style.visibility = 'hidden';
       container.current!.appendChild(viewer);
       removeMenuBounds = installMenuBounds(viewer);
+      removeUiPolish = installUiPolish(viewer,currentLang);
       removeDatagridViewport = installDatagridViewport(viewer);
       removeBackground = installViewerBackground(viewer, container.current!.parentElement!);
       await viewer.load(table);
@@ -132,6 +136,7 @@ const Explore = forwardRef<ExploreHandle, {
       cleanup = opening.then(async () => {
         removeExportBridge?.();
         removeMenuBounds?.();
+        removeUiPolish?.();
         removeDatagridViewport?.();
         removeBackground?.();
         const release = async (action: () => unknown) => {
@@ -188,22 +193,28 @@ const Explore = forwardRef<ExploreHandle, {
         throw new Error(text('Представление изменилось. Нажмите SQL ещё раз.', 'The View changed. Click SQL again.'));
       }
       setCopied(false);
-      setSqlSnapshot(snapshot);
+      let sql = snapshot.sql;
+      if (formatSql) {
+        try { sql = await formatSql(sql); } catch { /* Keep the executable SDK script. */ }
+      }
+      if (sqlCapture.current !== tracking || viewerRef.current !== viewer) return;
+      setSqlSnapshot({sql});
       sqlDialog.current?.showModal();
     } catch (e) { setError(`${text('SQL представления', 'View SQL')}: ${String(e)}`); }
     finally { setSqlBusy(false); }
   }
 
   async function copySql() {
-    if (!sqlSnapshot) return;
-    const ok = await copyToClipboard(sqlSnapshot.sql);
+    const sql = sqlSnapshot?.sql;
+    if (!sql) return;
+    const ok = await copyToClipboard(sql);
     if (!ok) { setError(text('Не удалось скопировать SQL', 'Could not copy SQL')); return; }
     setCopied(true);
     if (copyTimer.current) clearTimeout(copyTimer.current);
     copyTimer.current = setTimeout(() => setCopied(false), 1600);
   }
 
-  return <section style={visible ? undefined : {display: 'none'}} aria-hidden={!visible} className="lens-explore" data-theme={theme} aria-label={text('Исследование данных', 'Explore data')}>
+  return <section style={visible ? undefined : {display: 'none'}} aria-hidden={!visible} className="lens-explore" data-theme={theme} data-language={currentLang} aria-label={text('Исследование данных', 'Explore data')}>
     <header className="explore-toolbar">
       {onBack ? <button disabled={busy || sqlBusy} onClick={() => void returnToEditor()}>← {text('В редактор', 'Back to editor')}</button> : <strong>QueryAST Lens</strong>}
       {source && <span className="explore-source" title={tablePath([source.database, source.schema, source.table])}>{source.schema}.{source.table}</span>}
