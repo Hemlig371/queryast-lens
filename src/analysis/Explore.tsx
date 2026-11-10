@@ -56,6 +56,7 @@ const Explore = forwardRef<ExploreHandle, {
   useEffect(() => {
     if (!selected || !container.current) return;
     let cancelled = false;
+    let opened = false;
     let viewer: HTMLPerspectiveViewerElement | undefined;
     let table: any;
     let client: any;
@@ -126,7 +127,7 @@ const Explore = forwardRef<ExploreHandle, {
         error: e => { setError(`${text('Экспорт', 'Export')}: ${String(e)}`); setStatus(text('Ошибка экспорта', 'Export failed')); },
       });
       await viewer.flush();
-      if (!cancelled) viewer.style.visibility = 'visible';
+      if (!cancelled) { opened = true; viewer.style.visibility = 'visible'; }
       setStatus('');
     }).catch(e => { if (!cancelled) { setError(String(e)); setStatus(text('Ошибка подключения', 'Connection failed')); } })
       .finally(() => { if (!cancelled) setBusy(false); });
@@ -137,16 +138,17 @@ const Explore = forwardRef<ExploreHandle, {
       viewerRef.current = null;
       sqlCapture.current = null;
       cleanup = opening.then(async () => {
-        removeExportBridge?.();
-        removeMenuBounds?.();
-        removeUiPolish?.();
-        removeDatagridViewport?.();
-        removeBackground?.();
         const release = async (action: () => unknown) => {
           try { await action(); } catch (e) { console.warn('Analysis cleanup', e); }
         };
+        await release(() => removeExportBridge?.());
+        await release(() => removeMenuBounds?.());
+        await release(() => removeUiPolish?.());
+        await release(() => removeDatagridViewport?.());
+        await release(() => removeBackground?.());
         if (viewer) {
-          await release(async () => { savedConfig.current = {key, config: await viewer!.saveWorkspace()}; });
+          // A failed restore must not replace the last successfully saved workspace.
+          if (opened) await release(async () => { savedConfig.current = {key, config: await viewer!.saveWorkspace()}; });
           await release(() => viewer!.delete());
           viewer.remove();
         }

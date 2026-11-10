@@ -4,7 +4,7 @@ import {createRoot, type Root} from 'react-dom/client';
 import {afterEach, beforeEach, expect, it, vi} from 'vitest';
 import Explore, {type ExploreHandle} from '../src/analysis/Explore';
 
-const sdk=vi.hoisted(()=>({load:vi.fn(),events:[] as string[]}));
+const sdk=vi.hoisted(()=>({load:vi.fn(),events:[] as string[],removeError:'',restoreFailures:0}));
 vi.mock('../src/analysis/sdk',()=>({loadPerspective:()=>sdk.load()}));
 vi.mock('../src/analysis/transport',()=>({
  tablePath:(parts:string[])=>parts.join('.'),
@@ -19,12 +19,12 @@ vi.mock('@perspective-dev/client/registry',()=>({client_runtime:()=>({glue:{
 vi.mock('../src/analysis/viewSql',()=>({ViewSqlCapture:class {record(){}instrument(h:unknown){return h;}async snapshot(){return {sql:'SELECT 1;'};}}}));
 vi.mock('../src/analysis/defaultColumns',()=>({installDefaultColumns:()=>{}}));
 vi.mock('../src/analysis/pivotMinMax',()=>({installPivotMinMax:()=>{}}));
-vi.mock('../src/analysis/uiPolish',()=>({installUiPolish:()=>()=>{}}));
-vi.mock('../src/analysis/menuBounds',()=>({installMenuBounds:()=>()=>{}}));
-vi.mock('../src/analysis/datagridViewport',()=>({installDatagridViewport:()=>()=>{}}));
-vi.mock('../src/analysis/viewerBackground',()=>({installViewerBackground:()=>()=>{}}));
+vi.mock('../src/analysis/uiPolish',()=>({installUiPolish:()=>()=>{sdk.events.push('ui.remove');if(sdk.removeError==='ui.remove')throw Error('remove failed');}}));
+vi.mock('../src/analysis/menuBounds',()=>({installMenuBounds:()=>()=>{sdk.events.push('menu.remove');if(sdk.removeError==='menu.remove')throw Error('remove failed');}}));
+vi.mock('../src/analysis/datagridViewport',()=>({installDatagridViewport:()=>()=>{sdk.events.push('grid.remove');if(sdk.removeError==='grid.remove')throw Error('remove failed');}}));
+vi.mock('../src/analysis/viewerBackground',()=>({installViewerBackground:()=>()=>{sdk.events.push('background.remove');if(sdk.removeError==='background.remove')throw Error('remove failed');}}));
 vi.mock('../src/analysis/dateSplitPaths',()=>({installDateSplitPathCompatibility:()=>()=>sdk.events.push('paths.restore')}));
-vi.mock('../src/analysis/exportMenu',()=>({installExportMenuBridge:()=>()=>sdk.events.push('export.remove')}));
+vi.mock('../src/analysis/exportMenu',()=>({installExportMenuBridge:()=>()=>{sdk.events.push('export.remove');if(sdk.removeError==='export.remove')throw Error('remove failed');}}));
 
 function deferred<T>() {let resolve!:(value:T)=>void;const promise=new Promise<T>(r=>resolve=r);return {promise,resolve};}
 const workspace={panels:{panel:{columns:['id']}}};
@@ -33,7 +33,7 @@ class FakeViewer extends HTMLElement {
  load=vi.fn(async()=>{});
  resetThemes=vi.fn(async()=>{});
  restore=vi.fn(async()=>{});
- restoreWorkspace=vi.fn(async()=>{});
+ restoreWorkspace=vi.fn(async()=>{if(sdk.restoreFailures>0){sdk.restoreFailures--;throw Error('restore failed');}});
  saveWorkspace=vi.fn(async()=>{sdk.events.push('viewer.save');return workspace;});
  delete=vi.fn(async()=>{sdk.events.push('viewer.delete');});
  getActivePanel=()=> 'panel';
@@ -50,7 +50,7 @@ async function ready() {await vi.waitFor(()=>expect(host.querySelector('perspect
 async function click(element:HTMLElement) {await act(async()=>element.click());}
 beforeEach(()=>{
  (globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;
- sdk.events.length=0;
+ sdk.events.length=0;sdk.removeError='';sdk.restoreFailures=0;
  runtime={make_client:async()=>({
   open_table:async()=>({schema:async()=>({id:'integer'}),free:()=>sdk.events.push('table.free')}),
   terminate:async()=>{sdk.events.push('client.terminate');},free:()=>sdk.events.push('client.free'),
@@ -143,4 +143,26 @@ it('source switching waits for old cleanup before opening the next connection',a
  await vi.waitFor(()=>expect(sdk.load.mock.calls.length).toBe(opened+1));
  const second=await ready();expect(second).not.toBe(first);
  expect(sdk.events).toContain('client.free');
+});
+
+it('preserves the last saved workspace after an unsuccessful restore',async()=>{
+ await render();const first=await ready();sdk.restoreFailures=1;
+ await click(button(/^(Обновить|Refresh)$/));
+ await vi.waitFor(()=>expect(host.querySelector('.explore-status')?.textContent).toContain('restore failed'));
+ const failed=host.querySelector('perspective-viewer') as FakeViewer;expect(failed).not.toBe(first);
+ failed.saveWorkspace.mockResolvedValueOnce({panels:{partial:{columns:['missing']}}} as any);
+ await click(button(/^(Обновить|Refresh)$/));
+ await vi.waitFor(()=>expect(host.querySelector('perspective-viewer')).not.toBe(failed));
+ const recovered=await ready();
+ expect(failed.saveWorkspace).not.toHaveBeenCalled();
+ expect(recovered.restoreWorkspace).toHaveBeenCalledWith(workspace);
+});
+
+it.each(['export.remove','menu.remove','ui.remove','grid.remove','background.remove'])('cleanup continues when %s throws and the next source can open',async(name)=>{
+ const ref=createRef<ExploreHandle>();await render({ref});await ready();sdk.removeError=name;
+ const warn=vi.spyOn(console,'warn').mockImplementation(()=>{});
+ await act(async()=>{await expect(ref.current!.close()).resolves.toBeUndefined();});
+ expect(warn).toHaveBeenCalledOnce();
+ for(const event of ['export.remove','menu.remove','ui.remove','grid.remove','background.remove','viewer.delete','client.free','server.free','handler.free'])expect(sdk.events).toContain(event);
+ sdk.removeError='';await render({ref,source:{...source,table:'other'}});await ready();
 });

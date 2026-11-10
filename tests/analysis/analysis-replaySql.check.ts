@@ -24,3 +24,18 @@ test('replay preserves dependency order and rejects missing construction', () =>
   assert.ok(statements[1].includes('"lens_replay_deps_1" AS SELECT * FROM "lens_replay_deps_0"'));
   assert.throws(() => isolateReplaySql(['SELECT 1']), /unavailable/);
 });
+
+test('repeated CREATE keeps its mapping without colliding with a later table', () => {
+  const {statements,sql} = isolateReplaySql([
+    'CREATE TEMP TABLE a AS SELECT 1 AS value',
+    'CREATE TEMP TABLE b AS SELECT * FROM a',
+    'CREATE OR REPLACE TEMP TABLE "A" AS SELECT 2 AS value',
+    'CREATE TEMP TABLE c AS SELECT * FROM a',
+    'SELECT * FROM c',
+  ], 'repeat');
+  assert.match(statements[0], /TABLE "lens_replay_repeat_0"/);
+  assert.match(statements[1], /TABLE "lens_replay_repeat_1" AS SELECT \* FROM "lens_replay_repeat_0"/);
+  assert.match(statements[2], /TABLE "lens_replay_repeat_0"/);
+  assert.match(statements[3], /TABLE "lens_replay_repeat_2" AS SELECT \* FROM "lens_replay_repeat_0"/);
+  assert.equal((sql.match(/-- DROP TABLE IF EXISTS/g)??[]).length,3);
+});

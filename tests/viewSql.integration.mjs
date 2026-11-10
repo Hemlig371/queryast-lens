@@ -101,6 +101,17 @@ async function checkRange(config,referenceSql,label) {
  return view;
 }
 try{
+ // Repeated construction of one name must not alias a later dependency.
+ const repeated=isolateReplaySql([
+  'CREATE TEMP TABLE replay_a AS SELECT 1 AS value',
+  'CREATE TEMP TABLE replay_b AS SELECT * FROM replay_a',
+  'CREATE OR REPLACE TEMP TABLE replay_a AS SELECT 2 AS value',
+  'CREATE TEMP TABLE replay_c AS SELECT * FROM replay_a',
+  'SELECT (SELECT value FROM replay_b) AS initial, (SELECT value FROM replay_c) AS latest',
+ ]);
+ for(let attempt=0;attempt<2;attempt++)assert.deepEqual(conn.query(repeated.sql).toArray()[0].toJSON(),{initial:1,latest:2});
+ for(const cleanup of repeated.sql.split('\n').filter(line=>line.startsWith('-- DROP TABLE')))conn.query(cleanup.slice(3));
+ console.log('Repeated CREATE replay preserves distinct dependencies and executes twice.');
  const draft=await handler.tableDescribe('memory.demo',{columns:[],expressions:{draft:''}});
  assert.ok(draft.expression_errors.draft);assert.ok(!draft.config_error);
  const valid=await handler.tableDescribe('memory.demo',{columns:[],expressions:{double_quantity:'"quantity" * 2'}});

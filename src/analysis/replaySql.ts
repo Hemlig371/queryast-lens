@@ -8,7 +8,10 @@ export function isolateReplaySql(statements: string[], suffix = crypto.randomUUI
   const names = new Map<string, string>();
   for (const sql of statements) {
     const match = /^\s*CREATE\s+(?:OR\s+REPLACE\s+)?TEMP(?:ORARY)?\s+TABLE\s+("(?:""|[^"])+"|[A-Za-z_][A-Za-z_0-9$]*)/i.exec(sql);
-    if (match) names.set(identifier(match[1]).toLowerCase(), `lens_replay_${suffix}_${names.size}`);
+    if (match) {
+      const key = identifier(match[1]).toLowerCase();
+      if (!names.has(key)) names.set(key, `lens_replay_${suffix}_${names.size}`);
+    }
   }
   if (!names.size) throw new Error('No temporary View construction found; SQL replay is unavailable');
   const rewritten = statements.map(sql => sql.replace(tokens, token => {
